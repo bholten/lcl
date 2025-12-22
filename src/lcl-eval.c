@@ -146,7 +146,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   rc = lcl_eval_word(interp, &cmd->w[0], &callee);
   if (rc != LCL_RC_OK) return rc;
 
-  /* If result is a string, look up command by name (no qualified lookup) */
+  /* Look up command by name if result is a string or convertible to one */
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
@@ -160,6 +160,22 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       return LCL_RC_ERR;
     }
     lcl_ref_dec(name);
+  } else if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
+    /* Non-callable value - for single-word command, return the value itself */
+    if (cmd->argc == 1) {
+      *out = callee;
+      return LCL_RC_OK;
+    }
+    /* Otherwise try to look it up as a command name */
+    {
+      lcl_value *name = callee;
+      callee = NULL;
+      if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) != LCL_OK) {
+        lcl_ref_dec(name);
+        return LCL_RC_ERR;
+      }
+      lcl_ref_dec(name);
+    }
   }
 
   if (callee->type == LCL_CPROC && callee->as.c_proc.fn->kind == LCL_CK_SPECIAL) {

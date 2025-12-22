@@ -71,6 +71,7 @@ lcl_result lcl_value_to_float(lcl_value *value, float *out);
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
 lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
+lcl_result lcl_list_set(lcl_value **list_io, size_t i, lcl_value *value);
 size_t lcl_list_len(const lcl_value *list);
 
 lcl_value *lcl_dict_new(void);
