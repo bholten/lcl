@@ -190,4 +190,55 @@ puts [lindex $nested 0 1]      ;# expect: y
 puts [lindex $nested 1 0]      ;# expect: z
 
 puts ""
+puts "-- dict operations --"
+# dict create and size
+let d [dict create a 1 b 2 c 3]
+puts [dict size $d]            ;# expect: 3
+
+# dict get
+puts [dict get $d a]           ;# expect: 1
+puts [dict get $d b]           ;# expect: 2
+puts [dict get $d c]           ;# expect: 3
+
+# dict exists
+puts [dict exists $d a]        ;# expect: 1
+puts [dict exists $d missing]  ;# expect: 0
+
+# dict keys (order may vary, but count should be 3)
+let ks [dict keys $d]
+puts [llength $ks]             ;# expect: 3
+
+# dict values (order may vary, but count should be 3)
+let vs [dict values $d]
+puts [llength $vs]             ;# expect: 3
+
+# dict set on cell-bound dict
+var md [dict create x 10]
+dict set md x 20
+puts [dict get $md x]          ;# expect: 20
+
+# dict set adds new key
+dict set md y 30
+puts [dict get $md y]          ;# expect: 30
+puts [dict size $md]           ;# expect: 2
+
+# dict unset
+dict unset md x
+puts [dict size $md]           ;# expect: 1
+puts [dict exists $md x]       ;# expect: 0
+
+# empty dict
+let empty [dict create]
+puts [dict size $empty]        ;# expect: 0
+
+# nested dict get with multiple keys
+let nested [dict create outer [dict create inner 42]]
+puts [dict get $nested outer inner]  ;# expect: 42
+
+# dict set nested
+var nd [dict create outer [dict create inner 0]]
+dict set nd outer inner 99
+puts [dict get $nd outer inner]      ;# expect: 99
+
+puts ""
 puts "=== Done ==="

@@ -1707,6 +1707,575 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
+/* ============================================================================
+ * Dict Commands (ensemble)
+ * ============================================================================ */
+
+/* dict create ?key value ...? - create a dict from key-value pairs */
+static int dict_create(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out) {
+  lcl_value *dict;
+  int i;
+
+  if (argc % 2 != 0) {
+    return LCL_RC_ERR;  /* Must have even number of args */
+  }
+
+  dict = lcl_dict_new();
+  if (!dict) return LCL_RC_ERR;
+
+  for (i = 0; i < argc; i += 2) {
+    lcl_value *key_v = NULL;
+    lcl_value *val_v = NULL;
+
+    if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_eval_word(interp, args[i + 1], &val_v) != LCL_RC_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_dict_put(&dict, lcl_value_to_string(key_v), val_v) != LCL_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(val_v);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val_v);
+  }
+
+  *out = dict;
+  return LCL_RC_OK;
+}
+
+/* dict get dictValue ?key ...? - get value by key(s) */
+static int dict_get(lcl_interp *interp, int argc, const lcl_word **args,
+                    lcl_value **out) {
+  lcl_value *dict = NULL;
+  int i;
+
+  if (argc < 1) return LCL_RC_ERR;
+
+  if (lcl_eval_word(interp, args[0], &dict) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  /* No keys - return the dict itself */
+  if (argc == 1) {
+    *out = dict;
+    return LCL_RC_OK;
+  }
+
+  /* Navigate through nested keys */
+  for (i = 1; i < argc; i++) {
+    lcl_value *key_v = NULL;
+    lcl_value *val = NULL;
+
+    if (dict->type != LCL_DICT) {
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_dict_get(dict, lcl_value_to_string(key_v), &val) != LCL_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    /* lcl_dict_get already returns with +1 refcount */
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(dict);
+    dict = val;
+  }
+
+  *out = dict;
+  return LCL_RC_OK;
+}
+
+/* dict size dictValue - get number of entries */
+static int dict_size(lcl_interp *interp, int argc, const lcl_word **args,
+                     lcl_value **out) {
+  lcl_value *dict = NULL;
+  size_t len;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  if (lcl_eval_word(interp, args[0], &dict) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (dict->type != LCL_DICT) {
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  len = lcl_dict_len(dict);
+  lcl_ref_dec(dict);
+
+  *out = lcl_int_new((long)len);
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
+/* dict keys dictValue - get all keys as a list */
+static int dict_keys(lcl_interp *interp, int argc, const lcl_word **args,
+                     lcl_value **out) {
+  lcl_value *dict = NULL;
+  lcl_value *result;
+  hash_iter it = {0};
+  const char *k;
+  lcl_value *v;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  if (lcl_eval_word(interp, args[0], &dict) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (dict->type != LCL_DICT) {
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  if (!result) {
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &v)) {
+    lcl_value *key_v = lcl_string_new(k);
+    lcl_ref_dec(v);  /* hash_table_iterate returns +1 refcount */
+    if (!key_v || lcl_list_push(&result, key_v) != LCL_OK) {
+      if (key_v) lcl_ref_dec(key_v);
+      lcl_ref_dec(result);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+    lcl_ref_dec(key_v);
+  }
+
+  lcl_ref_dec(dict);
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* dict values dictValue - get all values as a list */
+static int dict_values(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out) {
+  lcl_value *dict = NULL;
+  lcl_value *result;
+  hash_iter it = {0};
+  const char *k;
+  lcl_value *v;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  if (lcl_eval_word(interp, args[0], &dict) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (dict->type != LCL_DICT) {
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  if (!result) {
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &v)) {
+    int push_rc = lcl_list_push(&result, v);
+    lcl_ref_dec(v);  /* hash_table_iterate returns +1 refcount */
+    if (push_rc != LCL_OK) {
+      lcl_ref_dec(result);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+  }
+
+  lcl_ref_dec(dict);
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* dict exists dictValue key ?key ...? - check if key exists */
+static int dict_exists(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out) {
+  lcl_value *dict = NULL;
+  int i;
+
+  if (argc < 2) return LCL_RC_ERR;
+
+  if (lcl_eval_word(interp, args[0], &dict) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  /* Navigate through nested keys */
+  for (i = 1; i < argc; i++) {
+    lcl_value *key_v = NULL;
+    lcl_value *val = NULL;
+
+    if (dict->type != LCL_DICT) {
+      lcl_ref_dec(dict);
+      *out = lcl_int_new(0);
+      return *out ? LCL_RC_OK : LCL_RC_ERR;
+    }
+
+    if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_dict_get(dict, lcl_value_to_string(key_v), &val) != LCL_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(dict);
+      *out = lcl_int_new(0);
+      return *out ? LCL_RC_OK : LCL_RC_ERR;
+    }
+
+    /* lcl_dict_get already returns with +1 refcount */
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(dict);
+    dict = val;
+  }
+
+  lcl_ref_dec(dict);
+  *out = lcl_int_new(1);
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
+/* dict set dictVariable key ?key ...? value - set value in dict variable */
+static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
+                    lcl_value **out) {
+  lcl_value *name_v = NULL;
+  lcl_value *cell = NULL;
+  lcl_value *dict = NULL;
+  lcl_value *val_v = NULL;
+  lcl_value *key_v = NULL;
+
+  if (argc < 3) return LCL_RC_ERR;
+
+  /* Get variable name */
+  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  /* Look up the variable - must be a cell */
+  if (lcl_env_get_value(&interp->env, lcl_value_to_string(name_v), &cell)
+      != LCL_OK) {
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  if (cell->type != LCL_CELL) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    return LCL_RC_ERR;
+  }
+
+  /* Get the current dict from the cell */
+  if (lcl_cell_get(cell, &dict) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    return LCL_RC_ERR;
+  }
+
+  if (dict->type != LCL_DICT) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  /* Get the value (last argument) */
+  if (lcl_eval_word(interp, args[argc - 1], &val_v) != LCL_RC_OK) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  /* Simple case: single key */
+  if (argc == 3) {
+    if (lcl_eval_word_to_str(interp, args[1], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(cell);
+      lcl_ref_dec(dict);
+      lcl_ref_dec(val_v);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_dict_put(&dict, lcl_value_to_string(key_v), val_v) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(cell);
+      lcl_ref_dec(dict);
+      lcl_ref_dec(val_v);
+      lcl_ref_dec(key_v);
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val_v);  /* dict_put incremented refcount */
+  } else {
+    /* Nested keys - navigate and set */
+    lcl_value **path_dicts;
+    lcl_value **path_keys;
+    int path_len = argc - 2;  /* number of keys */
+    int i;
+
+    path_dicts = (lcl_value **)calloc((size_t)path_len, sizeof(*path_dicts));
+    path_keys = (lcl_value **)calloc((size_t)path_len, sizeof(*path_keys));
+
+    if (!path_dicts || !path_keys) {
+      free(path_dicts);
+      free(path_keys);
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(cell);
+      lcl_ref_dec(dict);
+      lcl_ref_dec(val_v);
+      return LCL_RC_ERR;
+    }
+
+    path_dicts[0] = dict;
+
+    /* Navigate to nested dicts, creating as needed */
+    for (i = 0; i < path_len - 1; i++) {
+      lcl_value *nested = NULL;
+
+      if (lcl_eval_word_to_str(interp, args[i + 1], &path_keys[i]) != LCL_RC_OK) {
+        goto nested_cleanup;
+      }
+
+      if (lcl_dict_get(path_dicts[i], lcl_value_to_string(path_keys[i]), &nested) != LCL_OK) {
+        /* Create new nested dict */
+        nested = lcl_dict_new();
+        if (!nested) goto nested_cleanup;
+      } else {
+        /* lcl_dict_get already returns with +1 refcount */
+        if (nested->type != LCL_DICT) {
+          lcl_ref_dec(nested);
+          goto nested_cleanup;
+        }
+      }
+
+      path_dicts[i + 1] = nested;
+    }
+
+    /* Get final key */
+    if (lcl_eval_word_to_str(interp, args[path_len], &path_keys[path_len - 1]) != LCL_RC_OK) {
+      goto nested_cleanup;
+    }
+
+    /* Set value in innermost dict */
+    if (lcl_dict_put(&path_dicts[path_len - 1],
+                     lcl_value_to_string(path_keys[path_len - 1]),
+                     val_v) != LCL_OK) {
+      goto nested_cleanup;
+    }
+
+    /* Propagate changes back up */
+    for (i = path_len - 2; i >= 0; i--) {
+      if (lcl_dict_put(&path_dicts[i],
+                       lcl_value_to_string(path_keys[i]),
+                       path_dicts[i + 1]) != LCL_OK) {
+        goto nested_cleanup;
+      }
+    }
+
+    dict = path_dicts[0];
+
+    /* Cleanup path */
+    for (i = 1; i < path_len; i++) {
+      if (path_dicts[i]) lcl_ref_dec(path_dicts[i]);
+    }
+    for (i = 0; i < path_len; i++) {
+      if (path_keys[i]) lcl_ref_dec(path_keys[i]);
+    }
+    free(path_dicts);
+    free(path_keys);
+    lcl_ref_dec(val_v);  /* dict_put incremented refcount */
+    goto after_nested;
+
+nested_cleanup:
+    for (i = 0; i < path_len; i++) {
+      if (path_dicts[i] && i > 0) lcl_ref_dec(path_dicts[i]);
+      if (path_keys[i]) lcl_ref_dec(path_keys[i]);
+    }
+    free(path_dicts);
+    free(path_keys);
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    lcl_ref_dec(val_v);
+    return LCL_RC_ERR;
+  }
+
+after_nested:
+  /* Update the cell with the modified dict */
+  if (lcl_cell_set(cell, dict) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(cell);
+  *out = dict;
+  return LCL_RC_OK;
+}
+
+/* dict unset dictVariable key ?key ...? - remove key from dict variable */
+static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
+                      lcl_value **out) {
+  lcl_value *name_v = NULL;
+  lcl_value *cell = NULL;
+  lcl_value *dict = NULL;
+  lcl_value *key_v = NULL;
+
+  if (argc < 2) return LCL_RC_ERR;
+
+  /* Get variable name */
+  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  /* Look up the variable - must be a cell */
+  if (lcl_env_get_value(&interp->env, lcl_value_to_string(name_v), &cell)
+      != LCL_OK) {
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  if (cell->type != LCL_CELL) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    return LCL_RC_ERR;
+  }
+
+  /* Get the current dict from the cell */
+  if (lcl_cell_get(cell, &dict) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    return LCL_RC_ERR;
+  }
+
+  if (dict->type != LCL_DICT) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  /* Simple case: single key */
+  if (argc == 2) {
+    if (lcl_eval_word_to_str(interp, args[1], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(cell);
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+
+    /* Delete the key (ignore if not found) */
+    lcl_dict_del(&dict, lcl_value_to_string(key_v));
+    lcl_ref_dec(key_v);
+  } else {
+    /* Nested unset - not implemented for MVP */
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  /* Update the cell with the modified dict */
+  if (lcl_cell_set(cell, dict) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(dict);
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(cell);
+  *out = dict;
+  return LCL_RC_OK;
+}
+
+/* dict - ensemble command dispatcher */
+int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
+           lcl_value **out) {
+  lcl_value *subcmd_v = NULL;
+  const char *subcmd;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  /* Get subcommand name */
+  if (lcl_eval_word_to_str(interp, args[0], &subcmd_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  subcmd = lcl_value_to_string(subcmd_v);
+
+  if (strcmp(subcmd, "create") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_create(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "get") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_get(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "size") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_size(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "keys") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_keys(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "values") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_values(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "exists") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_exists(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "set") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_set(interp, argc - 1, args + 1, out);
+  }
+
+  if (strcmp(subcmd, "unset") == 0) {
+    lcl_ref_dec(subcmd_v);
+    return dict_unset(interp, argc - 1, args + 1, out);
+  }
+
+  /* Unknown subcommand */
+  lcl_ref_dec(subcmd_v);
+  return LCL_RC_ERR;
+}
+
 void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "puts",    lcl_c_proc_new("puts", c_puts));
   lcl_env_let_take(&interp->env, "+",       lcl_c_proc_new("+", c_add));
@@ -1735,4 +2304,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "split",   lcl_c_proc_new("split", c_split));
   lcl_env_let_take(&interp->env, "lappend", lcl_c_spec_new("lappend", s_lappend));
   lcl_env_let_take(&interp->env, "lset",    lcl_c_spec_new("lset", s_lset));
+
+  /* Dict command (ensemble) */
+  lcl_env_let_take(&interp->env, "dict",    lcl_c_spec_new("dict", s_dict));
 }
