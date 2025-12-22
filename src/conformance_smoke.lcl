@@ -1,0 +1,134 @@
+# Lcl Conformance Smoke (MVP)
+# This script assumes the host registered the core stdlib:
+#   let, ref, var (sugar), set!, +, puts, lambda, proc, return
+# Optional: ns, ns::def, get
+
+puts "=== Lcl Conformance Smoke ==="
+
+puts ""
+puts "-- immutability & substitution --"
+let x 10
+puts "x=$x"                    ;# expect: x=10
+
+puts ""
+puts "-- cells (var/ref) & set! --"
+var n 0                        ;# let n [ref 0]
+set! n [+ $n 1]
+puts "n=$n"                    ;# expect: n=1
+
+puts ""
+puts "-- quoting and subcommand substitution --"
+let a 10
+let s "x=$a [ + 1 2 ]"
+puts $s                        ;# expect: x=10 3
+let t {x=$a [ + 1 2 ]}
+puts $t                        ;# expect: x=$a [ + 1 2 ]
+
+puts ""
+puts "-- user proc, return, and closures --"
+proc add {a b} { return [+ $a $b] }
+puts "add(20,22)=[add 20 22]"  ;# expect: add(20,22)=42
+
+proc makeCounter {start} {
+  var n $start
+  return [lambda {} { set! n [+ $n 1]; $n }]
+}
+let c [makeCounter 10]
+puts [$c]                      ;# expect: 11
+puts [$c]                      ;# expect: 12
+
+puts ""
+puts "-- namespaces (optional stdlib) --"
+let math [ns]
+ns::def $math ten 10
+puts [get math::ten]
+# expect: 10
+
+puts ""
+puts "-- eval --"
+# basic eval
+puts [eval {+ 1 2}]            ;# expect: 3
+
+# eval accesses outer variables (same frame)
+let ev_x 42
+puts [eval {+ $ev_x 1}]        ;# expect: 43
+
+# eval defines variables in current frame
+eval {let ev_y 100}
+puts $ev_y                     ;# expect: 100
+
+# eval with multiple args (joined with spaces)
+let ev_cmd1 "let ev_z"
+let ev_cmd2 "200"
+eval $ev_cmd1 $ev_cmd2
+puts $ev_z                     ;# expect: 200
+
+# return inside eval in a proc
+proc testEvalReturn {} {
+  eval { return 999 }
+  puts "ERROR: should not reach"
+}
+puts [testEvalReturn]          ;# expect: 999
+
+puts ""
+puts "-- subst --"
+# variable substitution
+let sub_x 42
+puts [subst {x is $sub_x}]     ;# expect: x is 42
+
+# subcommand substitution
+puts [subst {sum=[+ 1 2]}]     ;# expect: sum=3
+
+# ${name} form
+let sub_foo bar
+puts [subst {${sub_foo}!}]     ;# expect: bar!
+
+# backslash escapes
+puts [subst {a\tb}]            ;# expect: a	b (tab)
+puts [subst {literal \$x}]     ;# expect: literal $x
+
+# braces and quotes are literal (not grouping)
+puts [subst {braces {} ok}]    ;# expect: braces {} ok
+
+puts ""
+puts "-- namespace eval --"
+# define values in namespace
+namespace eval myns {
+  let val 100
+}
+puts [get myns::val]           ;# expect: 100
+
+# define procs in namespace
+namespace eval funcs {
+  proc double {n} { return [+ $n $n] }
+}
+puts [funcs::double 7]         ;# expect: 14
+
+# nested namespace path (creates intermediates)
+namespace eval outer::inner::leaf {
+  let deep 42
+}
+puts [get outer::inner::leaf::deep]  ;# expect: 42
+
+# multiple evals on same namespace
+namespace eval ns1 { let x 1 }
+namespace eval ns1 { let y 2 }
+puts [get ns1::x]              ;# expect: 1
+puts [get ns1::y]              ;# expect: 2
+
+puts ""
+puts "-- load --"
+# load a file and call its procs
+load src/conformance_lib.lcl
+puts [lib_add 10 20]           ;# expect: 30
+puts $LIB_CONST                ;# expect: 42
+
+# load into namespace (import pattern)
+namespace eval imported {
+  load src/conformance_lib.lcl
+}
+puts [imported::lib_add 5 5]   ;# expect: 10
+puts [get imported::LIB_CONST] ;# expect: 42
+
+puts ""
+puts "=== Done ==="

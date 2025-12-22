@@ -1,0 +1,5 @@
+# Conformance test library file
+# Used by conformance_smoke.lcl to test load command
+
+proc lib_add {a b} { return [+ $a $b] }
+let LIB_CONST 42

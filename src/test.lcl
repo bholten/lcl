@@ -1,0 +1,73 @@
+proc make_counter {start} {
+    var n $start
+
+    return [lambda {} { set! n [+ $n 1]; $n }]
+}
+
+let c [make_counter 10]
+
+puts [$c]
+puts [$c]
+
+proc test_123 {num} {
+    let n [+ $num 1]
+    
+    return $n
+}
+
+puts [test_123 4]
+
+proc test_str {code} {
+    let c {
+        this is a test
+        1234
+        lcl is fun
+    }
+
+    puts "calling $code"
+    
+    return $c
+}
+
+puts [test_str "this is a test"]
+
+puts "test_str is done"
+
+puts testing_raw_str
+
+proc test_2 {code} {
+    let c 42
+
+    let s [subst {
+        this is a test
+        this is string s
+        c = $c
+        code = $code
+        asdf
+    }]
+
+    return $s
+}
+
+puts [test_2 thisisatest]
+
+proc lets_see_if_floats_work {float} {
+    let result [+ 3.20 $float]
+
+    return $result
+}
+
+puts "Trying floats"
+puts [lets_see_if_floats_work 3.10]
+
+proc test_meta {code} {
+    let magic_var 42
+    let result [subst $code]
+
+    return $result
+}
+
+puts [test_meta {
+    this is a test $magic_var
+}]
+
