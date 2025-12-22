@@ -14,3 +14,7 @@ debug: $(SRCS) src/lcl-main.c
 
 test: $(SRCS) src/lcl-test.c
 	gcc $(CFLAGS) -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DLCL_TEST -DDEBUG_REFC -o lcl-test $(SRCS) src/lcl-test.c
+
+liblcl.so: $(SRCS)
+	gcc $(CFLAGS) -O2 -fPIC -shared -Iinclude -o liblcl.so $(SRCS)
+
