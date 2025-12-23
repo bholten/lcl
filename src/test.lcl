@@ -71,3 +71,48 @@ puts [test_meta {
     this is a test $magic_var
 }]
 
+
+var acc 0
+
+foreach num [list 1 2 3 4 5] {
+    set! acc [+ $acc $num]  
+    puts "acc = $acc"
+}
+
+for {var acc2 100} {$acc2} {set! acc2 [+ $acc2 -1]} {
+    puts "acc2 => $acc2"
+}
+
+var acc3 100
+
+puts "acc3 before while loop => $acc3"
+
+while [!= $acc3 0] {
+    set! acc3 [+ $acc3 -1]
+
+    if [== $acc3 42] {
+        break
+    }
+    
+    puts "acc3 => $acc3"
+}
+
+
+var acc4 [- 100 43]
+puts "acc4 => $acc4"
+
+var acc5 [/ 100 42.69]
+puts "acc5 => $acc5"
+
+var acc6 [% 9 2]
+puts "acc6 => $acc6"
+
+var acc7 0
+
+while [< $acc7 100] {
+    if [== [% $acc7 2] 0] {
+        puts "acc7 => $acc7"
+    }
+
+    set! acc7 [+ $acc7 1]
+}

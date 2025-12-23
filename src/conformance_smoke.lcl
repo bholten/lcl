@@ -402,4 +402,178 @@ foreach cont_x [list a b c] {
 puts "cont_n=$cont_n"                ;# expect: cont_n=3
 
 puts ""
+puts "-- equality operators --"
+# == value equality
+puts [== 1 1]                        ;# expect: 1
+puts [== 1 2]                        ;# expect: 0
+puts [== hello hello]                ;# expect: 1
+puts [== hello world]                ;# expect: 0
+
+# Numeric string promotion (both "1" and "1.0" parse as numbers)
+puts [== 1 1.0]                      ;# expect: 1 (both parse as 1.0)
+
+# Numeric promotion (both actual floats from +)
+let eq_f1 [+ 0 1]
+let eq_f2 [+ 0 1.0]
+puts [== $eq_f1 $eq_f2]              ;# expect: 1
+
+# List deep equality
+let eq_l1 [list 1 2 3]
+let eq_l2 [list 1 2 3]
+let eq_l3 [list 1 2 4]
+puts [== $eq_l1 $eq_l2]              ;# expect: 1
+puts [== $eq_l1 $eq_l3]              ;# expect: 0
+
+# Dict deep equality
+let eq_d1 [dict create a 1 b 2]
+let eq_d2 [dict create a 1 b 2]
+let eq_d3 [dict create a 1 b 3]
+puts [== $eq_d1 $eq_d2]              ;# expect: 1
+puts [== $eq_d1 $eq_d3]              ;# expect: 0
+
+# != value inequality
+puts [!= 1 1]                        ;# expect: 0
+puts [!= 1 2]                        ;# expect: 1
+
+# same? identity equality
+let eq_x 42
+puts [same? $eq_x $eq_x]             ;# expect: 1
+let eq_y 42
+puts [same? $eq_x $eq_y]             ;# expect: 0
+
+# not-same? identity inequality
+puts [not-same? $eq_x $eq_y]         ;# expect: 1
+puts [not-same? $eq_x $eq_x]         ;# expect: 0
+
+# cell? predicate
+puts [cell? [ref 1]]                 ;# expect: 1
+puts [cell? 1]                       ;# expect: 0
+
+# same-binding? for cell bindings
+var eq_p 100
+var eq_q 200
+puts [same-binding? eq_p eq_p]       ;# expect: 1
+puts [same-binding? eq_p eq_q]       ;# expect: 0
+
+# binding-cell returns the cell object
+let eq_pcell [binding-cell eq_p]
+let eq_pcell2 [binding-cell eq_p]
+puts [same? $eq_pcell $eq_pcell2]    ;# expect: 1
+
+# Proc identity via get
+proc eq_f {} { 1 }
+proc eq_g {} { 1 }
+let eq_fp [get eq_f]
+let eq_gp [get eq_g]
+puts [== $eq_fp $eq_gp]              ;# expect: 0
+puts [same? $eq_fp $eq_fp]           ;# expect: 1
+
+puts ""
+puts "-- equality with control flow --"
+
+# while with == condition: count down until value equals target
+var ecf_i 5
+var ecf_target 2
+while [!= $ecf_i $ecf_target] {
+  puts "ecf_i=$ecf_i"
+  set! ecf_i [+ $ecf_i -1]
+}
+puts "reached=$ecf_target"           ;# expect: ecf_i=5 ecf_i=4 ecf_i=3 reached=2
+
+# for loop building list, then compare
+var ecf_built [list]
+for {var ecf_j 1} {[!= $ecf_j 4]} {set! ecf_j [+ $ecf_j 1]} {
+  lappend ecf_built $ecf_j
+}
+let ecf_expected [list 1 2 3]
+puts [== $ecf_built $ecf_expected]   ;# expect: 1
+
+# foreach with == to find matching element
+let ecf_haystack [list apple banana cherry date]
+var ecf_found 0
+foreach ecf_item $ecf_haystack {
+  if [== $ecf_item cherry] {
+    set! ecf_found 1
+    break
+  }
+}
+puts "found=$ecf_found"              ;# expect: found=1
+
+# foreach with != to skip specific elements
+var ecf_kept [list]
+foreach ecf_x [list a skip b skip c] {
+  if [!= $ecf_x skip] {
+    lappend ecf_kept $ecf_x
+  }
+}
+puts [== $ecf_kept [list a b c]]     ;# expect: 1
+
+# while with same? to detect same binding
+var ecf_obj [list 1 2 3]
+var ecf_iters 0
+while [same-binding? ecf_obj ecf_obj] {
+  set! ecf_iters [+ $ecf_iters 1]
+  if [== $ecf_iters 3] {
+    break
+  }
+}
+puts "iters=$ecf_iters"              ;# expect: iters=3
+
+# cell? predicate in loop
+var ecf_cell_count 0
+let ecf_cell1 [ref 10]
+let ecf_cell2 [ref 20]
+let ecf_notcell 30
+foreach ecf_item [list $ecf_cell1 $ecf_cell2 $ecf_notcell] {
+  if [cell? $ecf_item] {
+    set! ecf_cell_count [+ $ecf_cell_count 1]
+  }
+}
+# Note: cells in lists are dereferenced when accessed with $, so count=0
+puts "cell_count=$ecf_cell_count"    ;# expect: cell_count=0
+
+# for loop comparing list elements pairwise
+let ecf_a [list 1 2 3 4]
+let ecf_b [list 1 2 9 4]
+var ecf_diff_idx -1
+for {var ecf_k 0} {[!= $ecf_k [llength $ecf_a]]} {set! ecf_k [+ $ecf_k 1]} {
+  if [!= [lindex $ecf_a $ecf_k] [lindex $ecf_b $ecf_k]] {
+    set! ecf_diff_idx $ecf_k
+    break
+  }
+}
+puts "diff_idx=$ecf_diff_idx"        ;# expect: diff_idx=2
+
+# nested loops with equality checks - find common elements
+let ecf_set1 [list a b c d]
+let ecf_set2 [list c d e f]
+var ecf_common [list]
+foreach ecf_s1 $ecf_set1 {
+  foreach ecf_s2 $ecf_set2 {
+    if [== $ecf_s1 $ecf_s2] {
+      lappend ecf_common $ecf_s1
+      break
+    }
+  }
+}
+puts [== $ecf_common [list c d]]     ;# expect: 1
+
+# while loop with dict equality
+var ecf_d [dict create count 0]
+while [!= [dict get $ecf_d count] 3] {
+  dict set ecf_d count [+ [dict get $ecf_d count] 1]
+}
+puts [dict get $ecf_d count]         ;# expect: 3
+
+# continue with equality check
+var ecf_sum 0
+foreach ecf_n [list 1 2 3 4 5] {
+  if [== $ecf_n 3] {
+    continue
+  }
+  set! ecf_sum [+ $ecf_sum $ecf_n]
+}
+puts "sum=$ecf_sum"                  ;# expect: sum=12 (1+2+4+5)
+
+puts ""
 puts "=== Done ==="

@@ -50,6 +50,496 @@ int c_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
+int c_sub(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  float result;
+  int i;
+  float v;
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+  
+  for (i = 1; i < argc; i++) {
+    if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    result -= v;
+  }
+  
+  *out = lcl_float_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_div(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  float result;
+  float numerator;
+  float divisor;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &numerator) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[1], &divisor) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (divisor == 0.0f) {
+    return LCL_RC_ERR;
+  }
+
+  result = numerator / divisor;
+  
+  *out = lcl_float_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_mod(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long result;
+  long dividend;
+  long divisor;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_int(argv[0], &dividend) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_int(argv[1], &divisor) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  result = dividend % divisor;
+  
+  *out = lcl_int_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_lt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long result;
+  float left;
+  float right;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  result = left < right;
+
+  *out = lcl_int_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_lte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long result;
+  float left;
+  float right;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  result = left <= right;
+
+  *out = lcl_int_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_gt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long result;
+  float left;
+  float right;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  result = left > right;
+
+  *out = lcl_int_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_gte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long result;
+  float left;
+  float right;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  result = left >= right;
+
+  *out = lcl_int_new(result);
+
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
+ * Equality operators
+ * ============================================================================ */
+
+/* Cycle guard for deep equality - simple stack of visited pointer pairs */
+#define EQ_STACK_MAX 256
+
+typedef struct {
+  lcl_value *a[EQ_STACK_MAX];
+  lcl_value *b[EQ_STACK_MAX];
+  int depth;
+} eq_cycle_guard;
+
+static int eq_cycle_guard_check(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
+  int i;
+  for (i = 0; i < g->depth; i++) {
+    if (g->a[i] == a && g->b[i] == b) return 1;
+    if (g->a[i] == b && g->b[i] == a) return 1;
+  }
+  return 0;
+}
+
+static int eq_cycle_guard_push(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
+  if (g->depth >= EQ_STACK_MAX) return 0;
+  g->a[g->depth] = a;
+  g->b[g->depth] = b;
+  g->depth++;
+  return 1;
+}
+
+static void eq_cycle_guard_pop(eq_cycle_guard *g) {
+  if (g->depth > 0) g->depth--;
+}
+
+/* Forward declaration for recursive equality */
+static int lcl_value_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard);
+
+/* Deref one level of cell */
+static lcl_value *deref_once(lcl_value *v) {
+  if (v && v->type == LCL_CELL) {
+    return v->as.cell.inner;
+  }
+  return v;
+}
+
+/* Deep equality for lists */
+static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
+  size_t len_a, len_b, i;
+  lcl_value *elem_a, *elem_b;
+
+  len_a = lcl_list_len(a);
+  len_b = lcl_list_len(b);
+  if (len_a != len_b) return 0;
+
+  for (i = 0; i < len_a; i++) {
+    if (lcl_list_get(a, i, &elem_a) != LCL_OK) return 0;
+    if (lcl_list_get(b, i, &elem_b) != LCL_OK) return 0;
+    if (!lcl_value_equal_deep(elem_a, elem_b, guard)) return 0;
+  }
+  return 1;
+}
+
+/* Deep equality for dicts */
+static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val_a, *val_b;
+
+  /* Check same size */
+  if (lcl_dict_len(a) != lcl_dict_len(b)) return 0;
+
+  /* Check all keys in a exist in b with equal values */
+  while (hash_table_iterate(a->as.dict.dictionary, &it, &key, &val_a)) {
+    if (lcl_dict_get(b, key, &val_b) != LCL_OK) return 0;
+    if (!lcl_value_equal_deep(val_a, val_b, guard)) return 0;
+  }
+  return 1;
+}
+
+/* Helper: check if a value can be interpreted as a number and get its double value */
+static int value_to_double(lcl_value *v, double *out) {
+  if (v->type == LCL_INT) {
+    *out = (double)v->as.i;
+    return 1;
+  }
+  if (v->type == LCL_FLOAT) {
+    *out = (double)v->as.f;
+    return 1;
+  }
+  if (v->type == LCL_STRING) {
+    const char *s = lcl_value_to_string(v);
+    char *endptr;
+    double d;
+    if (!s || *s == '\0') return 0;
+    d = strtod(s, &endptr);
+    if (*endptr == '\0') {
+      *out = d;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Main deep equality function */
+static int lcl_value_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
+  /* Deref cells once */
+  a = deref_once(a);
+  b = deref_once(b);
+
+  if (!a || !b) return a == b;
+
+  /* Same object = equal */
+  if (a == b) return 1;
+
+  /* Check for cycles */
+  if (eq_cycle_guard_check(guard, a, b)) return 1;
+
+  /* Handle numeric comparisons with promotion (including string-to-number) */
+  {
+    double da, db;
+    int a_is_num = value_to_double(a, &da);
+    int b_is_num = value_to_double(b, &db);
+
+    /* If both can be numbers, compare numerically */
+    if (a_is_num && b_is_num) {
+      return da == db;
+    }
+  }
+
+  /* Type mismatch (non-numeric) = not equal */
+  if (a->type != b->type) return 0;
+
+  switch (a->type) {
+    case LCL_STRING:
+      return strcmp(lcl_value_to_string(a), lcl_value_to_string(b)) == 0;
+
+    case LCL_INT:
+      return a->as.i == b->as.i;
+
+    case LCL_FLOAT:
+      return a->as.f == b->as.f;
+
+    case LCL_LIST:
+      if (!eq_cycle_guard_push(guard, a, b)) return 0;
+      {
+        int result = list_equal_deep(a, b, guard);
+        eq_cycle_guard_pop(guard);
+        return result;
+      }
+
+    case LCL_DICT:
+      if (!eq_cycle_guard_push(guard, a, b)) return 0;
+      {
+        int result = dict_equal_deep(a, b, guard);
+        eq_cycle_guard_pop(guard);
+        return result;
+      }
+
+    /* Identity comparison for procs, cprocs, namespaces, cells */
+    case LCL_PROC:
+    case LCL_CPROC:
+    case LCL_NAMESPACE:
+    case LCL_CELL:
+      return a == b;
+
+    default:
+      return 0;
+  }
+}
+
+/* == : value equality */
+int c_eq(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  eq_cycle_guard guard = {{0}, {0}, 0};
+  (void)interp;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  *out = lcl_int_new(lcl_value_equal_deep(argv[0], argv[1], &guard) ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+/* != : value inequality */
+int c_ne(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  eq_cycle_guard guard = {{0}, {0}, 0};
+  (void)interp;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  *out = lcl_int_new(lcl_value_equal_deep(argv[0], argv[1], &guard) ? 0 : 1);
+  return LCL_RC_OK;
+}
+
+/* same? : identity equality (no deref) */
+int c_same(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  *out = lcl_int_new(argv[0] == argv[1] ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+/* not-same? : identity inequality */
+int c_not_same(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  *out = lcl_int_new(argv[0] != argv[1] ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+/* cell? : check if value is a cell */
+int c_is_cell(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  *out = lcl_int_new(argv[0]->type == LCL_CELL ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+/* binding-cell name : returns the cell object for a binding (special form) */
+int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *name_v = NULL;
+  lcl_value *binding = NULL;
+  const char *name;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  /* Evaluate the name argument */
+  if (lcl_eval_word(interp, args[0], &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  name = lcl_value_to_string(name_v);
+
+  /* Get the raw binding (not dereferenced) */
+  if (lcl_env_get_value(&interp->env, name, &binding) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(name_v);
+
+  /* Must be a cell */
+  if (binding->type != LCL_CELL) {
+    lcl_ref_dec(binding);
+    return LCL_RC_ERR;
+  }
+
+  *out = binding;
+  return LCL_RC_OK;
+}
+
+/* same-binding? name1 name2 : check if two bindings refer to the same cell */
+int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *name1_v = NULL, *name2_v = NULL;
+  lcl_value *binding1 = NULL, *binding2 = NULL;
+  const char *name1, *name2;
+  int same;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  /* Evaluate name arguments */
+  if (lcl_eval_word(interp, args[0], &name1_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+  if (lcl_eval_word(interp, args[1], &name2_v) != LCL_RC_OK) {
+    lcl_ref_dec(name1_v);
+    return LCL_RC_ERR;
+  }
+
+  name1 = lcl_value_to_string(name1_v);
+  name2 = lcl_value_to_string(name2_v);
+
+  /* Get the raw bindings */
+  if (lcl_env_get_value(&interp->env, name1, &binding1) != LCL_OK) {
+    lcl_ref_dec(name1_v);
+    lcl_ref_dec(name2_v);
+    return LCL_RC_ERR;
+  }
+  if (lcl_env_get_value(&interp->env, name2, &binding2) != LCL_OK) {
+    lcl_ref_dec(name1_v);
+    lcl_ref_dec(name2_v);
+    lcl_ref_dec(binding1);
+    return LCL_RC_ERR;
+  }
+
+  /* Both must be cells */
+  if (binding1->type != LCL_CELL || binding2->type != LCL_CELL) {
+    lcl_ref_dec(name1_v);
+    lcl_ref_dec(name2_v);
+    lcl_ref_dec(binding1);
+    lcl_ref_dec(binding2);
+    return LCL_RC_ERR;
+  }
+
+  same = (binding1 == binding2) ? 1 : 0;
+
+  lcl_ref_dec(name1_v);
+  lcl_ref_dec(name2_v);
+  lcl_ref_dec(binding1);
+  lcl_ref_dec(binding2);
+
+  *out = lcl_int_new(same);
+  return LCL_RC_OK;
+}
+
 int c_let(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   if (argc != 2) return LCL_RC_ERR;
 
@@ -2843,21 +3333,40 @@ int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 void lcl_register_core(lcl_interp *interp) {
-  lcl_env_let_take(&interp->env, "puts",    lcl_c_proc_new("puts", c_puts));
-  lcl_env_let_take(&interp->env, "+",       lcl_c_proc_new("+", c_add));
-  lcl_env_let_take(&interp->env, "let",     lcl_c_proc_new("let", c_let));
-  lcl_env_let_take(&interp->env, "ref",     lcl_c_proc_new("ref", c_ref));
-  lcl_env_let_take(&interp->env, "ns",      lcl_c_proc_new("ns", c_ns));
-  lcl_env_let_take(&interp->env, "ns::def", lcl_c_proc_new("ns::def", c_ns_def));
-  lcl_env_let_take(&interp->env, "get",     lcl_c_proc_new("get", c_get));
-  lcl_env_let_take(&interp->env, "var",     lcl_c_spec_new("var", s_var));
-  lcl_env_let_take(&interp->env, "set!",    lcl_c_spec_new("set!", s_set_bang));
-  lcl_env_let_take(&interp->env, "return",  lcl_c_spec_new("return", s_return));
-  lcl_env_let_take(&interp->env, "lambda",  lcl_c_spec_new("lambda", s_lambda));
-  lcl_env_let_take(&interp->env, "proc",    lcl_c_spec_new("proc", s_proc));
-  lcl_env_let_take(&interp->env, "eval",    lcl_c_spec_new("eval", s_eval));
-  lcl_env_let_take(&interp->env, "load",    lcl_c_spec_new("load", s_load));
-  lcl_env_let_take(&interp->env, "subst",   lcl_c_spec_new("subst", s_subst));
+  lcl_env_let_take(&interp->env, "puts", lcl_c_proc_new("puts", c_puts));
+
+  /* Math */
+  lcl_env_let_take(&interp->env, "+",  lcl_c_proc_new("+", c_add));
+  lcl_env_let_take(&interp->env, "-",  lcl_c_proc_new("-", c_sub));
+  lcl_env_let_take(&interp->env, "/",  lcl_c_proc_new("/", c_div));
+  lcl_env_let_take(&interp->env, "%",  lcl_c_proc_new("%", c_mod));
+  lcl_env_let_take(&interp->env, "<",  lcl_c_proc_new("<", c_lt));
+  lcl_env_let_take(&interp->env, "<=", lcl_c_proc_new("<=", c_lte));
+  lcl_env_let_take(&interp->env, ">",  lcl_c_proc_new(">", c_gt));
+  lcl_env_let_take(&interp->env, ">=", lcl_c_proc_new(">=", c_gte));
+
+  /* Equality operators */
+  lcl_env_let_take(&interp->env, "==",            lcl_c_proc_new("==", c_eq));
+  lcl_env_let_take(&interp->env, "!=",            lcl_c_proc_new("!=", c_ne));
+  lcl_env_let_take(&interp->env, "same?",         lcl_c_proc_new("same?", c_same));
+  lcl_env_let_take(&interp->env, "not-same?",     lcl_c_proc_new("not-same?", c_not_same));
+  lcl_env_let_take(&interp->env, "cell?",         lcl_c_proc_new("cell?", c_is_cell));
+  lcl_env_let_take(&interp->env, "binding-cell",  lcl_c_spec_new("binding-cell", s_binding_cell));
+  lcl_env_let_take(&interp->env, "same-binding?", lcl_c_spec_new("same-binding?", s_same_binding));
+
+  lcl_env_let_take(&interp->env, "let",       lcl_c_proc_new("let", c_let));
+  lcl_env_let_take(&interp->env, "ref",       lcl_c_proc_new("ref", c_ref));
+  lcl_env_let_take(&interp->env, "ns",        lcl_c_proc_new("ns", c_ns));
+  lcl_env_let_take(&interp->env, "ns::def",   lcl_c_proc_new("ns::def", c_ns_def));
+  lcl_env_let_take(&interp->env, "get",       lcl_c_proc_new("get", c_get));
+  lcl_env_let_take(&interp->env, "var",       lcl_c_spec_new("var", s_var));
+  lcl_env_let_take(&interp->env, "set!",      lcl_c_spec_new("set!", s_set_bang));
+  lcl_env_let_take(&interp->env, "return",    lcl_c_spec_new("return", s_return));
+  lcl_env_let_take(&interp->env, "lambda",    lcl_c_spec_new("lambda", s_lambda));
+  lcl_env_let_take(&interp->env, "proc",      lcl_c_spec_new("proc", s_proc));
+  lcl_env_let_take(&interp->env, "eval",      lcl_c_spec_new("eval", s_eval));
+  lcl_env_let_take(&interp->env, "load",      lcl_c_spec_new("load", s_load));
+  lcl_env_let_take(&interp->env, "subst",     lcl_c_spec_new("subst", s_subst));
   lcl_env_let_take(&interp->env, "namespace", lcl_c_spec_new("namespace", s_namespace));
 
   /* Control flow */
@@ -2880,5 +3389,5 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "lset",    lcl_c_spec_new("lset", s_lset));
 
   /* Dict command (ensemble) */
-  lcl_env_let_take(&interp->env, "dict",    lcl_c_spec_new("dict", s_dict));
+  lcl_env_let_take(&interp->env, "dict", lcl_c_spec_new("dict", s_dict));
 }
