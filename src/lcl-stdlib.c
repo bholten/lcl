@@ -200,6 +200,32 @@ int s_return(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **ou
   return LCL_RC_ERR;
 }
 
+/* break - exit from innermost loop */
+int s_break(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  (void)interp;
+  (void)args;
+
+  if (argc != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_BREAK;
+}
+
+/* continue - skip to next iteration of innermost loop */
+int s_continue(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  (void)interp;
+  (void)args;
+
+  if (argc != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_CONTINUE;
+}
+
 /* Helper: check if a value is "truthy" (non-zero number or non-empty string) */
 static int lcl_value_is_true(lcl_value *v) {
   const char *s;
@@ -2839,6 +2865,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "while",    lcl_c_spec_new("while", s_while));
   lcl_env_let_take(&interp->env, "for",      lcl_c_spec_new("for", s_for));
   lcl_env_let_take(&interp->env, "foreach",  lcl_c_spec_new("foreach", s_foreach));
+  lcl_env_let_take(&interp->env, "break",    lcl_c_spec_new("break", s_break));
+  lcl_env_let_take(&interp->env, "continue", lcl_c_spec_new("continue", s_continue));
 
   /* List commands */
   lcl_env_let_take(&interp->env, "list",    lcl_c_proc_new("list", c_list));

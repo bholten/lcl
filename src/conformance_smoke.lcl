@@ -353,4 +353,53 @@ foreach fe_v [list a b fe_v] {
 puts "fe_edge=$fe_edge"              ;# expect: fe_edge=fe_v
 
 puts ""
+puts "-- break --"
+# break in while loop
+var brk_i 5
+while 1 {
+  puts $brk_i
+  set! brk_i [+ $brk_i -1]
+  if $brk_i { } else { break }
+}                                    ;# expect: 5 4 3 2 1
+
+# break in for loop (exits immediately)
+for {var brk_j 1} {1} {set! brk_j [+ $brk_j 1]} {
+  puts "for_brk"
+  break
+}                                    ;# expect: for_brk
+
+# break in foreach (exits after first)
+foreach brk_x [list a b c] {
+  puts "fe_brk=$brk_x"
+  break
+}                                    ;# expect: fe_brk=a
+
+puts ""
+puts "-- continue --"
+# continue in while loop (skip when i=2)
+var cont_i 3
+while $cont_i {
+  let cur $cont_i
+  set! cont_i [+ $cont_i -1]
+  if [+ $cur -2] { } else { continue }
+  puts "cw=$cur"
+}                                    ;# expect: cw=3 cw=1
+
+# continue in for loop (skip when j=2)
+var cont_j 3
+for {} {$cont_j} {set! cont_j [+ $cont_j -1]} {
+  if [+ $cont_j -2] { } else { continue }
+  puts "cf=$cont_j"
+}                                    ;# expect: cf=3 cf=1
+
+# continue in foreach (skips puts ERROR)
+var cont_n 0
+foreach cont_x [list a b c] {
+  set! cont_n [+ $cont_n 1]
+  continue
+  puts ERROR
+}
+puts "cont_n=$cont_n"                ;# expect: cont_n=3
+
+puts ""
 puts "=== Done ==="
