@@ -160,6 +160,16 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       return LCL_RC_ERR;
     }
     lcl_ref_dec(name);
+    /* Check if the looked-up value is callable; if not and single-word, return it */
+    if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
+      if (cmd->argc == 1) {
+        *out = callee;
+        return LCL_RC_OK;
+      }
+      /* Non-callable with args - error */
+      lcl_ref_dec(callee);
+      return LCL_RC_ERR;
+    }
   } else if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
     /* Non-callable value - for single-word command, return the value itself */
     if (cmd->argc == 1) {

@@ -103,6 +103,9 @@ namespace eval funcs {
   proc double {n} { return [+ $n $n] }
 }
 puts [funcs::double 7]         ;# expect: 14
+namespace eval funcs {
+    puts [double 8]
+}                              ;# expect: 16
 
 # nested namespace path (creates intermediates)
 namespace eval outer::inner::leaf {
@@ -239,6 +242,115 @@ puts [dict get $nested outer inner]  ;# expect: 42
 var nd [dict create outer [dict create inner 0]]
 dict set nd outer inner 99
 puts [dict get $nd outer inner]      ;# expect: 99
+
+puts ""
+puts "-- if/elseif/else --"
+# simple true
+if 1 { puts yes }                    ;# expect: yes
+
+# simple false (no output)
+if 0 { puts ERROR }
+
+# if-else
+if 0 { puts ERROR } else { puts no } ;# expect: no
+
+# elseif chain
+if 0 {
+  puts ERROR
+} elseif 1 {
+  puts elseif
+} else {
+  puts ERROR
+}                                    ;# expect: elseif
+
+# computed condition
+let cond_x 5
+if [+ $cond_x 0] { puts nonzero }    ;# expect: nonzero
+
+# string truthiness
+if hello { puts truthy }             ;# expect: truthy
+
+# empty string is false
+if {} { puts ERROR } else { puts empty } ;# expect: empty
+
+# if returns last value in body
+let if_result [if 1 { + 10 20 }]
+puts $if_result                      ;# expect: 30
+
+puts ""
+puts "-- while --"
+# basic countdown
+var w_i 3
+while $w_i {
+  puts $w_i
+  set! w_i [+ $w_i -1]
+}                                    ;# expect: 3 2 1
+
+# condition false initially (no output)
+while 0 { puts ERROR }
+
+# test re-evaluated each iteration
+var w_n 2
+while $w_n {
+  set! w_n [+ $w_n -1]
+}
+puts "w_n=$w_n"                      ;# expect: w_n=0
+
+# while returns last body value
+var w_x 3
+let w_result [while $w_x { set! w_x [+ $w_x -1] }]
+puts "w_result=$w_result"            ;# expect: w_result=0
+
+puts ""
+puts "-- for --"
+# basic for loop
+for {var f_i 3} {$f_i} {set! f_i [+ $f_i -1]} {
+  puts $f_i
+}                                    ;# expect: 3 2 1
+
+# condition false initially (no output)
+for {var f_j 0} {$f_j} {set! f_j [+ $f_j -1]} {
+  puts ERROR
+}
+
+# empty start (use existing var)
+var f_k 2
+for {} {$f_k} {set! f_k [+ $f_k -1]} {
+  puts "k=$f_k"
+}                                    ;# expect: k=2 k=1
+
+# for returns last body value
+let f_result [for {var f_m 3} {$f_m} {set! f_m [+ $f_m -1]} { $f_m }]
+puts "f_result=$f_result"            ;# expect: f_result=1
+
+puts ""
+puts "-- foreach --"
+# basic foreach over list
+foreach fe_x [list a b c] {
+  puts $fe_x
+}                                    ;# expect: a b c
+
+# foreach over list variable
+let fe_items [list 1 2 3]
+foreach fe_item $fe_items {
+  puts $fe_item
+}                                    ;# expect: 1 2 3
+
+# empty list (no output)
+foreach fe_y [list] {
+  puts ERROR
+}
+
+# foreach returns last body value
+let fe_result [foreach fe_z [list x y z] { $fe_z }]
+puts "fe_result=$fe_result"          ;# expect: fe_result=z
+
+# edge case: variable name equals value (tests eval fix)
+let fe_edge {}
+foreach fe_v [list a b fe_v] {
+  let fe_edge $fe_v
+}
+puts "fe_edge=$fe_edge"              ;# expect: fe_edge=fe_v
 
 puts ""
 puts "=== Done ==="

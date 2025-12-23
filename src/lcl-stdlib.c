@@ -7,6 +7,9 @@
 
 #include "lcl-stdlib.h"
 
+/* Forward declarations */
+lcl_value *lcl_list_new_from_cwords(const char *words);
+
 int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   int i;
   (void)interp;
@@ -195,6 +198,543 @@ int s_return(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **ou
   }
 
   return LCL_RC_ERR;
+}
+
+/* Helper: check if a value is "truthy" (non-zero number or non-empty string) */
+static int lcl_value_is_true(lcl_value *v) {
+  const char *s;
+  long n;
+  char *endptr;
+
+  if (!v) return 0;
+
+  /* Integer type: non-zero is true */
+  if (v->type == LCL_INT) {
+    return v->as.i != 0;
+  }
+
+  /* Float type: non-zero is true */
+  if (v->type == LCL_FLOAT) {
+    return v->as.f != 0.0;
+  }
+
+  /* String: try to parse as number */
+  s = lcl_value_to_string(v);
+  if (!s || *s == '\0') return 0;  /* empty string is false */
+
+  n = strtol(s, &endptr, 10);
+  if (*endptr == '\0') {
+    /* Successfully parsed as integer */
+    return n != 0;
+  }
+
+  /* Non-numeric non-empty string is true */
+  return 1;
+}
+
+/* if condition body ?elseif condition body ...? ?else body? */
+int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  int i = 0;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  while (i < argc) {
+    lcl_value *cond_v = NULL;
+    lcl_value *body_v = NULL;
+    lcl_program *body_p = NULL;
+    int is_true;
+    int rc;
+
+    /* Check for 'else' keyword (must be followed by body) */
+    if (i > 0) {
+      lcl_value *kw = NULL;
+      const char *kw_str;
+
+      if (lcl_eval_word_to_str(interp, args[i], &kw) != LCL_RC_OK) {
+        return LCL_RC_ERR;
+      }
+
+      kw_str = lcl_value_to_string(kw);
+
+      if (strcmp(kw_str, "else") == 0) {
+        lcl_ref_dec(kw);
+
+        if (i + 1 >= argc) {
+          return LCL_RC_ERR;  /* else requires body */
+        }
+
+        /* Evaluate else body */
+        if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
+          return LCL_RC_ERR;
+        }
+
+        body_p = lcl_program_compile(lcl_value_to_string(body_v), "<if-else>");
+        lcl_ref_dec(body_v);
+
+        if (!body_p) {
+          return LCL_RC_ERR;
+        }
+
+        rc = lcl_eval_program(interp, body_p, out);
+        lcl_program_free(body_p);
+
+        return rc;
+      }
+
+      if (strcmp(kw_str, "elseif") == 0) {
+        lcl_ref_dec(kw);
+        i++;  /* skip 'elseif', process condition+body below */
+
+        if (i + 1 >= argc) {
+          return LCL_RC_ERR;  /* elseif requires condition and body */
+        }
+      } else {
+        lcl_ref_dec(kw);
+        return LCL_RC_ERR;  /* unexpected token */
+      }
+    }
+
+    /* Evaluate condition */
+    if (lcl_eval_word(interp, args[i], &cond_v) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+
+    is_true = lcl_value_is_true(cond_v);
+    lcl_ref_dec(cond_v);
+
+    if (is_true) {
+      /* Evaluate body */
+      if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
+        return LCL_RC_ERR;
+      }
+
+      body_p = lcl_program_compile(lcl_value_to_string(body_v), "<if>");
+      lcl_ref_dec(body_v);
+
+      if (!body_p) {
+        return LCL_RC_ERR;
+      }
+
+      rc = lcl_eval_program(interp, body_p, out);
+      lcl_program_free(body_p);
+
+      return rc;
+    }
+
+    /* Condition was false, skip to next clause */
+    i += 2;
+  }
+
+  /* No condition was true and no else clause */
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* while test body - loop while test is true, re-evaluating test each iteration */
+int s_while(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *body_v = NULL;
+  lcl_program *test_p = NULL;
+  lcl_program *body_p = NULL;
+  lcl_value *last = NULL;
+  int test_is_braced;
+  int rc;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  test_is_braced = args[0]->braced;
+
+  /* If test is braced, compile it as a script to evaluate each iteration */
+  if (test_is_braced) {
+    lcl_value *test_v = NULL;
+    if (lcl_eval_word_to_str(interp, args[0], &test_v) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+    test_p = lcl_program_compile(lcl_value_to_string(test_v), "<while-test>");
+    lcl_ref_dec(test_v);
+    if (!test_p) {
+      return LCL_RC_ERR;
+    }
+  }
+
+  /* Compile body script */
+  if (lcl_eval_word_to_str(interp, args[1], &body_v) != LCL_RC_OK) {
+    if (test_p) lcl_program_free(test_p);
+    return LCL_RC_ERR;
+  }
+  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<while-body>");
+  lcl_ref_dec(body_v);
+  if (!body_p) {
+    if (test_p) lcl_program_free(test_p);
+    return LCL_RC_ERR;
+  }
+
+  /* Loop while condition is true */
+  for (;;) {
+    lcl_value *cond_v = NULL;
+    int is_true;
+
+    /* Evaluate test each iteration */
+    if (test_is_braced) {
+      rc = lcl_eval_program(interp, test_p, &cond_v);
+      if (rc != LCL_RC_OK) {
+        lcl_program_free(test_p);
+        lcl_program_free(body_p);
+        if (last) lcl_ref_dec(last);
+        return rc;
+      }
+    } else {
+      /* Non-braced: evaluate word directly (handles $var) */
+      if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
+        lcl_program_free(body_p);
+        if (last) lcl_ref_dec(last);
+        return LCL_RC_ERR;
+      }
+    }
+
+    is_true = lcl_value_is_true(cond_v);
+    lcl_ref_dec(cond_v);
+
+    if (!is_true) {
+      break;
+    }
+
+    /* Execute body */
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    rc = lcl_eval_program(interp, body_p, &last);
+
+    if (rc == LCL_RC_BREAK) {
+      break;
+    }
+
+    if (rc == LCL_RC_CONTINUE) {
+      continue;
+    }
+
+    if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
+      if (test_p) lcl_program_free(test_p);
+      lcl_program_free(body_p);
+      if (last) lcl_ref_dec(last);
+      return rc;
+    }
+
+    if (rc == LCL_RC_RETURN) {
+      if (test_p) lcl_program_free(test_p);
+      lcl_program_free(body_p);
+      *out = last;
+      return LCL_RC_RETURN;
+    }
+  }
+
+  if (test_p) lcl_program_free(test_p);
+  lcl_program_free(body_p);
+  *out = last ? last : lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* for start test next body - Tcl-style for loop */
+int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *start_v = NULL;
+  lcl_value *body_v = NULL;
+  lcl_value *next_v = NULL;
+  lcl_program *start_p = NULL;
+  lcl_program *test_p = NULL;
+  lcl_program *body_p = NULL;
+  lcl_program *next_p = NULL;
+  lcl_value *last = NULL;
+  lcl_value *tmp = NULL;
+  int test_is_braced;
+  int rc;
+
+  if (argc != 4) {
+    return LCL_RC_ERR;
+  }
+
+  test_is_braced = args[1]->braced;
+
+  /* Compile start script */
+  if (lcl_eval_word_to_str(interp, args[0], &start_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+  start_p = lcl_program_compile(lcl_value_to_string(start_v), "<for-start>");
+  lcl_ref_dec(start_v);
+  if (!start_p) {
+    return LCL_RC_ERR;
+  }
+
+  /* If test is braced, compile it as a script to evaluate each iteration */
+  if (test_is_braced) {
+    lcl_value *test_v = NULL;
+    if (lcl_eval_word_to_str(interp, args[1], &test_v) != LCL_RC_OK) {
+      lcl_program_free(start_p);
+      return LCL_RC_ERR;
+    }
+    test_p = lcl_program_compile(lcl_value_to_string(test_v), "<for-test>");
+    lcl_ref_dec(test_v);
+    if (!test_p) {
+      lcl_program_free(start_p);
+      return LCL_RC_ERR;
+    }
+  }
+
+  /* Compile next script (args[2]) */
+  if (lcl_eval_word_to_str(interp, args[2], &next_v) != LCL_RC_OK) {
+    lcl_program_free(start_p);
+    if (test_p) lcl_program_free(test_p);
+    return LCL_RC_ERR;
+  }
+  next_p = lcl_program_compile(lcl_value_to_string(next_v), "<for-next>");
+  lcl_ref_dec(next_v);
+  if (!next_p) {
+    lcl_program_free(start_p);
+    if (test_p) lcl_program_free(test_p);
+    return LCL_RC_ERR;
+  }
+
+  /* Compile body script (args[3]) */
+  if (lcl_eval_word_to_str(interp, args[3], &body_v) != LCL_RC_OK) {
+    lcl_program_free(start_p);
+    if (test_p) lcl_program_free(test_p);
+    lcl_program_free(next_p);
+    return LCL_RC_ERR;
+  }
+  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<for-body>");
+  lcl_ref_dec(body_v);
+  if (!body_p) {
+    lcl_program_free(start_p);
+    if (test_p) lcl_program_free(test_p);
+    lcl_program_free(next_p);
+    return LCL_RC_ERR;
+  }
+
+  /* Execute start script once */
+  rc = lcl_eval_program(interp, start_p, &tmp);
+  lcl_program_free(start_p);
+  if (tmp) lcl_ref_dec(tmp);
+  if (rc != LCL_RC_OK) {
+    if (test_p) lcl_program_free(test_p);
+    lcl_program_free(body_p);
+    lcl_program_free(next_p);
+    return rc;
+  }
+
+  /* Loop while condition is true */
+  for (;;) {
+    lcl_value *cond_v = NULL;
+    int is_true;
+
+    /* Evaluate test each iteration */
+    if (test_is_braced) {
+      rc = lcl_eval_program(interp, test_p, &cond_v);
+      if (rc != LCL_RC_OK) {
+        lcl_program_free(test_p);
+        lcl_program_free(body_p);
+        lcl_program_free(next_p);
+        if (last) lcl_ref_dec(last);
+        return rc;
+      }
+    } else {
+      /* Non-braced: evaluate word directly */
+      if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
+        lcl_program_free(body_p);
+        lcl_program_free(next_p);
+        if (last) lcl_ref_dec(last);
+        return LCL_RC_ERR;
+      }
+    }
+
+    is_true = lcl_value_is_true(cond_v);
+    lcl_ref_dec(cond_v);
+
+    if (!is_true) {
+      break;
+    }
+
+    /* Execute body */
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    rc = lcl_eval_program(interp, body_p, &last);
+
+    if (rc == LCL_RC_BREAK) {
+      break;
+    }
+
+    if (rc == LCL_RC_CONTINUE) {
+      /* Still execute next before continuing */
+      tmp = NULL;
+      rc = lcl_eval_program(interp, next_p, &tmp);
+      if (tmp) lcl_ref_dec(tmp);
+      if (rc != LCL_RC_OK && rc != LCL_RC_CONTINUE) {
+        if (test_p) lcl_program_free(test_p);
+        lcl_program_free(body_p);
+        lcl_program_free(next_p);
+        if (last) lcl_ref_dec(last);
+        return rc;
+      }
+      continue;
+    }
+
+    if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
+      if (test_p) lcl_program_free(test_p);
+      lcl_program_free(body_p);
+      lcl_program_free(next_p);
+      if (last) lcl_ref_dec(last);
+      return rc;
+    }
+
+    if (rc == LCL_RC_RETURN) {
+      if (test_p) lcl_program_free(test_p);
+      lcl_program_free(body_p);
+      lcl_program_free(next_p);
+      *out = last;
+      return LCL_RC_RETURN;
+    }
+
+    /* Execute next script */
+    tmp = NULL;
+    rc = lcl_eval_program(interp, next_p, &tmp);
+    if (tmp) lcl_ref_dec(tmp);
+    if (rc != LCL_RC_OK) {
+      if (test_p) lcl_program_free(test_p);
+      lcl_program_free(body_p);
+      lcl_program_free(next_p);
+      if (last) lcl_ref_dec(last);
+      return rc;
+    }
+  }
+
+  if (test_p) lcl_program_free(test_p);
+  lcl_program_free(body_p);
+  lcl_program_free(next_p);
+  *out = last ? last : lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* foreach varname list body - iterate over list elements */
+int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *varname_v = NULL;
+  lcl_value *list_v = NULL;
+  lcl_value *body_v = NULL;
+  lcl_program *body_p = NULL;
+  lcl_value *last = NULL;
+  const char *varname;
+  int i, list_len;
+  int rc;
+
+  if (argc != 3) {
+    return LCL_RC_ERR;
+  }
+
+  /* Get variable name */
+  if (lcl_eval_word_to_str(interp, args[0], &varname_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+  varname = lcl_value_to_string(varname_v);
+
+  /* Evaluate the list */
+  if (lcl_eval_word(interp, args[1], &list_v) != LCL_RC_OK) {
+    lcl_ref_dec(varname_v);
+    return LCL_RC_ERR;
+  }
+
+  /* If not already a list, try to parse as a list */
+  if (list_v->type != LCL_LIST) {
+    lcl_value *parsed = lcl_list_new_from_cwords(lcl_value_to_string(list_v));
+    lcl_ref_dec(list_v);
+    if (!parsed) {
+      lcl_ref_dec(varname_v);
+      return LCL_RC_ERR;
+    }
+    list_v = parsed;
+  }
+
+  /* Compile body script */
+  if (lcl_eval_word_to_str(interp, args[2], &body_v) != LCL_RC_OK) {
+    lcl_ref_dec(varname_v);
+    lcl_ref_dec(list_v);
+    return LCL_RC_ERR;
+  }
+  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<foreach>");
+  lcl_ref_dec(body_v);
+  if (!body_p) {
+    lcl_ref_dec(varname_v);
+    lcl_ref_dec(list_v);
+    return LCL_RC_ERR;
+  }
+
+  list_len = (int)lcl_list_len(list_v);
+
+  /* Iterate over list elements */
+  for (i = 0; i < list_len; i++) {
+    lcl_value *elem = NULL;
+
+    if (lcl_list_get(list_v, (size_t)i, &elem) != LCL_OK) {
+      lcl_ref_dec(varname_v);
+      lcl_ref_dec(list_v);
+      lcl_program_free(body_p);
+      if (last) lcl_ref_dec(last);
+      return LCL_RC_ERR;
+    }
+
+    /* Bind element to variable (using let - rebinds each iteration) */
+    if (lcl_env_let(&interp->env, varname, elem) != LCL_OK) {
+      lcl_ref_dec(elem);
+      lcl_ref_dec(varname_v);
+      lcl_ref_dec(list_v);
+      lcl_program_free(body_p);
+      if (last) lcl_ref_dec(last);
+      return LCL_RC_ERR;
+    }
+    lcl_ref_dec(elem);  /* env_let increments refcount */
+
+    /* Execute body */
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    rc = lcl_eval_program(interp, body_p, &last);
+
+    if (rc == LCL_RC_BREAK) {
+      break;
+    }
+
+    if (rc == LCL_RC_CONTINUE) {
+      continue;
+    }
+
+    if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
+      lcl_ref_dec(varname_v);
+      lcl_ref_dec(list_v);
+      lcl_program_free(body_p);
+      if (last) lcl_ref_dec(last);
+      return rc;
+    }
+
+    if (rc == LCL_RC_RETURN) {
+      lcl_ref_dec(varname_v);
+      lcl_ref_dec(list_v);
+      lcl_program_free(body_p);
+      *out = last;
+      return LCL_RC_RETURN;
+    }
+  }
+
+  lcl_ref_dec(varname_v);
+  lcl_ref_dec(list_v);
+  lcl_program_free(body_p);
+  *out = last ? last : lcl_string_new("");
+  return LCL_RC_OK;
 }
 
 lcl_value *lcl_list_new_from_cwords(const char *words) {
@@ -2293,6 +2833,12 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "load",    lcl_c_spec_new("load", s_load));
   lcl_env_let_take(&interp->env, "subst",   lcl_c_spec_new("subst", s_subst));
   lcl_env_let_take(&interp->env, "namespace", lcl_c_spec_new("namespace", s_namespace));
+
+  /* Control flow */
+  lcl_env_let_take(&interp->env, "if",       lcl_c_spec_new("if", s_if));
+  lcl_env_let_take(&interp->env, "while",    lcl_c_spec_new("while", s_while));
+  lcl_env_let_take(&interp->env, "for",      lcl_c_spec_new("for", s_for));
+  lcl_env_let_take(&interp->env, "foreach",  lcl_c_spec_new("foreach", s_foreach));
 
   /* List commands */
   lcl_env_let_take(&interp->env, "list",    lcl_c_proc_new("list", c_list));
