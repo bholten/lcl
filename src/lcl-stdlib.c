@@ -9,6 +9,7 @@
 
 /* Forward declarations */
 lcl_value *lcl_list_new_from_cwords(const char *words);
+static int lcl_value_is_true(lcl_value *v);
 
 int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   int i;
@@ -31,6 +32,61 @@ int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
+int c_and(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  int b;
+  int i;
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  for (i = 0; i < argc; i++) {
+    b = lcl_value_is_true(argv[i]);
+
+    if (!b) {
+      goto ret;
+    }
+  }
+
+ ret:
+  *out = lcl_int_new(b);
+  return LCL_RC_OK;
+}
+
+int c_or(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  int b;
+  int i;
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  b = lcl_value_is_true(argv[0]);
+
+  for (i = 1; i < argc; i++) {
+    b = b || lcl_value_is_true(argv[i]);
+  }
+
+  *out = lcl_int_new(b);
+  return LCL_RC_OK;
+}
+
+int c_not(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  int b;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  b = !lcl_value_is_true(argv[0]);
+
+  *out = lcl_int_new(b);
+  return LCL_RC_OK;
+}
+
 int c_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   float sum = 0.0f;
   int i;
@@ -44,7 +100,7 @@ int c_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
     sum += v;
   }
-  
+
   *out = lcl_float_new(sum);
 
   return LCL_RC_OK;
@@ -63,7 +119,7 @@ int c_sub(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
     return LCL_RC_ERR;
   }
-  
+
   for (i = 1; i < argc; i++) {
     if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
       return LCL_RC_ERR;
@@ -71,8 +127,27 @@ int c_sub(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
     result -= v;
   }
-  
+
   *out = lcl_float_new(result);
+
+  return LCL_RC_OK;
+}
+
+int c_mult(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  float product = 1.0f;
+  int i;
+  float v;
+  (void)interp;
+
+  for (i = 0; i < argc; i++) {
+    if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    product *= v;
+  }
+
+  *out = lcl_float_new(product);
 
   return LCL_RC_OK;
 }
@@ -100,7 +175,7 @@ int c_div(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   }
 
   result = numerator / divisor;
-  
+
   *out = lcl_float_new(result);
 
   return LCL_RC_OK;
@@ -125,7 +200,7 @@ int c_mod(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   }
 
   result = dividend % divisor;
-  
+
   *out = lcl_int_new(result);
 
   return LCL_RC_OK;
@@ -3341,9 +3416,15 @@ int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
 void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "puts", lcl_c_proc_new("puts", c_puts));
 
+  /* Logical operators */
+  lcl_env_let_take(&interp->env, "and", lcl_c_proc_new("and", c_and));
+  lcl_env_let_take(&interp->env, "or",  lcl_c_proc_new("or", c_or));
+  lcl_env_let_take(&interp->env, "not", lcl_c_proc_new("not", c_not));
+
   /* Math */
   lcl_env_let_take(&interp->env, "+",  lcl_c_proc_new("+", c_add));
   lcl_env_let_take(&interp->env, "-",  lcl_c_proc_new("-", c_sub));
+  lcl_env_let_take(&interp->env, "*",  lcl_c_proc_new("/", c_mult));
   lcl_env_let_take(&interp->env, "/",  lcl_c_proc_new("/", c_div));
   lcl_env_let_take(&interp->env, "%",  lcl_c_proc_new("%", c_mod));
   lcl_env_let_take(&interp->env, "<",  lcl_c_proc_new("<", c_lt));

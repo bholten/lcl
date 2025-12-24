@@ -109,11 +109,42 @@ puts "acc6 => $acc6"
 
 var acc7 0
 
+proc zero? {num} {
+    return [== $num 0]
+}
+
 while [< $acc7 100] {
-    if [== [% $acc7 2] 0] {
+    if [zero? [% $acc7 2]] {
         puts "acc7 => $acc7"
     }
 
     set! acc7 [+ $acc7 1]
 }
 
+puts "5 * 6 = [* 5 6]"
+
+puts "and 1 0 = [and 1 0]"
+puts "and 1 1 = [and 1 1]"
+puts "and 0 0 = [and 0 0]"
+puts "and 1 1 = [and 1 1]"
+puts "or 1 0  = [or 1 0]"
+puts "or 1 1  = [or 1 1]"
+puts "or 0 0  = [or 0 0]"
+puts "or 1 1  = [or 1 1]"
+puts "not 0   = [not 0]"
+puts "not 1   = [not 1]"
+
+proc proj_euler_1 {limit} {
+    var result 0
+    var i 0
+
+    for {var i 0} {< $i $limit} {set! i [+ $i 1]} {
+        if [or [zero? [% $i 3]] [zero? [% $i 5]]] {
+            set! result [+ $result $i]
+        }
+    }
+
+    return $result
+}
+
+puts "Project Euler 1 => [proj_euler_1 1000]"
