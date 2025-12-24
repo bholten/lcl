@@ -17,3 +17,7 @@ char *strndup(const char *s, size_t n) {
   d[l] = '\0';
   return d;
 }
+
+char *strdup(const char *s) {
+  return strndup(s, strlen(s));
+}

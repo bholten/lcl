@@ -1314,6 +1314,8 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **ou
   lcl_value *body_s = NULL;
   lcl_program *body_p = NULL;
   lcl_value *params_list = NULL;
+  lcl_upvalue *upvals = NULL;
+  int nupvals = 0;
 
   if (argc != 2) {
     return LCL_RC_ERR;
@@ -1340,8 +1342,12 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **ou
     return LCL_RC_ERR;
   }
 
-  /* lcl_proc_new takes ownership of body_p */
-  *out = lcl_proc_new(interp->env.frame, params_list, body_p);
+  /* Build upvalues (flat closure) from variables referenced in body */
+  upvals = lcl_build_upvalues(interp, body_p, params_list, &nupvals);
+  /* upvals can be NULL if no captures needed - that's okay */
+
+  /* lcl_proc_new takes ownership of body_p and upvals */
+  *out = lcl_proc_new(upvals, nupvals, params_list, body_p);
   lcl_ref_dec(params_list);
 
   if (!*out) {

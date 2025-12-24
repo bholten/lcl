@@ -91,12 +91,26 @@ typedef struct {
   } fn;
 } lcl_c_func;
 
+/* Upvalue: a captured variable from the enclosing scope */
 typedef struct {
-  lcl_frame *closure;
-  lcl_value *params;
-  lcl_program *body;
-  int capture_ns;
-  lcl_value *captured_ns;
+  char *name;           /* Variable name (owned, must be freed) */
+  int is_cell;          /* 1 if cell (mutable), 0 if immutable value */
+  lcl_value *value;     /* The captured cell or value (refcounted) */
+} lcl_upvalue;
+
+typedef struct {
+  lcl_upvalue *upvals;  /* Array of captured upvalues */
+  int nupvals;          /* Number of upvalues */
+  lcl_value *params;    /* Parameter names (list) */
+  lcl_program *body;    /* Compiled body */
+  int capture_ns;       /* Whether to capture current namespace */
+  lcl_value *captured_ns; /* Captured namespace (if capture_ns) */
 } lcl_proc;
+
+/* Build upvalues by capturing referenced variables from current environment.
+ * params_list: list of parameter names (to exclude from capture)
+ * Returns array of upvalues, sets *nout to count. Returns NULL on error or if no upvalues. */
+lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
+                                lcl_value *params_list, int *nout);
 
 #endif

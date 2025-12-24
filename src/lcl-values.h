@@ -96,8 +96,9 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs, const char **rhs
 const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);
 
-/* lcl_value *lcl_proc_new(lcl_proc *p); */
-lcl_value *lcl_proc_new(lcl_frame *closure, lcl_value *params, lcl_program *body);
+/* Create a new proc with captured upvalues (flat closure) */
+lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals,
+                        lcl_value *params, lcl_program *body);
 
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);

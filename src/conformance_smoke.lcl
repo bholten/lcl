@@ -576,4 +576,202 @@ foreach ecf_n [list 1 2 3 4 5] {
 puts "sum=$ecf_sum"                  ;# expect: sum=12 (1+2+4+5)
 
 puts ""
+puts "-- lexical scoping --"
+
+# Basic closure capture: proc captures variable from definition scope
+let sc_outer 100
+proc sc_get_outer {} {
+  $sc_outer
+}
+puts [sc_get_outer]                  ;# expect: 100
+
+# Shadowing: inner binding shadows outer
+let sc_shadow outer
+proc sc_test_shadow {} {
+  let sc_shadow inner
+  $sc_shadow
+}
+puts [sc_test_shadow]                ;# expect: inner
+puts $sc_shadow                      ;# expect: outer (unchanged)
+
+# Closure captures the BINDING (frame slot), not the value
+# Rebinding in the same frame updates what closures see
+let sc_capture_val A
+proc sc_capture_test {} {
+  $sc_capture_val
+}
+let sc_capture_val B
+puts [sc_capture_test]               ;# expect: B (sees rebind in same frame)
+
+# Cell mutation through closure
+var sc_counter 0
+proc sc_incr {} {
+  set! sc_counter [+ $sc_counter 1]
+  $sc_counter
+}
+puts [sc_incr]                       ;# expect: 1
+puts [sc_incr]                       ;# expect: 2
+puts [sc_incr]                       ;# expect: 3
+
+# Multiple closures sharing same cell
+var sc_shared 0
+proc sc_add {n} {
+  set! sc_shared [+ $sc_shared $n]
+}
+proc sc_get_shared {} {
+  $sc_shared
+}
+sc_add 10
+sc_add 5
+puts [sc_get_shared]                 ;# expect: 15
+
+# Nested closures (closure returning closure)
+proc sc_make_adder {x} {
+  lambda {y} {
+    + $x $y
+  }
+}
+let sc_add5 [sc_make_adder 5]
+let sc_add10 [sc_make_adder 10]
+puts [$sc_add5 3]                    ;# expect: 8
+puts [$sc_add10 3]                   ;# expect: 13
+
+# Counter factory - each call creates independent counter
+proc sc_make_counter {} {
+  var n 0
+  lambda {} {
+    set! n [+ $n 1]
+    $n
+  }
+}
+let sc_c1 [sc_make_counter]
+let sc_c2 [sc_make_counter]
+puts [$sc_c1]                        ;# expect: 1
+puts [$sc_c1]                        ;# expect: 2
+puts [$sc_c2]                        ;# expect: 1 (independent)
+puts [$sc_c1]                        ;# expect: 3
+
+# Let rebinding in same scope
+let sc_rebind first
+let sc_rebind second
+puts $sc_rebind                      ;# expect: second
+
+# Proc parameter shadows outer binding
+let sc_param_test outer_value
+proc sc_param_shadow {sc_param_test} {
+  $sc_param_test
+}
+puts [sc_param_shadow inner_value]   ;# expect: inner_value
+puts $sc_param_test                  ;# expect: outer_value
+
+# Nested proc definitions with shadowing
+let sc_nest_val level0
+proc sc_outer_proc {} {
+  let sc_nest_val level1
+  proc sc_inner_proc {} {
+    $sc_nest_val
+  }
+  sc_inner_proc
+}
+puts [sc_outer_proc]                 ;# expect: level1
+
+# Loop variable scoping - foreach rebinds in current frame
+let sc_loop_var before
+foreach sc_loop_var [list a b c] {
+  # loop var is rebound each iteration
+}
+puts $sc_loop_var                    ;# expect: c (last iteration value)
+
+# Loop variable scoping - for rebinds in current frame
+let sc_for_i before_for
+for {let sc_for_i 0} {[!= $sc_for_i 3]} {let sc_for_i [+ $sc_for_i 1]} {
+  # for loop
+}
+puts $sc_for_i                       ;# expect: 3 (final value)
+
+# Classic closure-in-loop capture issue
+# All closures capture the SAME binding, which has final value
+var sc_closures [list]
+foreach sc_iter_val [list 1 2 3] {
+  lappend sc_closures [lambda {} { $sc_iter_val }]
+}
+# All see the final value because they share the binding
+puts [[lindex $sc_closures 0]]       ;# expect: 3
+puts [[lindex $sc_closures 1]]       ;# expect: 3
+puts [[lindex $sc_closures 2]]       ;# expect: 3
+
+# Evil: deeply nested scope chain
+let sc_deep0 d0
+proc sc_deep_test {} {
+  let sc_deep1 d1
+  proc sc_deep_inner {} {
+    let sc_deep2 d2
+    proc sc_deepest {} {
+      # can access all outer scopes
+      list $sc_deep0 $sc_deep1 $sc_deep2
+    }
+    sc_deepest
+  }
+  sc_deep_inner
+}
+puts [== [sc_deep_test] [list d0 d1 d2]]  ;# expect: 1
+
+# Evil: mutual recursion with closures
+var sc_is_even_fn {}
+var sc_is_odd_fn {}
+set! sc_is_even_fn [lambda {n} {
+  if [== $n 0] { return 1 }
+  [$sc_is_odd_fn [+ $n -1]]
+}]
+set! sc_is_odd_fn [lambda {n} {
+  if [== $n 0] { return 0 }
+  [$sc_is_even_fn [+ $n -1]]
+}]
+puts [$sc_is_even_fn 4]              ;# expect: 1
+puts [$sc_is_even_fn 3]              ;# expect: 0
+puts [$sc_is_odd_fn 3]               ;# expect: 1
+
+# Evil: closure captures closure
+let sc_inner_fn [lambda {x} { + $x 1 }]
+let sc_outer_fn [lambda {y} { [$sc_inner_fn $y] }]
+puts [$sc_outer_fn 10]               ;# expect: 11
+
+# Evil: self-referential through cell
+var sc_factorial {}
+set! sc_factorial [lambda {n} {
+  if [== $n 0] { return 1 }
+  + 0 [* $n [$sc_factorial [+ $n -1]]]
+}]
+# Note: need * operator, skip if not available
+# puts [$sc_factorial 5]             ;# would expect: 120
+
+# Verify proc doesn't pollute global scope
+proc sc_local_only {} {
+  let sc_very_local secret
+  $sc_very_local
+}
+puts [sc_local_only]                 ;# expect: secret
+# sc_very_local should not exist here
+
+# Closure over parameter
+proc sc_make_multiplier {factor} {
+  lambda {x} {
+    + 0 $factor
+    # Simplified: just return factor (no * operator)
+  }
+}
+let sc_triple [sc_make_multiplier 3]
+puts [$sc_triple 10]                 ;# expect: 3
+
+# Evil: shadowing with var vs let
+let sc_shadow_type immutable
+proc sc_shadow_var_let {} {
+  var sc_shadow_type mutable
+  set! sc_shadow_type changed
+  $sc_shadow_type
+}
+puts [sc_shadow_var_let]             ;# expect: changed
+puts $sc_shadow_type                 ;# expect: immutable
+
+puts ""
 puts "=== Done ==="

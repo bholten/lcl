@@ -24,6 +24,7 @@ lcl_value *lcl_ns_new(const char *qname) {
   h = hash_table_new();
 
   if (!h) {
+    free(v);
     return NULL;
   }
 
@@ -41,11 +42,18 @@ lcl_value *lcl_ns_new(const char *qname) {
 
     memcpy(v->str_repr, qname, n + 1);
     v->as.namespace.qname = malloc(n + 1);
+
+    if (!v->as.namespace.qname) {
+      free(v->str_repr);
+      hash_table_free(h);
+      free(v);
+      return NULL;
+    }
+
     memcpy(v->as.namespace.qname, qname, n + 1);
-    /* v->as.namespace.qname = (char*)qname; */
   }
 
-  return v;  
+  return v;
 }
 
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {

@@ -5,5 +5,6 @@
 
 size_t strnlen(const char *s, size_t n);
 char *strndup(const char *s, size_t n);
+char *strdup(const char *s);
 
 #endif

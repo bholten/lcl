@@ -42,8 +42,15 @@ void lcl_ref_dec(lcl_value *value) {
 
   case LCL_PROC: {
     lcl_proc *p = value->as.procedure.proc;
-    lcl_frame_ref_dec(p->closure);
+    int i;
+    /* Free upvalues */
+    for (i = 0; i < p->nupvals; i++) {
+      free(p->upvals[i].name);
+      lcl_ref_dec(p->upvals[i].value);
+    }
+    free(p->upvals);
     lcl_ref_dec(p->params);
+    lcl_ref_dec(p->captured_ns);
     lcl_program_free(p->body);
     free(p);
   } break;

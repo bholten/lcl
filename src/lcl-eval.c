@@ -51,25 +51,37 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
                        int argc, lcl_value **argv, lcl_value **out) {
   int i;
   int rc;
-  lcl_frame *child = lcl_frame_new(p->closure);
   lcl_env saved = interp->env;
+  /* Use caller's frame as parent for command lookup - no cycle because proc
+   * doesn't store a reference to this frame (uses upvalues instead) */
+  lcl_frame *child = lcl_frame_new(saved.frame);
+
+  if (!child) {
+    return LCL_RC_ERR;
+  }
 
   interp->env.frame = child;
   if (p->capture_ns && p->captured_ns) {
     if (interp->env.current_ns) {
       lcl_ref_dec(interp->env.current_ns);
     }
-    
+
     interp->env.current_ns = lcl_ref_inc(p->captured_ns);
   }
 
   if ((int)lcl_list_len(p->params) != argc) {
     interp->env = saved;
     lcl_frame_ref_dec(child);
-    
+
     return LCL_RC_ERR;
   }
-  
+
+  /* Inject upvalues into the child frame as regular bindings.
+   * hash_table_put will handle the refcount increment. */
+  for (i = 0; i < p->nupvals; i++) {
+    hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
+  }
+
   for (i = 0; i < argc; i++) {
     lcl_value *nameV = NULL;
     const char *pname;
@@ -84,11 +96,11 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
 
   if (rc == LCL_RC_RETURN) {
     rc = LCL_RC_OK;
-  }    
+  }
 
   interp->env = saved;
   lcl_frame_ref_dec(child);
-  
+
   return rc;
 }
 
@@ -326,13 +338,19 @@ int lcl_eval_word_to_str(lcl_interp *interp,
       if (need > cap) {
         size_t newcap = cap ? cap * 2 : 64;
         char *newbuf;
-        while (newcap < need) newcap *= 2;
+
+        while (newcap < need) {
+          newcap *= 2;
+        }
+
         newbuf = (char *)realloc(buf, newcap);
+
         if (!newbuf) {
           lcl_ref_dec(val);
           free(buf);
           return LCL_RC_ERR;
         }
+
         buf = newbuf;
         cap = newcap;
       }
@@ -361,13 +379,19 @@ int lcl_eval_word_to_str(lcl_interp *interp,
       if (need > cap) {
         size_t newcap = cap ? cap * 2 : 64;
         char *newbuf;
-        while (newcap < need) newcap *= 2;
+
+        while (newcap < need) {
+          newcap *= 2;
+        }
+
         newbuf = (char *)realloc(buf, newcap);
+
         if (!newbuf) {
           lcl_ref_dec(result);
           free(buf);
           return LCL_RC_ERR;
         }
+
         buf = newbuf;
         cap = newcap;
       }
@@ -387,24 +411,21 @@ int lcl_eval_word_to_str(lcl_interp *interp,
   } else {
     if (len >= cap) {
       char *newbuf = (char *)realloc(buf, len + 1);
-      if (!newbuf) { free(buf); return LCL_RC_ERR; }
+
+      if (!newbuf) {
+        free(buf);
+        return LCL_RC_ERR;
+      }
+
       buf = newbuf;
     }
+    
     buf[len] = '\0';
     *out = lcl_value_new_string(buf);
     free(buf);
   }
 
   return *out ? LCL_RC_OK : LCL_RC_ERR;
-}
-
-lcl_return_code lcl_call(lcl_interp *interp, const lcl_command *command,
-                         lcl_value **out) {
-  /* Stub function - use lcl_call_from_words instead */
-  (void)interp;
-  (void)command;
-  (void)out;
-  return LCL_RC_ERR;
 }
 
 int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
@@ -429,8 +450,8 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
 
     rc = lcl_call_from_words(interp, cmd, &last);
 
+    /* Propagate RETURN - let caller (e.g., lcl_call_user_proc) handle it */
     if (rc == LCL_RC_RETURN) {
-      rc = LCL_RC_OK;
       break;
     }
 

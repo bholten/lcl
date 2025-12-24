@@ -58,12 +58,19 @@ static lcl_value *lcl_list_clone_shallow(lcl_value *src) {
   if (!src || src->type != LCL_LIST) return NULL;
 
   dest = lcl_list_new();
+  if (!dest) return NULL;
+
   n = src->as.list.len;
 
   if (n) {
     size_t i = 0;
 
     dest->as.list.items = malloc(n * sizeof(*dest->as.list.items));
+    if (!dest->as.list.items) {
+      lcl_ref_dec(dest);
+      return NULL;
+    }
+
     dest->as.list.cap = n;
     dest->as.list.len = n;
 

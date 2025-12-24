@@ -8,11 +8,18 @@
 
 lcl_frame *lcl_frame_new(lcl_frame *parent) {
   lcl_frame *f = malloc(sizeof(*f));
+  hash_table *locals;
 
   if (!f) return NULL;
 
+  locals = hash_table_new();
+  if (!locals) {
+    free(f);
+    return NULL;
+  }
+
   f->refc = 1;
-  f->locals = hash_table_new();
+  f->locals = locals;
   f->parent = lcl_frame_ref_inc(parent);
   f->owns_locals = 1;
 
