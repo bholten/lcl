@@ -11,7 +11,7 @@ puts [$c]
 
 proc test_123 {num} {
     let n [+ $num 1]
-    
+
     return $n
 }
 
@@ -25,7 +25,7 @@ proc test_str {code} {
     }
 
     puts "calling $code"
-    
+
     return $c
 }
 
@@ -75,7 +75,7 @@ puts [test_meta {
 var acc 0
 
 foreach num [list 1 2 3 4 5] {
-    set! acc [+ $acc $num]  
+    set! acc [+ $acc $num]
     puts "acc = $acc"
 }
 
@@ -93,7 +93,7 @@ while [!= $acc3 0] {
     if [== $acc3 42] {
         break
     }
-    
+
     puts "acc3 => $acc3"
 }
 
@@ -148,3 +148,55 @@ proc proj_euler_1 {limit} {
 }
 
 puts "Project Euler 1 => [proj_euler_1 1000]"
+
+puts "=== metaprogramming"
+
+let ts [lambda {x} {
+    return [+ $x 1]
+}]
+
+puts "This is ts 2 ===> [$ts 2]"
+
+proc make_dd {n} {
+    return [lambda {x} [subst {
+        + $n \$x
+    }]]
+}
+
+let add11 [make_dd 11]
+puts "add11 5 => [$add11 5]"
+
+puts "Tcl-style builder pattern"
+
+proc GET {url body} {
+    var request [dict create url $url]
+
+    proc method {m} {
+      dict set request method $m
+    }
+
+    proc timeout {t} {
+        dict set request timeout $t
+    }
+
+    eval $body
+
+    return $request
+}
+
+let request [GET https://www.google.com {
+    method GET
+    timeout 1.2
+}]
+
+puts "request => $request"
+
+foreach key [dict keys $request] {
+    puts "key => $key"
+}
+
+foreach val [dict values $request] {
+    puts "value => $val"
+}
+
+puts "== done =="

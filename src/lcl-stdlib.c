@@ -7,7 +7,6 @@
 
 #include "lcl-stdlib.h"
 
-/* Forward declarations */
 lcl_value *lcl_list_new_from_cwords(const char *words);
 static int lcl_value_is_true(lcl_value *v);
 
@@ -355,6 +354,7 @@ static lcl_value *deref_once(lcl_value *v) {
 static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
   size_t len_a, len_b, i;
   lcl_value *elem_a, *elem_b;
+  int result;
 
   len_a = lcl_list_len(a);
   len_b = lcl_list_len(b);
@@ -362,8 +362,14 @@ static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
 
   for (i = 0; i < len_a; i++) {
     if (lcl_list_get(a, i, &elem_a) != LCL_OK) return 0;
-    if (lcl_list_get(b, i, &elem_b) != LCL_OK) return 0;
-    if (!lcl_value_equal_deep(elem_a, elem_b, guard)) return 0;
+    if (lcl_list_get(b, i, &elem_b) != LCL_OK) {
+      lcl_ref_dec(elem_a);
+      return 0;
+    }
+    result = lcl_value_equal_deep(elem_a, elem_b, guard);
+    lcl_ref_dec(elem_a);
+    lcl_ref_dec(elem_b);
+    if (!result) return 0;
   }
   return 1;
 }
@@ -373,14 +379,21 @@ static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val_a, *val_b;
+  int result;
 
   /* Check same size */
   if (lcl_dict_len(a) != lcl_dict_len(b)) return 0;
 
   /* Check all keys in a exist in b with equal values */
   while (hash_table_iterate(a->as.dict.dictionary, &it, &key, &val_a)) {
-    if (lcl_dict_get(b, key, &val_b) != LCL_OK) return 0;
-    if (!lcl_value_equal_deep(val_a, val_b, guard)) return 0;
+    if (lcl_dict_get(b, key, &val_b) != LCL_OK) {
+      lcl_ref_dec(val_a);
+      return 0;
+    }
+    result = lcl_value_equal_deep(val_a, val_b, guard);
+    lcl_ref_dec(val_a);
+    lcl_ref_dec(val_b);
+    if (!result) return 0;
   }
   return 1;
 }

@@ -5,6 +5,7 @@
 
 #include "hash-table.h"
 #include "lcl-compile.h"
+#include "lcl-values.h"
 
 lcl_frame *lcl_frame_new(lcl_frame *parent) {
   lcl_frame *f = malloc(sizeof(*f));
@@ -73,7 +74,24 @@ void lcl_frame_ref_dec(lcl_frame *f) {
 }
 
 void lcl_frame_clear(lcl_frame *f) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+
   if (!f || !f->locals) return;
+
+  /* Break reference cycles through cells before freeing.
+   * This handles mutual recursion cases where:
+   * cell A -> lambda A -> upvalues -> cell B -> lambda B -> upvalues -> cell A
+   * By clearing cell contents first, we break the cycle.
+   */
+  while (hash_table_iterate(f->locals, &it, &key, &val)) {
+    if (val->type == LCL_CELL && val->as.cell.inner) {
+      lcl_ref_dec(val->as.cell.inner);
+      val->as.cell.inner = NULL;
+    }
+    lcl_ref_dec(val); /* Balance the incref from hash_table_iterate */
+  }
 
   hash_table_free(f->locals);
   f->locals = NULL;
