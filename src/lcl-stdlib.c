@@ -2240,11 +2240,25 @@ int s_load(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out)
   return rc;
 }
 
+/* Helper: find the end of a callable expression starting with [ */
+static const char *find_bracket_end(const char *s) {
+  int depth = 1;
+  s++;  /* skip initial [ */
+  while (*s && depth > 0) {
+    if (*s == '[') depth++;
+    else if (*s == ']') depth--;
+    s++;
+  }
+  return s;
+}
+
 /* ============================================================================
  * Thread-first operator: -> initial {form1} {form2} ...
  * Threads the value through each form as the first argument.
  * Example: -> $d {get b} becomes: get $d b
  *          -> $d {put c 3} {del a} becomes: del [put $d c 3] a
+ *          -> 10 {$f} becomes: [$f 10] (call lambda in variable)
+ *          -> 10 {[lambda {x} ...]} becomes: [[lambda {x} ...] 10]
  *
  * Implementation: Uses a temporary variable $_thread_ to hold the current
  * value, allowing it to preserve type information (dict, list, etc.)
@@ -2287,33 +2301,73 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
 
     form = lcl_value_to_string(form_v);
 
-    /* Find end of command name (first whitespace) */
-    cmd_end = form;
-    while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
-      cmd_end++;
-    }
-    cmd_len = (size_t)(cmd_end - form);
+    /* Handle callable expressions: $var or [expr] */
+    if (form[0] == '[') {
+      /* Find matching ], that's the callable */
+      cmd_end = find_bracket_end(form);
+      cmd_len = (size_t)(cmd_end - form);
+      rest = cmd_end;
+      while (*rest == ' ' || *rest == '\t') rest++;
 
-    /* Skip whitespace to find rest of arguments */
-    rest = cmd_end;
-    while (*rest == ' ' || *rest == '\t') {
-      rest++;
-    }
+      /* Build: [callable $_thread_ rest] */
+      total = 1 + cmd_len + 11 + strlen(rest) + 2;
+      threaded = (char *)malloc(total);
+      if (!threaded) {
+        lcl_ref_dec(form_v);
+        lcl_ref_dec(current);
+        return LCL_RC_ERR;
+      }
+      if (*rest) {
+        sprintf(threaded, "[%.*s $_thread_ %s]", (int)cmd_len, form, rest);
+      } else {
+        sprintf(threaded, "[%.*s $_thread_]", (int)cmd_len, form);
+      }
+    } else if (form[0] == '$') {
+      /* Variable reference - find end of variable name */
+      cmd_end = form + 1;
+      while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
+        cmd_end++;
+      }
+      cmd_len = (size_t)(cmd_end - form);
+      rest = cmd_end;
+      while (*rest == ' ' || *rest == '\t') rest++;
 
-    /* Build threaded command: "cmd $_thread_ rest" */
-    /* Using $_thread_ variable reference preserves the value's type */
-    total = cmd_len + 12 + strlen(rest) + 1;  /* 12 = " $_thread_ " */
-    threaded = (char *)malloc(total);
-    if (!threaded) {
-      lcl_ref_dec(form_v);
-      lcl_ref_dec(current);
-      return LCL_RC_ERR;
-    }
-
-    if (*rest) {
-      sprintf(threaded, "%.*s $_thread_ %s", (int)cmd_len, form, rest);
+      /* Build: [$var $_thread_ rest] */
+      total = 1 + cmd_len + 11 + strlen(rest) + 2;
+      threaded = (char *)malloc(total);
+      if (!threaded) {
+        lcl_ref_dec(form_v);
+        lcl_ref_dec(current);
+        return LCL_RC_ERR;
+      }
+      if (*rest) {
+        sprintf(threaded, "[%.*s $_thread_ %s]", (int)cmd_len, form, rest);
+      } else {
+        sprintf(threaded, "[%.*s $_thread_]", (int)cmd_len, form);
+      }
     } else {
-      sprintf(threaded, "%.*s $_thread_", (int)cmd_len, form);
+      /* Normal command name */
+      cmd_end = form;
+      while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
+        cmd_end++;
+      }
+      cmd_len = (size_t)(cmd_end - form);
+      rest = cmd_end;
+      while (*rest == ' ' || *rest == '\t') rest++;
+
+      /* Build: cmd $_thread_ rest */
+      total = cmd_len + 12 + strlen(rest) + 1;
+      threaded = (char *)malloc(total);
+      if (!threaded) {
+        lcl_ref_dec(form_v);
+        lcl_ref_dec(current);
+        return LCL_RC_ERR;
+      }
+      if (*rest) {
+        sprintf(threaded, "%.*s $_thread_ %s", (int)cmd_len, form, rest);
+      } else {
+        sprintf(threaded, "%.*s $_thread_", (int)cmd_len, form);
+      }
     }
 
     lcl_ref_dec(form_v);
@@ -2340,6 +2394,8 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
  * Thread-last operator: ->> initial {form1} {form2} ...
  * Threads the value through each form as the last argument.
  * Example: ->> $d {cmd a b} becomes: cmd a b $d
+ *          ->> 10 {$f a} becomes: [$f a 10]
+ *          ->> 10 {[lambda {x} ...]} becomes: [[lambda {x} ...] 10]
  * ============================================================================ */
 int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
                   lcl_value **out) {
@@ -2376,16 +2432,28 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
     form = lcl_value_to_string(form_v);
 
-    /* Build threaded command: "form $_thread_" (append at end) */
-    total = strlen(form) + 11 + 1;  /* 11 = " $_thread_" */
-    threaded = (char *)malloc(total);
-    if (!threaded) {
-      lcl_ref_dec(form_v);
-      lcl_ref_dec(current);
-      return LCL_RC_ERR;
+    /* Handle callable expressions: $var or [expr] - wrap in brackets */
+    if (form[0] == '[' || form[0] == '$') {
+      /* Build: [form $_thread_] */
+      total = 1 + strlen(form) + 11 + 1;
+      threaded = (char *)malloc(total);
+      if (!threaded) {
+        lcl_ref_dec(form_v);
+        lcl_ref_dec(current);
+        return LCL_RC_ERR;
+      }
+      sprintf(threaded, "[%s $_thread_]", form);
+    } else {
+      /* Normal command: "form $_thread_" (append at end) */
+      total = strlen(form) + 11 + 1;  /* 11 = " $_thread_" */
+      threaded = (char *)malloc(total);
+      if (!threaded) {
+        lcl_ref_dec(form_v);
+        lcl_ref_dec(current);
+        return LCL_RC_ERR;
+      }
+      sprintf(threaded, "%s $_thread_", form);
     }
-
-    sprintf(threaded, "%s $_thread_", form);
 
     lcl_ref_dec(form_v);
     form_v = NULL;

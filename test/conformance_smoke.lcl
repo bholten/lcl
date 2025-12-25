@@ -833,5 +833,27 @@ puts [-> $th_nested {get x} {get y}] ;# expect: 42
 let th_val [+ 10 [-> $th_d {get c}]]
 puts $th_val                         ;# expect: 13
 
+# -> with lambda in variable
+let th_inc [lambda {x} {+ $x 1}]
+puts [-> 10 {$th_inc}]               ;# expect: 11
+
+# -> with lambda with extra args
+let th_add [lambda {a b} {+ $a $b}]
+puts [-> 10 {$th_add 5}]             ;# expect: 15
+
+# -> with inline lambda
+puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;# expect: 110
+
+# -> chain with lambdas
+let th_dbl [lambda {x} {+ $x $x}]
+puts [-> 5 {$th_inc} {$th_dbl}]      ;# expect: 12
+
+# ->> with lambda
+let th_greet2 [lambda {g n} {return "$g, $n!"}]
+puts [->> World {$th_greet2 Hello}]  ;# expect: Hello, World!
+
+# ->> with inline lambda
+puts [->> 10 {[lambda {x} {+ $x 5}]}]  ;# expect: 15
+
 puts ""
 puts "=== Done ==="

@@ -230,4 +230,13 @@ namespace eval foo {
     puts $eleven ; # expect 11
 }
 
+puts "threading operators"
+
+let dthread [dict a 1 b 2 c 3]
+
+proc dadd1 {x} { return [+ $x 1]}
+
+puts [-> $dthread {get b} \
+          {[lambda {x} { * $x 42 }]}]
+
 puts "== done =="
