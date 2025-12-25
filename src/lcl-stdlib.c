@@ -2240,6 +2240,173 @@ int s_load(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out)
   return rc;
 }
 
+/* ============================================================================
+ * Thread-first operator: -> initial {form1} {form2} ...
+ * Threads the value through each form as the first argument.
+ * Example: -> $d {get b} becomes: get $d b
+ *          -> $d {put c 3} {del a} becomes: del [put $d c 3] a
+ *
+ * Implementation: Uses a temporary variable $_thread_ to hold the current
+ * value, allowing it to preserve type information (dict, list, etc.)
+ * ============================================================================ */
+int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
+  lcl_value *current = NULL;
+  lcl_value *form_v = NULL;
+  int i;
+  int rc;
+
+  if (argc < 1) {
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
+  }
+
+  /* Evaluate first argument to get initial value */
+  rc = lcl_eval_word(interp, args[0], &current);
+  if (rc != LCL_RC_OK) return rc;
+
+  /* For each subsequent form, thread the current value */
+  for (i = 1; i < argc; i++) {
+    const char *form;
+    const char *cmd_end;
+    const char *rest;
+    char *threaded = NULL;
+    size_t cmd_len;
+    size_t total;
+    lcl_value *result = NULL;
+
+    /* Bind current value to temporary variable $_thread_ */
+    lcl_env_let(&interp->env, "_thread_", current);
+
+    /* Evaluate the word to get the form string (should be braced) */
+    rc = lcl_eval_word_to_str(interp, args[i], &form_v);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(current);
+      return rc;
+    }
+
+    form = lcl_value_to_string(form_v);
+
+    /* Find end of command name (first whitespace) */
+    cmd_end = form;
+    while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
+      cmd_end++;
+    }
+    cmd_len = (size_t)(cmd_end - form);
+
+    /* Skip whitespace to find rest of arguments */
+    rest = cmd_end;
+    while (*rest == ' ' || *rest == '\t') {
+      rest++;
+    }
+
+    /* Build threaded command: "cmd $_thread_ rest" */
+    /* Using $_thread_ variable reference preserves the value's type */
+    total = cmd_len + 12 + strlen(rest) + 1;  /* 12 = " $_thread_ " */
+    threaded = (char *)malloc(total);
+    if (!threaded) {
+      lcl_ref_dec(form_v);
+      lcl_ref_dec(current);
+      return LCL_RC_ERR;
+    }
+
+    if (*rest) {
+      sprintf(threaded, "%.*s $_thread_ %s", (int)cmd_len, form, rest);
+    } else {
+      sprintf(threaded, "%.*s $_thread_", (int)cmd_len, form);
+    }
+
+    lcl_ref_dec(form_v);
+    form_v = NULL;
+
+    /* Evaluate the threaded command */
+    rc = lcl_eval_string(interp, threaded, &result);
+    free(threaded);
+
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(current);
+      return rc;
+    }
+
+    lcl_ref_dec(current);
+    current = result;
+  }
+
+  *out = current;
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
+ * Thread-last operator: ->> initial {form1} {form2} ...
+ * Threads the value through each form as the last argument.
+ * Example: ->> $d {cmd a b} becomes: cmd a b $d
+ * ============================================================================ */
+int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
+  lcl_value *current = NULL;
+  lcl_value *form_v = NULL;
+  int i;
+  int rc;
+
+  if (argc < 1) {
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
+  }
+
+  /* Evaluate first argument to get initial value */
+  rc = lcl_eval_word(interp, args[0], &current);
+  if (rc != LCL_RC_OK) return rc;
+
+  /* For each subsequent form, thread the current value as last arg */
+  for (i = 1; i < argc; i++) {
+    const char *form;
+    char *threaded = NULL;
+    size_t total;
+    lcl_value *result = NULL;
+
+    /* Bind current value to temporary variable $_thread_ */
+    lcl_env_let(&interp->env, "_thread_", current);
+
+    /* Evaluate the word to get the form string (should be braced) */
+    rc = lcl_eval_word_to_str(interp, args[i], &form_v);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(current);
+      return rc;
+    }
+
+    form = lcl_value_to_string(form_v);
+
+    /* Build threaded command: "form $_thread_" (append at end) */
+    total = strlen(form) + 11 + 1;  /* 11 = " $_thread_" */
+    threaded = (char *)malloc(total);
+    if (!threaded) {
+      lcl_ref_dec(form_v);
+      lcl_ref_dec(current);
+      return LCL_RC_ERR;
+    }
+
+    sprintf(threaded, "%s $_thread_", form);
+
+    lcl_ref_dec(form_v);
+    form_v = NULL;
+
+    /* Evaluate the threaded command */
+    rc = lcl_eval_string(interp, threaded, &result);
+    free(threaded);
+
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(current);
+      return rc;
+    }
+
+    lcl_ref_dec(current);
+    current = result;
+  }
+
+  *out = current;
+  return LCL_RC_OK;
+}
+
 int s_proc(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out){
   /* proc name {params} {body} */
   lcl_value *name_v = NULL;
@@ -4219,6 +4386,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "load",      lcl_c_spec_new("load", s_load));
   lcl_env_let_take(&interp->env, "subst",     lcl_c_spec_new("subst", s_subst));
   lcl_env_let_take(&interp->env, "namespace", lcl_c_spec_new("namespace", s_namespace));
+  lcl_env_let_take(&interp->env, "->",        lcl_c_spec_new("->", s_thread_first));
+  lcl_env_let_take(&interp->env, "->>",       lcl_c_spec_new("->>", s_thread_last));
 
   /* Control flow */
   lcl_env_let_take(&interp->env, "if",       lcl_c_spec_new("if", s_if));
