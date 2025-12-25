@@ -6,12 +6,12 @@ Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides t
 
 ## Key Differences from Tcl
 
-| Feature | Tcl | Lcl |
-|---------|-----|-----|
-| Scoping | Dynamic (`upvar`, `uplevel`) | Lexical (closures) |
-| Bindings | Mutable by default | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
-| Memory | Garbage collected | Reference counted |
-| Closures | Limited | First-class (flat closures) |
+| Feature  | Tcl                          | Lcl                                                            |
+|----------|------------------------------|----------------------------------------------------------------|
+| Scoping  | Dynamic (`upvar`, `uplevel`) | Lexical (closures)                                             |
+| Bindings | Mutable by default           | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
+| Memory   | Garbage collected            | Reference counted                                              |
+| Closures | Limited                      | First-class (flat closures)                                    |
 
 ## Build
 
@@ -288,6 +288,21 @@ dict create \
     key1 value1 \
     key2 value2
 ```
+
+## Differences from Tcl
+
+Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
+
+| Tcl            | Lcl            |
+|----------------|----------------|
+| llength x      | len x          |
+| dict get d k   | get d k        |
+| lindex x i     | get x i        |
+| dict set d k v | put d k v      |
+| lappend x v    | List::push x v |
+| dict keys d    | Dict::keys d   |
+
+And many others.
 
 ## Embedding
 

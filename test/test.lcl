@@ -199,11 +199,11 @@ let request [GET https://www.google.com {
 
 puts "request => $request"
 
-foreach key [dict keys $request] {
+foreach key [Dict::keys $request] {
     puts "key => $key"
 }
 
-foreach val [dict values $request] {
+foreach val [Dict::values $request] {
     puts "value => $val"
 }
 
