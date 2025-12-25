@@ -147,8 +147,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         while (j < sc->len && sc->s[j] != '}') {
           if (sc->s[j] == '\n') {
             sc->line++;
-            j++;
           }
+          j++;
         }
 
         if (j >= sc->len) return -1;
