@@ -774,4 +774,64 @@ puts [sc_shadow_var_let]             ;# expect: changed
 puts $sc_shadow_type                 ;# expect: immutable
 
 puts ""
+puts "-- threading operators --"
+
+# -> (thread-first): threads value as first argument
+let th_d [dict a 1 b 2 c 3]
+puts [-> $th_d {get b}]              ;# expect: 2
+puts [-> $th_d {get a}]              ;# expect: 1
+
+# -> with multiple forms (chained)
+let th_d2 [-> $th_d {put d 4} {del a}]
+puts [has? $th_d2 d]                 ;# expect: 1
+puts [has? $th_d2 a]                 ;# expect: 0
+
+# -> with list operations
+let th_lst [list 1 2 3]
+puts [-> $th_lst {get 1}]            ;# expect: 2
+puts [-> $th_lst {List::push 4} {List::reverse}]  ;# expect: 4 3 2 1
+
+# -> with len
+puts [-> $th_lst {len}]              ;# expect: 3
+
+# -> identity (no forms)
+puts [-> 42]                         ;# expect: 42
+
+# -> with string operations
+puts [-> hello {String::upper}]      ;# expect: HELLO
+
+# ->> (thread-last): threads value as last argument
+proc th_greet {greeting name} {
+  return "$greeting, $name!"
+}
+puts [->> World {th_greet Hello}]    ;# expect: Hello, World!
+
+# ->> with custom transformation proc
+proc th_add_n {n lst} {
+  var result [list]
+  foreach x $lst {
+    set! result [List::push $result [+ $x $n]]
+  }
+  return $result
+}
+puts [->> $th_lst {th_add_n 10}]     ;# expect: 11 12 13
+
+# ->> chained
+puts [->> $th_lst {th_add_n 10} {th_add_n 5}]  ;# expect: 16 17 18
+
+# ->> identity (no forms)
+puts [->> hello]                     ;# expect: hello
+
+# ->> with String::find (haystack needle) - needle threaded last
+puts [->> llo {String::find hello}]  ;# expect: 2
+
+# Nested threading
+let th_nested [dict x [dict y 42]]
+puts [-> $th_nested {get x} {get y}] ;# expect: 42
+
+# Thread result used in expression
+let th_val [+ 10 [-> $th_d {get c}]]
+puts $th_val                         ;# expect: 13
+
+puts ""
 puts "=== Done ==="
