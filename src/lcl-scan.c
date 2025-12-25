@@ -52,6 +52,13 @@ static void skip_intra_ws(lcl_scan *sc) {
       continue;
     }
 
+    /* Handle backslash-newline continuation between words */
+    if (c == '\\' && sc->i + 1 < sc->len && sc->s[sc->i + 1] == '\n') {
+      sc->i += 2;
+      sc->line++;
+      continue;
+    }
+
     break;
   }
 }
