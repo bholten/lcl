@@ -6,14 +6,16 @@ SRCS = src/hash-table.c src/lcl-api.c src/lcl-cell.c src/lcl-command.c \
        src/lcl-stdlib.c src/lcl-str.c src/lcl-string.c src/lcl-word.c \
        src/str-compat.c
 
+.PHONY: debug test clean
+
 lcl: $(SRCS) src/lcl-main.c
 	gcc $(CFLAGS) -O2 -o lcl $(SRCS) src/lcl-main.c
 
 debug: $(SRCS) src/lcl-main.c
 	gcc $(CFLAGS) -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -o lcl $(SRCS) src/lcl-main.c
 
-test: $(SRCS) src/lcl-test.c
-	gcc $(CFLAGS) -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DLCL_TEST -DDEBUG_REFC -o lcl-test $(SRCS) src/lcl-test.c
+test: $(SRCS) test/lcl-test.c
+	gcc $(CFLAGS) -Isrc -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DLCL_TEST -DDEBUG_REFC -o lcl-test $(SRCS) test/lcl-test.c
 
 liblcl.so: $(SRCS)
 	gcc $(CFLAGS) -O2 -fPIC -shared -Iinclude -o liblcl.so $(SRCS)

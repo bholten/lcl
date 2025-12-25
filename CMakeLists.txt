@@ -42,7 +42,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(LCL_COMPILE_OPTIONS -Wall -Wextra)
 
 if(LCL_ENABLE_ASAN)
-  list(APPEND LCL_COMPILE_OPTIONS -fsanitize=address,undefined -fno-omit-frame-pointer)
+  list(APPEND LCL_COMPILE_OPTIONS -fsanitize=address,undefined -fno-omit-frame-pointer -g3 -O0)
   set(LCL_LINK_OPTIONS -fsanitize=address,undefined)
 endif()
 
@@ -109,9 +109,10 @@ if(LCL_BUILD_CLI)
 endif()
 
 if(LCL_BUILD_TESTS)
-  add_executable(lcl-test src/lcl-test.c)
+  add_executable(lcl-test test/lcl-test.c)
   target_compile_definitions(lcl-test PRIVATE LCL_TEST DEBUG_REFC)
   target_compile_options(lcl-test PRIVATE ${LCL_COMPILE_OPTIONS})
+  target_include_directories(lcl-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
   if(LCL_BUILD_STATIC)
     target_link_libraries(lcl-test PRIVATE lcl_static)

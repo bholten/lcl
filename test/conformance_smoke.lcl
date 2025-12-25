@@ -122,13 +122,13 @@ puts [get ns1::y]              ;# expect: 2
 puts ""
 puts "-- load --"
 # load a file and call its procs
-load src/conformance_lib.lcl
+load test/conformance_lib.lcl
 puts [lib_add 10 20]           ;# expect: 30
 puts $LIB_CONST                ;# expect: 42
 
 # load into namespace (import pattern)
 namespace eval imported {
-  load src/conformance_lib.lcl
+  load test/conformance_lib.lcl
 }
 puts [imported::lib_add 5 5]   ;# expect: 10
 puts [get imported::LIB_CONST] ;# expect: 42
