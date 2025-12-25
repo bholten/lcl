@@ -151,6 +151,14 @@ puts "Project Euler 1 => [proj_euler_1 1000]"
 
 puts "=== metaprogramming"
 
+let ex "this is 1 + 1 = [+ 1 1]"
+puts $ex
+let ex2 {this is 1 + 1 = [+ 1  1]}
+puts $ex2
+puts [subst $ex2]
+let ex3 [subst {$ex}]
+puts $ex3
+
 let ts [lambda {x} {
     return [+ $x 1]
 }]
@@ -198,5 +206,21 @@ foreach key [dict keys $request] {
 foreach val [dict values $request] {
     puts "value => $val"
 }
+
+puts "== namespace tests =="
+
+let math [ns]
+ns::def $math ten 10
+
+puts [get math::ten] ; # expect 10
+
+namespace eval math {
+    puts $ten
+} ; # expect 10
+
+puts $math::ten ; # eexpect 10
+
+# TODO this is not working but should:
+# puts ${math::ten}
 
 puts "== done =="
