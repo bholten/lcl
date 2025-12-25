@@ -650,30 +650,6 @@ int c_ref(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-int c_ns(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  (void)interp;
-  (void)argv;
-  if (argc != 0) return LCL_RC_ERR;
-
-  *out = lcl_ns_new(NULL);
-
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
-}
-
-int c_ns_def(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  (void)interp;
-  if (argc != 3) return LCL_RC_ERR;
-  if (argv[0]->type != LCL_NAMESPACE) return LCL_RC_ERR;
-
-  if (lcl_ns_def(argv[0], lcl_value_to_string(argv[1]), lcl_ref_inc(argv[2])) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  *out = lcl_ref_inc(argv[2]);
-
-  return LCL_RC_OK;
-}
-
 int c_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   lcl_value *val = NULL;
 
@@ -3364,6 +3340,751 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
+/* ============================================================================
+ * Generic Type-Directed Operations
+ * ============================================================================ */
+
+/* len x - returns length of list, dict, or string */
+int c_len(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_LIST:
+      *out = lcl_int_new((long)lcl_list_len(argv[0]));
+      return LCL_RC_OK;
+    case LCL_DICT:
+      *out = lcl_int_new((long)lcl_dict_len(argv[0]));
+      return LCL_RC_OK;
+    case LCL_STRING:
+      *out = lcl_int_new((long)strlen(lcl_value_to_string(argv[0])));
+      return LCL_RC_OK;
+    default:
+      return LCL_RC_ERR;
+  }
+}
+
+/* empty? x - returns 1 if container is empty */
+int c_empty(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_LIST:
+      *out = lcl_int_new(lcl_list_len(argv[0]) == 0 ? 1 : 0);
+      return LCL_RC_OK;
+    case LCL_DICT:
+      *out = lcl_int_new(lcl_dict_len(argv[0]) == 0 ? 1 : 0);
+      return LCL_RC_OK;
+    case LCL_STRING:
+      *out = lcl_int_new(strlen(lcl_value_to_string(argv[0])) == 0 ? 1 : 0);
+      return LCL_RC_OK;
+    default:
+      return LCL_RC_ERR;
+  }
+}
+
+/* get x k [default] - get element by key/index */
+int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc < 2 || argc > 3) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_LIST: {
+      long idx;
+      if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      if (lcl_list_get(argv[0], (size_t)idx, out) != LCL_OK) {
+        if (argc == 3) {
+          *out = lcl_ref_inc(argv[2]);
+          return LCL_RC_OK;
+        }
+        return LCL_RC_ERR;
+      }
+      return LCL_RC_OK;
+    }
+    case LCL_DICT: {
+      const char *key = lcl_value_to_string(argv[1]);
+      if (lcl_dict_get(argv[0], key, out) != LCL_OK) {
+        if (argc == 3) {
+          *out = lcl_ref_inc(argv[2]);
+          return LCL_RC_OK;
+        }
+        return LCL_RC_ERR;
+      }
+      return LCL_RC_OK;
+    }
+    case LCL_STRING: {
+      long idx;
+      const char *str;
+      char buf[2];
+      if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      str = lcl_value_to_string(argv[0]);
+      if (idx < 0 || (size_t)idx >= strlen(str)) {
+        if (argc == 3) {
+          *out = lcl_ref_inc(argv[2]);
+          return LCL_RC_OK;
+        }
+        return LCL_RC_ERR;
+      }
+      buf[0] = str[idx];
+      buf[1] = '\0';
+      *out = lcl_string_new(buf);
+      return LCL_RC_OK;
+    }
+    default:
+      return LCL_RC_ERR;
+  }
+}
+
+/* put x k v - return new container with element added/replaced */
+int c_put(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 3) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_LIST: {
+      long idx;
+      lcl_value *copy;
+      if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      copy = lcl_ref_inc(argv[0]);
+      if (lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
+        lcl_ref_dec(copy);
+        return LCL_RC_ERR;
+      }
+      *out = copy;
+      return LCL_RC_OK;
+    }
+    case LCL_DICT: {
+      const char *key = lcl_value_to_string(argv[1]);
+      lcl_value *copy = lcl_ref_inc(argv[0]);
+      if (lcl_dict_put(&copy, key, argv[2]) != LCL_OK) {
+        lcl_ref_dec(copy);
+        return LCL_RC_ERR;
+      }
+      *out = copy;
+      return LCL_RC_OK;
+    }
+    default:
+      return LCL_RC_ERR;
+  }
+}
+
+/* del x k - return new container without element */
+int c_del(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_DICT: {
+      const char *key = lcl_value_to_string(argv[1]);
+      lcl_value *copy = lcl_ref_inc(argv[0]);
+      lcl_dict_del(&copy, key);
+      *out = copy;
+      return LCL_RC_OK;
+    }
+    default:
+      /* del on list not implemented for MVP - could remove by index */
+      return LCL_RC_ERR;
+  }
+}
+
+/* has? x k - check if key/index exists */
+int c_has(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  switch (argv[0]->type) {
+    case LCL_LIST: {
+      long idx;
+      if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      *out = lcl_int_new(idx >= 0 && (size_t)idx < lcl_list_len(argv[0]) ? 1 : 0);
+      return LCL_RC_OK;
+    }
+    case LCL_DICT: {
+      const char *key = lcl_value_to_string(argv[1]);
+      lcl_value *val;
+      if (lcl_dict_get(argv[0], key, &val) == LCL_OK) {
+        lcl_ref_dec(val);
+        *out = lcl_int_new(1);
+      } else {
+        *out = lcl_int_new(0);
+      }
+      return LCL_RC_OK;
+    }
+    default:
+      return LCL_RC_ERR;
+  }
+}
+
+/* ============================================================================
+ * Type Predicates
+ * ============================================================================ */
+
+int c_is_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_LIST ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_DICT ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+int c_is_string(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_STRING ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+int c_is_number(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  /* Check type directly, or try parsing string as number */
+  if (argv[0]->type == LCL_INT || argv[0]->type == LCL_FLOAT) {
+    *out = lcl_int_new(1);
+  } else if (argv[0]->type == LCL_STRING) {
+    const char *s = lcl_value_to_string(argv[0]);
+    char *end;
+    (void)strtol(s, &end, 10);
+    if (end != s && *end == '\0') {
+      *out = lcl_int_new(1);
+    } else {
+      (void)strtod(s, &end);
+      *out = lcl_int_new(end != s && *end == '\0' ? 1 : 0);
+    }
+  } else {
+    *out = lcl_int_new(0);
+  }
+  return LCL_RC_OK;
+}
+
+int c_is_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_INT ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+int c_is_float(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_FLOAT ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  if (argc != 1) return LCL_RC_ERR;
+  *out = lcl_int_new(argv[0]->type == LCL_PROC || argv[0]->type == LCL_CPROC ? 1 : 0);
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
+ * Namespaced List Operations
+ * ============================================================================ */
+
+/* list::push x v - return new list with v appended */
+int c_list_push(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *copy;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST) {
+    return LCL_RC_ERR;
+  }
+
+  copy = lcl_ref_inc(argv[0]);
+  if (lcl_list_push(&copy, argv[1]) != LCL_OK) {
+    lcl_ref_dec(copy);
+    return LCL_RC_ERR;
+  }
+
+  *out = copy;
+  return LCL_RC_OK;
+}
+
+/* list::pop x - return new list without last element */
+int c_list_pop(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *copy;
+  size_t len;
+  size_t i;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST) {
+    return LCL_RC_ERR;
+  }
+
+  len = lcl_list_len(argv[0]);
+  if (len == 0) {
+    return LCL_RC_ERR;
+  }
+
+  copy = lcl_list_new();
+  for (i = 0; i < len - 1; i++) {
+    lcl_value *elem;
+    if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      lcl_ref_dec(copy);
+      return LCL_RC_ERR;
+    }
+    lcl_list_push(&copy, elem);
+    lcl_ref_dec(elem);
+  }
+
+  *out = copy;
+  return LCL_RC_OK;
+}
+
+/* list::slice x start [end] - return sublist */
+int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long start, end;
+  size_t len;
+  size_t i;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc < 2 || argc > 3) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST) {
+    return LCL_RC_ERR;
+  }
+
+  len = lcl_list_len(argv[0]);
+
+  if (lcl_value_to_int(argv[1], &start) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (argc == 3) {
+    if (lcl_value_to_int(argv[2], &end) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+  } else {
+    end = (long)len;
+  }
+
+  /* Handle negative indices */
+  if (start < 0) start = (long)len + start;
+  if (end < 0) end = (long)len + end;
+
+  /* Clamp */
+  if (start < 0) start = 0;
+  if (end > (long)len) end = (long)len;
+  if (start > end) start = end;
+
+  result = lcl_list_new();
+  for (i = (size_t)start; i < (size_t)end; i++) {
+    lcl_value *elem;
+    if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+    lcl_list_push(&result, elem);
+    lcl_ref_dec(elem);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* list::concat a b - return new list with elements from both */
+int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *result;
+  size_t i;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST || argv[1]->type != LCL_LIST) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+
+  for (i = 0; i < lcl_list_len(argv[0]); i++) {
+    lcl_value *elem;
+    if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+    lcl_list_push(&result, elem);
+    lcl_ref_dec(elem);
+  }
+
+  for (i = 0; i < lcl_list_len(argv[1]); i++) {
+    lcl_value *elem;
+    if (lcl_list_get(argv[1], i, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+    lcl_list_push(&result, elem);
+    lcl_ref_dec(elem);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* list::reverse x - return reversed list */
+int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *result;
+  size_t len;
+  size_t i;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST) {
+    return LCL_RC_ERR;
+  }
+
+  len = lcl_list_len(argv[0]);
+  result = lcl_list_new();
+
+  for (i = len; i > 0; i--) {
+    lcl_value *elem;
+    if (lcl_list_get(argv[0], i - 1, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+    lcl_list_push(&result, elem);
+    lcl_ref_dec(elem);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
+ * Namespaced Dict Operations
+ * ============================================================================ */
+
+/* dict::keys d - return list of keys */
+int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_DICT) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *key_v = lcl_string_new(key);
+    lcl_list_push(&result, key_v);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* dict::values d - return list of values */
+int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_DICT) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
+    lcl_list_push(&result, val);
+    lcl_ref_dec(val);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* dict::items d - return list of {key value} pairs */
+int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_DICT) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *pair = lcl_list_new();
+    lcl_value *key_v = lcl_string_new(key);
+    lcl_list_push(&pair, key_v);
+    lcl_list_push(&pair, val);
+    lcl_list_push(&result, pair);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+    lcl_ref_dec(pair);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* dict (constructor) - create dict from key-value pairs */
+int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *dict;
+  int i;
+  (void)interp;
+
+  if (argc % 2 != 0) {
+    return LCL_RC_ERR;  /* Must have even number of args */
+  }
+
+  dict = lcl_dict_new();
+  if (!dict) return LCL_RC_ERR;
+
+  for (i = 0; i < argc; i += 2) {
+    const char *key = lcl_value_to_string(argv[i]);
+    if (lcl_dict_put(&dict, key, argv[i + 1]) != LCL_OK) {
+      lcl_ref_dec(dict);
+      return LCL_RC_ERR;
+    }
+  }
+
+  *out = dict;
+  return LCL_RC_OK;
+}
+
+/* dict::merge a b - return new dict with entries from both (b overwrites a) */
+int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_DICT || argv[1]->type != LCL_DICT) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_ref_inc(argv[0]);
+
+  while (hash_table_iterate(argv[1]->as.dict.dictionary, &it, &key, &val)) {
+    lcl_dict_put(&result, key, val);
+    lcl_ref_dec(val);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
+ * Namespaced String Operations
+ * ============================================================================ */
+
+/* string::upper s - return uppercase string */
+int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *src;
+  char *result;
+  size_t i, len;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  src = lcl_value_to_string(argv[0]);
+  len = strlen(src);
+  result = malloc(len + 1);
+  if (!result) return LCL_RC_ERR;
+
+  for (i = 0; i < len; i++) {
+    char c = src[i];
+    if (c >= 'a' && c <= 'z') {
+      result[i] = c - 32;
+    } else {
+      result[i] = c;
+    }
+  }
+  result[len] = '\0';
+
+  *out = lcl_string_new(result);
+  free(result);
+  return LCL_RC_OK;
+}
+
+/* string::lower s - return lowercase string */
+int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *src;
+  char *result;
+  size_t i, len;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  src = lcl_value_to_string(argv[0]);
+  len = strlen(src);
+  result = malloc(len + 1);
+  if (!result) return LCL_RC_ERR;
+
+  for (i = 0; i < len; i++) {
+    char c = src[i];
+    if (c >= 'A' && c <= 'Z') {
+      result[i] = c + 32;
+    } else {
+      result[i] = c;
+    }
+  }
+  result[len] = '\0';
+
+  *out = lcl_string_new(result);
+  free(result);
+  return LCL_RC_OK;
+}
+
+/* string::find s sub - return index of first occurrence or -1 */
+int c_string_find(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *haystack, *needle, *found;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  haystack = lcl_value_to_string(argv[0]);
+  needle = lcl_value_to_string(argv[1]);
+
+  found = strstr(haystack, needle);
+  if (found) {
+    *out = lcl_int_new((long)(found - haystack));
+  } else {
+    *out = lcl_int_new(-1);
+  }
+
+  return LCL_RC_OK;
+}
+
+/* string::replace s old new - return string with replacements */
+int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *src, *old_str, *new_str, *p, *found;
+  size_t old_len, new_len, result_len;
+  char *result, *dst;
+  int count = 0;
+  (void)interp;
+
+  if (argc != 3) {
+    return LCL_RC_ERR;
+  }
+
+  src = lcl_value_to_string(argv[0]);
+  old_str = lcl_value_to_string(argv[1]);
+  new_str = lcl_value_to_string(argv[2]);
+
+  old_len = strlen(old_str);
+  new_len = strlen(new_str);
+
+  if (old_len == 0) {
+    *out = lcl_ref_inc(argv[0]);
+    return LCL_RC_OK;
+  }
+
+  /* Count occurrences */
+  p = src;
+  while ((found = strstr(p, old_str)) != NULL) {
+    count++;
+    p = found + old_len;
+  }
+
+  if (count == 0) {
+    *out = lcl_ref_inc(argv[0]);
+    return LCL_RC_OK;
+  }
+
+  result_len = strlen(src) + (size_t)count * (new_len - old_len);
+  result = malloc(result_len + 1);
+  if (!result) return LCL_RC_ERR;
+
+  dst = result;
+  p = src;
+  while ((found = strstr(p, old_str)) != NULL) {
+    size_t prefix_len = (size_t)(found - p);
+    memcpy(dst, p, prefix_len);
+    dst += prefix_len;
+    memcpy(dst, new_str, new_len);
+    dst += new_len;
+    p = found + old_len;
+  }
+  strcpy(dst, p);
+
+  *out = lcl_string_new(result);
+  free(result);
+  return LCL_RC_OK;
+}
+
 /* dict - ensemble command dispatcher */
 int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
            lcl_value **out) {
@@ -3426,7 +4147,19 @@ int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_ERR;
 }
 
+/* Helper to register a function in a namespace.
+ * Note: lcl_ns_def handles the refcount - it stores a ref in the hash table
+ * and then decrements the passed-in value. So we just pass through.
+ */
+static void ns_def(lcl_value *ns, const char *name, lcl_value *fn) {
+  lcl_ns_def(ns, name, fn);
+}
+
 void lcl_register_core(lcl_interp *interp) {
+  lcl_value *list_ns;
+  lcl_value *dict_ns;
+  lcl_value *string_ns;
+
   lcl_env_let_take(&interp->env, "puts", lcl_c_proc_new("puts", c_puts));
 
   /* Logical operators */
@@ -3437,7 +4170,7 @@ void lcl_register_core(lcl_interp *interp) {
   /* Math */
   lcl_env_let_take(&interp->env, "+",  lcl_c_proc_new("+", c_add));
   lcl_env_let_take(&interp->env, "-",  lcl_c_proc_new("-", c_sub));
-  lcl_env_let_take(&interp->env, "*",  lcl_c_proc_new("/", c_mult));
+  lcl_env_let_take(&interp->env, "*",  lcl_c_proc_new("*", c_mult));
   lcl_env_let_take(&interp->env, "/",  lcl_c_proc_new("/", c_div));
   lcl_env_let_take(&interp->env, "%",  lcl_c_proc_new("%", c_mod));
   lcl_env_let_take(&interp->env, "<",  lcl_c_proc_new("<", c_lt));
@@ -3450,17 +4183,35 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "!=",            lcl_c_proc_new("!=", c_ne));
   lcl_env_let_take(&interp->env, "same?",         lcl_c_proc_new("same?", c_same));
   lcl_env_let_take(&interp->env, "not-same?",     lcl_c_proc_new("not-same?", c_not_same));
-  lcl_env_let_take(&interp->env, "cell?",         lcl_c_proc_new("cell?", c_is_cell));
+
+  /* Generic type-directed operations */
+  lcl_env_let_take(&interp->env, "len",    lcl_c_proc_new("len", c_len));
+  lcl_env_let_take(&interp->env, "empty?", lcl_c_proc_new("empty?", c_empty));
+  lcl_env_let_take(&interp->env, "get",    lcl_c_proc_new("get", c_generic_get));
+  lcl_env_let_take(&interp->env, "put",    lcl_c_proc_new("put", c_put));
+  lcl_env_let_take(&interp->env, "del",    lcl_c_proc_new("del", c_del));
+  lcl_env_let_take(&interp->env, "has?",   lcl_c_proc_new("has?", c_has));
+
+  /* Type predicates */
+  lcl_env_let_take(&interp->env, "list?",   lcl_c_proc_new("list?", c_is_list));
+  lcl_env_let_take(&interp->env, "dict?",   lcl_c_proc_new("dict?", c_is_dict));
+  lcl_env_let_take(&interp->env, "string?", lcl_c_proc_new("string?", c_is_string));
+  lcl_env_let_take(&interp->env, "number?", lcl_c_proc_new("number?", c_is_number));
+  lcl_env_let_take(&interp->env, "int?",    lcl_c_proc_new("int?", c_is_int));
+  lcl_env_let_take(&interp->env, "float?",  lcl_c_proc_new("float?", c_is_float));
+  lcl_env_let_take(&interp->env, "cell?",   lcl_c_proc_new("cell?", c_is_cell));
+  lcl_env_let_take(&interp->env, "proc?",   lcl_c_proc_new("proc?", c_is_proc));
+
+  /* Bindings and cells */
+  lcl_env_let_take(&interp->env, "let",           lcl_c_proc_new("let", c_let));
+  lcl_env_let_take(&interp->env, "ref",           lcl_c_proc_new("ref", c_ref));
+  lcl_env_let_take(&interp->env, "getvar",        lcl_c_proc_new("getvar", c_get));
+  lcl_env_let_take(&interp->env, "var",           lcl_c_spec_new("var", s_var));
+  lcl_env_let_take(&interp->env, "set!",          lcl_c_spec_new("set!", s_set_bang));
   lcl_env_let_take(&interp->env, "binding-cell",  lcl_c_spec_new("binding-cell", s_binding_cell));
   lcl_env_let_take(&interp->env, "same-binding?", lcl_c_spec_new("same-binding?", s_same_binding));
 
-  lcl_env_let_take(&interp->env, "let",       lcl_c_proc_new("let", c_let));
-  lcl_env_let_take(&interp->env, "ref",       lcl_c_proc_new("ref", c_ref));
-  lcl_env_let_take(&interp->env, "ns",        lcl_c_proc_new("ns", c_ns));
-  lcl_env_let_take(&interp->env, "ns::def",   lcl_c_proc_new("ns::def", c_ns_def));
-  lcl_env_let_take(&interp->env, "get",       lcl_c_proc_new("get", c_get));
-  lcl_env_let_take(&interp->env, "var",       lcl_c_spec_new("var", s_var));
-  lcl_env_let_take(&interp->env, "set!",      lcl_c_spec_new("set!", s_set_bang));
+  /* Procedures and evaluation */
   lcl_env_let_take(&interp->env, "return",    lcl_c_spec_new("return", s_return));
   lcl_env_let_take(&interp->env, "lambda",    lcl_c_spec_new("lambda", s_lambda));
   lcl_env_let_take(&interp->env, "proc",      lcl_c_spec_new("proc", s_proc));
@@ -3477,17 +4228,47 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_env_let_take(&interp->env, "break",    lcl_c_spec_new("break", s_break));
   lcl_env_let_take(&interp->env, "continue", lcl_c_spec_new("continue", s_continue));
 
-  /* List commands */
-  lcl_env_let_take(&interp->env, "list",    lcl_c_proc_new("list", c_list));
-  lcl_env_let_take(&interp->env, "lindex",  lcl_c_proc_new("lindex", c_lindex));
-  lcl_env_let_take(&interp->env, "llength", lcl_c_proc_new("llength", c_llength));
-  lcl_env_let_take(&interp->env, "lrange",  lcl_c_proc_new("lrange", c_lrange));
-  lcl_env_let_take(&interp->env, "concat",  lcl_c_proc_new("concat", c_concat));
-  lcl_env_let_take(&interp->env, "join",    lcl_c_proc_new("join", c_join));
-  lcl_env_let_take(&interp->env, "split",   lcl_c_proc_new("split", c_split));
-  lcl_env_let_take(&interp->env, "lappend", lcl_c_spec_new("lappend", s_lappend));
-  lcl_env_let_take(&interp->env, "lset",    lcl_c_spec_new("lset", s_lset));
+  /* Constructors (ergonomic single-word forms) */
+  lcl_env_let_take(&interp->env, "list", lcl_c_proc_new("list", c_list));
+  lcl_env_let_take(&interp->env, "dict", lcl_c_proc_new("dict", c_dict_create_proc));
 
-  /* Dict command (ensemble) */
-  lcl_env_let_take(&interp->env, "dict", lcl_c_spec_new("dict", s_dict));
+  /* ========================================================================
+   * List:: namespace (capitalized to avoid conflict with constructor)
+   * ======================================================================== */
+  list_ns = lcl_ns_new("List");
+  lcl_env_let_take(&interp->env, "List", list_ns);
+
+  ns_def(list_ns, "new",     lcl_c_proc_new("List::new", c_list));
+  ns_def(list_ns, "push",    lcl_c_proc_new("List::push", c_list_push));
+  ns_def(list_ns, "pop",     lcl_c_proc_new("List::pop", c_list_pop));
+  ns_def(list_ns, "slice",   lcl_c_proc_new("List::slice", c_list_slice));
+  ns_def(list_ns, "concat",  lcl_c_proc_new("List::concat", c_list_concat));
+  ns_def(list_ns, "reverse", lcl_c_proc_new("List::reverse", c_list_reverse));
+  ns_def(list_ns, "index",   lcl_c_proc_new("List::index", c_lindex));
+  ns_def(list_ns, "range",   lcl_c_proc_new("List::range", c_lrange));
+
+  /* ========================================================================
+   * Dict:: namespace
+   * ======================================================================== */
+  dict_ns = lcl_ns_new("Dict");
+  lcl_env_let_take(&interp->env, "Dict", dict_ns);
+
+  ns_def(dict_ns, "new",    lcl_c_proc_new("Dict::new", c_dict_create_proc));
+  ns_def(dict_ns, "keys",   lcl_c_proc_new("Dict::keys", c_dict_keys));
+  ns_def(dict_ns, "values", lcl_c_proc_new("Dict::values", c_dict_values));
+  ns_def(dict_ns, "items",  lcl_c_proc_new("Dict::items", c_dict_items));
+  ns_def(dict_ns, "merge",  lcl_c_proc_new("Dict::merge", c_dict_merge));
+
+  /* ========================================================================
+   * String:: namespace
+   * ======================================================================== */
+  string_ns = lcl_ns_new("String");
+  lcl_env_let_take(&interp->env, "String", string_ns);
+
+  ns_def(string_ns, "upper",   lcl_c_proc_new("String::upper", c_string_upper));
+  ns_def(string_ns, "lower",   lcl_c_proc_new("String::lower", c_string_lower));
+  ns_def(string_ns, "find",    lcl_c_proc_new("String::find", c_string_find));
+  ns_def(string_ns, "replace", lcl_c_proc_new("String::replace", c_string_replace));
+  ns_def(string_ns, "split",   lcl_c_proc_new("String::split", c_split));
+  ns_def(string_ns, "join",    lcl_c_proc_new("String::join", c_join));
 }

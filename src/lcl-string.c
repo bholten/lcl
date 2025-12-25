@@ -52,10 +52,121 @@ static void lcl_reify_str_float(lcl_value *value) {
   memcpy(value->str_repr, buf, (size_t)m + 1);
 }
 
+/* Check if string needs bracing for Tcl-like list output */
+static int needs_braces(const char *s) {
+  if (!s || !*s) return 1;  /* empty string needs braces */
+  while (*s) {
+    char c = *s++;
+    if (c == ' ' || c == '\t' || c == '\n' || c == '{' || c == '}' ||
+        c == '[' || c == ']' || c == '$' || c == '"' || c == '\\') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void lcl_reify_str_list(lcl_value *value) {
+  size_t len = lcl_list_len(value);
+  size_t total = 0;
+  size_t i;
+  char *buf, *p;
+
+  /* Calculate total size needed */
+  for (i = 0; i < len; i++) {
+    lcl_value *elem = NULL;
+    const char *s;
+    if (lcl_list_get(value, i, &elem) != LCL_OK) continue;
+    s = lcl_value_to_string(elem);
+    total += strlen(s);
+    if (needs_braces(s)) total += 2;  /* for {} */
+    lcl_ref_dec(elem);
+  }
+  total += len;  /* for spaces */
+
+  buf = (char *)malloc(total + 1);
+  if (!buf) return;
+
+  p = buf;
+  for (i = 0; i < len; i++) {
+    lcl_value *elem = NULL;
+    const char *s;
+    size_t slen;
+    int braced;
+
+    if (i > 0) *p++ = ' ';
+
+    if (lcl_list_get(value, i, &elem) != LCL_OK) continue;
+    s = lcl_value_to_string(elem);
+    slen = strlen(s);
+    braced = needs_braces(s);
+
+    if (braced) *p++ = '{';
+    memcpy(p, s, slen);
+    p += slen;
+    if (braced) *p++ = '}';
+
+    lcl_ref_dec(elem);
+  }
+  *p = '\0';
+
+  value->str_repr = buf;
+}
+
+static void lcl_reify_str_dict(lcl_value *value) {
+  lcl_dict_it it = {0};
+  const char *key;
+  lcl_value *val;
+  size_t total = 0;
+  char *buf, *p;
+  int first = 1;
+
+  /* First pass: calculate size */
+  while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
+    const char *vs = lcl_value_to_string(val);
+    total += strlen(key) + strlen(vs) + 2;  /* key, value, spaces */
+    if (needs_braces(key)) total += 2;
+    if (needs_braces(vs)) total += 2;
+    lcl_ref_dec(val);
+  }
+
+  buf = (char *)malloc(total + 1);
+  if (!buf) return;
+
+  p = buf;
+  it.i = 0;
+  while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
+    const char *vs = lcl_value_to_string(val);
+    size_t klen = strlen(key);
+    size_t vlen = strlen(vs);
+    int kbraced = needs_braces(key);
+    int vbraced = needs_braces(vs);
+
+    if (!first) *p++ = ' ';
+    first = 0;
+
+    if (kbraced) *p++ = '{';
+    memcpy(p, key, klen);
+    p += klen;
+    if (kbraced) *p++ = '}';
+
+    *p++ = ' ';
+
+    if (vbraced) *p++ = '{';
+    memcpy(p, vs, vlen);
+    p += vlen;
+    if (vbraced) *p++ = '}';
+
+    lcl_ref_dec(val);
+  }
+  *p = '\0';
+
+  value->str_repr = buf;
+}
+
 const char *lcl_value_to_string(lcl_value *value) {
   if (!value) return "";
   if (!value->str_repr) {
-    switch (value->type) {      
+    switch (value->type) {
     case LCL_INT:
       lcl_reify_str_int(value);
       break;
@@ -64,12 +175,16 @@ const char *lcl_value_to_string(lcl_value *value) {
       break;
     case LCL_STRING:
       break;
+    case LCL_LIST:
+      lcl_reify_str_list(value);
+      break;
+    case LCL_DICT:
+      lcl_reify_str_dict(value);
+      break;
     default:
-      /** TODO list/dict pretty print later **/
+      /* PROC, CPROC, NS, CELL - not directly stringifiable */
       value->str_repr = (char *)malloc(4);
-
       if (!value->str_repr) return "";
-
       memcpy(value->str_repr, "<?>", 4);
       break;
     }

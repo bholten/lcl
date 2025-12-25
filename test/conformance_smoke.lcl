@@ -1,7 +1,6 @@
 # Lcl Conformance Smoke (MVP)
 # This script assumes the host registered the core stdlib:
 #   let, ref, var (sugar), set!, +, puts, lambda, proc, return
-# Optional: ns, ns::def, get
 
 puts "=== Lcl Conformance Smoke ==="
 
@@ -39,9 +38,12 @@ puts [$c]                      ;# expect: 12
 
 puts ""
 puts "-- namespaces (optional stdlib) --"
-let math [ns]
-ns::def $math ten 10
-puts [get math::ten]
+namespace eval math {
+    let ten 10
+}
+puts $math::ten
+# expect: 10
+puts ${math::ten}
 # expect: 10
 
 puts ""
@@ -96,7 +98,7 @@ puts "-- namespace eval --"
 namespace eval myns {
   let val 100
 }
-puts [get myns::val]           ;# expect: 100
+puts $myns::val                ;# expect: 100
 
 # define procs in namespace
 namespace eval funcs {
@@ -111,13 +113,13 @@ namespace eval funcs {
 namespace eval outer::inner::leaf {
   let deep 42
 }
-puts [get outer::inner::leaf::deep]  ;# expect: 42
+puts $outer::inner::leaf::deep       ;# expect: 42
 
 # multiple evals on same namespace
 namespace eval ns1 { let x 1 }
 namespace eval ns1 { let y 2 }
-puts [get ns1::x]              ;# expect: 1
-puts [get ns1::y]              ;# expect: 2
+puts $ns1::x                   ;# expect: 1
+puts $ns1::y                   ;# expect: 2
 
 puts ""
 puts "-- load --"
@@ -131,117 +133,115 @@ namespace eval imported {
   load test/conformance_lib.lcl
 }
 puts [imported::lib_add 5 5]   ;# expect: 10
-puts [get imported::LIB_CONST] ;# expect: 42
+puts $imported::LIB_CONST      ;# expect: 42
 
 puts ""
 puts "-- list operations --"
 # list creation and length
 let mylist [list a b c d e]
-puts [llength $mylist]         ;# expect: 5
+puts [len $mylist]             ;# expect: 5
 
-# lindex - get elements
-puts [lindex $mylist 0]        ;# expect: a
-puts [lindex $mylist 2]        ;# expect: c
-puts [lindex $mylist 4]        ;# expect: e
+# get - get elements by index
+puts [get $mylist 0]           ;# expect: a
+puts [get $mylist 2]           ;# expect: c
+puts [get $mylist 4]           ;# expect: e
 
-# lindex - out of bounds returns empty
-puts [lindex $mylist 99]       ;# expect: (empty)
+# List::slice - extract slice
+let slice [List::slice $mylist 1 4]
+puts [len $slice]              ;# expect: 3
+puts [get $slice 0]            ;# expect: b
+puts [get $slice 2]            ;# expect: d
 
-# lrange - extract slice
-let slice [lrange $mylist 1 3]
-puts [llength $slice]          ;# expect: 3
-puts [lindex $slice 0]         ;# expect: b
-puts [lindex $slice 2]         ;# expect: d
-
-# concat - concatenate lists
+# List::concat - concatenate lists
 let list1 [list 1 2]
 let list2 [list 3 4]
-let combined [concat $list1 $list2]
-puts [llength $combined]       ;# expect: 4
-puts [lindex $combined 0]      ;# expect: 1
-puts [lindex $combined 3]      ;# expect: 4
+let combined [List::concat $list1 $list2]
+puts [len $combined]           ;# expect: 4
+puts [get $combined 0]         ;# expect: 1
+puts [get $combined 3]         ;# expect: 4
 
-# join - join with separator
-puts [join $mylist -]          ;# expect: a-b-c-d-e
-puts [join $mylist {}]         ;# expect: abcde
+# String::join - join list with separator
+puts [String::join $mylist -]  ;# expect: a-b-c-d-e
+puts [String::join $mylist {}] ;# expect: abcde
 
-# split - split string into list
-let parts [split "hello,world,test" ","]
-puts [llength $parts]          ;# expect: 3
-puts [lindex $parts 0]         ;# expect: hello
-puts [lindex $parts 1]         ;# expect: world
-puts [lindex $parts 2]         ;# expect: test
+# String::split - split string into list
+let parts [String::split "hello,world,test" ","]
+puts [len $parts]              ;# expect: 3
+puts [get $parts 0]            ;# expect: hello
+puts [get $parts 1]            ;# expect: world
+puts [get $parts 2]            ;# expect: test
 
-# lappend - append to cell-bound list
-var nums [list 1 2 3]
-lappend nums 4 5
-puts [llength $nums]           ;# expect: 5
-puts [lindex $nums 3]          ;# expect: 4
-puts [lindex $nums 4]          ;# expect: 5
+# List::push - append to list (functional style)
+let nums [list 1 2 3]
+let nums [List::push $nums 4]
+let nums [List::push $nums 5]
+puts [len $nums]               ;# expect: 5
+puts [get $nums 3]             ;# expect: 4
+puts [get $nums 4]             ;# expect: 5
 
-# lset - modify element in cell-bound list
-var items [list a b c]
-lset items 1 B
-puts [lindex $items 0]         ;# expect: a
-puts [lindex $items 1]         ;# expect: B
-puts [lindex $items 2]         ;# expect: c
+# put - modify element (functional style)
+let items [list a b c]
+let items [put $items 1 B]
+puts [get $items 0]            ;# expect: a
+puts [get $items 1]            ;# expect: B
+puts [get $items 2]            ;# expect: c
 
 # nested list indexing
 let nested [list [list x y] [list z w]]
-puts [lindex $nested 0 0]      ;# expect: x
-puts [lindex $nested 0 1]      ;# expect: y
-puts [lindex $nested 1 0]      ;# expect: z
+puts [get [get $nested 0] 0]   ;# expect: x
+puts [get [get $nested 0] 1]   ;# expect: y
+puts [get [get $nested 1] 0]   ;# expect: z
 
 puts ""
 puts "-- dict operations --"
 # dict create and size
-let d [dict create a 1 b 2 c 3]
-puts [dict size $d]            ;# expect: 3
+let d [dict a 1 b 2 c 3]
+puts [len $d]                  ;# expect: 3
 
-# dict get
-puts [dict get $d a]           ;# expect: 1
-puts [dict get $d b]           ;# expect: 2
-puts [dict get $d c]           ;# expect: 3
+# get - access by key
+puts [get $d a]                ;# expect: 1
+puts [get $d b]                ;# expect: 2
+puts [get $d c]                ;# expect: 3
 
-# dict exists
-puts [dict exists $d a]        ;# expect: 1
-puts [dict exists $d missing]  ;# expect: 0
+# has? - check key existence
+puts [has? $d a]               ;# expect: 1
+puts [has? $d missing]         ;# expect: 0
 
-# dict keys (order may vary, but count should be 3)
-let ks [dict keys $d]
-puts [llength $ks]             ;# expect: 3
+# Dict::keys (order may vary, but count should be 3)
+let ks [Dict::keys $d]
+puts [len $ks]                 ;# expect: 3
 
-# dict values (order may vary, but count should be 3)
-let vs [dict values $d]
-puts [llength $vs]             ;# expect: 3
+# Dict::values (order may vary, but count should be 3)
+let vs [Dict::values $d]
+puts [len $vs]                 ;# expect: 3
 
-# dict set on cell-bound dict
-var md [dict create x 10]
-dict set md x 20
-puts [dict get $md x]          ;# expect: 20
+# put - functional update
+var md [dict x 10]
+set! md [put $md x 20]
+puts [get $md x]               ;# expect: 20
 
-# dict set adds new key
-dict set md y 30
-puts [dict get $md y]          ;# expect: 30
-puts [dict size $md]           ;# expect: 2
+# put adds new key
+set! md [put $md y 30]
+puts [get $md y]               ;# expect: 30
+puts [len $md]                 ;# expect: 2
 
-# dict unset
-dict unset md x
-puts [dict size $md]           ;# expect: 1
-puts [dict exists $md x]       ;# expect: 0
+# del - functional remove
+set! md [del $md x]
+puts [len $md]                 ;# expect: 1
+puts [has? $md x]              ;# expect: 0
 
 # empty dict
-let empty [dict create]
-puts [dict size $empty]        ;# expect: 0
+let empty [dict]
+puts [len $empty]              ;# expect: 0
 
-# nested dict get with multiple keys
-let nested [dict create outer [dict create inner 42]]
-puts [dict get $nested outer inner]  ;# expect: 42
+# nested dict get
+let nested [dict outer [dict inner 42]]
+puts [get [get $nested outer] inner]  ;# expect: 42
 
-# dict set nested
-var nd [dict create outer [dict create inner 0]]
-dict set nd outer inner 99
-puts [dict get $nd outer inner]      ;# expect: 99
+# nested dict update
+var nd [dict outer [dict inner 0]]
+set! nd [put $nd outer [put [get $nd outer] inner 99]]
+puts [get [get $nd outer] inner]      ;# expect: 99
 
 puts ""
 puts "-- if/elseif/else --"
@@ -425,9 +425,9 @@ puts [== $eq_l1 $eq_l2]              ;# expect: 1
 puts [== $eq_l1 $eq_l3]              ;# expect: 0
 
 # Dict deep equality
-let eq_d1 [dict create a 1 b 2]
-let eq_d2 [dict create a 1 b 2]
-let eq_d3 [dict create a 1 b 3]
+let eq_d1 [dict a 1 b 2]
+let eq_d2 [dict a 1 b 2]
+let eq_d3 [dict a 1 b 3]
 puts [== $eq_d1 $eq_d2]              ;# expect: 1
 puts [== $eq_d1 $eq_d3]              ;# expect: 0
 
@@ -460,11 +460,11 @@ let eq_pcell [binding-cell eq_p]
 let eq_pcell2 [binding-cell eq_p]
 puts [same? $eq_pcell $eq_pcell2]    ;# expect: 1
 
-# Proc identity via get
+# Proc identity via getvar
 proc eq_f {} { 1 }
 proc eq_g {} { 1 }
-let eq_fp [get eq_f]
-let eq_gp [get eq_g]
+let eq_fp [getvar eq_f]
+let eq_gp [getvar eq_g]
 puts [== $eq_fp $eq_gp]              ;# expect: 0
 puts [same? $eq_fp $eq_fp]           ;# expect: 1
 
@@ -483,7 +483,7 @@ puts "reached=$ecf_target"           ;# expect: ecf_i=5 ecf_i=4 ecf_i=3 reached=
 # for loop building list, then compare
 var ecf_built [list]
 for {var ecf_j 1} {[!= $ecf_j 4]} {set! ecf_j [+ $ecf_j 1]} {
-  lappend ecf_built $ecf_j
+  set! ecf_built [List::push $ecf_built $ecf_j]
 }
 let ecf_expected [list 1 2 3]
 puts [== $ecf_built $ecf_expected]   ;# expect: 1
@@ -503,7 +503,7 @@ puts "found=$ecf_found"              ;# expect: found=1
 var ecf_kept [list]
 foreach ecf_x [list a skip b skip c] {
   if [!= $ecf_x skip] {
-    lappend ecf_kept $ecf_x
+    set! ecf_kept [List::push $ecf_kept $ecf_x]
   }
 }
 puts [== $ecf_kept [list a b c]]     ;# expect: 1
@@ -536,8 +536,8 @@ puts "cell_count=$ecf_cell_count"    ;# expect: cell_count=0
 let ecf_a [list 1 2 3 4]
 let ecf_b [list 1 2 9 4]
 var ecf_diff_idx -1
-for {var ecf_k 0} {[!= $ecf_k [llength $ecf_a]]} {set! ecf_k [+ $ecf_k 1]} {
-  if [!= [lindex $ecf_a $ecf_k] [lindex $ecf_b $ecf_k]] {
+for {var ecf_k 0} {[!= $ecf_k [len $ecf_a]]} {set! ecf_k [+ $ecf_k 1]} {
+  if [!= [get $ecf_a $ecf_k] [get $ecf_b $ecf_k]] {
     set! ecf_diff_idx $ecf_k
     break
   }
@@ -551,7 +551,7 @@ var ecf_common [list]
 foreach ecf_s1 $ecf_set1 {
   foreach ecf_s2 $ecf_set2 {
     if [== $ecf_s1 $ecf_s2] {
-      lappend ecf_common $ecf_s1
+      set! ecf_common [List::push $ecf_common $ecf_s1]
       break
     }
   }
@@ -559,11 +559,11 @@ foreach ecf_s1 $ecf_set1 {
 puts [== $ecf_common [list c d]]     ;# expect: 1
 
 # while loop with dict equality
-var ecf_d [dict create count 0]
-while [!= [dict get $ecf_d count] 3] {
-  dict set ecf_d count [+ [dict get $ecf_d count] 1]
+var ecf_d [dict count 0]
+while [!= [get $ecf_d count] 3] {
+  set! ecf_d [put $ecf_d count [+ [get $ecf_d count] 1]]
 }
-puts [dict get $ecf_d count]         ;# expect: 3
+puts [get $ecf_d count]              ;# expect: 3
 
 # continue with equality check
 var ecf_sum 0
@@ -693,12 +693,12 @@ puts $sc_for_i                       ;# expect: 3 (final value)
 # All closures capture the SAME binding, which has final value
 var sc_closures [list]
 foreach sc_iter_val [list 1 2 3] {
-  lappend sc_closures [lambda {} { $sc_iter_val }]
+  set! sc_closures [List::push $sc_closures [lambda {} { $sc_iter_val }]]
 }
 # All see the final value because they share the binding
-puts [[lindex $sc_closures 0]]       ;# expect: 3
-puts [[lindex $sc_closures 1]]       ;# expect: 3
-puts [[lindex $sc_closures 2]]       ;# expect: 3
+puts [[get $sc_closures 0]]          ;# expect: 3
+puts [[get $sc_closures 1]]          ;# expect: 3
+puts [[get $sc_closures 2]]          ;# expect: 3
 
 # Evil: deeply nested scope chain
 let sc_deep0 d0

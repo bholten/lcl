@@ -99,10 +99,14 @@ lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it, const char 
                   lcl_value **value) {
   const lcl_value *dict = *dict_io;
   hash_iter hit;
+  int found;
 
   if (dict->type != LCL_DICT) return LCL_ERROR;
 
   hit.i = it->i;
 
-  return hash_table_iterate(dict->as.dict.dictionary, &hit, key, value);
+  found = hash_table_iterate(dict->as.dict.dictionary, &hit, key, value);
+  it->i = hit.i;  /* Save iterator position */
+
+  return found ? LCL_OK : LCL_ERROR;
 }

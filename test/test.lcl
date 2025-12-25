@@ -177,14 +177,14 @@ puts "add11 5 => [$add11 5]"
 puts "Tcl-style builder pattern"
 
 proc GET {url body} {
-    var request [dict create url $url]
+    var request [dict url $url]
 
     proc method {m} {
-      dict set request method $m
+      set! request [put $request method $m]
     }
 
     proc timeout {t} {
-        dict set request timeout $t
+      set! request [put $request timeout $t]
     }
 
     eval $body
@@ -208,19 +208,26 @@ foreach val [dict values $request] {
 }
 
 puts "== namespace tests =="
-
-let math [ns]
-ns::def $math ten 10
-
-puts [get math::ten] ; # expect 10
+namespace eval math {
+    let ten 10
+}
 
 namespace eval math {
     puts $ten
 } ; # expect 10
 
-puts $math::ten ; # eexpect 10
+puts $math::ten ; # expect 10
+puts ${math::ten} ; # expect 10
 
-# TODO this is not working but should:
-# puts ${math::ten}
+namespace eval foo {
+    let eleven 11
+}
+
+puts $foo::eleven ; # expect 11
+puts ${foo::eleven} ; # expect 11
+
+namespace eval foo {
+    puts $eleven ; # expect 11
+}
 
 puts "== done =="
