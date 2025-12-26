@@ -309,7 +309,6 @@ int c_gte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
  * Equality operators
  * ============================================================================ */
 
-/* Cycle guard for deep equality - simple stack of visited pointer pairs */
 #define EQ_STACK_MAX 256
 
 typedef struct {
@@ -320,29 +319,33 @@ typedef struct {
 
 static int eq_cycle_guard_check(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
   int i;
+
   for (i = 0; i < g->depth; i++) {
     if (g->a[i] == a && g->b[i] == b) return 1;
     if (g->a[i] == b && g->b[i] == a) return 1;
   }
+
   return 0;
 }
 
 static int eq_cycle_guard_push(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
   if (g->depth >= EQ_STACK_MAX) return 0;
+
   g->a[g->depth] = a;
   g->b[g->depth] = b;
   g->depth++;
+
   return 1;
 }
 
 static void eq_cycle_guard_pop(eq_cycle_guard *g) {
-  if (g->depth > 0) g->depth--;
+  if (g->depth > 0) {
+    g->depth--;
+  }
 }
 
-/* Forward declaration for recursive equality */
 static int lcl_value_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard);
 
-/* Deref one level of cell */
 static lcl_value *deref_once(lcl_value *v) {
   if (v && v->type == LCL_CELL) {
     return v->as.cell.inner;
@@ -350,38 +353,44 @@ static lcl_value *deref_once(lcl_value *v) {
   return v;
 }
 
-/* Deep equality for lists */
 static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
-  size_t len_a, len_b, i;
-  lcl_value *elem_a, *elem_b;
+  size_t len_a;
+  size_t len_b;
+  size_t i;
+  lcl_value *elem_a;
+  lcl_value *elem_b;
   int result;
 
   len_a = lcl_list_len(a);
   len_b = lcl_list_len(b);
+
   if (len_a != len_b) return 0;
 
   for (i = 0; i < len_a; i++) {
     if (lcl_list_get(a, i, &elem_a) != LCL_OK) return 0;
+    
     if (lcl_list_get(b, i, &elem_b) != LCL_OK) {
       lcl_ref_dec(elem_a);
       return 0;
     }
+    
     result = lcl_value_equal_deep(elem_a, elem_b, guard);
+
     lcl_ref_dec(elem_a);
     lcl_ref_dec(elem_b);
+
     if (!result) return 0;
   }
+
   return 1;
 }
 
-/* Deep equality for dicts */
 static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val_a, *val_b;
   int result;
 
-  /* Check same size */
   if (lcl_dict_len(a) != lcl_dict_len(b)) return 0;
 
   /* Check all keys in a exist in b with equal values */
@@ -390,35 +399,45 @@ static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
       lcl_ref_dec(val_a);
       return 0;
     }
+    
     result = lcl_value_equal_deep(val_a, val_b, guard);
+
     lcl_ref_dec(val_a);
     lcl_ref_dec(val_b);
+
     if (!result) return 0;
   }
+
   return 1;
 }
 
-/* Helper: check if a value can be interpreted as a number and get its double value */
+/* check if a value can be interpreted as a number and get its double value */
 static int value_to_double(lcl_value *v, double *out) {
   if (v->type == LCL_INT) {
     *out = (double)v->as.i;
     return 1;
   }
+  
   if (v->type == LCL_FLOAT) {
     *out = (double)v->as.f;
     return 1;
   }
+
   if (v->type == LCL_STRING) {
     const char *s = lcl_value_to_string(v);
     char *endptr;
     double d;
+
     if (!s || *s == '\0') return 0;
+
     d = strtod(s, &endptr);
+
     if (*endptr == '\0') {
       *out = d;
       return 1;
     }
   }
+  
   return 0;
 }
 
@@ -438,7 +457,8 @@ static int lcl_value_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guar
 
   /* Handle numeric comparisons with promotion (including string-to-number) */
   {
-    double da, db;
+    double da;
+    double db;
     int a_is_num = value_to_double(a, &da);
     int b_is_num = value_to_double(b, &db);
 
@@ -576,9 +596,12 @@ int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args, lcl_valu
 
 /* same-binding? name1 name2 : check if two bindings refer to the same cell */
 int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
-  lcl_value *name1_v = NULL, *name2_v = NULL;
-  lcl_value *binding1 = NULL, *binding2 = NULL;
-  const char *name1, *name2;
+  lcl_value *name1_v = NULL;
+  lcl_value *name2_v = NULL;
+  lcl_value *binding1 = NULL;
+  lcl_value *binding2 = NULL;
+  const char *name1;
+  const char *name2;
   int same;
 
   if (argc != 2) return LCL_RC_ERR;
@@ -601,6 +624,7 @@ int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args, lcl_valu
     lcl_ref_dec(name2_v);
     return LCL_RC_ERR;
   }
+
   if (lcl_env_get_value(&interp->env, name2, &binding2) != LCL_OK) {
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
@@ -643,6 +667,7 @@ int c_let(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
 int c_ref(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
 
   *out = lcl_cell_new(argv[0]);
@@ -665,6 +690,7 @@ int c_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       lcl_ref_dec(val);
       return LCL_RC_ERR;
     }
+
     lcl_ref_dec(val);
   } else {
     *out = val;
@@ -780,7 +806,7 @@ int s_continue(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **
   return LCL_RC_CONTINUE;
 }
 
-/* Helper: check if a value is "truthy" (non-zero number or non-empty string) */
+/* check if a value is "truthy" (non-zero number or non-empty string) */
 static int lcl_value_is_true(lcl_value *v) {
   const char *s;
   long n;
@@ -930,11 +956,14 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out
   /* If test is braced, compile it as a script to evaluate each iteration */
   if (test_is_braced) {
     lcl_value *test_v = NULL;
+
     if (lcl_eval_word_to_str(interp, args[0], &test_v) != LCL_RC_OK) {
       return LCL_RC_ERR;
     }
+
     test_p = lcl_program_compile(lcl_value_to_string(test_v), "<while-test>");
     lcl_ref_dec(test_v);
+
     if (!test_p) {
       return LCL_RC_ERR;
     }
@@ -943,12 +972,16 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out
   /* Compile body script */
   if (lcl_eval_word_to_str(interp, args[1], &body_v) != LCL_RC_OK) {
     if (test_p) lcl_program_free(test_p);
+
     return LCL_RC_ERR;
   }
+
   body_p = lcl_program_compile(lcl_value_to_string(body_v), "<while-body>");
   lcl_ref_dec(body_v);
+
   if (!body_p) {
     if (test_p) lcl_program_free(test_p);
+
     return LCL_RC_ERR;
   }
 
@@ -960,17 +993,22 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out
     /* Evaluate test each iteration */
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);
+
       if (rc != LCL_RC_OK) {
         lcl_program_free(test_p);
         lcl_program_free(body_p);
+
         if (last) lcl_ref_dec(last);
+
         return rc;
       }
     } else {
       /* Non-braced: evaluate word directly (handles $var) */
       if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
         lcl_program_free(body_p);
+
         if (last) lcl_ref_dec(last);
+
         return LCL_RC_ERR;
       }
     }
@@ -1000,22 +1038,30 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out
 
     if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
       if (test_p) lcl_program_free(test_p);
+
       lcl_program_free(body_p);
+
       if (last) lcl_ref_dec(last);
+
       return rc;
     }
 
     if (rc == LCL_RC_RETURN) {
       if (test_p) lcl_program_free(test_p);
+
       lcl_program_free(body_p);
       *out = last;
+
       return LCL_RC_RETURN;
     }
   }
 
   if (test_p) lcl_program_free(test_p);
+
   lcl_program_free(body_p);
+
   *out = last ? last : lcl_string_new("");
+
   return LCL_RC_OK;
 }
 
@@ -1043,8 +1089,10 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
   if (lcl_eval_word_to_str(interp, args[0], &start_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
+
   start_p = lcl_program_compile(lcl_value_to_string(start_v), "<for-start>");
   lcl_ref_dec(start_v);
+
   if (!start_p) {
     return LCL_RC_ERR;
   }
@@ -1052,12 +1100,15 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
   /* If test is braced, compile it as a script to evaluate each iteration */
   if (test_is_braced) {
     lcl_value *test_v = NULL;
+
     if (lcl_eval_word_to_str(interp, args[1], &test_v) != LCL_RC_OK) {
       lcl_program_free(start_p);
       return LCL_RC_ERR;
     }
+
     test_p = lcl_program_compile(lcl_value_to_string(test_v), "<for-test>");
     lcl_ref_dec(test_v);
+
     if (!test_p) {
       lcl_program_free(start_p);
       return LCL_RC_ERR;
@@ -1067,41 +1118,59 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
   /* Compile next script (args[2]) */
   if (lcl_eval_word_to_str(interp, args[2], &next_v) != LCL_RC_OK) {
     lcl_program_free(start_p);
+
     if (test_p) lcl_program_free(test_p);
+
     return LCL_RC_ERR;
   }
+
   next_p = lcl_program_compile(lcl_value_to_string(next_v), "<for-next>");
   lcl_ref_dec(next_v);
+
   if (!next_p) {
     lcl_program_free(start_p);
+
     if (test_p) lcl_program_free(test_p);
+
     return LCL_RC_ERR;
   }
 
   /* Compile body script (args[3]) */
   if (lcl_eval_word_to_str(interp, args[3], &body_v) != LCL_RC_OK) {
     lcl_program_free(start_p);
+
     if (test_p) lcl_program_free(test_p);
+
     lcl_program_free(next_p);
+
     return LCL_RC_ERR;
   }
+
   body_p = lcl_program_compile(lcl_value_to_string(body_v), "<for-body>");
   lcl_ref_dec(body_v);
+
   if (!body_p) {
     lcl_program_free(start_p);
+
     if (test_p) lcl_program_free(test_p);
+
     lcl_program_free(next_p);
+
     return LCL_RC_ERR;
   }
 
   /* Execute start script once */
   rc = lcl_eval_program(interp, start_p, &tmp);
   lcl_program_free(start_p);
+
   if (tmp) lcl_ref_dec(tmp);
+
   if (rc != LCL_RC_OK) {
     if (test_p) lcl_program_free(test_p);
+
     lcl_program_free(body_p);
     lcl_program_free(next_p);
+
     return rc;
   }
 
@@ -1113,11 +1182,14 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
     /* Evaluate test each iteration */
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);
+
       if (rc != LCL_RC_OK) {
         lcl_program_free(test_p);
         lcl_program_free(body_p);
         lcl_program_free(next_p);
+
         if (last) lcl_ref_dec(last);
+
         return rc;
       }
     } else {
@@ -1125,7 +1197,9 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
       if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
         lcl_program_free(body_p);
         lcl_program_free(next_p);
+
         if (last) lcl_ref_dec(last);
+
         return LCL_RC_ERR;
       }
     }
@@ -1153,50 +1227,71 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) 
       /* Still execute next before continuing */
       tmp = NULL;
       rc = lcl_eval_program(interp, next_p, &tmp);
+
       if (tmp) lcl_ref_dec(tmp);
+
       if (rc != LCL_RC_OK && rc != LCL_RC_CONTINUE) {
         if (test_p) lcl_program_free(test_p);
+
         lcl_program_free(body_p);
         lcl_program_free(next_p);
+
         if (last) lcl_ref_dec(last);
+
         return rc;
       }
+
       continue;
     }
 
     if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
       if (test_p) lcl_program_free(test_p);
+
       lcl_program_free(body_p);
       lcl_program_free(next_p);
+
       if (last) lcl_ref_dec(last);
+
       return rc;
     }
 
     if (rc == LCL_RC_RETURN) {
+
       if (test_p) lcl_program_free(test_p);
+
       lcl_program_free(body_p);
       lcl_program_free(next_p);
+
       *out = last;
+
       return LCL_RC_RETURN;
     }
 
     /* Execute next script */
     tmp = NULL;
     rc = lcl_eval_program(interp, next_p, &tmp);
+
     if (tmp) lcl_ref_dec(tmp);
+
     if (rc != LCL_RC_OK) {
       if (test_p) lcl_program_free(test_p);
+
       lcl_program_free(body_p);
       lcl_program_free(next_p);
+
       if (last) lcl_ref_dec(last);
+
       return rc;
     }
   }
 
   if (test_p) lcl_program_free(test_p);
+
   lcl_program_free(body_p);
   lcl_program_free(next_p);
+
   *out = last ? last : lcl_string_new("");
+
   return LCL_RC_OK;
 }
 
@@ -1219,11 +1314,13 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
   if (lcl_eval_word_to_str(interp, args[0], &varname_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
+
   varname = lcl_value_to_string(varname_v);
 
   /* Evaluate the list */
   if (lcl_eval_word(interp, args[1], &list_v) != LCL_RC_OK) {
     lcl_ref_dec(varname_v);
+
     return LCL_RC_ERR;
   }
 
@@ -1231,10 +1328,13 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
   if (list_v->type != LCL_LIST) {
     lcl_value *parsed = lcl_list_new_from_cwords(lcl_value_to_string(list_v));
     lcl_ref_dec(list_v);
+
     if (!parsed) {
       lcl_ref_dec(varname_v);
+
       return LCL_RC_ERR;
     }
+    
     list_v = parsed;
   }
 
@@ -1242,13 +1342,17 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
   if (lcl_eval_word_to_str(interp, args[2], &body_v) != LCL_RC_OK) {
     lcl_ref_dec(varname_v);
     lcl_ref_dec(list_v);
+
     return LCL_RC_ERR;
   }
+
   body_p = lcl_program_compile(lcl_value_to_string(body_v), "<foreach>");
   lcl_ref_dec(body_v);
+
   if (!body_p) {
     lcl_ref_dec(varname_v);
     lcl_ref_dec(list_v);
+
     return LCL_RC_ERR;
   }
 
@@ -1262,7 +1366,9 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       lcl_program_free(body_p);
+
       if (last) lcl_ref_dec(last);
+
       return LCL_RC_ERR;
     }
 
@@ -1272,9 +1378,12 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       lcl_program_free(body_p);
+
       if (last) lcl_ref_dec(last);
+
       return LCL_RC_ERR;
     }
+
     lcl_ref_dec(elem);  /* env_let increments refcount */
 
     /* Execute body */
@@ -1297,7 +1406,9 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       lcl_program_free(body_p);
+
       if (last) lcl_ref_dec(last);
+
       return rc;
     }
 
@@ -1305,7 +1416,9 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       lcl_program_free(body_p);
+
       *out = last;
+
       return LCL_RC_RETURN;
     }
   }
@@ -1313,7 +1426,9 @@ int s_foreach(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **o
   lcl_ref_dec(varname_v);
   lcl_ref_dec(list_v);
   lcl_program_free(body_p);
+
   *out = last ? last : lcl_string_new("");
+
   return LCL_RC_OK;
 }
 
@@ -1347,6 +1462,7 @@ lcl_value *lcl_list_new_from_cwords(const char *words) {
 
       if (!word) {
         lcl_ref_dec(list);
+
         return NULL;
       }
 
@@ -1357,12 +1473,14 @@ lcl_value *lcl_list_new_from_cwords(const char *words) {
 
       if (!val) {
         lcl_ref_dec(list);
+
         return NULL;
       }
 
       if (lcl_list_push(&list, val) != LCL_OK) {
         lcl_ref_dec(val);
         lcl_ref_dec(list);
+
         return NULL;
       }
 
@@ -1403,6 +1521,7 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **ou
 
   if (!body_p) {
     lcl_ref_dec(params_list);
+
     return LCL_RC_ERR;
   }
 
@@ -1435,7 +1554,7 @@ static int is_name_start(int c) {
           (c >= 'A' && c <= 'Z'));
 }
 
-/* Helper: append n bytes to a dynamic buffer */
+/* append n bytes to a dynamic buffer */
 static int buf_append(char **buf, size_t *len, size_t *cap,
                       const char *s, size_t n) {
   if (*len + n + 1 > *cap) {
@@ -1464,7 +1583,7 @@ static int buf_append_char(char **buf, size_t *len, size_t *cap, char c) {
   return buf_append(buf, len, cap, &c, 1);
 }
 
-/* Helper: resolve or create a namespace path like "a::b::c".
+/* resolve or create a namespace path like "a::b::c".
  * Creates intermediate namespaces as needed.
  * Returns the final namespace with +1 refcount, or NULL on error. */
 static lcl_value *resolve_or_create_ns_path(lcl_interp *interp, const char *path) {
@@ -2113,7 +2232,7 @@ int s_eval(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out)
   return rc;
 }
 
-/* Helper: read entire file into a malloc'd string */
+/* Read entire file into a malloc'd string */
 static char *read_file(const char *path, size_t *out_len) {
   FILE *f;
   long len;
@@ -2240,7 +2359,7 @@ int s_load(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out)
   return rc;
 }
 
-/* Helper: find the end of a callable expression starting with [ */
+/* find the end of a callable expression starting with [ */
 static const char *find_bracket_end(const char *s) {
   int depth = 1;
   s++;  /* skip initial [ */
@@ -2307,6 +2426,7 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
       cmd_end = find_bracket_end(form);
       cmd_len = (size_t)(cmd_end - form);
       rest = cmd_end;
+
       while (*rest == ' ' || *rest == '\t') rest++;
 
       /* Build: [callable $_thread_ rest] */
@@ -2315,6 +2435,7 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
       if (!threaded) {
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
       if (*rest) {
@@ -2325,21 +2446,27 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
     } else if (form[0] == '$') {
       /* Variable reference - find end of variable name */
       cmd_end = form + 1;
+
       while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
         cmd_end++;
       }
+
       cmd_len = (size_t)(cmd_end - form);
       rest = cmd_end;
+
       while (*rest == ' ' || *rest == '\t') rest++;
 
       /* Build: [$var $_thread_ rest] */
       total = 1 + cmd_len + 11 + strlen(rest) + 2;
       threaded = (char *)malloc(total);
+
       if (!threaded) {
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
+
       if (*rest) {
         sprintf(threaded, "[%.*s $_thread_ %s]", (int)cmd_len, form, rest);
       } else {
@@ -2348,21 +2475,27 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
     } else {
       /* Normal command name */
       cmd_end = form;
+
       while (*cmd_end && *cmd_end != ' ' && *cmd_end != '\t' && *cmd_end != '\n') {
         cmd_end++;
       }
+
       cmd_len = (size_t)(cmd_end - form);
       rest = cmd_end;
+
       while (*rest == ' ' || *rest == '\t') rest++;
 
       /* Build: cmd $_thread_ rest */
       total = cmd_len + 12 + strlen(rest) + 1;
       threaded = (char *)malloc(total);
+
       if (!threaded) {
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
+
       if (*rest) {
         sprintf(threaded, "%.*s $_thread_ %s", (int)cmd_len, form, rest);
       } else {
@@ -2379,6 +2512,7 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(current);
+
       return rc;
     }
 
@@ -2411,6 +2545,7 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
   /* Evaluate first argument to get initial value */
   rc = lcl_eval_word(interp, args[0], &current);
+
   if (rc != LCL_RC_OK) return rc;
 
   /* For each subsequent form, thread the current value as last arg */
@@ -2425,8 +2560,10 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
     /* Evaluate the word to get the form string (should be braced) */
     rc = lcl_eval_word_to_str(interp, args[i], &form_v);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(current);
+
       return rc;
     }
 
@@ -2437,9 +2574,11 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
       /* Build: [form $_thread_] */
       total = 1 + strlen(form) + 11 + 1;
       threaded = (char *)malloc(total);
+
       if (!threaded) {
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
       sprintf(threaded, "[%s $_thread_]", form);
@@ -2447,9 +2586,11 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
       /* Normal command: "form $_thread_" (append at end) */
       total = strlen(form) + 11 + 1;  /* 11 = " $_thread_" */
       threaded = (char *)malloc(total);
+
       if (!threaded) {
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
       sprintf(threaded, "%s $_thread_", form);
@@ -2464,6 +2605,7 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(current);
+
       return rc;
     }
 
@@ -2553,6 +2695,7 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   /* No index - return the list itself */
   if (argc == 1) {
     *out = lcl_ref_inc(list);
+
     return LCL_RC_OK;
   }
 
@@ -2565,10 +2708,12 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       }
       if (idx == 0) {
         *out = lcl_ref_inc(list);
+
         return LCL_RC_OK;
       }
       /* Out of bounds - return empty string (Tcl behavior) */
       *out = lcl_string_new("");
+
       return LCL_RC_OK;
     }
 
@@ -2579,6 +2724,7 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     /* Handle negative index or end-based index */
     if (idx < 0) {
       *out = lcl_string_new("");
+
       return LCL_RC_OK;
     }
 
@@ -2586,6 +2732,7 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       /* Out of bounds - return empty string (Tcl behavior) */
       *out = lcl_string_new("");
     }
+
     return LCL_RC_OK;
   }
 
@@ -2600,25 +2747,31 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       if (current->type != LCL_LIST) {
         if (lcl_value_to_int(argv[i], &idx) != LCL_OK) {
           lcl_ref_dec(current);
+
           return LCL_RC_ERR;
         }
+
         if (idx == 0) {
           /* current is the element */
           continue;
         }
+
         lcl_ref_dec(current);
         *out = lcl_string_new("");
+
         return LCL_RC_OK;
       }
 
       if (lcl_value_to_int(argv[i], &idx) != LCL_OK) {
         lcl_ref_dec(current);
+
         return LCL_RC_ERR;
       }
 
       if (idx < 0 || lcl_list_get(current, (size_t)idx, &next) != LCL_OK) {
         lcl_ref_dec(current);
         *out = lcl_string_new("");
+
         return LCL_RC_OK;
       }
 
@@ -2672,6 +2825,7 @@ int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     if (first <= 0 && last >= 0) {
       if (lcl_list_push(&result, list) != LCL_OK) {
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
     }
@@ -2690,6 +2844,7 @@ int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   if ((size_t)last >= len) last = (long)len - 1;
 
   result = lcl_list_new();
+
   if (!result) return LCL_RC_ERR;
 
   for (i = (size_t)first; i <= (size_t)last && i < len; i++) {
@@ -2698,6 +2853,7 @@ int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       if (lcl_list_push(&result, elem) != LCL_OK) {
         lcl_ref_dec(elem);
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
       lcl_ref_dec(elem);
@@ -2715,6 +2871,7 @@ int c_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
 
   result = lcl_list_new();
+
   if (!result) return LCL_RC_ERR;
 
   for (i = 0; i < argc; i++) {
@@ -2728,8 +2885,10 @@ int c_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
           if (lcl_list_push(&result, elem) != LCL_OK) {
             lcl_ref_dec(elem);
             lcl_ref_dec(result);
+
             return LCL_RC_ERR;
           }
+
           lcl_ref_dec(elem);
         }
       }
@@ -2737,6 +2896,7 @@ int c_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       /* Non-list - add as single element */
       if (lcl_list_push(&result, arg) != LCL_OK) {
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
     }
@@ -2753,7 +2913,8 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   size_t sep_len;
   size_t len, i;
   char *buf = NULL;
-  size_t buf_len = 0, buf_cap = 0;
+  size_t buf_len = 0;
+  size_t buf_cap = 0;
   (void)interp;
 
   if (argc < 1 || argc > 2) return LCL_RC_ERR;
@@ -2762,11 +2923,13 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   if (argc == 2) {
     sep = lcl_value_to_string(argv[1]);
   }
+
   sep_len = strlen(sep);
 
   if (list->type != LCL_LIST) {
     /* Non-list - return string representation */
     *out = lcl_string_new(lcl_value_to_string(list));
+
     return LCL_RC_OK;
   }
 
@@ -2787,6 +2950,7 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       if (!buf_append(&buf, &buf_len, &buf_cap, sep, sep_len)) {
         lcl_ref_dec(elem);
         free(buf);
+
         return LCL_RC_ERR;
       }
     }
@@ -2794,6 +2958,7 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     if (!buf_append(&buf, &buf_len, &buf_cap, elem_str, elem_len)) {
       lcl_ref_dec(elem);
       free(buf);
+
       return LCL_RC_ERR;
     }
 
@@ -2802,6 +2967,7 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
   *out = lcl_string_new(buf ? buf : "");
   free(buf);
+
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
@@ -2815,24 +2981,30 @@ int c_split(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   if (argc < 1 || argc > 2) return LCL_RC_ERR;
 
   str = lcl_value_to_string(argv[0]);
+
   if (argc == 2) {
     split_chars = lcl_value_to_string(argv[1]);
   }
 
   result = lcl_list_new();
+
   if (!result) return LCL_RC_ERR;
 
   if (!split_chars || *split_chars == '\0') {
     /* Split on each character */
     const char *p = str;
+
     while (*p) {
       char c[2] = { *p, '\0' };
       lcl_value *elem = lcl_string_new(c);
+
       if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
         if (elem) lcl_ref_dec(elem);
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
+
       lcl_ref_dec(elem);
       p++;
     }
@@ -2861,11 +3033,13 @@ int c_split(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
         if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
           if (elem) lcl_ref_dec(elem);
           lcl_ref_dec(result);
+
           return LCL_RC_ERR;
         }
         lcl_ref_dec(elem);
         start = p + 1;
       }
+      
       p++;
     }
 
@@ -2875,8 +3049,10 @@ int c_split(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
         if (elem) lcl_ref_dec(elem);
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
+      
       lcl_ref_dec(elem);
     }
   }
@@ -2904,12 +3080,14 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_env_get_value(&interp->env, lcl_value_to_string(name_v), &cell)
       != LCL_OK) {
     lcl_ref_dec(name_v);
+
     return LCL_RC_ERR;
   }
 
   if (cell->type != LCL_CELL) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -2917,6 +3095,7 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_cell_get(cell, &list) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -2927,15 +3106,19 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(name_v);
       lcl_ref_dec(cell);
       lcl_ref_dec(list);
+
       return LCL_RC_ERR;
     }
+    
     if (lcl_list_push(&new_list, list) != LCL_OK) {
       lcl_ref_dec(name_v);
       lcl_ref_dec(cell);
       lcl_ref_dec(list);
       lcl_ref_dec(new_list);
+
       return LCL_RC_ERR;
     }
+    
     lcl_ref_dec(list);
     list = new_list;
   }
@@ -2948,6 +3131,7 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(name_v);
       lcl_ref_dec(cell);
       lcl_ref_dec(list);
+
       return LCL_RC_ERR;
     }
 
@@ -2956,6 +3140,7 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(cell);
       lcl_ref_dec(list);
       lcl_ref_dec(val);
+
       return LCL_RC_ERR;
     }
 
@@ -2967,12 +3152,14 @@ int s_lappend(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(list);
+
     return LCL_RC_ERR;
   }
 
   lcl_ref_dec(name_v);
   lcl_ref_dec(cell);
   *out = list;  /* Return the updated list */
+
   return LCL_RC_OK;
 }
 
@@ -2996,19 +3183,23 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
   /* Get index */
   if (lcl_eval_word(interp, args[1], &idx_v) != LCL_RC_OK) {
     lcl_ref_dec(name_v);
+
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_int(idx_v, &idx) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(idx_v);
+
     return LCL_RC_ERR;
   }
+  
   lcl_ref_dec(idx_v);
 
   /* Get value */
   if (lcl_eval_word(interp, args[2], &val_v) != LCL_RC_OK) {
     lcl_ref_dec(name_v);
+
     return LCL_RC_ERR;
   }
 
@@ -3017,6 +3208,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
       != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(val_v);
+
     return LCL_RC_ERR;
   }
 
@@ -3024,6 +3216,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(val_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3032,6 +3225,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(val_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3040,6 +3234,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(val_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(list);
+
     return LCL_RC_ERR;
   }
 
@@ -3049,6 +3244,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(val_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(list);
+
     return LCL_RC_ERR;
   }
 
@@ -3058,6 +3254,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(val_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(list);
+
     return LCL_RC_ERR;
   }
 
@@ -3065,6 +3262,7 @@ int s_lset(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_ref_dec(cell);
   lcl_ref_dec(val_v);
   *out = list;  /* Return the updated list */
+
   return LCL_RC_OK;
 }
 
@@ -3083,6 +3281,7 @@ static int dict_create(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   dict = lcl_dict_new();
+
   if (!dict) return LCL_RC_ERR;
 
   for (i = 0; i < argc; i += 2) {
@@ -3091,12 +3290,14 @@ static int dict_create(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
     if (lcl_eval_word(interp, args[i + 1], &val_v) != LCL_RC_OK) {
       lcl_ref_dec(key_v);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
@@ -3104,6 +3305,7 @@ static int dict_create(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(key_v);
       lcl_ref_dec(val_v);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
@@ -3112,6 +3314,7 @@ static int dict_create(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   *out = dict;
+
   return LCL_RC_OK;
 }
 
@@ -3130,6 +3333,7 @@ static int dict_get(lcl_interp *interp, int argc, const lcl_word **args,
   /* No keys - return the dict itself */
   if (argc == 1) {
     *out = dict;
+
     return LCL_RC_OK;
   }
 
@@ -3140,17 +3344,20 @@ static int dict_get(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (dict->type != LCL_DICT) {
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
     if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
     if (lcl_dict_get(dict, lcl_value_to_string(key_v), &val) != LCL_OK) {
       lcl_ref_dec(key_v);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
@@ -3161,6 +3368,7 @@ static int dict_get(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   *out = dict;
+  
   return LCL_RC_OK;
 }
 
@@ -3178,6 +3386,7 @@ static int dict_size(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (dict->type != LCL_DICT) {
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3185,6 +3394,7 @@ static int dict_size(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_ref_dec(dict);
 
   *out = lcl_int_new((long)len);
+
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
@@ -3205,29 +3415,37 @@ static int dict_keys(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (dict->type != LCL_DICT) {
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
   result = lcl_list_new();
+
   if (!result) {
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
   while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &v)) {
     lcl_value *key_v = lcl_string_new(k);
     lcl_ref_dec(v);  /* hash_table_iterate returns +1 refcount */
+
     if (!key_v || lcl_list_push(&result, key_v) != LCL_OK) {
       if (key_v) lcl_ref_dec(key_v);
+
       lcl_ref_dec(result);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
+    
     lcl_ref_dec(key_v);
   }
 
   lcl_ref_dec(dict);
   *out = result;
+  
   return LCL_RC_OK;
 }
 
@@ -3248,27 +3466,32 @@ static int dict_values(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (dict->type != LCL_DICT) {
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
   result = lcl_list_new();
   if (!result) {
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
   while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &v)) {
     int push_rc = lcl_list_push(&result, v);
     lcl_ref_dec(v);  /* hash_table_iterate returns +1 refcount */
+
     if (push_rc != LCL_OK) {
       lcl_ref_dec(result);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
   }
 
   lcl_ref_dec(dict);
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -3292,11 +3515,13 @@ static int dict_exists(lcl_interp *interp, int argc, const lcl_word **args,
     if (dict->type != LCL_DICT) {
       lcl_ref_dec(dict);
       *out = lcl_int_new(0);
+
       return *out ? LCL_RC_OK : LCL_RC_ERR;
     }
 
     if (lcl_eval_word_to_str(interp, args[i], &key_v) != LCL_RC_OK) {
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
@@ -3304,6 +3529,7 @@ static int dict_exists(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(key_v);
       lcl_ref_dec(dict);
       *out = lcl_int_new(0);
+
       return *out ? LCL_RC_OK : LCL_RC_ERR;
     }
 
@@ -3315,6 +3541,7 @@ static int dict_exists(lcl_interp *interp, int argc, const lcl_word **args,
 
   lcl_ref_dec(dict);
   *out = lcl_int_new(1);
+
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
@@ -3338,12 +3565,14 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_env_get_value(&interp->env, lcl_value_to_string(name_v), &cell)
       != LCL_OK) {
     lcl_ref_dec(name_v);
+
     return LCL_RC_ERR;
   }
 
   if (cell->type != LCL_CELL) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3351,6 +3580,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_cell_get(cell, &dict) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3358,6 +3588,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3366,6 +3597,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3376,6 +3608,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(cell);
       lcl_ref_dec(dict);
       lcl_ref_dec(val_v);
+
       return LCL_RC_ERR;
     }
 
@@ -3385,6 +3618,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(dict);
       lcl_ref_dec(val_v);
       lcl_ref_dec(key_v);
+
       return LCL_RC_ERR;
     }
 
@@ -3407,6 +3641,7 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(cell);
       lcl_ref_dec(dict);
       lcl_ref_dec(val_v);
+
       return LCL_RC_ERR;
     }
 
@@ -3460,11 +3695,16 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
 
     /* Cleanup path */
     for (i = 1; i < path_len; i++) {
-      if (path_dicts[i]) lcl_ref_dec(path_dicts[i]);
+      if (path_dicts[i]) {
+        lcl_ref_dec(path_dicts[i]);
+      }
     }
     for (i = 0; i < path_len; i++) {
-      if (path_keys[i]) lcl_ref_dec(path_keys[i]);
+      if (path_keys[i]) {
+        lcl_ref_dec(path_keys[i]);
+      }
     }
+    
     free(path_dicts);
     free(path_keys);
     lcl_ref_dec(val_v);  /* dict_put incremented refcount */
@@ -3472,15 +3712,22 @@ static int dict_set(lcl_interp *interp, int argc, const lcl_word **args,
 
 nested_cleanup:
     for (i = 0; i < path_len; i++) {
-      if (path_dicts[i] && i > 0) lcl_ref_dec(path_dicts[i]);
-      if (path_keys[i]) lcl_ref_dec(path_keys[i]);
+      if (path_dicts[i] && i > 0) {
+        lcl_ref_dec(path_dicts[i]);
+      }
+
+      if (path_keys[i]) {
+        lcl_ref_dec(path_keys[i]);
+      }
     }
+    
     free(path_dicts);
     free(path_keys);
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
     lcl_ref_dec(val_v);
+
     return LCL_RC_ERR;
   }
 
@@ -3490,6 +3737,7 @@ after_nested:
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3518,12 +3766,14 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_env_get_value(&interp->env, lcl_value_to_string(name_v), &cell)
       != LCL_OK) {
     lcl_ref_dec(name_v);
+
     return LCL_RC_ERR;
   }
 
   if (cell->type != LCL_CELL) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3531,6 +3781,7 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_cell_get(cell, &dict) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
+
     return LCL_RC_ERR;
   }
 
@@ -3538,6 +3789,7 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3547,6 +3799,7 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(name_v);
       lcl_ref_dec(cell);
       lcl_ref_dec(dict);
+
       return LCL_RC_ERR;
     }
 
@@ -3558,6 +3811,7 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
@@ -3566,12 +3820,15 @@ static int dict_unset(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(name_v);
     lcl_ref_dec(cell);
     lcl_ref_dec(dict);
+
     return LCL_RC_ERR;
   }
 
   lcl_ref_dec(name_v);
   lcl_ref_dec(cell);
+
   *out = dict;
+
   return LCL_RC_OK;
 }
 
@@ -3591,12 +3848,15 @@ int c_len(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     case LCL_LIST:
       *out = lcl_int_new((long)lcl_list_len(argv[0]));
       return LCL_RC_OK;
+
     case LCL_DICT:
       *out = lcl_int_new((long)lcl_dict_len(argv[0]));
       return LCL_RC_OK;
+
     case LCL_STRING:
       *out = lcl_int_new((long)strlen(lcl_value_to_string(argv[0])));
       return LCL_RC_OK;
+
     default:
       return LCL_RC_ERR;
   }
@@ -3614,12 +3874,15 @@ int c_empty(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     case LCL_LIST:
       *out = lcl_int_new(lcl_list_len(argv[0]) == 0 ? 1 : 0);
       return LCL_RC_OK;
+
     case LCL_DICT:
       *out = lcl_int_new(lcl_dict_len(argv[0]) == 0 ? 1 : 0);
       return LCL_RC_OK;
+
     case LCL_STRING:
       *out = lcl_int_new(strlen(lcl_value_to_string(argv[0])) == 0 ? 1 : 0);
       return LCL_RC_OK;
+
     default:
       return LCL_RC_ERR;
   }
@@ -3639,26 +3902,35 @@ int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
       if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       if (lcl_list_get(argv[0], (size_t)idx, out) != LCL_OK) {
         if (argc == 3) {
           *out = lcl_ref_inc(argv[2]);
+
           return LCL_RC_OK;
         }
+
         return LCL_RC_ERR;
       }
+     
       return LCL_RC_OK;
     }
+
     case LCL_DICT: {
       const char *key = lcl_value_to_string(argv[1]);
       if (lcl_dict_get(argv[0], key, out) != LCL_OK) {
         if (argc == 3) {
           *out = lcl_ref_inc(argv[2]);
+          
           return LCL_RC_OK;
         }
+        
         return LCL_RC_ERR;
       }
+      
       return LCL_RC_OK;
     }
+
     case LCL_STRING: {
       long idx;
       const char *str;
@@ -3666,19 +3938,27 @@ int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
       if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       str = lcl_value_to_string(argv[0]);
+
       if (idx < 0 || (size_t)idx >= strlen(str)) {
         if (argc == 3) {
           *out = lcl_ref_inc(argv[2]);
+
           return LCL_RC_OK;
         }
+        
         return LCL_RC_ERR;
       }
+      
       buf[0] = str[idx];
       buf[1] = '\0';
+
       *out = lcl_string_new(buf);
+
       return LCL_RC_OK;
     }
+      
     default:
       return LCL_RC_ERR;
   }
@@ -3696,27 +3976,37 @@ int c_put(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     case LCL_LIST: {
       long idx;
       lcl_value *copy;
+
       if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       copy = lcl_ref_inc(argv[0]);
+
       if (lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
         lcl_ref_dec(copy);
         return LCL_RC_ERR;
       }
+
       *out = copy;
+
       return LCL_RC_OK;
     }
+      
     case LCL_DICT: {
       const char *key = lcl_value_to_string(argv[1]);
       lcl_value *copy = lcl_ref_inc(argv[0]);
+
       if (lcl_dict_put(&copy, key, argv[2]) != LCL_OK) {
         lcl_ref_dec(copy);
         return LCL_RC_ERR;
       }
+      
       *out = copy;
+
       return LCL_RC_OK;
     }
+      
     default:
       return LCL_RC_ERR;
   }
@@ -3735,11 +4025,14 @@ int c_del(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
       const char *key = lcl_value_to_string(argv[1]);
       lcl_value *copy = lcl_ref_inc(argv[0]);
       lcl_dict_del(&copy, key);
+
       *out = copy;
+
       return LCL_RC_OK;
     }
+      
     default:
-      /* del on list not implemented for MVP - could remove by index */
+      /* TODO(bjh) del on list not implemented for MVP - could remove by index */
       return LCL_RC_ERR;
   }
 }
@@ -3755,23 +4048,30 @@ int c_has(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   switch (argv[0]->type) {
     case LCL_LIST: {
       long idx;
+
       if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
         return LCL_RC_ERR;
       }
+      
       *out = lcl_int_new(idx >= 0 && (size_t)idx < lcl_list_len(argv[0]) ? 1 : 0);
+
       return LCL_RC_OK;
     }
+      
     case LCL_DICT: {
       const char *key = lcl_value_to_string(argv[1]);
       lcl_value *val;
+
       if (lcl_dict_get(argv[0], key, &val) == LCL_OK) {
         lcl_ref_dec(val);
         *out = lcl_int_new(1);
       } else {
         *out = lcl_int_new(0);
       }
+
       return LCL_RC_OK;
     }
+      
     default:
       return LCL_RC_ERR;
   }
@@ -3783,35 +4083,47 @@ int c_has(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
 int c_is_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_LIST ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
 int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_DICT ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
 int c_is_string(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_STRING ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
 int c_is_number(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
   /* Check type directly, or try parsing string as number */
+
   if (argv[0]->type == LCL_INT || argv[0]->type == LCL_FLOAT) {
     *out = lcl_int_new(1);
   } else if (argv[0]->type == LCL_STRING) {
     const char *s = lcl_value_to_string(argv[0]);
     char *end;
     (void)strtol(s, &end, 10);
+
     if (end != s && *end == '\0') {
       *out = lcl_int_new(1);
     } else {
@@ -3821,27 +4133,37 @@ int c_is_number(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
   } else {
     *out = lcl_int_new(0);
   }
+  
   return LCL_RC_OK;
 }
 
 int c_is_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_INT ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
 int c_is_float(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+  
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_FLOAT ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
 int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   (void)interp;
+
   if (argc != 1) return LCL_RC_ERR;
+
   *out = lcl_int_new(argv[0]->type == LCL_PROC || argv[0]->type == LCL_CPROC ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
@@ -3863,12 +4185,15 @@ int c_list_push(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
   }
 
   copy = lcl_ref_inc(argv[0]);
+
   if (lcl_list_push(&copy, argv[1]) != LCL_OK) {
     lcl_ref_dec(copy);
+
     return LCL_RC_ERR;
   }
 
   *out = copy;
+  
   return LCL_RC_OK;
 }
 
@@ -3888,22 +4213,27 @@ int c_list_pop(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   }
 
   len = lcl_list_len(argv[0]);
+
   if (len == 0) {
     return LCL_RC_ERR;
   }
 
   copy = lcl_list_new();
+
   for (i = 0; i < len - 1; i++) {
     lcl_value *elem;
+
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
       lcl_ref_dec(copy);
       return LCL_RC_ERR;
     }
+    
     lcl_list_push(&copy, elem);
     lcl_ref_dec(elem);
   }
 
   *out = copy;
+  
   return LCL_RC_OK;
 }
 
@@ -3938,21 +4268,38 @@ int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
   }
 
   /* Handle negative indices */
-  if (start < 0) start = (long)len + start;
-  if (end < 0) end = (long)len + end;
+  if (start < 0) {
+    start = (long)len + start;
+  }
+  
+  if (end < 0) {
+    end = (long)len + end;
+  }
 
   /* Clamp */
-  if (start < 0) start = 0;
-  if (end > (long)len) end = (long)len;
-  if (start > end) start = end;
+  if (start < 0) {
+    start = 0;
+  }
+
+  if (end > (long)len) {
+    end = (long)len;
+  }
+
+  if (start > end) {
+   start = end; 
+  }
 
   result = lcl_list_new();
+  
   for (i = (size_t)start; i < (size_t)end; i++) {
     lcl_value *elem;
+
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
+
     lcl_list_push(&result, elem);
     lcl_ref_dec(elem);
   }
@@ -3979,25 +4326,32 @@ int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
 
   for (i = 0; i < lcl_list_len(argv[0]); i++) {
     lcl_value *elem;
+
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
+    
     lcl_list_push(&result, elem);
     lcl_ref_dec(elem);
   }
 
   for (i = 0; i < lcl_list_len(argv[1]); i++) {
     lcl_value *elem;
+
     if (lcl_list_get(argv[1], i, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+      
       return LCL_RC_ERR;
     }
+    
     lcl_list_push(&result, elem);
     lcl_ref_dec(elem);
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4021,15 +4375,19 @@ int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
 
   for (i = len; i > 0; i--) {
     lcl_value *elem;
+
     if (lcl_list_get(argv[0], i - 1, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
+    
     lcl_list_push(&result, elem);
     lcl_ref_dec(elem);
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4037,10 +4395,22 @@ int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
  * Functional List Operations (map, filter, reduce)
  * ============================================================================ */
 
+/* TODO(bjh)
+
+   These use a little hack for binding functions to a temp variable, see example:
+
+   lcl_env_let(&interp->env, "_map_f_", func);
+
+   This is silly and I'd like to figure out a way of doing this more properly.
+ */
+
 /* List::map f list - apply f to each element, return new list */
 int c_list_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  lcl_value *func, *list, *result;
-  size_t i, len;
+  lcl_value *func;
+  lcl_value *list;
+  lcl_value *result;
+  size_t i;
+  size_t len;
   int rc;
 
   if (argc != 2) return LCL_RC_ERR;
@@ -4053,7 +4423,8 @@ int c_list_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
 
   len = lcl_list_len(list);
   result = lcl_list_new();
-
+  
+  /* TODO(bjh) nonsense here: */
   /* Bind function to temp variable */
   lcl_env_let(&interp->env, "_map_f_", func);
 
@@ -4063,6 +4434,7 @@ int c_list_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
 
@@ -4070,28 +4442,36 @@ int c_list_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
     lcl_ref_dec(elem);
 
     rc = lcl_eval_string(interp, "[$_map_f_ $_map_x_]", &mapped);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(result);
+
       return rc;
     }
 
     if (lcl_list_push(&result, mapped) != LCL_OK) {
       lcl_ref_dec(mapped);
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
+    
     lcl_ref_dec(mapped);
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
 /* List::filter f list - keep elements where f returns true */
 int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  lcl_value *func, *list, *result;
-  size_t i, len;
+  lcl_value *func;
+  lcl_value *list;
+  lcl_value *result;
+  size_t i;
+  size_t len;
   int rc;
 
   if (argc != 2) return LCL_RC_ERR;
@@ -4114,15 +4494,18 @@ int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
       lcl_ref_dec(result);
+
       return LCL_RC_ERR;
     }
 
     lcl_env_let(&interp->env, "_filter_x_", elem);
 
     rc = lcl_eval_string(interp, "[$_filter_f_ $_filter_x_]", &pred_result);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(elem);
       lcl_ref_dec(result);
+
       return rc;
     }
 
@@ -4132,27 +4515,35 @@ int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
       const char *s = lcl_value_to_string(pred_result);
       keep = (s && *s) ? 1 : 0;
     }
+    
     lcl_ref_dec(pred_result);
 
     if (keep) {
       if (lcl_list_push(&result, elem) != LCL_OK) {
         lcl_ref_dec(elem);
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
     }
+
     lcl_ref_dec(elem);
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
 /* List::reduce init f list - fold list with f(acc, elem) */
 int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  lcl_value *init, *func, *list, *acc;
-  size_t i, len;
+  lcl_value *init;
+  lcl_value *func;
+  lcl_value *list;
+  lcl_value *acc;
+  size_t i;
+  size_t len;
   int rc;
 
   if (argc != 3) return LCL_RC_ERR;
@@ -4175,6 +4566,7 @@ int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
       lcl_ref_dec(acc);
+
       return LCL_RC_ERR;
     }
 
@@ -4184,6 +4576,7 @@ int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
 
     rc = lcl_eval_string(interp, "[$_reduce_f_ $_reduce_acc_ $_reduce_x_]",
                          &new_acc);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(acc);
       return rc;
@@ -4194,6 +4587,7 @@ int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = acc;
+
   return LCL_RC_OK;
 }
 
@@ -4226,6 +4620,7 @@ int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4246,12 +4641,14 @@ int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
   }
 
   result = lcl_list_new();
+
   while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
     lcl_list_push(&result, val);
     lcl_ref_dec(val);
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4272,6 +4669,7 @@ int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
   }
 
   result = lcl_list_new();
+
   while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
     lcl_value *pair = lcl_list_new();
     lcl_value *key_v = lcl_string_new(key);
@@ -4284,6 +4682,7 @@ int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4302,6 +4701,7 @@ int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value
 
   for (i = 0; i < argc; i += 2) {
     const char *key = lcl_value_to_string(argv[i]);
+
     if (lcl_dict_put(&dict, key, argv[i + 1]) != LCL_OK) {
       lcl_ref_dec(dict);
       return LCL_RC_ERR;
@@ -4309,6 +4709,7 @@ int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value
   }
 
   *out = dict;
+
   return LCL_RC_OK;
 }
 
@@ -4336,6 +4737,7 @@ int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -4370,6 +4772,7 @@ int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
     lcl_ref_dec(val);
 
     rc = lcl_eval_string(interp, "[$_map_f_ $_map_k_ $_map_v_]", &mapped);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(result);
       return rc;
@@ -4380,13 +4783,16 @@ int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
 /* Dict::filter f d - keep entries where f(key, value) returns true */
 int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  lcl_value *func, *dict, *result;
+  lcl_value *func;
+  lcl_value *dict;
+  lcl_value *result;
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -4436,7 +4842,10 @@ int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
 /* Dict::reduce init f d - fold dict with f(acc, key, value) */
 int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  lcl_value *init, *func, *dict, *acc;
+  lcl_value *init;
+  lcl_value *func;
+  lcl_value *dict;
+  lcl_value *acc;
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -4453,6 +4862,7 @@ int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
 
   acc = lcl_ref_inc(init);
 
+  /* TODO(bjh) nonsense here: */
   lcl_env_let(&interp->env, "_reduce_f_", func);
 
   while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &val)) {
@@ -4468,6 +4878,7 @@ int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
     rc = lcl_eval_string(interp,
                          "[$_reduce_f_ $_reduce_acc_ $_reduce_k_ $_reduce_v_]",
                          &new_acc);
+
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(acc);
       return rc;
@@ -4478,6 +4889,7 @@ int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = acc;
+
   return LCL_RC_OK;
 }
 
@@ -4499,20 +4911,24 @@ int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
   src = lcl_value_to_string(argv[0]);
   len = strlen(src);
   result = malloc(len + 1);
+
   if (!result) return LCL_RC_ERR;
 
   for (i = 0; i < len; i++) {
     char c = src[i];
+
     if (c >= 'a' && c <= 'z') {
       result[i] = c - 32;
     } else {
       result[i] = c;
     }
   }
+  
   result[len] = '\0';
 
   *out = lcl_string_new(result);
   free(result);
+
   return LCL_RC_OK;
 }
 
@@ -4530,26 +4946,32 @@ int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
   src = lcl_value_to_string(argv[0]);
   len = strlen(src);
   result = malloc(len + 1);
+
   if (!result) return LCL_RC_ERR;
 
   for (i = 0; i < len; i++) {
     char c = src[i];
+
     if (c >= 'A' && c <= 'Z') {
       result[i] = c + 32;
     } else {
       result[i] = c;
     }
   }
+
   result[len] = '\0';
 
   *out = lcl_string_new(result);
   free(result);
+
   return LCL_RC_OK;
 }
 
 /* string::find s sub - return index of first occurrence or -1 */
 int c_string_find(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  const char *haystack, *needle, *found;
+  const char *haystack;
+  const char *needle;
+  const char *found;
   (void)interp;
 
   if (argc != 2) {
@@ -4560,6 +4982,7 @@ int c_string_find(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
   needle = lcl_value_to_string(argv[1]);
 
   found = strstr(haystack, needle);
+
   if (found) {
     *out = lcl_int_new((long)(found - haystack));
   } else {
@@ -4571,9 +4994,16 @@ int c_string_find(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **ou
 
 /* string::replace s old new - return string with replacements */
 int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  const char *src, *old_str, *new_str, *p, *found;
-  size_t old_len, new_len, result_len;
-  char *result, *dst;
+  const char *src;
+  const char *old_str;
+  const char *new_str;
+  const char *p;
+  const char *found;
+  size_t old_len;
+  size_t new_len;
+  size_t result_len;
+  char *result;
+  char *dst;
   int count = 0;
   (void)interp;
 
@@ -4595,6 +5025,7 @@ int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv, lcl_value *
 
   /* Count occurrences */
   p = src;
+
   while ((found = strstr(p, old_str)) != NULL) {
     count++;
     p = found + old_len;
@@ -4602,15 +5033,18 @@ int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv, lcl_value *
 
   if (count == 0) {
     *out = lcl_ref_inc(argv[0]);
+
     return LCL_RC_OK;
   }
 
   result_len = strlen(src) + (size_t)count * (new_len - old_len);
   result = malloc(result_len + 1);
+
   if (!result) return LCL_RC_ERR;
 
   dst = result;
   p = src;
+
   while ((found = strstr(p, old_str)) != NULL) {
     size_t prefix_len = (size_t)(found - p);
     memcpy(dst, p, prefix_len);
@@ -4619,10 +5053,12 @@ int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv, lcl_value *
     dst += new_len;
     p = found + old_len;
   }
+
   strcpy(dst, p);
 
   *out = lcl_string_new(result);
   free(result);
+
   return LCL_RC_OK;
 }
 
@@ -4688,7 +5124,7 @@ int s_dict(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_ERR;
 }
 
-/* Helper to register a function in a namespace.
+/* register a function in a namespace.
  * Note: lcl_ns_def handles the refcount - it stores a ref in the hash table
  * and then decrements the passed-in value. So we just pass through.
  */
