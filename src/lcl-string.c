@@ -181,6 +181,25 @@ const char *lcl_value_to_string(lcl_value *value) {
     case LCL_DICT:
       lcl_reify_str_dict(value);
       break;
+    case LCL_OPAQUE: {
+      const char *tag = value->as.opaque.type_tag;
+
+      if (tag) {
+        size_t len = strlen(tag) + 10;  /* "<opaque:>" + tag + null */
+        value->str_repr = (char *)malloc(len);
+
+        if (value->str_repr) {
+          sprintf(value->str_repr, "<opaque:%s>", tag);
+        }
+      } else {
+        value->str_repr = (char *)malloc(9);
+
+        if (value->str_repr) {
+          memcpy(value->str_repr, "<opaque>", 9);
+        }
+      }
+    } break;
+
     default:
       /* PROC, CPROC, NS, CELL - not directly stringifiable */
       value->str_repr = (char *)malloc(4);

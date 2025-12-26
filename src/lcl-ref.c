@@ -68,6 +68,13 @@ void lcl_ref_dec(lcl_value *value) {
     lcl_ref_dec(value->as.cell.inner);
   } break;
 
+  case LCL_OPAQUE: {
+    if (value->as.opaque.finalizer && value->as.opaque.ptr) {
+      value->as.opaque.finalizer(value->as.opaque.ptr);
+    }
+    free((void *)value->as.opaque.type_tag);
+  } break;
+
   default:
     break;
   }

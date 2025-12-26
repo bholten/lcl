@@ -12,9 +12,11 @@ typedef enum lcl_type {
   LCL_CELL,
   LCL_PROC,
   LCL_CPROC,
-  LCL_NAMESPACE
+  LCL_NAMESPACE,
+  LCL_OPAQUE
 } lcl_type;
 
+typedef void (*lcl_finalizer)(void *ptr);
 
 typedef int (*lcl_cproc)(lcl_frame *env,
                          int argc,
@@ -50,6 +52,11 @@ struct lcl_value {
     struct {
       lcl_c_func *fn;
     } c_proc;
+    struct {
+      void *ptr;
+      const char *type_tag;
+      lcl_finalizer finalizer;
+    } opaque;
   } as;
 };
 
@@ -96,11 +103,14 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs, const char **rhs
 const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);
 
-/* Create a new proc with captured upvalues (flat closure) */
 lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals,
                         lcl_value *params, lcl_program *body);
 
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);
+
+lcl_value *lcl_opaque_new(void *ptr, const char *type_tag, lcl_finalizer finalizer);
+lcl_result lcl_opaque_get(lcl_value *v, const char *expected_type, void **out);
+const char *lcl_opaque_type(lcl_value *v);
 
 #endif

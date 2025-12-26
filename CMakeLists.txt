@@ -25,6 +25,7 @@ set(LCL_SOURCES
   src/lcl-list.c
   src/lcl-ns.c
   src/lcl-num.c
+  src/lcl-opaque.c
   src/lcl-proc.c
   src/lcl-program.c
   src/lcl-ref.c

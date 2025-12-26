@@ -2,9 +2,9 @@ CFLAGS = -std=c89 -Wall -Wextra
 SRCS = src/hash-table.c src/lcl-api.c src/lcl-cell.c src/lcl-command.c \
        src/lcl-dict.c src/lcl-env.c src/lcl-eval.c src/lcl-frame.c \
        src/lcl-interp.c src/lcl-list.c src/lcl-ns.c src/lcl-num.c \
-       src/lcl-proc.c src/lcl-program.c src/lcl-ref.c src/lcl-scan.c \
-       src/lcl-stdlib.c src/lcl-str.c src/lcl-string.c src/lcl-word.c \
-       src/str-compat.c
+       src/lcl-opaque.c src/lcl-proc.c src/lcl-program.c src/lcl-ref.c \
+       src/lcl-scan.c src/lcl-stdlib.c src/lcl-str.c src/lcl-string.c \
+       src/lcl-word.c src/str-compat.c
 
 .PHONY: debug test clean
 

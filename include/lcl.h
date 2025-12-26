@@ -277,6 +277,74 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn fn);
 
 /* ============================================================================
+ * Opaque Values (C Extension Data)
+ *
+ * Opaque values allow C extensions to wrap arbitrary C pointers in LCL values
+ * with type safety and automatic cleanup via finalizers.
+ *
+ * Example usage (e.g., wrapping curl):
+ *
+ *   void curl_ctx_free(void *ptr) {
+ *       struct curl_context *ctx = ptr;
+ *       curl_easy_cleanup(ctx->curl);
+ *       free(ctx);
+ *   }
+ *
+ *   int c_curl_new(..., lcl_value **out) {
+ *       struct curl_context *ctx = calloc(1, sizeof(*ctx));
+ *       ctx->curl = curl_easy_init();
+ *       *out = lcl_opaque_new(ctx, "curl_context", curl_ctx_free);
+ *       return LCL_RC_OK;
+ *   }
+ *
+ *   int c_curl_set_url(...) {
+ *       struct curl_context *ctx;
+ *       if (lcl_opaque_get(argv[0], "curl_context", (void**)&ctx) != LCL_OK) {
+ *           return LCL_RC_ERR;  // type mismatch
+ *       }
+ *       curl_easy_setopt(ctx->curl, CURLOPT_URL, ...);
+ *       ...
+ *   }
+ * ============================================================================ */
+
+/*
+ * Finalizer function type - called when opaque value refcount reaches 0.
+ */
+typedef void (*lcl_finalizer)(void *ptr);
+
+/*
+ * Create a new opaque value wrapping a C pointer.
+ *
+ * Parameters:
+ *   ptr       - the C pointer to wrap (may be NULL)
+ *   type_tag  - type identifier for safety checks (e.g., "curl_context")
+ *   finalizer - cleanup function called when refcount hits 0 (may be NULL)
+ *
+ * Returns a new value with refcount 1, or NULL on allocation failure.
+ * The type_tag string is copied internally.
+ */
+lcl_value *lcl_opaque_new(void *ptr, const char *type_tag, lcl_finalizer finalizer);
+
+/*
+ * Extract a C pointer from an opaque value with type checking.
+ *
+ * Parameters:
+ *   value         - the value to extract from
+ *   expected_type - expected type tag (NULL to skip type check)
+ *   out           - receives the C pointer
+ *
+ * Returns LCL_OK on success, LCL_ERROR if value is not an opaque
+ * or if expected_type doesn't match the value's type_tag.
+ */
+lcl_result lcl_opaque_get(lcl_value *value, const char *expected_type, void **out);
+
+/*
+ * Get the type tag of an opaque value.
+ * Returns NULL if value is not an opaque.
+ */
+const char *lcl_opaque_type(lcl_value *value);
+
+/* ============================================================================
  * Frame Reference Counting (Advanced)
  *
  * Frames are used internally for lexical scoping. You typically don't need
