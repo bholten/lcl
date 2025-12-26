@@ -4034,6 +4034,170 @@ int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
 }
 
 /* ============================================================================
+ * Functional List Operations (map, filter, reduce)
+ * ============================================================================ */
+
+/* List::map f list - apply f to each element, return new list */
+int c_list_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *func, *list, *result;
+  size_t i, len;
+  int rc;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  func = argv[0];
+  list = argv[1];
+
+  if (list->type != LCL_LIST) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  len = lcl_list_len(list);
+  result = lcl_list_new();
+
+  /* Bind function to temp variable */
+  lcl_env_let(&interp->env, "_map_f_", func);
+
+  for (i = 0; i < len; i++) {
+    lcl_value *elem = NULL;
+    lcl_value *mapped = NULL;
+
+    if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+
+    lcl_env_let(&interp->env, "_map_x_", elem);
+    lcl_ref_dec(elem);
+
+    rc = lcl_eval_string(interp, "[$_map_f_ $_map_x_]", &mapped);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(result);
+      return rc;
+    }
+
+    if (lcl_list_push(&result, mapped) != LCL_OK) {
+      lcl_ref_dec(mapped);
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+    lcl_ref_dec(mapped);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* List::filter f list - keep elements where f returns true */
+int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  lcl_value *func, *list, *result;
+  size_t i, len;
+  int rc;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  func = argv[0];
+  list = argv[1];
+
+  if (list->type != LCL_LIST) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  len = lcl_list_len(list);
+  result = lcl_list_new();
+
+  lcl_env_let(&interp->env, "_filter_f_", func);
+
+  for (i = 0; i < len; i++) {
+    lcl_value *elem = NULL;
+    lcl_value *pred_result = NULL;
+    long keep = 0;
+
+    if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      lcl_ref_dec(result);
+      return LCL_RC_ERR;
+    }
+
+    lcl_env_let(&interp->env, "_filter_x_", elem);
+
+    rc = lcl_eval_string(interp, "[$_filter_f_ $_filter_x_]", &pred_result);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(elem);
+      lcl_ref_dec(result);
+      return rc;
+    }
+
+    /* Check if result is truthy */
+    if (lcl_value_to_int(pred_result, &keep) != LCL_OK) {
+      /* Non-numeric: treat non-empty string as true */
+      const char *s = lcl_value_to_string(pred_result);
+      keep = (s && *s) ? 1 : 0;
+    }
+    lcl_ref_dec(pred_result);
+
+    if (keep) {
+      if (lcl_list_push(&result, elem) != LCL_OK) {
+        lcl_ref_dec(elem);
+        lcl_ref_dec(result);
+        return LCL_RC_ERR;
+      }
+    }
+    lcl_ref_dec(elem);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* List::reduce init f list - fold list with f(acc, elem) */
+int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  lcl_value *init, *func, *list, *acc;
+  size_t i, len;
+  int rc;
+
+  if (argc != 3) return LCL_RC_ERR;
+
+  init = argv[0];
+  func = argv[1];
+  list = argv[2];
+
+  if (list->type != LCL_LIST) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  len = lcl_list_len(list);
+  acc = lcl_ref_inc(init);
+
+  lcl_env_let(&interp->env, "_reduce_f_", func);
+
+  for (i = 0; i < len; i++) {
+    lcl_value *elem = NULL;
+    lcl_value *new_acc = NULL;
+
+    if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      lcl_ref_dec(acc);
+      return LCL_RC_ERR;
+    }
+
+    lcl_env_let(&interp->env, "_reduce_acc_", acc);
+    lcl_env_let(&interp->env, "_reduce_x_", elem);
+    lcl_ref_dec(elem);
+
+    rc = lcl_eval_string(interp, "[$_reduce_f_ $_reduce_acc_ $_reduce_x_]",
+                         &new_acc);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(acc);
+      return rc;
+    }
+
+    lcl_ref_dec(acc);
+    acc = new_acc;
+  }
+
+  *out = acc;
+  return LCL_RC_OK;
+}
+
+/* ============================================================================
  * Namespaced Dict Operations
  * ============================================================================ */
 
@@ -4172,6 +4336,148 @@ int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
   }
 
   *out = result;
+  return LCL_RC_OK;
+}
+
+/* Dict::map f d - apply f to each key-value pair, f receives key and value,
+ * returns new value */
+int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  lcl_value *func, *dict, *result;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  int rc;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  func = argv[0];
+  dict = argv[1];
+
+  if (dict->type != LCL_DICT) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  result = lcl_dict_new();
+
+  lcl_env_let(&interp->env, "_map_f_", func);
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *mapped = NULL;
+    lcl_value *key_v = lcl_string_new(key);
+
+    lcl_env_let(&interp->env, "_map_k_", key_v);
+    lcl_env_let(&interp->env, "_map_v_", val);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+
+    rc = lcl_eval_string(interp, "[$_map_f_ $_map_k_ $_map_v_]", &mapped);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(result);
+      return rc;
+    }
+
+    lcl_dict_put(&result, key, mapped);
+    lcl_ref_dec(mapped);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* Dict::filter f d - keep entries where f(key, value) returns true */
+int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  lcl_value *func, *dict, *result;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  int rc;
+
+  if (argc != 2) return LCL_RC_ERR;
+
+  func = argv[0];
+  dict = argv[1];
+
+  if (dict->type != LCL_DICT) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  result = lcl_dict_new();
+
+  lcl_env_let(&interp->env, "_filter_f_", func);
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *pred_result = NULL;
+    lcl_value *key_v = lcl_string_new(key);
+
+    lcl_env_let(&interp->env, "_filter_k_", key_v);
+    lcl_env_let(&interp->env, "_filter_v_", val);
+
+    rc = lcl_eval_string(interp, "[$_filter_f_ $_filter_k_ $_filter_v_]",
+                         &pred_result);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(val);
+      lcl_ref_dec(result);
+      return rc;
+    }
+
+    if (lcl_value_is_true(pred_result)) {
+      lcl_dict_put(&result, key, val);
+    }
+
+    lcl_ref_dec(pred_result);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* Dict::reduce init f d - fold dict with f(acc, key, value) */
+int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  lcl_value *init, *func, *dict, *acc;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  int rc;
+
+  if (argc != 3) return LCL_RC_ERR;
+
+  init = argv[0];
+  func = argv[1];
+  dict = argv[2];
+
+  if (dict->type != LCL_DICT) return LCL_RC_ERR;
+  if (func->type != LCL_PROC && func->type != LCL_CPROC) return LCL_RC_ERR;
+
+  acc = lcl_ref_inc(init);
+
+  lcl_env_let(&interp->env, "_reduce_f_", func);
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *new_acc = NULL;
+    lcl_value *key_v = lcl_string_new(key);
+
+    lcl_env_let(&interp->env, "_reduce_acc_", acc);
+    lcl_env_let(&interp->env, "_reduce_k_", key_v);
+    lcl_env_let(&interp->env, "_reduce_v_", val);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+
+    rc = lcl_eval_string(interp,
+                         "[$_reduce_f_ $_reduce_acc_ $_reduce_k_ $_reduce_v_]",
+                         &new_acc);
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(acc);
+      return rc;
+    }
+
+    lcl_ref_dec(acc);
+    acc = new_acc;
+  }
+
+  *out = acc;
   return LCL_RC_OK;
 }
 
@@ -4483,6 +4789,9 @@ void lcl_register_core(lcl_interp *interp) {
   ns_def(list_ns, "reverse", lcl_c_proc_new("List::reverse", c_list_reverse));
   ns_def(list_ns, "index",   lcl_c_proc_new("List::index", c_lindex));
   ns_def(list_ns, "range",   lcl_c_proc_new("List::range", c_lrange));
+  ns_def(list_ns, "map",     lcl_c_proc_new("List::map", c_list_map));
+  ns_def(list_ns, "filter",  lcl_c_proc_new("List::filter", c_list_filter));
+  ns_def(list_ns, "reduce",  lcl_c_proc_new("List::reduce", c_list_reduce));
 
   /* ========================================================================
    * Dict:: namespace
@@ -4495,6 +4804,9 @@ void lcl_register_core(lcl_interp *interp) {
   ns_def(dict_ns, "values", lcl_c_proc_new("Dict::values", c_dict_values));
   ns_def(dict_ns, "items",  lcl_c_proc_new("Dict::items", c_dict_items));
   ns_def(dict_ns, "merge",  lcl_c_proc_new("Dict::merge", c_dict_merge));
+  ns_def(dict_ns, "map",    lcl_c_proc_new("Dict::map", c_dict_map));
+  ns_def(dict_ns, "filter", lcl_c_proc_new("Dict::filter", c_dict_filter));
+  ns_def(dict_ns, "reduce", lcl_c_proc_new("Dict::reduce", c_dict_reduce));
 
   /* ========================================================================
    * String:: namespace

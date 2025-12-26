@@ -4,6 +4,18 @@
 
 Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides the simplicity and extensibility of Tcl's "everything is a string" philosophy while adding modern features like closures, immutable bindings, and namespaces.
 
+Lcl is implemented in **C89** with no dependencies except for a hosted C standard library.
+
+## Why?
+
+Tcl is woefully unappreciated. It is one of the best languages for creating DSLs and embedding them in C/C++ projects. It's been described as "Lisp for C programmers" and it definitely hits that same itch: homoiconicity ("everything is a string") and simple metaprogramming by passing around literal blocks of code and operating on them as data.
+
+However, Tcl's scoping rules are... awkward. Whenever I've worked with Tcl, I often find myself fighting the scoping, and wishing it was simply lexical.
+
+Hence, Lcl.
+
+The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C++ projects, not as a complete replacement for -- or even any compatability with -- Tcl. This constrains the design and scope of the project: I'm not particularly interested in making a full language with an independent runtime. I'm focused on making embedding into C/C++ projects easy and fun; a way to use a Tcl-like extentions language with more Scheme-like semantics. 
+
 ## Key Differences from Tcl
 
 | Feature  | Tcl                          | Lcl                                                            |
@@ -12,6 +24,20 @@ Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides t
 | Bindings | Mutable by default           | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
 | Memory   | Garbage collected            | Reference counted                                              |
 | Closures | Limited                      | First-class (flat closures)                                    |
+
+
+Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
+
+| Tcl            | Lcl            |
+|----------------|----------------|
+| llength x      | len x          |
+| dict get d k   | get d k        |
+| lindex x i     | get x i        |
+| dict set d k v | put d k v      |
+| lappend x v    | List::push x v |
+| dict keys d    | Dict::keys d   |
+
+And many others.
 
 ## Build
 
@@ -289,20 +315,16 @@ dict create \
     key2 value2
 ```
 
-## Differences from Tcl
+### Functional Programming
 
-Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
-
-| Tcl            | Lcl            |
-|----------------|----------------|
-| llength x      | len x          |
-| dict get d k   | get d k        |
-| lindex x i     | get x i        |
-| dict set d k v | put d k v      |
-| lappend x v    | List::push x v |
-| dict keys d    | Dict::keys d   |
-
-And many others.
+  | Function              | Description                                                           |
+  |-----------------------|-----------------------------------------------------------------------|
+  | List::map f l         | Apply f to each element, return new list                              |
+  | List::filter f l      | Keep elements where f returns true                                    |
+  | List::reduce init f l | Fold list with f(acc, elem)                                           |
+  | Dict::map f d         | Apply f(key, value) to each entry, return new dict with mapped values |
+  | Dict::filter f d      | Keep entries where f(key, value) returns true                         |
+  | Dict::reduce init f d | Fold dict with f(acc, key, value)                                     |
 
 ## Embedding
 

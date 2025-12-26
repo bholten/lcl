@@ -856,4 +856,33 @@ puts [->> World {$th_greet2 Hello}]  ;# expect: Hello, World!
 puts [->> 10 {[lambda {x} {+ $x 5}]}]  ;# expect: 15
 
 puts ""
+puts "-- functional primitives --"
+
+# List::map
+let fp_lst [list 1 2 3 4 5]
+let fp_doubled [List::map [lambda {x} {* $x 2}] $fp_lst]
+puts $fp_doubled                     ;# expect: 2 4 6 8 10
+
+# List::filter
+let fp_evens [List::filter [lambda {x} {== [% $x 2] 0}] $fp_lst]
+puts $fp_evens                       ;# expect: 2 4
+
+# List::reduce
+let fp_sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] $fp_lst]
+puts $fp_sum                         ;# expect: 15
+
+# Dict::map (values multiplied by 10)
+let fp_d [dict a 1 b 2 c 3]
+let fp_d_mapped [Dict::map [lambda {k v} {* $v 10}] $fp_d]
+puts [len [Dict::keys $fp_d_mapped]] ;# expect: 3
+
+# Dict::filter (values > 1)
+let fp_d_filtered [Dict::filter [lambda {k v} {> $v 1}] $fp_d]
+puts [len [Dict::keys $fp_d_filtered]]  ;# expect: 2
+
+# Dict::reduce (sum all values)
+let fp_d_sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] $fp_d]
+puts $fp_d_sum                       ;# expect: 6
+
+puts ""
 puts "=== Done ==="

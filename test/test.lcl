@@ -1,3 +1,7 @@
+# TODO(bjh):
+#
+# This is more of a scratch pad. Need to make an actual test framework.
+
 proc make_counter {start} {
     var n $start
 
@@ -240,3 +244,7 @@ puts [-> $dthread {get b} \
           {[lambda {x} { * $x 42 }]}]
 
 puts "== done =="
+
+puts [->> $dthread \
+          { Dict::filter [lambda {k v} { == 1 [% $v 2] }] } \
+          { Dict::reduce 0 [lambda {acc k v} { + $v $acc }] }] ; # expect 1 + 3 = 4
