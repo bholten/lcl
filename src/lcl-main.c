@@ -6,40 +6,10 @@
 #include "lcl-eval.h"
 
 void lcl_register_core(lcl_interp *interp);
-
-static char *read_file(const char *path) {
-  FILE *f;
-  long len;
-  char *buf;
-
-  f = fopen(path, "rb");
-
-  if (!f) {
-    fprintf(stderr, "Could not open file: %s\n", path);
-    return NULL;
-  }
-
-  fseek(f, 0, SEEK_END);
-  len = ftell(f);
-  fseek(f, 0, SEEK_SET);
-
-  buf = (char *)malloc((size_t)len + 1);
-
-  if (!buf) {
-    fclose(f);
-    return NULL;
-  }
-
-  fread(buf, 1, (size_t)len, f);
-  buf[len] = '\0';
-  fclose(f);
-
-  return buf;
-}
+int lcl_eval_file(lcl_interp *interp, const char *filepath, lcl_value **out);
 
 int main(int argc, char **argv) {
   lcl_interp *interp;
-  char *src;
   lcl_value *result = NULL;
   int rc;
 
@@ -48,23 +18,16 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  src = read_file(argv[1]);
-
-  if (!src) {
-    return 1;
-  }
-
   interp = lcl_interp_new();
 
   if (!interp) {
     fprintf(stderr, "Failed to create interpreter\n");
-    free(src);
     return 1;
   }
 
   lcl_register_core(interp);
 
-  rc = lcl_eval_string(interp, src, &result);
+  rc = lcl_eval_file(interp, argv[1], &result);
 
   if (rc != LCL_RC_OK) {
     fprintf(stderr, "Error at %s:%d\n",
@@ -77,7 +40,6 @@ int main(int argc, char **argv) {
   }
 
   lcl_interp_free(interp);
-  free(src);
 
   return rc == LCL_RC_OK ? 0 : 1;
 }

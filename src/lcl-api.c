@@ -136,3 +136,49 @@ lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn
 
   return lcl_env_let_take(&interp->env, name, spec);
 }
+
+/* ============================================================================
+ * Calling LCL Procedures from C
+ * ============================================================================ */
+
+int lcl_is_callable(lcl_value *value) {
+  if (!value) return 0;
+  return value->type == LCL_PROC || value->type == LCL_CPROC;
+}
+
+lcl_return_code lcl_call_proc(lcl_interp *interp,
+                               lcl_value *proc,
+                               int argc,
+                               lcl_value **argv,
+                               lcl_value **out) {
+  lcl_return_code rc;
+  lcl_value *dummy = NULL;
+
+  if (!interp || !proc) return LCL_RC_ERR;
+
+  /* Use dummy if caller doesn't want result */
+  if (!out) out = &dummy;
+
+  if (proc->type == LCL_CPROC) {
+    /* For C procedures, only call normal procs (not special forms) */
+    if (proc->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+      return LCL_RC_ERR;  /* Can't call special forms this way */
+    }
+    rc = proc->as.c_proc.fn->fn.proc(interp, argc, argv, out);
+  } else if (proc->type == LCL_PROC) {
+    rc = lcl_call_user_proc(interp, proc->as.procedure.proc, argc, argv, out);
+    /* Convert RETURN to OK (normal proc return) */
+    if (rc == LCL_RC_RETURN) {
+      rc = LCL_RC_OK;
+    }
+  } else {
+    return LCL_RC_ERR;  /* Not callable */
+  }
+
+  /* Clean up dummy if used */
+  if (out == &dummy && dummy) {
+    lcl_ref_dec(dummy);
+  }
+
+  return rc;
+}

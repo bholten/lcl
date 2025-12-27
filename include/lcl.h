@@ -297,9 +297,9 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
  * Return LCL_RC_OK on success, LCL_RC_ERR on error.
  */
 typedef int (*lcl_c_proc_fn)(lcl_interp *interp,
-                              int argc,
-                              lcl_value **argv,
-                              lcl_value **out);
+                             int argc,
+                             lcl_value **argv,
+                             lcl_value **out);
 
 /*
  * Create a C procedure value.
@@ -367,6 +367,63 @@ lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn
  * Used by special forms to selectively evaluate their arguments.
  */
 lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word, lcl_value **out);
+
+/* ============================================================================
+ * Calling LCL Procedures from C
+ *
+ * These functions allow C code to call LCL procedures. This is essential
+ * for implementing C callbacks that need to invoke user-provided LCL
+ * procedures (e.g., CURL write callbacks, event handlers, iterators).
+ *
+ * Example (CURL write callback):
+ *
+ *   size_t curl_write_wrapper(char *ptr, size_t size, size_t n, void *userdata) {
+ *       struct curl_ctx *ctx = userdata;
+ *       lcl_value *args[1];
+ *       lcl_value *result = NULL;
+ *       size_t bytes = size * n;
+ *       char *data = malloc(bytes + 1);
+ *       memcpy(data, ptr, bytes);
+ *       data[bytes] = '\0';
+ *
+ *       args[0] = lcl_string_new(data);
+ *       free(data);
+ *       lcl_call_proc(ctx->interp, ctx->write_callback, 1, args, &result);
+ *       if (result) lcl_ref_dec(result);
+ *       lcl_ref_dec(args[0]);
+ *       return bytes;
+ *   }
+ * ============================================================================ */
+
+/*
+ * Check if a value is callable (user procedure or C procedure).
+ * Returns 1 if callable, 0 otherwise.
+ */
+int lcl_is_callable(lcl_value *value);
+
+/*
+ * Call an LCL procedure from C code.
+ *
+ * Parameters:
+ *   interp - the interpreter
+ *   proc   - an LCL procedure value (LCL_PROC or LCL_CPROC)
+ *   argc   - number of arguments
+ *   argv   - array of argument values (caller retains ownership)
+ *   out    - receives the return value (with +1 refcount), may be NULL
+ *
+ * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
+ * Note: LCL_RC_RETURN from the procedure is converted to LCL_RC_OK.
+ *
+ * The caller is responsible for:
+ *   - Creating argument values (lcl_string_new, etc.)
+ *   - Decrementing argument refcounts after the call
+ *   - Decrementing the result refcount when done
+ */
+lcl_return_code lcl_call_proc(lcl_interp *interp,
+                               lcl_value *proc,
+                               int argc,
+                               lcl_value **argv,
+                               lcl_value **out);
 
 /* ============================================================================
  * Opaque Values (C Extension Data)
