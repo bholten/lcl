@@ -168,6 +168,11 @@ lcl_value *lcl_float_new(float f);
  */
 lcl_value *lcl_list_new(void);
 
+/*
+ * Create a new namespace.
+ */
+lcl_value *lcl_ns_new(const char *name);
+
 /* ============================================================================
  * Value Access
  * ============================================================================ */
@@ -212,6 +217,38 @@ lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
  */
 lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
 
+/* ============================================================================
+ * Dictionary Operations
+ * ============================================================================ */
+
+/*
+ * Get the number of pairs of a dictary.
+ */
+size_t lcl_dict_len(const lcl_value *dict);
+
+/*
+ * Get an item from a dictionary by key.
+ */
+lcl_result lcl_dict_get(const lcl_value *dict, const char *key, lcl_value **out);;
+
+/*
+ * Puts a value into a dictionary with key.
+ */
+lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
+
+/*
+ * Deletes a value into a dictionary with key.
+ */
+lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
+
+/* ============================================================================
+ * Namespace Operations
+ * ============================================================================ */
+
+lcl_value *lcl_ns_new(const char *qname);
+lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
+lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
+  
 /* ============================================================================
  * Variable/Definition Access
  * ============================================================================ */
