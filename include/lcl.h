@@ -241,11 +241,11 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
  * There are two types of C functions you can register:
  *
  * 1. Normal procedures (lcl_c_proc_fn): Arguments are pre-evaluated to values.
- *    Use this for most commands like "puts", "+", etc.
+ *    Use this for most commands like "puts", "+", "len", etc.
  *
  * 2. Special forms (lcl_c_spec_fn): Arguments are passed as raw, unevaluated
  *    words. Use this for control structures that need to control evaluation,
- *    like "if", "while", "lambda", etc.
+ *    like "if", "while", "lambda", etc. Most extensions won't need this.
  * ============================================================================ */
 
 /*
@@ -271,10 +271,65 @@ typedef int (*lcl_c_proc_fn)(lcl_interp *interp,
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 
 /*
- * Convenience: register a C procedure in the interpreter.
- * Equivalent to: lcl_define_take(interp, name, lcl_c_proc_new(name, fn))
+ * Register a C procedure in the interpreter's global scope.
+ * This is the primary way to extend LCL with C functions.
+ *
+ * Example:
+ *   int my_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+ *       long a, b;
+ *       if (argc != 2) return LCL_RC_ERR;
+ *       lcl_value_to_int(argv[0], &a);
+ *       lcl_value_to_int(argv[1], &b);
+ *       *out = lcl_int_new(a + b);
+ *       return LCL_RC_OK;
+ *   }
+ *
+ *   lcl_register_proc(interp, "my-add", my_add);
  */
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn fn);
+
+/* ============================================================================
+ * Special Forms (Advanced)
+ *
+ * Special forms receive unevaluated arguments and control their own evaluation.
+ * This is an advanced feature for implementing control structures.
+ * Most C extensions should use lcl_register_proc() instead.
+ * ============================================================================ */
+
+/* Opaque type for unevaluated words (used by special forms) */
+typedef struct lcl_word lcl_word;
+
+/*
+ * Function signature for special forms.
+ *
+ * Parameters:
+ *   interp - the interpreter
+ *   argc   - number of unevaluated arguments
+ *   args   - array of unevaluated words
+ *   out    - set this to the return value (with +1 refcount)
+ *
+ * Special forms must evaluate their arguments manually using lcl_eval_word().
+ */
+typedef int (*lcl_c_spec_fn)(lcl_interp *interp,
+                              int argc,
+                              const lcl_word **args,
+                              lcl_value **out);
+
+/*
+ * Create a special form value.
+ */
+lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);
+
+/*
+ * Register a special form in the interpreter's global scope.
+ */
+lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn fn);
+
+/*
+ * Evaluate an unevaluated word to a value.
+ * Used by special forms to selectively evaluate their arguments.
+ */
+lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word, lcl_value **out);
 
 /* ============================================================================
  * Opaque Values (C Extension Data)

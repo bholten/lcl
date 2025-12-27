@@ -125,3 +125,14 @@ lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn
 
   return lcl_env_let_take(&interp->env, name, proc);
 }
+
+lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn fn) {
+  lcl_value *spec;
+
+  if (!interp || !name || !fn) return LCL_ERROR;
+
+  spec = lcl_c_spec_new(name, fn);
+  if (!spec) return LCL_ERROR;
+
+  return lcl_env_let_take(&interp->env, name, spec);
+}

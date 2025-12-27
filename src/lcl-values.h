@@ -23,7 +23,6 @@ typedef int (*lcl_cproc)(lcl_frame *env,
                          lcl_value **argv,
                          lcl_value **out);
 
-
 struct lcl_value {
   lcl_type type;
   int refc;

@@ -7,6 +7,10 @@
 
 #include "lcl-stdlib.h"
 
+lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn fn);
+lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn fn);
+lcl_result lcl_define_take(lcl_interp *interp, const char *name, lcl_value *value);
+
 lcl_value *lcl_list_new_from_cwords(const char *words);
 static int lcl_value_is_true(lcl_value *v);
 
@@ -4304,85 +4308,85 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_value *dict_ns;
   lcl_value *string_ns;
 
-  lcl_env_let_take(&interp->env, "puts", lcl_c_proc_new("puts", c_puts));
+  lcl_register_proc(interp, "puts", c_puts);
 
   /* Logical operators */
-  lcl_env_let_take(&interp->env, "and", lcl_c_proc_new("and", c_and));
-  lcl_env_let_take(&interp->env, "or",  lcl_c_proc_new("or", c_or));
-  lcl_env_let_take(&interp->env, "not", lcl_c_proc_new("not", c_not));
+  lcl_register_proc(interp, "and", c_and);
+  lcl_register_proc(interp, "or",  c_or);
+  lcl_register_proc(interp, "not", c_not);
 
   /* Math */
-  lcl_env_let_take(&interp->env, "+",  lcl_c_proc_new("+", c_add));
-  lcl_env_let_take(&interp->env, "-",  lcl_c_proc_new("-", c_sub));
-  lcl_env_let_take(&interp->env, "*",  lcl_c_proc_new("*", c_mult));
-  lcl_env_let_take(&interp->env, "/",  lcl_c_proc_new("/", c_div));
-  lcl_env_let_take(&interp->env, "%",  lcl_c_proc_new("%", c_mod));
-  lcl_env_let_take(&interp->env, "<",  lcl_c_proc_new("<", c_lt));
-  lcl_env_let_take(&interp->env, "<=", lcl_c_proc_new("<=", c_lte));
-  lcl_env_let_take(&interp->env, ">",  lcl_c_proc_new(">", c_gt));
-  lcl_env_let_take(&interp->env, ">=", lcl_c_proc_new(">=", c_gte));
+  lcl_register_proc(interp, "+",  c_add);
+  lcl_register_proc(interp, "-",  c_sub);
+  lcl_register_proc(interp, "*",  c_mult);
+  lcl_register_proc(interp, "/",  c_div);
+  lcl_register_proc(interp, "%",  c_mod);
+  lcl_register_proc(interp, "<",  c_lt);
+  lcl_register_proc(interp, "<=", c_lte);
+  lcl_register_proc(interp, ">",  c_gt);
+  lcl_register_proc(interp, ">=", c_gte);
 
   /* Equality operators */
-  lcl_env_let_take(&interp->env, "==",            lcl_c_proc_new("==", c_eq));
-  lcl_env_let_take(&interp->env, "!=",            lcl_c_proc_new("!=", c_ne));
-  lcl_env_let_take(&interp->env, "same?",         lcl_c_proc_new("same?", c_same));
-  lcl_env_let_take(&interp->env, "not-same?",     lcl_c_proc_new("not-same?", c_not_same));
+  lcl_register_proc(interp, "==",        c_eq);
+  lcl_register_proc(interp, "!=",        c_ne);
+  lcl_register_proc(interp, "same?",     c_same);
+  lcl_register_proc(interp, "not-same?", c_not_same);
 
   /* Generic type-directed operations */
-  lcl_env_let_take(&interp->env, "len",    lcl_c_proc_new("len", c_len));
-  lcl_env_let_take(&interp->env, "empty?", lcl_c_proc_new("empty?", c_empty));
-  lcl_env_let_take(&interp->env, "get",    lcl_c_proc_new("get", c_generic_get));
-  lcl_env_let_take(&interp->env, "put",    lcl_c_proc_new("put", c_put));
-  lcl_env_let_take(&interp->env, "del",    lcl_c_proc_new("del", c_del));
-  lcl_env_let_take(&interp->env, "has?",   lcl_c_proc_new("has?", c_has));
+  lcl_register_proc(interp, "len",    c_len);
+  lcl_register_proc(interp, "empty?", c_empty);
+  lcl_register_proc(interp, "get",    c_generic_get);
+  lcl_register_proc(interp, "put",    c_put);
+  lcl_register_proc(interp, "del",    c_del);
+  lcl_register_proc(interp, "has?",   c_has);
 
   /* Type predicates */
-  lcl_env_let_take(&interp->env, "list?",   lcl_c_proc_new("list?", c_is_list));
-  lcl_env_let_take(&interp->env, "dict?",   lcl_c_proc_new("dict?", c_is_dict));
-  lcl_env_let_take(&interp->env, "string?", lcl_c_proc_new("string?", c_is_string));
-  lcl_env_let_take(&interp->env, "number?", lcl_c_proc_new("number?", c_is_number));
-  lcl_env_let_take(&interp->env, "int?",    lcl_c_proc_new("int?", c_is_int));
-  lcl_env_let_take(&interp->env, "float?",  lcl_c_proc_new("float?", c_is_float));
-  lcl_env_let_take(&interp->env, "cell?",   lcl_c_proc_new("cell?", c_is_cell));
-  lcl_env_let_take(&interp->env, "proc?",   lcl_c_proc_new("proc?", c_is_proc));
+  lcl_register_proc(interp, "list?",   c_is_list);
+  lcl_register_proc(interp, "dict?",   c_is_dict);
+  lcl_register_proc(interp, "string?", c_is_string);
+  lcl_register_proc(interp, "number?", c_is_number);
+  lcl_register_proc(interp, "int?",    c_is_int);
+  lcl_register_proc(interp, "float?",  c_is_float);
+  lcl_register_proc(interp, "cell?",   c_is_cell);
+  lcl_register_proc(interp, "proc?",   c_is_proc);
 
   /* Bindings and cells */
-  lcl_env_let_take(&interp->env, "let",           lcl_c_proc_new("let", c_let));
-  lcl_env_let_take(&interp->env, "ref",           lcl_c_proc_new("ref", c_ref));
-  lcl_env_let_take(&interp->env, "getvar",        lcl_c_proc_new("getvar", c_get));
-  lcl_env_let_take(&interp->env, "var",           lcl_c_spec_new("var", s_var));
-  lcl_env_let_take(&interp->env, "set!",          lcl_c_spec_new("set!", s_set_bang));
-  lcl_env_let_take(&interp->env, "binding-cell",  lcl_c_spec_new("binding-cell", s_binding_cell));
-  lcl_env_let_take(&interp->env, "same-binding?", lcl_c_spec_new("same-binding?", s_same_binding));
+  lcl_register_proc(interp, "let",    c_let);
+  lcl_register_proc(interp, "ref",    c_ref);
+  lcl_register_proc(interp, "getvar", c_get);
+  lcl_register_spec(interp, "var",           s_var);
+  lcl_register_spec(interp, "set!",          s_set_bang);
+  lcl_register_spec(interp, "binding-cell",  s_binding_cell);
+  lcl_register_spec(interp, "same-binding?", s_same_binding);
 
   /* Procedures and evaluation */
-  lcl_env_let_take(&interp->env, "return",    lcl_c_spec_new("return", s_return));
-  lcl_env_let_take(&interp->env, "lambda",    lcl_c_spec_new("lambda", s_lambda));
-  lcl_env_let_take(&interp->env, "proc",      lcl_c_spec_new("proc", s_proc));
-  lcl_env_let_take(&interp->env, "eval",      lcl_c_spec_new("eval", s_eval));
-  lcl_env_let_take(&interp->env, "load",      lcl_c_spec_new("load", s_load));
-  lcl_env_let_take(&interp->env, "subst",     lcl_c_spec_new("subst", s_subst));
-  lcl_env_let_take(&interp->env, "namespace", lcl_c_spec_new("namespace", s_namespace));
-  lcl_env_let_take(&interp->env, "->",        lcl_c_spec_new("->", s_thread_first));
-  lcl_env_let_take(&interp->env, "->>",       lcl_c_spec_new("->>", s_thread_last));
+  lcl_register_spec(interp, "return",    s_return);
+  lcl_register_spec(interp, "lambda",    s_lambda);
+  lcl_register_spec(interp, "proc",      s_proc);
+  lcl_register_spec(interp, "eval",      s_eval);
+  lcl_register_spec(interp, "load",      s_load);
+  lcl_register_spec(interp, "subst",     s_subst);
+  lcl_register_spec(interp, "namespace", s_namespace);
+  lcl_register_spec(interp, "->",        s_thread_first);
+  lcl_register_spec(interp, "->>",       s_thread_last);
 
   /* Control flow */
-  lcl_env_let_take(&interp->env, "if",       lcl_c_spec_new("if", s_if));
-  lcl_env_let_take(&interp->env, "while",    lcl_c_spec_new("while", s_while));
-  lcl_env_let_take(&interp->env, "for",      lcl_c_spec_new("for", s_for));
-  lcl_env_let_take(&interp->env, "foreach",  lcl_c_spec_new("foreach", s_foreach));
-  lcl_env_let_take(&interp->env, "break",    lcl_c_spec_new("break", s_break));
-  lcl_env_let_take(&interp->env, "continue", lcl_c_spec_new("continue", s_continue));
+  lcl_register_spec(interp, "if",       s_if);
+  lcl_register_spec(interp, "while",    s_while);
+  lcl_register_spec(interp, "for",      s_for);
+  lcl_register_spec(interp, "foreach",  s_foreach);
+  lcl_register_spec(interp, "break",    s_break);
+  lcl_register_spec(interp, "continue", s_continue);
 
   /* Constructors (ergonomic single-word forms) */
-  lcl_env_let_take(&interp->env, "list", lcl_c_proc_new("list", c_list));
-  lcl_env_let_take(&interp->env, "dict", lcl_c_proc_new("dict", c_dict_create_proc));
+  lcl_register_proc(interp, "list", c_list);
+  lcl_register_proc(interp, "dict", c_dict_create_proc);
 
   /* ========================================================================
    * List:: namespace (capitalized to avoid conflict with constructor)
    * ======================================================================== */
   list_ns = lcl_ns_new("List");
-  lcl_env_let_take(&interp->env, "List", list_ns);
+  lcl_define_take(interp, "List", list_ns);
 
   ns_def(list_ns, "new",     lcl_c_proc_new("List::new", c_list));
   ns_def(list_ns, "push",    lcl_c_proc_new("List::push", c_list_push));
@@ -4400,7 +4404,7 @@ void lcl_register_core(lcl_interp *interp) {
    * Dict:: namespace
    * ======================================================================== */
   dict_ns = lcl_ns_new("Dict");
-  lcl_env_let_take(&interp->env, "Dict", dict_ns);
+  lcl_define_take(interp, "Dict", dict_ns);
 
   ns_def(dict_ns, "new",    lcl_c_proc_new("Dict::new", c_dict_create_proc));
   ns_def(dict_ns, "keys",   lcl_c_proc_new("Dict::keys", c_dict_keys));
@@ -4415,7 +4419,7 @@ void lcl_register_core(lcl_interp *interp) {
    * String:: namespace
    * ======================================================================== */
   string_ns = lcl_ns_new("String");
-  lcl_env_let_take(&interp->env, "String", string_ns);
+  lcl_define_take(interp, "String", string_ns);
 
   ns_def(string_ns, "upper",   lcl_c_proc_new("String::upper", c_string_upper));
   ns_def(string_ns, "lower",   lcl_c_proc_new("String::lower", c_string_lower));
