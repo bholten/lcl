@@ -247,5 +247,12 @@ puts [->> $dthread \
           { Dict::filter [lambda {k v} { == 1 [% $v 2] }] } \
           { Dict::reduce 0 [lambda {acc k v} { + $v $acc }] }] ; # expect 1 + 3 = 4
 
+
+puts "testing asserts"
+let true 1
+let false 0
+
+assert {== $true 0}
+
 puts "== done =="
 

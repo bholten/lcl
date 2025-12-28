@@ -1,0 +1,28 @@
+puts "testing io"
+
+# open a file
+let h [io::open_file packages/lcl-io/include/lcl-io.h rt]
+
+var end 1
+
+while {$end} {
+    let line [io::fgets $h 1024]
+    puts $line
+}
+
+# close file
+io::close_file $h
+
+# open again
+let h2 [io::open_file packages/lcl-io/src/lcl-io.c rt]
+
+var c 0
+
+while [!= $c -1] {
+    set! c [io::fgetc $h2]
+    puts "c => $c"
+}
+
+io::close_file $h2
+
+puts "== Done =="

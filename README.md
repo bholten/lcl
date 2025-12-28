@@ -310,9 +310,8 @@ puts "hello"  ;# This is also a comment
 ### Line Continuation
 
 ```tcl
-dict create \
-    key1 value1 \
-    key2 value2
+dict key1 value1 \
+     key2 value2
 ```
 
 ### Functional Programming
