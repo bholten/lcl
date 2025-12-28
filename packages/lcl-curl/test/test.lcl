@@ -1,0 +1,40 @@
+# CURL tests
+
+puts "Lcl curl tests"
+
+# initialize curl (curl_easy API)
+curl::init
+
+# create a handle
+let c [curl::new]
+
+# Set an option
+curl::set_verbose $c 1
+
+# set verb
+curl::set_verb $c POST
+
+# set some headers
+curl::set_header $c "Content-Type: application/json"
+curl::set_header $c "User-Agent: liblclcurl"
+
+# Set Body
+curl::set_body $c "{\"route\": \"Test route\"}"
+
+# set URL
+curl::set_url $c http://localhost:8080/test
+
+curl::set_write_callback $c [lambda {response} {
+    puts "Hello from callback"
+    puts $response
+}]
+
+# perform
+curl::perform $c
+
+# reset
+curl::reset $c
+
+puts ""
+puts "Done"
+

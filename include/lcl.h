@@ -248,7 +248,7 @@ lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
 lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
-  
+
 /* ============================================================================
  * Variable/Definition Access
  * ============================================================================ */
@@ -348,9 +348,9 @@ typedef struct lcl_word lcl_word;
  * Special forms must evaluate their arguments manually using lcl_eval_word().
  */
 typedef int (*lcl_c_spec_fn)(lcl_interp *interp,
-                              int argc,
-                              const lcl_word **args,
-                              lcl_value **out);
+                             int argc,
+                             const lcl_word **args,
+                             lcl_value **out);
 
 /*
  * Create a special form value.
@@ -420,10 +420,10 @@ int lcl_is_callable(lcl_value *value);
  *   - Decrementing the result refcount when done
  */
 lcl_return_code lcl_call_proc(lcl_interp *interp,
-                               lcl_value *proc,
-                               int argc,
-                               lcl_value **argv,
-                               lcl_value **out);
+                              lcl_value *proc,
+                              int argc,
+                              lcl_value **argv,
+                              lcl_value **out);
 
 /* ============================================================================
  * Opaque Values (C Extension Data)
