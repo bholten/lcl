@@ -2833,61 +2833,47 @@ int c_llength(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-/* lrange list first last - extract a slice */
+/* List::range start end ?step? - generate numeric range [start, end) */
 int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  lcl_value *list;
   lcl_value *result;
-  long first, last;
-  size_t len, i;
+  lcl_value *num;
+  long start, end, step, i;
   (void)interp;
 
-  if (argc != 3) return LCL_RC_ERR;
+  if (argc < 2 || argc > 3) return LCL_RC_ERR;
 
-  list = argv[0];
+  if (lcl_value_to_int(argv[0], &start) != LCL_OK) return LCL_RC_ERR;
+  if (lcl_value_to_int(argv[1], &end) != LCL_OK) return LCL_RC_ERR;
 
-  if (list->type != LCL_LIST) {
-    /* Non-list treated as single-element list */
-    if (lcl_value_to_int(argv[1], &first) != LCL_OK) return LCL_RC_ERR;
-    if (lcl_value_to_int(argv[2], &last) != LCL_OK) return LCL_RC_ERR;
-
-    result = lcl_list_new();
-    if (!result) return LCL_RC_ERR;
-
-    if (first <= 0 && last >= 0) {
-      if (lcl_list_push(&result, list) != LCL_OK) {
-        lcl_ref_dec(result);
-
-        return LCL_RC_ERR;
-      }
-    }
-    *out = result;
-    return LCL_RC_OK;
+  step = 1;
+  if (argc == 3) {
+    if (lcl_value_to_int(argv[2], &step) != LCL_OK) return LCL_RC_ERR;
+    if (step == 0) return LCL_RC_ERR;  /* step cannot be zero */
   }
 
-  len = lcl_list_len(list);
-
-  if (lcl_value_to_int(argv[1], &first) != LCL_OK) return LCL_RC_ERR;
-  if (lcl_value_to_int(argv[2], &last) != LCL_OK) return LCL_RC_ERR;
-
-  /* Normalize indices */
-  if (first < 0) first = 0;
-  if (last < 0) last = -1;
-  if ((size_t)last >= len) last = (long)len - 1;
-
   result = lcl_list_new();
-
   if (!result) return LCL_RC_ERR;
 
-  for (i = (size_t)first; i <= (size_t)last && i < len; i++) {
-    lcl_value *elem = NULL;
-    if (lcl_list_get(list, i, &elem) == LCL_OK) {
-      if (lcl_list_push(&result, elem) != LCL_OK) {
-        lcl_ref_dec(elem);
+  if (step > 0) {
+    for (i = start; i < end; i += step) {
+      num = lcl_int_new(i);
+      if (!num || lcl_list_push(&result, num) != LCL_OK) {
+        if (num) lcl_ref_dec(num);
         lcl_ref_dec(result);
-
         return LCL_RC_ERR;
       }
-      lcl_ref_dec(elem);
+      lcl_ref_dec(num);
+    }
+  } else {
+    /* negative step: count down */
+    for (i = start; i > end; i += step) {
+      num = lcl_int_new(i);
+      if (!num || lcl_list_push(&result, num) != LCL_OK) {
+        if (num) lcl_ref_dec(num);
+        lcl_ref_dec(result);
+        return LCL_RC_ERR;
+      }
+      lcl_ref_dec(num);
     }
   }
 

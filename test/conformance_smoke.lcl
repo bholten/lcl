@@ -1054,4 +1054,324 @@ puts $fp_d_sum                       ;# expect: 6
 assert {== $fp_d_sum 6}
 
 puts ""
+puts "-- List:: namespace functions --"
+
+# List::new (same as list command)
+let ln_lst [List::new a b c]
+puts $ln_lst                         ;# expect: a b c
+assert {== $ln_lst [list a b c]}
+
+# List::push - append element
+let ln_pushed [List::push [list 1 2] 3]
+puts $ln_pushed                      ;# expect: 1 2 3
+assert {== $ln_pushed [list 1 2 3]}
+
+# List::push - append to empty list
+let ln_pushed_empty [List::push [list] x]
+puts $ln_pushed_empty                ;# expect: x
+assert {== $ln_pushed_empty [list x]}
+
+# List::pop - remove last element
+let ln_popped [List::pop [list a b c]]
+puts $ln_popped                      ;# expect: a b
+assert {== $ln_popped [list a b]}
+
+# List::pop - single element list becomes empty
+let ln_popped_one [List::pop [list x]]
+puts [len $ln_popped_one]            ;# expect: 0
+assert {== [len $ln_popped_one] 0}
+
+# List::slice - extract sublist [start, end)
+let ln_sliced [List::slice [list a b c d e] 1 4]
+puts $ln_sliced                      ;# expect: b c d
+assert {== $ln_sliced [list b c d]}
+
+# List::slice - from beginning
+let ln_slice_start [List::slice [list 1 2 3 4 5] 0 3]
+puts $ln_slice_start                 ;# expect: 1 2 3
+assert {== $ln_slice_start [list 1 2 3]}
+
+# List::slice - to end
+let ln_slice_end [List::slice [list 1 2 3 4 5] 3 5]
+puts $ln_slice_end                   ;# expect: 4 5
+assert {== $ln_slice_end [list 4 5]}
+
+# List::concat - concatenate two lists
+let ln_concat [List::concat [list a b] [list c d]]
+puts $ln_concat                      ;# expect: a b c d
+assert {== $ln_concat [list a b c d]}
+
+# List::concat - with empty list
+let ln_concat_empty [List::concat [list 1 2] [list]]
+puts $ln_concat_empty                ;# expect: 1 2
+assert {== $ln_concat_empty [list 1 2]}
+
+# List::reverse - reverse list
+let ln_rev [List::reverse [list 1 2 3 4]]
+puts $ln_rev                         ;# expect: 4 3 2 1
+assert {== $ln_rev [list 4 3 2 1]}
+
+# List::reverse - single element
+let ln_rev_one [List::reverse [list x]]
+puts $ln_rev_one                     ;# expect: x
+assert {== $ln_rev_one [list x]}
+
+# List::reverse - empty list
+let ln_rev_empty [List::reverse [list]]
+puts [len $ln_rev_empty]             ;# expect: 0
+assert {== [len $ln_rev_empty] 0}
+
+# List::index - get element at index (alias for get)
+let ln_idx [List::index [list a b c d] 2]
+puts $ln_idx                         ;# expect: c
+assert {== $ln_idx c}
+
+# List::range - generate numeric range [start, end)
+let ln_range [List::range 1 5]
+puts $ln_range                       ;# expect: 1 2 3 4
+assert {== $ln_range [list 1 2 3 4]}
+
+# List::range - with step
+let ln_range_step [List::range 0 10 2]
+puts $ln_range_step                  ;# expect: 0 2 4 6 8
+assert {== $ln_range_step [list 0 2 4 6 8]}
+
+# List::range - negative step (count down)
+let ln_range_down [List::range 5 0 -1]
+puts $ln_range_down                  ;# expect: 5 4 3 2 1
+assert {== $ln_range_down [list 5 4 3 2 1]}
+
+# List::range - single element
+let ln_range_one [List::range 5 6]
+puts $ln_range_one                   ;# expect: 5
+assert {== $ln_range_one [list 5]}
+
+# List::range - empty (start >= end with positive step)
+let ln_range_empty [List::range 5 5]
+puts [len $ln_range_empty]           ;# expect: 0
+assert {== [len $ln_range_empty] 0}
+
+# List::range - starting from zero
+let ln_range_zero [List::range 0 3]
+puts $ln_range_zero                  ;# expect: 0 1 2
+assert {== $ln_range_zero [list 0 1 2]}
+
+# List::range - negative numbers
+let ln_range_neg [List::range -2 2]
+puts $ln_range_neg                   ;# expect: -2 -1 0 1
+assert {== $ln_range_neg [list -2 -1 0 1]}
+
+# List::map - transform elements
+let ln_mapped [List::map [lambda {x} {+ $x 10}] [list 1 2 3]]
+puts $ln_mapped                      ;# expect: 11 12 13
+assert {== $ln_mapped [list 11 12 13]}
+
+# List::map - empty list
+let ln_map_empty [List::map [lambda {x} {* $x 2}] [list]]
+puts [len $ln_map_empty]             ;# expect: 0
+assert {== [len $ln_map_empty] 0}
+
+# List::filter - filter elements
+let ln_filtered [List::filter [lambda {x} {> $x 2}] [list 1 2 3 4 5]]
+puts $ln_filtered                    ;# expect: 3 4 5
+assert {== $ln_filtered [list 3 4 5]}
+
+# List::filter - no matches
+let ln_filter_none [List::filter [lambda {x} {> $x 100}] [list 1 2 3]]
+puts [len $ln_filter_none]           ;# expect: 0
+assert {== [len $ln_filter_none] 0}
+
+# List::reduce - fold with accumulator
+let ln_sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] [list 1 2 3 4]]
+puts $ln_sum                         ;# expect: 10
+assert {== $ln_sum 10}
+
+# List::reduce - string concatenation
+let ln_concat_str [List::reduce {} [lambda {acc x} {return "$acc$x"}] [list a b c]]
+puts $ln_concat_str                  ;# expect: abc
+assert {== $ln_concat_str abc}
+
+puts ""
+puts "-- Dict:: namespace functions --"
+
+# Dict::new (same as dict command)
+let dn_d [Dict::new x 1 y 2]
+puts [len $dn_d]                     ;# expect: 2
+assert {== [len $dn_d] 2}
+assert {== [get $dn_d x] 1}
+assert {== [get $dn_d y] 2}
+
+# Dict::keys - get all keys
+let dn_keys [Dict::keys [dict a 1 b 2 c 3]]
+puts [len $dn_keys]                  ;# expect: 3
+assert {== [len $dn_keys] 3}
+
+# Dict::values - get all values
+let dn_vals [Dict::values [dict a 10 b 20 c 30]]
+puts [len $dn_vals]                  ;# expect: 3
+assert {== [len $dn_vals] 3}
+
+# Dict::items - get key-value pairs as list of lists
+let dn_items [Dict::items [dict x 1 y 2]]
+puts [len $dn_items]                 ;# expect: 2
+assert {== [len $dn_items] 2}
+# Each item is a 2-element list [key value]
+let dn_first_item [get $dn_items 0]
+puts [len $dn_first_item]            ;# expect: 2
+assert {== [len $dn_first_item] 2}
+
+# Dict::merge - merge two dicts (second wins on conflict)
+let dn_d1 [dict a 1 b 2]
+let dn_d2 [dict b 20 c 30]
+let dn_merged [Dict::merge $dn_d1 $dn_d2]
+puts [len $dn_merged]                ;# expect: 3
+assert {== [len $dn_merged] 3}
+puts [get $dn_merged a]              ;# expect: 1
+assert {== [get $dn_merged a] 1}
+puts [get $dn_merged b]              ;# expect: 20 (from d2)
+assert {== [get $dn_merged b] 20}
+puts [get $dn_merged c]              ;# expect: 30
+assert {== [get $dn_merged c] 30}
+
+# Dict::merge - with empty dict
+let dn_merge_empty [Dict::merge [dict a 1] [dict]]
+puts [len $dn_merge_empty]           ;# expect: 1
+assert {== [len $dn_merge_empty] 1}
+
+# Dict::map - transform values
+let dn_mapped [Dict::map [lambda {k v} {* $v 2}] [dict a 1 b 2 c 3]]
+puts [get $dn_mapped a]              ;# expect: 2
+assert {== [get $dn_mapped a] 2}
+puts [get $dn_mapped b]              ;# expect: 4
+assert {== [get $dn_mapped b] 4}
+puts [get $dn_mapped c]              ;# expect: 6
+assert {== [get $dn_mapped c] 6}
+
+# Dict::filter - filter entries by predicate
+let dn_filtered [Dict::filter [lambda {k v} {> $v 1}] [dict a 1 b 2 c 3]]
+puts [len [Dict::keys $dn_filtered]] ;# expect: 2
+assert {== [len [Dict::keys $dn_filtered]] 2}
+assert {== [has? $dn_filtered a] 0}
+assert {== [has? $dn_filtered b] 1}
+assert {== [has? $dn_filtered c] 1}
+
+# Dict::filter - by key
+let dn_filter_key [Dict::filter [lambda {k v} {!= $k skip}] [dict keep 1 skip 2 also 3]]
+puts [len [Dict::keys $dn_filter_key]]  ;# expect: 2
+assert {== [len [Dict::keys $dn_filter_key]] 2}
+assert {== [has? $dn_filter_key skip] 0}
+
+# Dict::reduce - fold over entries
+let dn_sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] [dict a 1 b 2 c 3]]
+puts $dn_sum                         ;# expect: 6
+assert {== $dn_sum 6}
+
+# Dict::reduce - collect keys
+let dn_keys_str [Dict::reduce {} [lambda {acc k v} {return "$acc$k"}] [dict x 1 y 2 z 3]]
+puts [len $dn_keys_str]              ;# expect: 3 (length of "xyz")
+assert {== [len $dn_keys_str] 3}
+
+puts ""
+puts "-- String:: namespace functions --"
+
+# String::upper - convert to uppercase
+puts [String::upper hello]           ;# expect: HELLO
+assert {== [String::upper hello] HELLO}
+puts [String::upper HeLLo]           ;# expect: HELLO
+assert {== [String::upper HeLLo] HELLO}
+
+# String::upper - with numbers (unchanged)
+puts [String::upper abc123]          ;# expect: ABC123
+assert {== [String::upper abc123] ABC123}
+
+# String::lower - convert to lowercase
+puts [String::lower HELLO]           ;# expect: hello
+assert {== [String::lower HELLO] hello}
+puts [String::lower HeLLo]           ;# expect: hello
+assert {== [String::lower HeLLo] hello}
+
+# String::lower - with numbers (unchanged)
+puts [String::lower ABC123]          ;# expect: abc123
+assert {== [String::lower ABC123] abc123}
+
+# String::find - find substring position
+puts [String::find hello ll]         ;# expect: 2
+assert {== [String::find hello ll] 2}
+puts [String::find hello h]          ;# expect: 0
+assert {== [String::find hello h] 0}
+puts [String::find hello o]          ;# expect: 4
+assert {== [String::find hello o] 4}
+
+# String::find - not found returns -1
+puts [String::find hello xyz]        ;# expect: -1
+assert {== [String::find hello xyz] -1}
+
+# String::replace - replace substring
+puts [String::replace hello ll LL]   ;# expect: heLLo
+assert {== [String::replace hello ll LL] heLLo}
+
+# String::replace - replace at start
+puts [String::replace hello he HE]   ;# expect: HEllo
+assert {== [String::replace hello he HE] HEllo}
+
+# String::replace - replace at end
+puts [String::replace hello lo LO]   ;# expect: helLO
+assert {== [String::replace hello lo LO] helLO}
+
+# String::replace - replace with empty (deletion)
+puts [String::replace hello ll {}]   ;# expect: heo
+assert {== [String::replace hello ll {}] heo}
+
+# String::replace - no match (unchanged)
+puts [String::replace hello xyz ZZZ] ;# expect: hello
+assert {== [String::replace hello xyz ZZZ] hello}
+
+# String::split - split by delimiter
+let sn_parts [String::split "a,b,c" ","]
+puts $sn_parts                       ;# expect: a b c
+assert {== $sn_parts [list a b c]}
+
+# String::split - note: uses first char of delimiter only
+let sn_parts2 [String::split "a:b:c" ":"]
+puts $sn_parts2                      ;# expect: a b c
+assert {== $sn_parts2 [list a b c]}
+
+# String::split - no delimiter found
+let sn_nosplit [String::split hello ","]
+puts $sn_nosplit                     ;# expect: hello (single element list)
+assert {== [len $sn_nosplit] 1}
+assert {== [get $sn_nosplit 0] hello}
+
+# String::split - split by space
+let sn_words [String::split "one two three" " "]
+puts $sn_words                       ;# expect: one two three
+assert {== $sn_words [list one two three]}
+
+# String::join - join list with delimiter
+puts [String::join [list a b c] -]   ;# expect: a-b-c
+assert {== [String::join [list a b c] -] a-b-c}
+
+# String::join - join with empty delimiter
+puts [String::join [list x y z] {}]  ;# expect: xyz
+assert {== [String::join [list x y z] {}] xyz}
+
+# String::join - join with multi-char delimiter
+puts [String::join [list 1 2 3] ", "] ;# expect: 1, 2, 3
+assert {== [String::join [list 1 2 3] ", "] {1, 2, 3}}
+
+# String::join - single element list
+puts [String::join [list only] -]    ;# expect: only
+assert {== [String::join [list only] -] only}
+
+# String::join - empty list
+puts [String::join [list] -]         ;# expect: (empty string)
+assert {== [String::join [list] -] {}}
+
+# Round-trip: split then join
+let sn_original "hello world test"
+let sn_roundtrip [String::join [String::split $sn_original " "] " "]
+puts $sn_roundtrip                   ;# expect: hello world test
+assert {== $sn_roundtrip $sn_original}
+
+puts ""
 puts "=== Done ==="
