@@ -6,7 +6,6 @@
 #include "lcl-lex.h"
 #include "lcl-values.h"
 
-/* Forward declaration */
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
                   lcl_value **out);
 
