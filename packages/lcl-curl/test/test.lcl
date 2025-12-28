@@ -19,7 +19,12 @@ curl::set_header $c "Content-Type: application/json"
 curl::set_header $c "User-Agent: liblclcurl"
 
 # Set Body
-curl::set_body $c "{\"route\": \"Test route\"}"
+curl::set_body $c {
+    {
+        "user": "test user",
+        "number": 42
+    }
+}
 
 # set URL
 curl::set_url $c http://localhost:8080/test

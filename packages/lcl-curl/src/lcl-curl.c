@@ -46,6 +46,14 @@ void curl_context_free(struct curl_context *ctx) {
     curl_easy_cleanup(ctx->curl);
   }
 
+  if (ctx->headers) {
+    curl_slist_free_all(ctx->headers);
+  }
+
+  if (ctx->write_callback) {
+    lcl_ref_dec(ctx->write_callback);
+  }
+
   free(ctx);
 }
 
@@ -184,7 +192,16 @@ int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **
   }
 
   body = lcl_value_to_string(argv[1]);
-  rc = curl_easy_setopt(ctx->curl, CURLOPT_POSTFIELDS, body);
+
+  /*
+   * Use CURLOPT_COPYPOSTFIELDS instead of CURLOPT_POSTFIELDS.
+   * POSTFIELDS does NOT copy the data - it just stores the pointer.
+   * Since 'body' points to memory owned by the LCL value (argv[1]),
+   * that memory may be freed before curl_easy_perform() is called,
+   * resulting in garbage data being sent.
+   * COPYPOSTFIELDS makes CURL copy the data internally.
+   */
+  rc = curl_easy_setopt(ctx->curl, CURLOPT_COPYPOSTFIELDS, body);
 
   if (rc != CURLE_OK) return LCL_RC_ERR;
 
@@ -893,15 +910,13 @@ int c_curl_perform(lcl_interp *interp, int argc, lcl_value **argv,
 
   result = curl_easy_perform(ctx->curl);
 
-  if (result == CURLE_OK) {
+  /* Free headers after perform (they were already sent) */
+  if (ctx->headers) {
     curl_slist_free_all(ctx->headers);
-
-    return LCL_RC_OK;
+    ctx->headers = NULL;
   }
 
-  curl_slist_free_all(ctx->headers);
-
-  return LCL_RC_ERR;
+  return (result == CURLE_OK) ? LCL_RC_OK : LCL_RC_ERR;
 }
 
 /*
@@ -911,11 +926,28 @@ size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb, void *userd
   size_t realsize = size * nmemb;
   struct curl_context *ctx = (struct curl_context *)userdata;
   lcl_value *result = NULL;
-  lcl_value *arg = lcl_string_new(contents);
+  lcl_value *arg;
+  char *buf;
+
+  /*
+   * CURL's write callback data is NOT null-terminated.
+   * We must copy it to a null-terminated buffer before creating an LCL string.
+   */
+  buf = malloc(realsize + 1);
+  if (!buf) {
+    return 0;  /* Signal error to CURL */
+  }
+  memcpy(buf, contents, realsize);
+  buf[realsize] = '\0';
+
+  arg = lcl_string_new(buf);
+  free(buf);
 
   lcl_call_proc(ctx->interp, ctx->write_callback, 1, &arg, &result);
 
-  lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_ref_dec(arg);
 
   return realsize;
