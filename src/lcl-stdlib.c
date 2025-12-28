@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,30 +18,26 @@ lcl_value *lcl_list_new_from_cwords(const char *words);
 static int lcl_value_is_true(lcl_value *v);
 
 int c_assert(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  const char *callable;
-  lcl_value *result;
-  int rc;  
+  const char *expr;
+  lcl_value *result = NULL;
+  int rc;
   (void)out;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  callable = lcl_value_to_string(argv[0]);
+  expr = lcl_value_to_string(argv[0]);
 
-  if (lcl_eval_string(interp, callable, &result) != LCL_OK) {
-    lcl_ref_dec(result);
+  if (lcl_eval_string(interp, expr, &result) != LCL_OK) {
+    if (result) lcl_ref_dec(result);
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_is_true(result)) {
-    rc = LCL_RC_OK;
-  } else {
-    rc = LCL_RC_ERR;
-  }
+  rc = lcl_value_is_true(result) ? LCL_RC_OK : LCL_RC_ERR;
 
   lcl_ref_dec(result);
-  
+
   return rc;
 }
 

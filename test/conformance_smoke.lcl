@@ -8,25 +8,30 @@ puts ""
 puts "-- immutability & substitution --"
 let x 10
 puts "x=$x"                    ;# expect: x=10
+assert {== $x 10}
 
 puts ""
 puts "-- cells (var/ref) & set! --"
 var n 0                        ;# let n [ref 0]
 set! n [+ $n 1]
 puts "n=$n"                    ;# expect: n=1
+assert {== $n 1}
 
 puts ""
 puts "-- quoting and subcommand substitution --"
 let a 10
 let s "x=$a [ + 1 2 ]"
 puts $s                        ;# expect: x=10 3
+assert {== $s {x=10 3}}
 let t {x=$a [ + 1 2 ]}
 puts $t                        ;# expect: x=$a [ + 1 2 ]
+assert {== $t {x=$a [ + 1 2 ]}}
 
 puts ""
 puts "-- user proc, return, and closures --"
 proc add {a b} { return [+ $a $b] }
 puts "add(20,22)=[add 20 22]"  ;# expect: add(20,22)=42
+assert {== [add 20 22] 42}
 
 proc makeCounter {start} {
   var n $start
@@ -34,7 +39,8 @@ proc makeCounter {start} {
 }
 let c [makeCounter 10]
 puts [$c]                      ;# expect: 11
-puts [$c]                      ;# expect: 12
+assert {== [$c] 12}            ;# second call returns 12
+puts [$c]                      ;# expect: 13 (continues incrementing)
 
 puts ""
 puts "-- namespaces (optional stdlib) --"
@@ -42,28 +48,34 @@ namespace eval math {
     let ten 10
 }
 puts $math::ten
+assert {== $math::ten 10}
 # expect: 10
 puts ${math::ten}
+assert {== ${math::ten} 10}
 # expect: 10
 
 puts ""
 puts "-- eval --"
 # basic eval
 puts [eval {+ 1 2}]            ;# expect: 3
+assert {== [eval {+ 1 2}] 3}
 
 # eval accesses outer variables (same frame)
 let ev_x 42
 puts [eval {+ $ev_x 1}]        ;# expect: 43
+assert {== [eval {+ $ev_x 1}] 43}
 
 # eval defines variables in current frame
 eval {let ev_y 100}
 puts $ev_y                     ;# expect: 100
+assert {== $ev_y 100}
 
 # eval with multiple args (joined with spaces)
 let ev_cmd1 "let ev_z"
 let ev_cmd2 "200"
 eval $ev_cmd1 $ev_cmd2
 puts $ev_z                     ;# expect: 200
+assert {== $ev_z 200}
 
 # return inside eval in a proc
 proc testEvalReturn {} {
@@ -71,26 +83,32 @@ proc testEvalReturn {} {
   puts "ERROR: should not reach"
 }
 puts [testEvalReturn]          ;# expect: 999
+assert {== [testEvalReturn] 999}
 
 puts ""
 puts "-- subst --"
 # variable substitution
 let sub_x 42
 puts [subst {x is $sub_x}]     ;# expect: x is 42
+assert {== [subst {x is $sub_x}] {x is 42}}
 
 # subcommand substitution
 puts [subst {sum=[+ 1 2]}]     ;# expect: sum=3
+assert {== [subst {sum=[+ 1 2]}] {sum=3}}
 
 # ${name} form
 let sub_foo bar
 puts [subst {${sub_foo}!}]     ;# expect: bar!
+assert {== [subst {${sub_foo}!}] {bar!}}
 
 # backslash escapes
 puts [subst {a\tb}]            ;# expect: a	b (tab)
 puts [subst {literal \$x}]     ;# expect: literal $x
+assert {== [subst {literal \$x}] {literal $x}}
 
 # braces and quotes are literal (not grouping)
 puts [subst {braces {} ok}]    ;# expect: braces {} ok
+assert {== [subst {braces {} ok}] {braces {} ok}}
 
 puts ""
 puts "-- namespace eval --"
@@ -99,12 +117,14 @@ namespace eval myns {
   let val 100
 }
 puts $myns::val                ;# expect: 100
+assert {== $myns::val 100}
 
 # define procs in namespace
 namespace eval funcs {
   proc double {n} { return [+ $n $n] }
 }
 puts [funcs::double 7]         ;# expect: 14
+assert {== [funcs::double 7] 14}
 namespace eval funcs {
     puts [double 8]
 }                              ;# expect: 16
@@ -114,134 +134,182 @@ namespace eval outer::inner::leaf {
   let deep 42
 }
 puts $outer::inner::leaf::deep       ;# expect: 42
+assert {== $outer::inner::leaf::deep 42}
 
 # multiple evals on same namespace
 namespace eval ns1 { let x 1 }
 namespace eval ns1 { let y 2 }
 puts $ns1::x                   ;# expect: 1
+assert {== $ns1::x 1}
 puts $ns1::y                   ;# expect: 2
+assert {== $ns1::y 2}
 
 puts ""
 puts "-- load --"
 # load a file and call its procs
 load test/conformance_lib.lcl
 puts [lib_add 10 20]           ;# expect: 30
+assert {== [lib_add 10 20] 30}
 puts $LIB_CONST                ;# expect: 42
+assert {== $LIB_CONST 42}
 
 # load into namespace (import pattern)
 namespace eval imported {
   load test/conformance_lib.lcl
 }
 puts [imported::lib_add 5 5]   ;# expect: 10
+assert {== [imported::lib_add 5 5] 10}
 puts $imported::LIB_CONST      ;# expect: 42
+assert {== $imported::LIB_CONST 42}
 
 puts ""
 puts "-- list operations --"
 # list creation and length
 let mylist [list a b c d e]
 puts [len $mylist]             ;# expect: 5
+assert {== [len $mylist] 5}
 
 # get - get elements by index
 puts [get $mylist 0]           ;# expect: a
+assert {== [get $mylist 0] a}
 puts [get $mylist 2]           ;# expect: c
+assert {== [get $mylist 2] c}
 puts [get $mylist 4]           ;# expect: e
+assert {== [get $mylist 4] e}
 
 # List::slice - extract slice
 let slice [List::slice $mylist 1 4]
 puts [len $slice]              ;# expect: 3
+assert {== [len $slice] 3}
 puts [get $slice 0]            ;# expect: b
+assert {== [get $slice 0] b}
 puts [get $slice 2]            ;# expect: d
+assert {== [get $slice 2] d}
 
 # List::concat - concatenate lists
 let list1 [list 1 2]
 let list2 [list 3 4]
 let combined [List::concat $list1 $list2]
 puts [len $combined]           ;# expect: 4
+assert {== [len $combined] 4}
 puts [get $combined 0]         ;# expect: 1
+assert {== [get $combined 0] 1}
 puts [get $combined 3]         ;# expect: 4
+assert {== [get $combined 3] 4}
 
 # String::join - join list with separator
 puts [String::join $mylist -]  ;# expect: a-b-c-d-e
+assert {== [String::join $mylist -] {a-b-c-d-e}}
 puts [String::join $mylist {}] ;# expect: abcde
+assert {== [String::join $mylist {}] {abcde}}
 
 # String::split - split string into list
 let parts [String::split "hello,world,test" ","]
 puts [len $parts]              ;# expect: 3
+assert {== [len $parts] 3}
 puts [get $parts 0]            ;# expect: hello
+assert {== [get $parts 0] hello}
 puts [get $parts 1]            ;# expect: world
+assert {== [get $parts 1] world}
 puts [get $parts 2]            ;# expect: test
+assert {== [get $parts 2] test}
 
 # List::push - append to list (functional style)
 let nums [list 1 2 3]
 let nums [List::push $nums 4]
 let nums [List::push $nums 5]
 puts [len $nums]               ;# expect: 5
+assert {== [len $nums] 5}
 puts [get $nums 3]             ;# expect: 4
+assert {== [get $nums 3] 4}
 puts [get $nums 4]             ;# expect: 5
+assert {== [get $nums 4] 5}
 
 # put - modify element (functional style)
 let items [list a b c]
 let items [put $items 1 B]
 puts [get $items 0]            ;# expect: a
+assert {== [get $items 0] a}
 puts [get $items 1]            ;# expect: B
+assert {== [get $items 1] B}
 puts [get $items 2]            ;# expect: c
+assert {== [get $items 2] c}
 
 # nested list indexing
 let nested [list [list x y] [list z w]]
 puts [get [get $nested 0] 0]   ;# expect: x
+assert {== [get [get $nested 0] 0] x}
 puts [get [get $nested 0] 1]   ;# expect: y
+assert {== [get [get $nested 0] 1] y}
 puts [get [get $nested 1] 0]   ;# expect: z
+assert {== [get [get $nested 1] 0] z}
 
 puts ""
 puts "-- dict operations --"
 # dict create and size
 let d [dict a 1 b 2 c 3]
 puts [len $d]                  ;# expect: 3
+assert {== [len $d] 3}
 
 # get - access by key
 puts [get $d a]                ;# expect: 1
+assert {== [get $d a] 1}
 puts [get $d b]                ;# expect: 2
+assert {== [get $d b] 2}
 puts [get $d c]                ;# expect: 3
+assert {== [get $d c] 3}
 
 # has? - check key existence
 puts [has? $d a]               ;# expect: 1
+assert {== [has? $d a] 1}
 puts [has? $d missing]         ;# expect: 0
+assert {== [has? $d missing] 0}
 
 # Dict::keys (order may vary, but count should be 3)
 let ks [Dict::keys $d]
 puts [len $ks]                 ;# expect: 3
+assert {== [len $ks] 3}
 
 # Dict::values (order may vary, but count should be 3)
 let vs [Dict::values $d]
 puts [len $vs]                 ;# expect: 3
+assert {== [len $vs] 3}
 
 # put - functional update
 var md [dict x 10]
 set! md [put $md x 20]
 puts [get $md x]               ;# expect: 20
+assert {== [get $md x] 20}
 
 # put adds new key
 set! md [put $md y 30]
 puts [get $md y]               ;# expect: 30
+assert {== [get $md y] 30}
 puts [len $md]                 ;# expect: 2
+assert {== [len $md] 2}
 
 # del - functional remove
 set! md [del $md x]
 puts [len $md]                 ;# expect: 1
+assert {== [len $md] 1}
 puts [has? $md x]              ;# expect: 0
+assert {== [has? $md x] 0}
 
 # empty dict
 let empty [dict]
 puts [len $empty]              ;# expect: 0
+assert {== [len $empty] 0}
 
 # nested dict get
 let nested [dict outer [dict inner 42]]
 puts [get [get $nested outer] inner]  ;# expect: 42
+assert {== [get [get $nested outer] inner] 42}
 
 # nested dict update
 var nd [dict outer [dict inner 0]]
 set! nd [put $nd outer [put [get $nd outer] inner 99]]
 puts [get [get $nd outer] inner]      ;# expect: 99
+assert {== [get [get $nd outer] inner] 99}
 
 puts ""
 puts "-- if/elseif/else --"
@@ -276,6 +344,7 @@ if {} { puts ERROR } else { puts empty } ;# expect: empty
 # if returns last value in body
 let if_result [if 1 { + 10 20 }]
 puts $if_result                      ;# expect: 30
+assert {== $if_result 30}
 
 puts ""
 puts "-- while --"
@@ -285,6 +354,7 @@ while $w_i {
   puts $w_i
   set! w_i [+ $w_i -1]
 }                                    ;# expect: 3 2 1
+assert {== $w_i 0}
 
 # condition false initially (no output)
 while 0 { puts ERROR }
@@ -295,11 +365,13 @@ while $w_n {
   set! w_n [+ $w_n -1]
 }
 puts "w_n=$w_n"                      ;# expect: w_n=0
+assert {== $w_n 0}
 
 # while returns last body value
 var w_x 3
 let w_result [while $w_x { set! w_x [+ $w_x -1] }]
 puts "w_result=$w_result"            ;# expect: w_result=0
+assert {== $w_result 0}
 
 puts ""
 puts "-- for --"
@@ -307,6 +379,7 @@ puts "-- for --"
 for {var f_i 3} {$f_i} {set! f_i [+ $f_i -1]} {
   puts $f_i
 }                                    ;# expect: 3 2 1
+assert {== $f_i 0}
 
 # condition false initially (no output)
 for {var f_j 0} {$f_j} {set! f_j [+ $f_j -1]} {
@@ -318,10 +391,12 @@ var f_k 2
 for {} {$f_k} {set! f_k [+ $f_k -1]} {
   puts "k=$f_k"
 }                                    ;# expect: k=2 k=1
+assert {== $f_k 0}
 
 # for returns last body value
 let f_result [for {var f_m 3} {$f_m} {set! f_m [+ $f_m -1]} { $f_m }]
 puts "f_result=$f_result"            ;# expect: f_result=1
+assert {== $f_result 1}
 
 puts ""
 puts "-- foreach --"
@@ -344,6 +419,7 @@ foreach fe_y [list] {
 # foreach returns last body value
 let fe_result [foreach fe_z [list x y z] { $fe_z }]
 puts "fe_result=$fe_result"          ;# expect: fe_result=z
+assert {== $fe_result z}
 
 # edge case: variable name equals value (tests eval fix)
 let fe_edge {}
@@ -351,6 +427,7 @@ foreach fe_v [list a b fe_v] {
   let fe_edge $fe_v
 }
 puts "fe_edge=$fe_edge"              ;# expect: fe_edge=fe_v
+assert {== $fe_edge fe_v}
 
 puts ""
 puts "-- break --"
@@ -361,18 +438,21 @@ while 1 {
   set! brk_i [+ $brk_i -1]
   if $brk_i { } else { break }
 }                                    ;# expect: 5 4 3 2 1
+assert {== $brk_i 0}
 
 # break in for loop (exits immediately)
 for {var brk_j 1} {1} {set! brk_j [+ $brk_j 1]} {
   puts "for_brk"
   break
 }                                    ;# expect: for_brk
+assert {== $brk_j 1}
 
 # break in foreach (exits after first)
 foreach brk_x [list a b c] {
   puts "fe_brk=$brk_x"
   break
 }                                    ;# expect: fe_brk=a
+assert {== $brk_x a}
 
 puts ""
 puts "-- continue --"
@@ -384,6 +464,7 @@ while $cont_i {
   if [+ $cur -2] { } else { continue }
   puts "cw=$cur"
 }                                    ;# expect: cw=3 cw=1
+assert {== $cont_i 0}
 
 # continue in for loop (skip when j=2)
 var cont_j 3
@@ -391,6 +472,7 @@ for {} {$cont_j} {set! cont_j [+ $cont_j -1]} {
   if [+ $cont_j -2] { } else { continue }
   puts "cf=$cont_j"
 }                                    ;# expect: cf=3 cf=1
+assert {== $cont_j 0}
 
 # continue in foreach (skips puts ERROR)
 var cont_n 0
@@ -400,65 +482,87 @@ foreach cont_x [list a b c] {
   puts ERROR
 }
 puts "cont_n=$cont_n"                ;# expect: cont_n=3
+assert {== $cont_n 3}
 
 puts ""
 puts "-- equality operators --"
 # == value equality
 puts [== 1 1]                        ;# expect: 1
+assert {== 1 1}
 puts [== 1 2]                        ;# expect: 0
+assert {== [== 1 2] 0}
 puts [== hello hello]                ;# expect: 1
+assert {== hello hello}
 puts [== hello world]                ;# expect: 0
+assert {== [== hello world] 0}
 
 # Numeric string promotion (both "1" and "1.0" parse as numbers)
 puts [== 1 1.0]                      ;# expect: 1 (both parse as 1.0)
+assert {== 1 1.0}
 
 # Numeric promotion (both actual floats from +)
 let eq_f1 [+ 0 1]
 let eq_f2 [+ 0 1.0]
 puts [== $eq_f1 $eq_f2]              ;# expect: 1
+assert {== $eq_f1 $eq_f2}
 
 # List deep equality
 let eq_l1 [list 1 2 3]
 let eq_l2 [list 1 2 3]
 let eq_l3 [list 1 2 4]
 puts [== $eq_l1 $eq_l2]              ;# expect: 1
+assert {== $eq_l1 $eq_l2}
 puts [== $eq_l1 $eq_l3]              ;# expect: 0
+assert {== [== $eq_l1 $eq_l3] 0}
 
 # Dict deep equality
 let eq_d1 [dict a 1 b 2]
 let eq_d2 [dict a 1 b 2]
 let eq_d3 [dict a 1 b 3]
 puts [== $eq_d1 $eq_d2]              ;# expect: 1
+assert {== $eq_d1 $eq_d2}
 puts [== $eq_d1 $eq_d3]              ;# expect: 0
+assert {== [== $eq_d1 $eq_d3] 0}
 
 # != value inequality
 puts [!= 1 1]                        ;# expect: 0
+assert {== [!= 1 1] 0}
 puts [!= 1 2]                        ;# expect: 1
+assert {!= 1 2}
 
 # same? identity equality
 let eq_x 42
 puts [same? $eq_x $eq_x]             ;# expect: 1
+assert {same? $eq_x $eq_x}
 let eq_y 42
 puts [same? $eq_x $eq_y]             ;# expect: 0
+assert {== [same? $eq_x $eq_y] 0}
 
 # not-same? identity inequality
 puts [not-same? $eq_x $eq_y]         ;# expect: 1
+assert {not-same? $eq_x $eq_y}
 puts [not-same? $eq_x $eq_x]         ;# expect: 0
+assert {== [not-same? $eq_x $eq_x] 0}
 
 # cell? predicate
 puts [cell? [ref 1]]                 ;# expect: 1
+assert {cell? [ref 1]}
 puts [cell? 1]                       ;# expect: 0
+assert {== [cell? 1] 0}
 
 # same-binding? for cell bindings
 var eq_p 100
 var eq_q 200
 puts [same-binding? eq_p eq_p]       ;# expect: 1
+assert {same-binding? eq_p eq_p}
 puts [same-binding? eq_p eq_q]       ;# expect: 0
+assert {== [same-binding? eq_p eq_q] 0}
 
 # binding-cell returns the cell object
 let eq_pcell [binding-cell eq_p]
 let eq_pcell2 [binding-cell eq_p]
 puts [same? $eq_pcell $eq_pcell2]    ;# expect: 1
+assert {same? $eq_pcell $eq_pcell2}
 
 # Proc identity via getvar
 proc eq_f {} { 1 }
@@ -466,7 +570,9 @@ proc eq_g {} { 1 }
 let eq_fp [getvar eq_f]
 let eq_gp [getvar eq_g]
 puts [== $eq_fp $eq_gp]              ;# expect: 0
+assert {== [== $eq_fp $eq_gp] 0}
 puts [same? $eq_fp $eq_fp]           ;# expect: 1
+assert {same? $eq_fp $eq_fp}
 
 puts ""
 puts "-- equality with control flow --"
@@ -479,6 +585,7 @@ while [!= $ecf_i $ecf_target] {
   set! ecf_i [+ $ecf_i -1]
 }
 puts "reached=$ecf_target"           ;# expect: ecf_i=5 ecf_i=4 ecf_i=3 reached=2
+assert {== $ecf_i $ecf_target}
 
 # for loop building list, then compare
 var ecf_built [list]
@@ -487,6 +594,7 @@ for {var ecf_j 1} {[!= $ecf_j 4]} {set! ecf_j [+ $ecf_j 1]} {
 }
 let ecf_expected [list 1 2 3]
 puts [== $ecf_built $ecf_expected]   ;# expect: 1
+assert {== $ecf_built $ecf_expected}
 
 # foreach with == to find matching element
 let ecf_haystack [list apple banana cherry date]
@@ -498,6 +606,7 @@ foreach ecf_item $ecf_haystack {
   }
 }
 puts "found=$ecf_found"              ;# expect: found=1
+assert {== $ecf_found 1}
 
 # foreach with != to skip specific elements
 var ecf_kept [list]
@@ -507,6 +616,7 @@ foreach ecf_x [list a skip b skip c] {
   }
 }
 puts [== $ecf_kept [list a b c]]     ;# expect: 1
+assert {== $ecf_kept [list a b c]}
 
 # while with same? to detect same binding
 var ecf_obj [list 1 2 3]
@@ -518,6 +628,7 @@ while [same-binding? ecf_obj ecf_obj] {
   }
 }
 puts "iters=$ecf_iters"              ;# expect: iters=3
+assert {== $ecf_iters 3}
 
 # cell? predicate in loop
 var ecf_cell_count 0
@@ -531,6 +642,7 @@ foreach ecf_item [list $ecf_cell1 $ecf_cell2 $ecf_notcell] {
 }
 # Note: cells in lists are dereferenced when accessed with $, so count=0
 puts "cell_count=$ecf_cell_count"    ;# expect: cell_count=0
+assert {== $ecf_cell_count 0}
 
 # for loop comparing list elements pairwise
 let ecf_a [list 1 2 3 4]
@@ -543,6 +655,7 @@ for {var ecf_k 0} {[!= $ecf_k [len $ecf_a]]} {set! ecf_k [+ $ecf_k 1]} {
   }
 }
 puts "diff_idx=$ecf_diff_idx"        ;# expect: diff_idx=2
+assert {== $ecf_diff_idx 2}
 
 # nested loops with equality checks - find common elements
 let ecf_set1 [list a b c d]
@@ -557,6 +670,7 @@ foreach ecf_s1 $ecf_set1 {
   }
 }
 puts [== $ecf_common [list c d]]     ;# expect: 1
+assert {== $ecf_common [list c d]}
 
 # while loop with dict equality
 var ecf_d [dict count 0]
@@ -564,6 +678,7 @@ while [!= [get $ecf_d count] 3] {
   set! ecf_d [put $ecf_d count [+ [get $ecf_d count] 1]]
 }
 puts [get $ecf_d count]              ;# expect: 3
+assert {== [get $ecf_d count] 3}
 
 # continue with equality check
 var ecf_sum 0
@@ -574,6 +689,7 @@ foreach ecf_n [list 1 2 3 4 5] {
   set! ecf_sum [+ $ecf_sum $ecf_n]
 }
 puts "sum=$ecf_sum"                  ;# expect: sum=12 (1+2+4+5)
+assert {== $ecf_sum 12}
 
 puts ""
 puts "-- lexical scoping --"
@@ -584,6 +700,7 @@ proc sc_get_outer {} {
   $sc_outer
 }
 puts [sc_get_outer]                  ;# expect: 100
+assert {== [sc_get_outer] 100}
 
 # Shadowing: inner binding shadows outer
 let sc_shadow outer
@@ -592,16 +709,19 @@ proc sc_test_shadow {} {
   $sc_shadow
 }
 puts [sc_test_shadow]                ;# expect: inner
+assert {== [sc_test_shadow] inner}
 puts $sc_shadow                      ;# expect: outer (unchanged)
+assert {== $sc_shadow outer}
 
-# Closure captures the BINDING (frame slot), not the value
-# Rebinding in the same frame updates what closures see
+# Closure captures the value at definition time
+# Rebinding in the same frame does NOT update what closures see
 let sc_capture_val A
 proc sc_capture_test {} {
   $sc_capture_val
 }
 let sc_capture_val B
-puts [sc_capture_test]               ;# expect: B (sees rebind in same frame)
+puts [sc_capture_test]               ;# expect: A (captured at definition)
+assert {== [sc_capture_test] A}
 
 # Cell mutation through closure
 var sc_counter 0
@@ -610,8 +730,9 @@ proc sc_incr {} {
   $sc_counter
 }
 puts [sc_incr]                       ;# expect: 1
-puts [sc_incr]                       ;# expect: 2
+assert {== [sc_incr] 2}
 puts [sc_incr]                       ;# expect: 3
+assert {== $sc_counter 3}
 
 # Multiple closures sharing same cell
 var sc_shared 0
@@ -624,6 +745,7 @@ proc sc_get_shared {} {
 sc_add 10
 sc_add 5
 puts [sc_get_shared]                 ;# expect: 15
+assert {== [sc_get_shared] 15}
 
 # Nested closures (closure returning closure)
 proc sc_make_adder {x} {
@@ -634,7 +756,9 @@ proc sc_make_adder {x} {
 let sc_add5 [sc_make_adder 5]
 let sc_add10 [sc_make_adder 10]
 puts [$sc_add5 3]                    ;# expect: 8
+assert {== [$sc_add5 3] 8}
 puts [$sc_add10 3]                   ;# expect: 13
+assert {== [$sc_add10 3] 13}
 
 # Counter factory - each call creates independent counter
 proc sc_make_counter {} {
@@ -647,14 +771,17 @@ proc sc_make_counter {} {
 let sc_c1 [sc_make_counter]
 let sc_c2 [sc_make_counter]
 puts [$sc_c1]                        ;# expect: 1
-puts [$sc_c1]                        ;# expect: 2
+assert {== [$sc_c1] 2}
 puts [$sc_c2]                        ;# expect: 1 (independent)
+assert {== [$sc_c2] 2}
 puts [$sc_c1]                        ;# expect: 3
+assert {== [$sc_c1] 4}
 
 # Let rebinding in same scope
 let sc_rebind first
 let sc_rebind second
 puts $sc_rebind                      ;# expect: second
+assert {== $sc_rebind second}
 
 # Proc parameter shadows outer binding
 let sc_param_test outer_value
@@ -662,7 +789,9 @@ proc sc_param_shadow {sc_param_test} {
   $sc_param_test
 }
 puts [sc_param_shadow inner_value]   ;# expect: inner_value
+assert {== [sc_param_shadow inner_value] inner_value}
 puts $sc_param_test                  ;# expect: outer_value
+assert {== $sc_param_test outer_value}
 
 # Nested proc definitions with shadowing
 let sc_nest_val level0
@@ -674,6 +803,7 @@ proc sc_outer_proc {} {
   sc_inner_proc
 }
 puts [sc_outer_proc]                 ;# expect: level1
+assert {== [sc_outer_proc] level1}
 
 # Loop variable scoping - foreach rebinds in current frame
 let sc_loop_var before
@@ -681,6 +811,7 @@ foreach sc_loop_var [list a b c] {
   # loop var is rebound each iteration
 }
 puts $sc_loop_var                    ;# expect: c (last iteration value)
+assert {== $sc_loop_var c}
 
 # Loop variable scoping - for rebinds in current frame
 let sc_for_i before_for
@@ -688,17 +819,21 @@ for {let sc_for_i 0} {[!= $sc_for_i 3]} {let sc_for_i [+ $sc_for_i 1]} {
   # for loop
 }
 puts $sc_for_i                       ;# expect: 3 (final value)
+assert {== $sc_for_i 3}
 
-# Classic closure-in-loop capture issue
-# All closures capture the SAME binding, which has final value
+# Closures capture value at definition time
+# Each closure captures its own iteration value
 var sc_closures [list]
 foreach sc_iter_val [list 1 2 3] {
   set! sc_closures [List::push $sc_closures [lambda {} { $sc_iter_val }]]
 }
-# All see the final value because they share the binding
-puts [[get $sc_closures 0]]          ;# expect: 3
-puts [[get $sc_closures 1]]          ;# expect: 3
+# Each sees its own captured value
+puts [[get $sc_closures 0]]          ;# expect: 1
+assert {== [[get $sc_closures 0]] 1}
+puts [[get $sc_closures 1]]          ;# expect: 2
+assert {== [[get $sc_closures 1]] 2}
 puts [[get $sc_closures 2]]          ;# expect: 3
+assert {== [[get $sc_closures 2]] 3}
 
 # Evil: deeply nested scope chain
 let sc_deep0 d0
@@ -715,6 +850,7 @@ proc sc_deep_test {} {
   sc_deep_inner
 }
 puts [== [sc_deep_test] [list d0 d1 d2]]  ;# expect: 1
+assert {== [sc_deep_test] [list d0 d1 d2]}
 
 # Evil: mutual recursion with closures
 var sc_is_even_fn {}
@@ -728,13 +864,17 @@ set! sc_is_odd_fn [lambda {n} {
   [$sc_is_even_fn [+ $n -1]]
 }]
 puts [$sc_is_even_fn 4]              ;# expect: 1
+assert {== [$sc_is_even_fn 4] 1}
 puts [$sc_is_even_fn 3]              ;# expect: 0
+assert {== [$sc_is_even_fn 3] 0}
 puts [$sc_is_odd_fn 3]               ;# expect: 1
+assert {== [$sc_is_odd_fn 3] 1}
 
 # Evil: closure captures closure
 let sc_inner_fn [lambda {x} { + $x 1 }]
 let sc_outer_fn [lambda {y} { [$sc_inner_fn $y] }]
 puts [$sc_outer_fn 10]               ;# expect: 11
+assert {== [$sc_outer_fn 10] 11}
 
 # Evil: self-referential through cell
 var sc_factorial {}
@@ -751,6 +891,7 @@ proc sc_local_only {} {
   $sc_very_local
 }
 puts [sc_local_only]                 ;# expect: secret
+assert {== [sc_local_only] secret}
 # sc_very_local should not exist here
 
 # Closure over parameter
@@ -762,6 +903,7 @@ proc sc_make_multiplier {factor} {
 }
 let sc_triple [sc_make_multiplier 3]
 puts [$sc_triple 10]                 ;# expect: 3
+assert {== [$sc_triple 10] 3}
 
 # Evil: shadowing with var vs let
 let sc_shadow_type immutable
@@ -771,7 +913,9 @@ proc sc_shadow_var_let {} {
   $sc_shadow_type
 }
 puts [sc_shadow_var_let]             ;# expect: changed
+assert {== [sc_shadow_var_let] changed}
 puts $sc_shadow_type                 ;# expect: immutable
+assert {== $sc_shadow_type immutable}
 
 puts ""
 puts "-- threading operators --"
@@ -779,32 +923,41 @@ puts "-- threading operators --"
 # -> (thread-first): threads value as first argument
 let th_d [dict a 1 b 2 c 3]
 puts [-> $th_d {get b}]              ;# expect: 2
+assert {== [-> $th_d {get b}] 2}
 puts [-> $th_d {get a}]              ;# expect: 1
+assert {== [-> $th_d {get a}] 1}
 
 # -> with multiple forms (chained)
 let th_d2 [-> $th_d {put d 4} {del a}]
 puts [has? $th_d2 d]                 ;# expect: 1
+assert {== [has? $th_d2 d] 1}
 puts [has? $th_d2 a]                 ;# expect: 0
+assert {== [has? $th_d2 a] 0}
 
 # -> with list operations
 let th_lst [list 1 2 3]
 puts [-> $th_lst {get 1}]            ;# expect: 2
+assert {== [-> $th_lst {get 1}] 2}
 puts [-> $th_lst {List::push 4} {List::reverse}]  ;# expect: 4 3 2 1
 
 # -> with len
 puts [-> $th_lst {len}]              ;# expect: 3
+assert {== [-> $th_lst {len}] 3}
 
 # -> identity (no forms)
 puts [-> 42]                         ;# expect: 42
+assert {== [-> 42] 42}
 
 # -> with string operations
 puts [-> hello {String::upper}]      ;# expect: HELLO
+assert {== [-> hello {String::upper}] HELLO}
 
 # ->> (thread-last): threads value as last argument
 proc th_greet {greeting name} {
   return "$greeting, $name!"
 }
 puts [->> World {th_greet Hello}]    ;# expect: Hello, World!
+assert {== [->> World {th_greet Hello}] {Hello, World!}}
 
 # ->> with custom transformation proc
 proc th_add_n {n lst} {
@@ -821,39 +974,49 @@ puts [->> $th_lst {th_add_n 10} {th_add_n 5}]  ;# expect: 16 17 18
 
 # ->> identity (no forms)
 puts [->> hello]                     ;# expect: hello
+assert {== [->> hello] hello}
 
 # ->> with String::find (haystack needle) - needle threaded last
 puts [->> llo {String::find hello}]  ;# expect: 2
+assert {== [->> llo {String::find hello}] 2}
 
 # Nested threading
 let th_nested [dict x [dict y 42]]
 puts [-> $th_nested {get x} {get y}] ;# expect: 42
+assert {== [-> $th_nested {get x} {get y}] 42}
 
 # Thread result used in expression
 let th_val [+ 10 [-> $th_d {get c}]]
 puts $th_val                         ;# expect: 13
+assert {== $th_val 13}
 
 # -> with lambda in variable
 let th_inc [lambda {x} {+ $x 1}]
 puts [-> 10 {$th_inc}]               ;# expect: 11
+assert {== [-> 10 {$th_inc}] 11}
 
 # -> with lambda with extra args
 let th_add [lambda {a b} {+ $a $b}]
 puts [-> 10 {$th_add 5}]             ;# expect: 15
+assert {== [-> 10 {$th_add 5}] 15}
 
 # -> with inline lambda
 puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;# expect: 110
+assert {== [-> 10 {[lambda {x} {+ $x 100}]}] 110}
 
 # -> chain with lambdas
 let th_dbl [lambda {x} {+ $x $x}]
 puts [-> 5 {$th_inc} {$th_dbl}]      ;# expect: 12
+assert {== [-> 5 {$th_inc} {$th_dbl}] 12}
 
 # ->> with lambda
 let th_greet2 [lambda {g n} {return "$g, $n!"}]
 puts [->> World {$th_greet2 Hello}]  ;# expect: Hello, World!
+assert {== [->> World {$th_greet2 Hello}] {Hello, World!}}
 
 # ->> with inline lambda
 puts [->> 10 {[lambda {x} {+ $x 5}]}]  ;# expect: 15
+assert {== [->> 10 {[lambda {x} {+ $x 5}]}] 15}
 
 puts ""
 puts "-- functional primitives --"
@@ -862,27 +1025,33 @@ puts "-- functional primitives --"
 let fp_lst [list 1 2 3 4 5]
 let fp_doubled [List::map [lambda {x} {* $x 2}] $fp_lst]
 puts $fp_doubled                     ;# expect: 2 4 6 8 10
+assert {== $fp_doubled [list 2 4 6 8 10]}
 
 # List::filter
 let fp_evens [List::filter [lambda {x} {== [% $x 2] 0}] $fp_lst]
 puts $fp_evens                       ;# expect: 2 4
+assert {== $fp_evens [list 2 4]}
 
 # List::reduce
 let fp_sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] $fp_lst]
 puts $fp_sum                         ;# expect: 15
+assert {== $fp_sum 15}
 
 # Dict::map (values multiplied by 10)
 let fp_d [dict a 1 b 2 c 3]
 let fp_d_mapped [Dict::map [lambda {k v} {* $v 10}] $fp_d]
 puts [len [Dict::keys $fp_d_mapped]] ;# expect: 3
+assert {== [len [Dict::keys $fp_d_mapped]] 3}
 
 # Dict::filter (values > 1)
 let fp_d_filtered [Dict::filter [lambda {k v} {> $v 1}] $fp_d]
 puts [len [Dict::keys $fp_d_filtered]]  ;# expect: 2
+assert {== [len [Dict::keys $fp_d_filtered]] 2}
 
 # Dict::reduce (sum all values)
 let fp_d_sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] $fp_d]
 puts $fp_d_sum                       ;# expect: 6
+assert {== $fp_d_sum 6}
 
 puts ""
 puts "=== Done ==="

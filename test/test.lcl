@@ -252,7 +252,7 @@ puts "testing asserts"
 let true 1
 let false 0
 
-assert {== $true 0}
+assert {== $true 1}
 
 puts "== done =="
 
