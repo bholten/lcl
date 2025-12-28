@@ -255,7 +255,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           }
           else if (d == '"') {
             while (sc->i < sc->len) {
-              char e = sc->s[sc->line++];
+              char e = sc->s[sc->i++];
 
               if (e == '"') break;
               if (e == '\\' && sc->i < sc->len) {

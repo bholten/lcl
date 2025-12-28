@@ -37,6 +37,10 @@ curl::set_write_callback $c [lambda {response} {
 # perform
 curl::perform $c
 
+puts [curl::get_total_time $c]
+puts [curl::get_response_code $c]
+puts [curl::get_content_type $c]
+
 # reset
 curl::reset $c
 

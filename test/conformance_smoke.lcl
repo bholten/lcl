@@ -42,6 +42,26 @@ puts [$c]                      ;# expect: 11
 assert {== [$c] 12}            ;# second call returns 12
 puts [$c]                      ;# expect: 13 (continues incrementing)
 
+let lam [lambda {x} { + $x 10 }]
+puts "lam 10 = [$lam 10]"
+assert {== 20 [$lam 10]}
+
+let lambda_counter [lambda {start} {
+    var n $start
+
+    return [lambda {} {
+        set! n [+ $n 1]
+        return $n
+    }]
+}]
+
+let lam_count [$lambda_counter 10]
+$lam_count
+$lam_count
+$lam_count
+let final_count [$lam_count]
+assert {== $final_count 14}
+
 puts ""
 puts "-- namespaces (optional stdlib) --"
 namespace eval math {

@@ -111,6 +111,25 @@ puts "acc5 => $acc5"
 var acc6 [% 9 2]
 puts "acc6 => $acc6"
 
+puts "testing weird lambda issues"
+let lambda_counter [lambda {start} {
+    var n $start
+
+    return [lambda {} {
+        set! n [+ $n 1]
+        return $n
+    }]
+}]
+
+let counter [$lambda_counter 10]
+$counter
+$counter
+$counter
+let final_count [$counter]
+puts "final count $final_count"
+assert {== $final_count 14}
+
+
 var acc7 0
 
 proc zero? {num} {
@@ -254,5 +273,5 @@ let false 0
 
 assert {== $true 1}
 
-puts "== done =="
 
+puts "== done =="
