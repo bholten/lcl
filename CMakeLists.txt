@@ -12,6 +12,9 @@ option(LCL_BUILD_CLI "Build command-line interpreter" ON)
 option(LCL_BUILD_TESTS "Build test executable" OFF)
 option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
 
+# Optional packages
+option(LCL_BUILD_CURL "Build CURL bindings" OFF)
+
 set(LCL_SOURCES
   src/hash-table.c
   src/lcl-api.c
@@ -106,6 +109,28 @@ if(LCL_BUILD_CLI)
 
   if(LCL_ENABLE_ASAN)
     target_link_options(lcl-cli PRIVATE ${LCL_LINK_OPTIONS})
+  endif()
+endif()
+
+# ==============================================================================
+# Optional Packages
+# ==============================================================================
+
+if(LCL_BUILD_CURL)
+  add_subdirectory(packages/lcl-curl)
+
+  # Add compile definition for conditional compilation
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_CURL)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_CURL)
+  endif()
+
+  # Link CLI against curl package
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_CURL)
+    target_link_libraries(lcl-cli PRIVATE lcl_curl)
   endif()
 endif()
 

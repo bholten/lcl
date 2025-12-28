@@ -5,6 +5,10 @@
 #include "lcl-values.h"
 #include "lcl-eval.h"
 
+#ifdef LCL_HAVE_CURL
+#include <lcl-curl.h>
+#endif
+
 void lcl_register_core(lcl_interp *interp);
 int lcl_eval_file(lcl_interp *interp, const char *filepath, lcl_value **out);
 
@@ -26,6 +30,10 @@ int main(int argc, char **argv) {
   }
 
   lcl_register_core(interp);
+
+#ifdef LCL_HAVE_CURL
+  lcl_register_curl(interp);
+#endif
 
   rc = lcl_eval_file(interp, argv[1], &result);
 
