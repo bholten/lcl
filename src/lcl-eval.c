@@ -12,38 +12,101 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
                       lcl_value ***argv_out) {
   int i;
-  int argc = cmd->argc - 1;
+  int j;
+  int word_count = cmd->argc - 1;
   int rc;
-  lcl_value **argv;
+  lcl_value **argv = NULL;
+  int argc = 0;
+  int cap = 0;
 
-  if (argc < 0) {
+  if (word_count < 0) {
     *argc_out = 0;
     *argv_out = NULL;
     return LCL_RC_OK;
   }
-  
-  argv = (lcl_value **)calloc((size_t)argc, sizeof(*argv));
-  
-  if (!argv) return LCL_RC_ERR;
-  
-  for (i = 0; i < argc; i++) {
-    rc = lcl_eval_word(interp, &cmd->w[i + 1], &argv[i]);
-    
-    if (rc != LCL_RC_OK) {
-      while (i--) {
-        lcl_ref_dec(argv[i]);
-      }
-      
-      free(argv);
 
-      return rc;
+  cap = word_count > 0 ? word_count : 1;
+  argv = (lcl_value **)calloc((size_t)cap, sizeof(*argv));
+
+  if (!argv) return LCL_RC_ERR;
+
+  for (i = 0; i < word_count; i++) {
+    const lcl_word *w = &cmd->w[i + 1];
+    lcl_value *val = NULL;
+
+    rc = lcl_eval_word(interp, w, &val);
+    if (rc != LCL_RC_OK) {
+      goto cleanup;
+    }
+
+    if (w->expand) {
+      if (val->type == LCL_LIST) {
+        size_t len = lcl_list_len(val);
+        size_t k;
+
+        if (argc + (int)len > cap) {
+          int new_cap = argc + (int)len + 8;
+          lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+          if (!new_argv) {
+            lcl_ref_dec(val);
+            rc = LCL_RC_ERR;
+            goto cleanup;
+          }
+          argv = new_argv;
+          cap = new_cap;
+        }
+
+        for (k = 0; k < len; k++) {
+          lcl_value *elem = NULL;
+          if (lcl_list_get(val, k, &elem) != LCL_OK) {
+            lcl_ref_dec(val);
+            rc = LCL_RC_ERR;
+            goto cleanup;
+          }
+          argv[argc++] = elem;
+        }
+        lcl_ref_dec(val);
+      } else {
+        /* Not a list - just add as single argument */
+        if (argc >= cap) {
+          int new_cap = cap * 2 + 1;
+          lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+          if (!new_argv) {
+            lcl_ref_dec(val);
+            rc = LCL_RC_ERR;
+            goto cleanup;
+          }
+          argv = new_argv;
+          cap = new_cap;
+        }
+        argv[argc++] = val;
+      }
+    } else {
+      if (argc >= cap) {
+        int new_cap = cap * 2 + 1;
+        lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+        if (!new_argv) {
+          lcl_ref_dec(val);
+          rc = LCL_RC_ERR;
+          goto cleanup;
+        }
+        argv = new_argv;
+        cap = new_cap;
+      }
+      argv[argc++] = val;
     }
   }
-  
+
   *argc_out = argc;
   *argv_out = argv;
-  
-  return LCL_RC_OK;  
+  return LCL_RC_OK;
+
+cleanup:
+  for (j = 0; j < argc; j++) {
+    lcl_ref_dec(argv[j]);
+  }
+  free(argv);
+  return rc;
 }
 
 int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
@@ -104,10 +167,8 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
   return rc;
 }
 
-/* Evaluate a word and return the value directly (not forced to string) */
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
                   lcl_value **out) {
-  /* Handle single-piece words specially to preserve value types */
   if (w && w->np == 1) {
     lcl_word_piece *wp = &w->wp[0];
 
@@ -118,7 +179,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
         LCL_ERR_MSG(interp, "undefined variable");
         return LCL_RC_ERR;
       }
-      /* Unwrap cell if needed */
+
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
         if (lcl_cell_get(val, &inner) != LCL_OK) {
@@ -132,15 +193,13 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
       return LCL_RC_OK;
     }
     case LCL_WP_SUBCMD: {
-      /* Evaluate subcommand and return result directly */
       return lcl_eval_program(interp, wp->as.sub.program, out);
     }
     case LCL_WP_LIT:
-      /* Fall through to string evaluation for literals */
       break;
     }
   }
-  /* Multi-piece words or literals need string evaluation */
+
   return lcl_eval_word_to_str(interp, w, out);
 }
 
@@ -155,11 +214,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
-  /* Evaluate first word to get command/callee value */
   rc = lcl_eval_word(interp, &cmd->w[0], &callee);
   if (rc != LCL_RC_OK) return rc;
 
-  /* Look up command by name if result is a string or convertible to one */
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
@@ -173,25 +230,25 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       lcl_ref_dec(name);
       return LCL_RC_ERR;
     }
+
     lcl_ref_dec(name);
-    /* Check if the looked-up value is callable; if not and single-word, return it */
+
     if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
       if (cmd->argc == 1) {
         *out = callee;
         return LCL_RC_OK;
       }
-      /* Non-callable with args - error */
+
       LCL_ERR_MSG(interp, "value is not callable");
       lcl_ref_dec(callee);
       return LCL_RC_ERR;
     }
   } else if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
-    /* Non-callable value - for single-word command, return the value itself */
     if (cmd->argc == 1) {
       *out = callee;
       return LCL_RC_OK;
     }
-    /* Otherwise try to look it up as a command name */
+
     {
       lcl_value *name = callee;
       callee = NULL;

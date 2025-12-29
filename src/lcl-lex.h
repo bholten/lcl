@@ -56,6 +56,7 @@ struct lcl_word {
   int cap;
   unsigned quoted : 1;
   unsigned braced : 1;
+  unsigned expand : 1;
 };
 
 void lcl_word_free(lcl_word *w);

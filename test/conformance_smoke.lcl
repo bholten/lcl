@@ -597,6 +597,59 @@ if [catch { err_test_return } err_ret_res err_ret_msg] {
 }
 
 puts ""
+puts "-- @ expansion operator --"
+# expand list to multi-argument operator
+let exp_nums [list 1 2 3 4 5]
+let exp_sum [+ @$exp_nums]
+puts "sum=$exp_sum"                    ;# expect: sum=15
+assert {== $exp_sum 15}
+
+# expand in list construction
+let exp_a [list 1 2]
+let exp_b [list 3 4]
+let exp_combined [list @$exp_a @$exp_b]
+puts [len $exp_combined]               ;# expect: 4
+assert {== [len $exp_combined] 4}
+assert {== $exp_combined [list 1 2 3 4]}
+
+# expand single non-list value
+let exp_single 42
+let exp_result [+ 1 @$exp_single]
+puts "single=$exp_result"              ;# expect: single=43
+assert {== $exp_result 43}
+
+# expand empty list
+let exp_empty [list]
+let exp_with_empty [list a @$exp_empty b]
+puts [len $exp_with_empty]             ;# expect: 2
+assert {== [len $exp_with_empty] 2}
+assert {== $exp_with_empty [list a b]}
+
+# expand with braced list literal
+let exp_braced @{x y z}
+puts $exp_braced                       ;# expect: x y z
+assert {== $exp_braced {x y z}}
+
+# expand in proc arguments
+proc exp_sum3 {a b c} { + $a [+ $b $c] }
+let exp_args [list 10 20 30]
+puts [exp_sum3 @$exp_args]             ;# expect: 60
+assert {== [exp_sum3 @$exp_args] 60}
+
+# multiple expansions in one command
+let exp_x [list 1 2]
+let exp_y [list 3 4]
+let exp_multi [+ @$exp_x @$exp_y]
+puts "multi=$exp_multi"                ;# expect: multi=10
+assert {== $exp_multi 10}
+
+# expand nested list (only one level)
+let exp_nested [list [list a b] [list c d]]
+let exp_flat [list @$exp_nested]
+puts [len $exp_flat]                   ;# expect: 2 (the inner lists)
+assert {== [len $exp_flat] 2}
+
+puts ""
 puts "-- equality operators --"
 # == value equality
 puts [== 1 1]                        ;# expect: 1

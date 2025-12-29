@@ -75,6 +75,12 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
   long start;
 
+  /* Check for @ expand prefix */
+  if (sc->i < sc->len && sc->s[sc->i] == '@') {
+    w->expand = 1;
+    sc->i++;
+  }
+
   if (sc->i < sc->len && sc->s[sc->i] == '{') {
     long depth = 1;
     sc->i++;
