@@ -9,6 +9,7 @@
 
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn fn);
 lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn fn);
+lcl_result lcl_define(lcl_interp *interp, const char *name, lcl_value *value);
 lcl_result lcl_define_take(lcl_interp *interp, const char *name, lcl_value *value);
 int lcl_is_callable(lcl_value *value);
 lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc,
@@ -843,6 +844,139 @@ int s_continue(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **
 
   *out = lcl_string_new("");
   return LCL_RC_CONTINUE;
+}
+
+/* error - throw an error with the given message */
+int c_error(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *msg;
+
+  (void)out;
+
+  if (argc < 1) {
+    LCL_ERR_MSG(interp, "error: requires message argument");
+    return LCL_RC_ERR;
+  }
+
+  msg = lcl_value_to_string(argv[0]);
+  LCL_ERR_MSG_DUP(interp, msg);
+
+  return LCL_RC_ERR;
+}
+
+/* catch - execute script and catch errors
+ * Usage: catch script ?resultVar? ?errorVar?
+ * Returns: 0 if script succeeded, 1 if error occurred
+ */
+int c_catch(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
+  lcl_value *script_v = NULL;
+  lcl_program *prog = NULL;
+  lcl_value *result = NULL;
+  char *result_var = NULL;
+  char *error_var = NULL;
+  int rc;
+
+  if (argc < 1 || argc > 3) {
+    LCL_ERR_MSG(interp, "catch: usage: catch script ?resultVar? ?errorVar?");
+    return LCL_RC_ERR;
+  }
+
+  if (argc >= 2) {
+    lcl_value *rv = NULL;
+    if (lcl_eval_word_to_str(interp, args[1], &rv) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+    result_var = strdup(lcl_value_to_string(rv));
+    lcl_ref_dec(rv);
+  }
+
+  if (argc >= 3) {
+    lcl_value *ev = NULL;
+    if (lcl_eval_word_to_str(interp, args[2], &ev) != LCL_RC_OK) {
+      free(result_var);
+      return LCL_RC_ERR;
+    }
+    error_var = strdup(lcl_value_to_string(ev));
+    lcl_ref_dec(ev);
+  }
+
+  /* Evaluate the script word to get the body */
+  if (lcl_eval_word_to_str(interp, args[0], &script_v) != LCL_RC_OK) {
+    free(result_var);
+    free(error_var);
+    return LCL_RC_ERR;
+  }
+
+  /* Compile the script */
+  prog = lcl_program_compile(lcl_value_to_string(script_v), "<catch>");
+  lcl_ref_dec(script_v);
+
+  if (!prog) {
+    free(result_var);
+    free(error_var);
+    LCL_ERR_MSG(interp, "catch: failed to compile script");
+    return LCL_RC_ERR;
+  }
+
+  /* Execute the script */
+  rc = lcl_eval_program(interp, prog, &result);
+  lcl_program_free(prog);
+
+  if (rc == LCL_RC_ERR) {
+    if (error_var) {
+      const char *err_msg = interp->err_msg ? interp->err_msg : "unknown error";
+      lcl_value *err_v = lcl_string_new(err_msg);
+      lcl_define(interp, error_var, err_v);
+      lcl_ref_dec(err_v);
+    }
+
+    if (result_var) {
+      lcl_value *empty = lcl_string_new("");
+      lcl_define(interp, result_var, empty);
+      lcl_ref_dec(empty);
+    }
+
+    LCL_ERR_CLEAR(interp);
+
+    if (result) {
+      lcl_ref_dec(result);
+    }
+
+    free(result_var);
+    free(error_var);
+
+    /* Return 1 to indicate error was caught */
+    *out = lcl_int_new(1);
+    return LCL_RC_OK;
+
+  } else if (rc == LCL_RC_OK) {
+    if (result_var && result) {
+      lcl_define(interp, result_var, result);
+    }
+
+    if (error_var) {
+      lcl_value *empty = lcl_string_new("");
+      lcl_define(interp, error_var, empty);
+      lcl_ref_dec(empty);
+    }
+
+    if (result) {
+      lcl_ref_dec(result);
+    }
+
+    free(result_var);
+    free(error_var);
+
+    /* Return 0 to indicate success */
+    *out = lcl_int_new(0);
+    return LCL_RC_OK;
+
+  } else {
+    /* Other return codes (RETURN, BREAK, CONTINUE) - propagate them */
+    free(result_var);
+    free(error_var);
+    *out = result;
+    return rc;
+  }
 }
 
 /* check if a value is "truthy" (non-zero number or non-empty string) */
@@ -4329,6 +4463,10 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "foreach",  s_foreach);
   lcl_register_spec(interp, "break",    s_break);
   lcl_register_spec(interp, "continue", s_continue);
+
+  /* Error handling */
+  lcl_register_proc(interp, "error", c_error);
+  lcl_register_spec(interp, "catch", c_catch);
 
   /* Constructors (ergonomic single-word forms) */
   lcl_register_proc(interp, "list", c_list);

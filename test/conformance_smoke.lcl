@@ -541,6 +541,62 @@ puts "cont_n=$cont_n"                ;# expect: cont_n=3
 assert {== $cont_n 3}
 
 puts ""
+puts "-- error handling --"
+# catch success - returns 0
+let err_caught [catch { + 1 2 }]
+assert {== $err_caught 0}
+
+# catch error - returns 1
+let err_caught2 [catch { error "test error" }]
+assert {== $err_caught2 1}
+
+# catch with result variable (success case)
+if [catch { + 10 20 } err_res err_msg] {
+  puts "ERROR: expected success"
+} else {
+  assert {== $err_res 30}
+}
+
+# catch with error variable (error case)
+if [catch { error "my error" } err_res2 err_msg2] {
+  assert {== $err_msg2 {my error}}
+} else {
+  puts "ERROR: expected error"
+}
+
+# error in nested proc
+proc err_may_fail {x} {
+  if [== $x 0] {
+    error "cannot be zero"
+  }
+  return [+ $x 1]
+}
+
+# catch nested error
+if [catch { err_may_fail 0 } err_res3 err_msg3] {
+  assert {== $err_msg3 {cannot be zero}}
+} else {
+  puts "ERROR: expected nested error"
+}
+
+# catch nested success
+if [catch { err_may_fail 5 } err_res4 err_msg4] {
+  puts "ERROR: unexpected error"
+} else {
+  assert {== $err_res4 6}
+}
+
+# catch propagates return (not caught as error)
+proc err_test_return {} {
+  return 42
+}
+if [catch { err_test_return } err_ret_res err_ret_msg] {
+  puts "ERROR: return should not be caught as error"
+} else {
+  assert {== $err_ret_res 42}
+}
+
+puts ""
 puts "-- equality operators --"
 # == value equality
 puts [== 1 1]                        ;# expect: 1
