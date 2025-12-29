@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <lcl.h>
 
@@ -82,7 +83,6 @@ int c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
 int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   FILE *handle = NULL;
   (void)interp;
-  (void)out;
 
   if (argc < 1) {
     return LCL_RC_ERR;
@@ -96,10 +96,17 @@ int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **
     return LCL_RC_ERR;
   }
 
+  /* Don't close standard streams */
+  if (handle == stdin || handle == stdout || handle == stderr) {
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
+  }
+
   if (fclose(handle) == EOF) {
     return LCL_RC_ERR;
   }
 
+  *out = lcl_string_new("");
   return LCL_RC_OK;
 }
 
@@ -140,6 +147,34 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
+int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  FILE *handle = NULL;
+  const char *str;
+
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (!handle) {
+    return LCL_RC_ERR;
+  }
+
+  str = lcl_value_to_string(argv[1]);
+
+  if (fputs(str, handle) == EOF) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   char *contents = NULL;
   const char *path;
@@ -165,6 +200,89 @@ int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
   return LCL_RC_OK;
 }
 
+int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  const char *contents;
+  size_t len;
+  FILE *f;
+
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+  contents = lcl_value_to_string(argv[1]);
+  len = strlen(contents);
+
+  f = fopen(path, "wb");
+  if (!f) {
+    return LCL_RC_ERR;
+  }
+
+  if (fwrite(contents, 1, len, f) != len) {
+    fclose(f);
+    return LCL_RC_ERR;
+  }
+
+  fclose(f);
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+int c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  (void)argc;
+  (void)argv;
+
+  *out = lcl_opaque_new(stdout, FILE_HANDLE_TYPE_TAG, NULL);
+  return LCL_RC_OK;
+}
+
+int c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  (void)argc;
+  (void)argv;
+
+  *out = lcl_opaque_new(stderr, FILE_HANDLE_TYPE_TAG, NULL);
+  return LCL_RC_OK;
+}
+
+int c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  (void)interp;
+  (void)argc;
+  (void)argv;
+
+  *out = lcl_opaque_new(stdin, FILE_HANDLE_TYPE_TAG, NULL);
+  return LCL_RC_OK;
+}
+
+int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  FILE *handle = NULL;
+
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (!handle) {
+    return LCL_RC_ERR;
+  }
+
+  if (fflush(handle) == EOF) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 void lcl_register_io(lcl_interp *interp) {
   lcl_value *io_ns = lcl_ns_new(IO_NS);
   lcl_define_take(interp, IO_NS, io_ns);
@@ -172,5 +290,11 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_ns_def(io_ns, "open_file", lcl_c_proc_new("io::open_file", c_io_open_file));
   lcl_ns_def(io_ns, "close_file", lcl_c_proc_new("io::close_file", c_io_close_file));
   lcl_ns_def(io_ns, "fgets", lcl_c_proc_new("io::fgets", c_io_fgets));
+  lcl_ns_def(io_ns, "fputs", lcl_c_proc_new("io::fputs", c_io_fputs));
   lcl_ns_def(io_ns, "read_file", lcl_c_proc_new("io::read_file", c_io_read_file));
+  lcl_ns_def(io_ns, "write_file", lcl_c_proc_new("io::write_file", c_io_write_file));
+  lcl_ns_def(io_ns, "stdout", lcl_c_proc_new("io::stdout", c_io_stdout));
+  lcl_ns_def(io_ns, "stderr", lcl_c_proc_new("io::stderr", c_io_stderr));
+  lcl_ns_def(io_ns, "stdin", lcl_c_proc_new("io::stdin", c_io_stdin));
+  lcl_ns_def(io_ns, "flush", lcl_c_proc_new("io::flush", c_io_flush));
 }

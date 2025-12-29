@@ -28,6 +28,42 @@ puts $t                        ;# expect: x=$a [ + 1 2 ]
 assert {== $t {x=$a [ + 1 2 ]}}
 
 puts ""
+puts "-- escape sequences in strings --"
+# \n produces actual newline
+let esc_nl "line1\nline2"
+assert {== [len $esc_nl] 11}
+
+# \t produces actual tab
+let esc_tab "col1\tcol2"
+assert {== [len $esc_tab] 9}
+
+# \\ produces single backslash
+let esc_bs "a\\b"
+assert {== [len $esc_bs] 3}
+
+# \" allows embedded quotes
+let esc_qt "say \"hi\""
+assert {== [len $esc_qt] 8}
+
+# \$ prevents variable substitution
+let esc_var 100
+let esc_dol "\$esc_var"
+assert {== $esc_dol {$esc_var}}
+
+# \[ prevents command substitution
+let esc_brk "\[+ 1 2\]"
+assert {== $esc_brk {[+ 1 2]}}
+
+# escape sequences also work in unquoted words
+let esc_unq hello\nworld
+assert {== [len $esc_unq] 11}
+
+# braced strings do NOT process escapes (literal)
+let esc_brace {a\nb}
+assert {== [len $esc_brace] 4}
+assert {== $esc_brace {a\nb}}
+
+puts ""
 puts "-- user proc, return, and closures --"
 proc add {a b} { return [+ $a $b] }
 puts "add(20,22)=[add 20 22]"  ;# expect: add(20,22)=42

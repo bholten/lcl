@@ -309,19 +309,55 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     }
 
     if (c == '\\') {
-      if (sc->i + 1 < sc->len && sc->s[sc->i + 1] == '\n') {
+      if (sc->i + 1 < sc->len) {
+        char next = sc->s[sc->i + 1];
+        char esc_char;
+        int is_escape = 1;
+
+        /* Flush any accumulated literal before the backslash */
         if (sc->i > start) {
           if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
             return -1;
           }
         }
 
-        sc->i += 2;
-        sc->line++;
-        start = sc->i;
-        continue;
+        /* Line continuation */
+        if (next == '\n') {
+          sc->i += 2;
+          sc->line++;
+          start = sc->i;
+          continue;
+        }
+
+        /* Handle escape sequences */
+        switch (next) {
+          case 'n':  esc_char = '\n'; break;
+          case 't':  esc_char = '\t'; break;
+          case 'r':  esc_char = '\r'; break;
+          case '\\': esc_char = '\\'; break;
+          case '"':  esc_char = '"';  break;
+          case '$':  esc_char = '$';  break;
+          case '[':  esc_char = '[';  break;
+          case ']':  esc_char = ']';  break;
+          case '{':  esc_char = '{';  break;
+          case '}':  esc_char = '}';  break;
+          default:
+            /* Unknown escape - keep the escaped character only */
+            is_escape = 0;
+            sc->i++;
+            start = sc->i;
+            continue;
+        }
+
+        if (is_escape) {
+          if (!lcl_word_add_lit(w, &esc_char, 1)) {
+            return -1;
+          }
+          sc->i += 2;
+          start = sc->i;
+          continue;
+        }
       }
-      /* else copy backslash literally */
     }
 
     if (c == '\n') {

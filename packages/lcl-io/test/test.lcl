@@ -19,4 +19,10 @@ let contents [io::read_file $file]
 
 puts "contents"
 puts $contents
+
+# test stderr and stdout
+io::fputs [io::stderr] "Hello, stderr!\n"
+io::fputs [io::stdout] "Hello, stdout\n"
+
 puts "== done =="
+
