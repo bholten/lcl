@@ -1,8 +1,10 @@
 #ifndef LCL_COMPILE_H
 #define LCL_COMPILE_H
 
+#include <stdlib.h>
 #include "hash-table.h"
 #include "lcl-lex.h"
+#include "str-compat.h"
 
 /* Forward declarations */
 typedef struct lcl_interp lcl_interp;
@@ -60,11 +62,43 @@ struct lcl_interp {
   const char *cur_file;
   int cur_line;
   const char *err_msg;
+  int err_msg_owned;      /* 1 if err_msg was strdup'd and needs freeing */
   const char *err_file;
   int err_line;
   int depth;
   int max_depth;
 };
+
+/* Helper to clear any owned error message */
+#define LCL_ERR_CLEAR(interp) do { \
+  if ((interp)->err_msg_owned && (interp)->err_msg) { \
+    free((void *)(interp)->err_msg); \
+  } \
+  (interp)->err_msg = NULL; \
+  (interp)->err_msg_owned = 0; \
+} while(0)
+
+#define LCL_ERR(interp) do { \
+  LCL_ERR_CLEAR(interp); \
+  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_line = (interp)->cur_line; \
+} while(0)
+
+#define LCL_ERR_MSG(interp, msg) do { \
+  LCL_ERR_CLEAR(interp); \
+  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_line = (interp)->cur_line; \
+  (interp)->err_msg = (msg); \
+} while(0)
+
+/* Use this for dynamically allocated messages (will be freed) */
+#define LCL_ERR_MSG_DUP(interp, msg) do { \
+  LCL_ERR_CLEAR(interp); \
+  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_line = (interp)->cur_line; \
+  (interp)->err_msg = strdup(msg); \
+  (interp)->err_msg_owned = 1; \
+} while(0)
 
 lcl_interp *lcl_interp_new(void);
 void lcl_interp_free(lcl_interp *interp);
@@ -86,7 +120,7 @@ typedef enum {
 
 typedef struct {
   lcl_c_kind kind;
-  const char *name;  
+  const char *name;
   union {
     lcl_c_proc_fn proc;
     lcl_c_spec_fn spec;

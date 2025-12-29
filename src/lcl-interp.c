@@ -1,4 +1,5 @@
 #include <memory.h>
+#include <stdlib.h>
 
 #include "lcl-compile.h"
 #include "lcl-values.h"
@@ -24,6 +25,7 @@ lcl_interp *lcl_interp_new(void) {
   interp->cur_file = NULL;
   interp->cur_line = 0;
   interp->err_msg = NULL;
+  interp->err_msg_owned = 0;
   interp->err_file = NULL;
   interp->err_line = 0;
   interp->depth = 0;
@@ -36,6 +38,7 @@ void lcl_interp_free(lcl_interp *interp) {
   if (!interp) return;
 
   lcl_ref_dec(interp->last);
+  LCL_ERR_CLEAR(interp);
 
   /* Clear frame contents first to break circular references
    * (procs in frame have closures that reference the frame) */

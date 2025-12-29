@@ -9,8 +9,6 @@
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
                   lcl_value **out);
 
-void lcl_set_error(lcl_interp *interp, const char *msg);
-
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
                       lcl_value ***argv_out) {
   int i;
@@ -71,7 +69,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
   }
 
   if ((int)lcl_list_len(p->params) != argc) {
-    lcl_set_error(interp, "wrong number of arguments");
+    LCL_ERR_MSG(interp, "wrong number of arguments");
     interp->env = saved;
     lcl_frame_ref_dec(child);
 
@@ -117,7 +115,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
     case LCL_WP_VAR: {
       lcl_value *val = NULL;
       if (lcl_env_get_value(&interp->env, wp->as.var.name, &val) != LCL_OK) {
-        lcl_set_error(interp, "undefined variable");
+        LCL_ERR_MSG(interp, "undefined variable");
         return LCL_RC_ERR;
       }
       /* Unwrap cell if needed */
@@ -171,7 +169,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         *out = name;
         return LCL_RC_OK;
       }
-      lcl_set_error(interp, "unknown command");
+      LCL_ERR_MSG(interp, "unknown command");
       lcl_ref_dec(name);
       return LCL_RC_ERR;
     }
@@ -183,7 +181,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         return LCL_RC_OK;
       }
       /* Non-callable with args - error */
-      lcl_set_error(interp, "value is not callable");
+      LCL_ERR_MSG(interp, "value is not callable");
       lcl_ref_dec(callee);
       return LCL_RC_ERR;
     }
@@ -445,7 +443,7 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
   lcl_value *last = NULL;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
-    lcl_set_error(interp, "maximum recursion depth exceeded");
+    LCL_ERR_MSG(interp, "maximum recursion depth exceeded");
     return LCL_RC_ERR;
   }
 

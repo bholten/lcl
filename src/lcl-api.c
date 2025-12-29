@@ -99,6 +99,7 @@ const char *lcl_interp_error_msg(lcl_interp *interp) {
 
 void lcl_set_error(lcl_interp *interp, const char *msg) {
   if (!interp) return;
+  LCL_ERR_CLEAR(interp);
   interp->err_file = interp->cur_file;
   interp->err_line = interp->cur_line;
   interp->err_msg = msg;
@@ -106,9 +107,9 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
 
 void lcl_clear_error(lcl_interp *interp) {
   if (!interp) return;
+  LCL_ERR_CLEAR(interp);
   interp->err_file = NULL;
   interp->err_line = 0;
-  interp->err_msg = NULL;
 }
 
 /* ============================================================================

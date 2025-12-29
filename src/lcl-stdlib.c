@@ -20,10 +20,10 @@ static int lcl_value_is_true(lcl_value *v);
 int c_assert(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   const char *expr;
   lcl_value *result = NULL;
-  int rc;
   (void)out;
 
   if (argc < 1) {
+    LCL_ERR_MSG(interp, "assert requires an expression");
     return LCL_RC_ERR;
   }
 
@@ -34,11 +34,19 @@ int c_assert(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     return LCL_RC_ERR;
   }
 
-  rc = lcl_value_is_true(result) ? LCL_RC_OK : LCL_RC_ERR;
+  if (!lcl_value_is_true(result)) {
+    lcl_ref_dec(result);
+    if (argc >= 2) {
+      LCL_ERR_MSG_DUP(interp, lcl_value_to_string(argv[1]));
+    } else {
+      LCL_ERR_MSG(interp, "assertion failed");
+    }
+    return LCL_RC_ERR;
+  }
 
   lcl_ref_dec(result);
 
-  return rc;
+  return LCL_RC_OK;
 }
 
 int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
