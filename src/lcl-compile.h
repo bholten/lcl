@@ -57,7 +57,9 @@ lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 struct lcl_interp {
   lcl_env env;
   lcl_value  *last;
-  lcl_value  *err_msg;
+  const char *cur_file;
+  int cur_line;
+  const char *err_msg;
   const char *err_file;
   int err_line;
   int depth;

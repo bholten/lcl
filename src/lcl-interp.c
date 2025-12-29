@@ -21,6 +21,8 @@ lcl_interp *lcl_interp_new(void) {
   interp->env = *env;
   free(env);  /* free the struct, contents now owned by interp->env */
   interp->last = NULL;
+  interp->cur_file = NULL;
+  interp->cur_line = 0;
   interp->err_msg = NULL;
   interp->err_file = NULL;
   interp->err_line = 0;
@@ -34,7 +36,6 @@ void lcl_interp_free(lcl_interp *interp) {
   if (!interp) return;
 
   lcl_ref_dec(interp->last);
-  lcl_ref_dec(interp->err_msg);
 
   /* Clear frame contents first to break circular references
    * (procs in frame have closures that reference the frame) */

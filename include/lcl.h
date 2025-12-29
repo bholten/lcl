@@ -120,6 +120,30 @@ const char *lcl_interp_error_file(lcl_interp *interp);
  */
 int lcl_interp_error_line(lcl_interp *interp);
 
+/*
+ * Get the error message.
+ * Returns NULL if no error message was set.
+ */
+const char *lcl_interp_error_msg(lcl_interp *interp);
+
+/*
+ * Set an error message for the current evaluation position.
+ * Use this in C extensions to provide meaningful error messages.
+ * The msg must be a static string (not freed).
+ *
+ * Example:
+ *   if (argc < 2) {
+ *     lcl_set_error(interp, "expected at least 2 arguments");
+ *     return LCL_RC_ERR;
+ *   }
+ */
+void lcl_set_error(lcl_interp *interp, const char *msg);
+
+/*
+ * Clear any error state (typically called before evaluation).
+ */
+void lcl_clear_error(lcl_interp *interp);
+
 /* ============================================================================
  * Reference Counting
  *

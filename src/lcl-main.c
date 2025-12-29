@@ -46,9 +46,13 @@ int main(int argc, char **argv) {
   rc = lcl_eval_file(interp, argv[1], &result);
 
   if (rc != LCL_RC_OK) {
-    fprintf(stderr, "Error at %s:%d\n",
+    fprintf(stderr, "Error at %s:%d",
             interp->err_file ? interp->err_file : "<unknown>",
             interp->err_line);
+    if (interp->err_msg) {
+      fprintf(stderr, ": %s", interp->err_msg);
+    }
+    fprintf(stderr, "\n");
   }
 
   if (result) {

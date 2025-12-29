@@ -72,7 +72,7 @@ int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
     return LCL_RC_ERR;
   }
 
-  rc = lcl_eval_string(interp, src, out);
+  rc = lcl_eval_string_file(interp, src, path, out);
   free(src);
 
   return rc;
@@ -90,6 +90,25 @@ const char *lcl_interp_error_file(lcl_interp *interp) {
 int lcl_interp_error_line(lcl_interp *interp) {
   if (!interp) return 0;
   return interp->err_line;
+}
+
+const char *lcl_interp_error_msg(lcl_interp *interp) {
+  if (!interp) return NULL;
+  return interp->err_msg;
+}
+
+void lcl_set_error(lcl_interp *interp, const char *msg) {
+  if (!interp) return;
+  interp->err_file = interp->cur_file;
+  interp->err_line = interp->cur_line;
+  interp->err_msg = msg;
+}
+
+void lcl_clear_error(lcl_interp *interp) {
+  if (!interp) return;
+  interp->err_file = NULL;
+  interp->err_line = 0;
+  interp->err_msg = NULL;
 }
 
 /* ============================================================================

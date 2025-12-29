@@ -273,5 +273,20 @@ let false 0
 
 assert {== $true 1}
 
+puts "Implicit versus explicit return"
+
+proc explicit {} {
+    return 42
+}
+
+proc implicit {} {
+    24
+}
+
+let exp [explicit]
+let imp [implicit]
+
+puts $exp
+puts $imp
 
 puts "== done =="
