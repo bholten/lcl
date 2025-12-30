@@ -24,5 +24,14 @@ puts $contents
 io::fputs [io::stderr] "Hello, stderr!\n"
 io::fputs [io::stdout] "Hello, stdout\n"
 
-puts "== done =="
+puts "Testing glob"
+puts "glob *.md"
+puts [io::glob *.md]
 
+puts "glob *."
+puts [io::glob *]
+
+puts "Testing getenv"
+puts [io::getenv PATH]
+
+puts "== done =="

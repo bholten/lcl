@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <glob.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,7 +51,7 @@ static char *read_file(const char *path) {
   }
 
   buf[len] = '\0';
-  
+
   return buf;
 }
 
@@ -283,6 +284,62 @@ int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
+int c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *env;
+  const char *env_val;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  env = lcl_value_to_string(argv[0]);
+  env_val = getenv(env);
+
+  if (!env) {
+    *out = lcl_string_new("");
+  } else {
+    *out = lcl_string_new(env_val);
+  }
+
+  return LCL_RC_OK;
+}
+
+int c_io_glob(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *gl;
+  glob_t glob_buf;
+  int err;
+  size_t i;
+  lcl_value *result;
+  lcl_value *item;
+
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  gl = lcl_value_to_string(argv[0]);
+  err = glob(gl, 0, NULL, &glob_buf);
+
+  if (err == 0) {
+    result = lcl_list_new();
+
+    for (i = 0; i < glob_buf.gl_pathc; i++) {
+      item = lcl_string_new(glob_buf.gl_pathv[i]);
+      lcl_list_push(&result, item);
+      lcl_ref_dec(item);
+    }
+
+    globfree(&glob_buf);
+    *out = result;
+
+    return LCL_RC_OK;
+  }
+
+  return LCL_RC_ERR;
+}
+
 void lcl_register_io(lcl_interp *interp) {
   lcl_value *io_ns = lcl_ns_new(IO_NS);
   lcl_define_take(interp, IO_NS, io_ns);
@@ -297,4 +354,6 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_ns_def(io_ns, "stderr", lcl_c_proc_new("io::stderr", c_io_stderr));
   lcl_ns_def(io_ns, "stdin", lcl_c_proc_new("io::stdin", c_io_stdin));
   lcl_ns_def(io_ns, "flush", lcl_c_proc_new("io::flush", c_io_flush));
+  lcl_ns_def(io_ns, "getenv", lcl_c_proc_new("io::flush", c_io_getenv));
+  lcl_ns_def(io_ns, "glob", lcl_c_proc_new("io::glob", c_io_glob));
 }
