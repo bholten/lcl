@@ -19,10 +19,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   FetchContent_MakeAvailable(lcl)
 endif()
 
-# Configure curl options before making available
-set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(CURL_DISABLE_TESTS ON CACHE BOOL "" FORCE)
 
 set(LCL_IO_SOURCES
   src/lcl-io.c
@@ -41,11 +38,8 @@ target_include_directories(lcl_io
 
 target_compile_options(lcl_io PRIVATE -Wall -Wextra)
 
-# Link against parent LCL and CURL
-target_link_libraries(lcl_io
-  PUBLIC lcl::lcl
-  PRIVATE libcurl
-)
+# Link against LCL (PRIVATE since consumers link lcl separately)
+target_link_libraries(lcl_io PRIVATE lcl::lcl)
 
 # Standalone build: create test executable
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -81,21 +75,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   # Installation rules for standalone build
   include(GNUInstallDirs)
-  include(CMakePackageConfigHelpers)
 
   install(TARGETS lcl_io
-    EXPORT lclIoTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 
-  install(FILES include/lcl-curl.h
+  install(FILES include/lcl-io.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  )
-
-  install(EXPORT lclIoTargets
-    FILE lclIoTargets.cmake
-    NAMESPACE lcl::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/lcl_io
   )
 endif()
