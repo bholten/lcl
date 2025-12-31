@@ -136,6 +136,7 @@ typedef struct {
 } lcl_upvalue;
 
 typedef struct {
+  char *self_name;      /* Name for self-reference (NULL if anonymous) */
   lcl_upvalue *upvals;  /* Array of captured upvalues */
   int nupvals;          /* Number of upvalues */
   lcl_value *params;    /* Parameter names (list) */
@@ -146,8 +147,10 @@ typedef struct {
 
 /* Build upvalues by capturing referenced variables from current environment.
  * params_list: list of parameter names (to exclude from capture)
+ * self_name: name for self-reference (to exclude from capture), or NULL
  * Returns array of upvalues, sets *nout to count. Returns NULL on error or if no upvalues. */
 lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                                lcl_value *params_list, int *nout);
+                                lcl_value *params_list, const char *self_name,
+                                int *nout);
 
 #endif

@@ -94,9 +94,11 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
 
 /* Build upvalues by capturing referenced variables from current environment.
  * params_list: list of parameter names (to exclude from capture)
+ * self_name: name for self-reference (to exclude from capture), or NULL
  * Returns array of upvalues, sets *nout to count. Returns NULL on error. */
 lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                                lcl_value *params_list, int *nout) {
+                                lcl_value *params_list, const char *self_name,
+                                int *nout) {
   name_set vars;
   lcl_upvalue *upvals = NULL;
   int i, j, nupvals = 0;
@@ -124,6 +126,11 @@ lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
     const char *name = vars.names[i];
     lcl_value *val = NULL;
     int is_param = 0;
+
+    /* Skip if it's the self-reference name (will be injected at runtime) */
+    if (self_name && strcmp(name, self_name) == 0) {
+      continue;
+    }
 
     /* Skip if it's a parameter name */
     if (params_list) {
@@ -191,12 +198,23 @@ error:
  * ============================================================================
  */
 
-lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals, lcl_value *params,
-                        lcl_program *body) {
+lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
+                        lcl_value *params, lcl_program *body) {
   lcl_proc *p = (lcl_proc *)calloc(1, sizeof(*p));
   lcl_value *v;
 
   if (!p) return NULL;
+
+  /* Store self-reference name if provided */
+  if (self_name) {
+    p->self_name = strdup(self_name);
+    if (!p->self_name) {
+      free(p);
+      return NULL;
+    }
+  } else {
+    p->self_name = NULL;
+  }
 
   /* Store upvalues (already have incremented refcounts from caller) */
   p->upvals = upvals;
@@ -208,13 +226,14 @@ lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals, lcl_value *params,
 
   v = (lcl_value *)calloc(1, sizeof(*v));
   if (!v) {
-    /* Clean up upvalues on failure */
+    /* Clean up on failure */
     int i;
     for (i = 0; i < nupvals; i++) {
       free(upvals[i].name);
       lcl_ref_dec(upvals[i].value);
     }
     free(upvals);
+    free(p->self_name);
     lcl_ref_dec(p->params);
     lcl_program_free(p->body);
     free(p);

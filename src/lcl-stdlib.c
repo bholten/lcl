@@ -1678,8 +1678,11 @@ lcl_value *lcl_list_new_from_cwords(const char *words) {
   return list;
 }
 
-int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
-             lcl_value **out) {
+/* Helper to create a lambda with optional self-reference name.
+ * self_name can be NULL for anonymous lambdas. */
+static int make_lambda(lcl_interp *interp, const char *self_name,
+                       const lcl_word *params_word, const lcl_word *body_word,
+                       lcl_value **out) {
   lcl_value *params_s = NULL;
   lcl_value *body_s = NULL;
   lcl_program *body_p = NULL;
@@ -1687,15 +1690,11 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_upvalue *upvals = NULL;
   int nupvals = 0;
 
-  if (argc != 2) {
+  if (lcl_eval_word_to_str(interp, params_word, &params_s) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &params_s) != LCL_RC_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_eval_word_to_str(interp, args[1], &body_s) != LCL_RC_OK) {
+  if (lcl_eval_word_to_str(interp, body_word, &body_s) != LCL_RC_OK) {
     lcl_ref_dec(params_s);
     return LCL_RC_ERR;
   }
@@ -1709,16 +1708,16 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (!body_p) {
     lcl_ref_dec(params_list);
-
     return LCL_RC_ERR;
   }
 
-  /* Build upvalues (flat closure) from variables referenced in body */
-  upvals = lcl_build_upvalues(interp, body_p, params_list, &nupvals);
+  /* Build upvalues (flat closure) from variables referenced in body.
+   * self_name is excluded from capture - it will be injected at runtime. */
+  upvals = lcl_build_upvalues(interp, body_p, params_list, self_name, &nupvals);
   /* upvals can be NULL if no captures needed - that's okay */
 
   /* lcl_proc_new takes ownership of body_p and upvals */
-  *out = lcl_proc_new(upvals, nupvals, params_list, body_p);
+  *out = lcl_proc_new(self_name, upvals, nupvals, params_list, body_p);
   lcl_ref_dec(params_list);
 
   if (!*out) {
@@ -1726,6 +1725,39 @@ int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   return LCL_RC_OK;
+}
+
+int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
+             lcl_value **out) {
+  /*
+   * Two forms:
+   *   lambda {params} {body}        - anonymous (argc == 2, first arg braced)
+   *   lambda name {params} {body}   - named, can self-recurse (argc == 3)
+   *
+   * Detection: if argc == 2 → anonymous
+   *            if argc == 3 → named (first arg is the name)
+   */
+  if (argc == 2) {
+    /* Anonymous lambda: lambda {params} {body} */
+    return make_lambda(interp, NULL, args[0], args[1], out);
+  } else if (argc == 3) {
+    /* Named lambda: lambda name {params} {body} */
+    lcl_value *name_v = NULL;
+    const char *self_name;
+    int rc;
+
+    if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+
+    self_name = lcl_value_to_string(name_v);
+    rc = make_lambda(interp, self_name, args[1], args[2], out);
+    lcl_ref_dec(name_v);
+    return rc;
+  } else {
+    LCL_ERR_MSG(interp, "lambda: expected 2 or 3 arguments");
+    return LCL_RC_ERR;
+  }
 }
 
 static int is_name_char(int c) {
@@ -2820,11 +2852,15 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
 int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
            lcl_value **out) {
-  /* proc name {params} {body} */
+  /* proc name {params} {body}
+   * Desugars to: let name [lambda name {params} {body}] */
   lcl_value *name_v = NULL;
   lcl_value *lam = NULL;
+  const char *name_str;
+  int rc;
 
   if (argc != 3) {
+    LCL_ERR_MSG(interp, "proc: expected 3 arguments");
     return LCL_RC_ERR;
   }
 
@@ -2832,29 +2868,23 @@ int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  { /* build lambda from args[1], args[2] reusing s_lambda */
-    const lcl_word *lam_args[2] = {args[1], args[2]};
+  name_str = lcl_value_to_string(name_v);
+  rc = make_lambda(interp, name_str, args[1], args[2], &lam);
 
-    if (s_lambda(interp, 2, lam_args, &lam) != LCL_RC_OK) {
-      lcl_ref_dec(name_v);
-
-      return LCL_RC_ERR;
-    }
+  if (rc != LCL_RC_OK) {
+    lcl_ref_dec(name_v);
+    return rc;
   }
 
-  /* hash_table_put inside lcl_env_let will incref lam */
-  if (lcl_env_let(&interp->env, lcl_value_to_string(name_v), lam) != LCL_OK) {
+  if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(lam);
-
     return LCL_RC_ERR;
   }
 
-  /* lam now has refcount 2 (original + hash table), decref to balance */
   lcl_ref_dec(name_v);
   lcl_ref_dec(lam);
   *out = lcl_string_new("");
-
   return LCL_RC_OK;
 }
 

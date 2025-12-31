@@ -140,6 +140,54 @@ Test::suite "User Procs" {
 }
 
 # ============================================================================
+# Named Lambda Self-Recursion
+# ============================================================================
+
+Test::suite "Named Lambda Self-Recursion" {
+    Test::case "factorial via named lambda" {
+        let factorial [lambda factorial {n} {
+            if [<= $n 1] { 1 } else { [* $n [factorial [- $n 1]]] }
+        }]
+        Test::eq [factorial 5] 120
+    }
+
+    Test::case "fibonacci via named lambda" {
+        let fib [lambda fib {n} {
+            if [< $n 2] { $n } else { [+ [fib [- $n 1]] [fib [- $n 2]]] }
+        }]
+        Test::eq [fib 10] 55
+    }
+
+    Test::case "proc uses named lambda internally" {
+        proc fact {n} {
+            if [<= $n 1] { 1 } else { [* $n [fact [- $n 1]]] }
+        }
+        Test::eq [fact 6] 720
+    }
+
+    Test::case "anonymous lambda still works" {
+        let double [lambda {x} { [* $x 2] }]
+        Test::eq [double 21] 42
+    }
+
+    Test::case "self-recursive counter" {
+        # Uses SELF binding, no cycle
+        proc counter {n acc} {
+            if [== $n 0] { $acc } else { [counter [- $n 1] [+ $acc 1]] }
+        }
+        Test::eq [counter 100 0] 100
+    }
+
+    Test::case "named lambda with closure" {
+        let base 10
+        let addBase [lambda addBase {n} {
+            if [== $n 0] { $base } else { [+ 1 [addBase [- $n 1]]] }
+        }]
+        Test::eq [addBase 5] 15
+    }
+}
+
+# ============================================================================
 # Namespaces
 # ============================================================================
 

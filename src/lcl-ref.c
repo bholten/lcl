@@ -49,6 +49,7 @@ void lcl_ref_dec(lcl_value *value) {
       lcl_ref_dec(p->upvals[i].value);
     }
     free(p->upvals);
+    free(p->self_name); /* NULL-safe */
     lcl_ref_dec(p->params);
     lcl_ref_dec(p->captured_ns);
     lcl_program_free(p->body);

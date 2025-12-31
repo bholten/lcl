@@ -191,7 +191,8 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
     }
     rc = proc->as.c_proc.fn->fn.proc(interp, argc, argv, out);
   } else if (proc->type == LCL_PROC) {
-    rc = lcl_call_user_proc(interp, proc->as.procedure.proc, argc, argv, out);
+    rc = lcl_call_user_proc(interp, proc, proc->as.procedure.proc, argc, argv,
+                            out);
     /* Convert RETURN to OK (normal proc return) */
     if (rc == LCL_RC_RETURN) {
       rc = LCL_RC_OK;

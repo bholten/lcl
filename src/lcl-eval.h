@@ -3,7 +3,7 @@
 
 #include "lcl-compile.h"
 
-int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
+int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
                        int argc, lcl_value **argv, lcl_value **out);
 
 int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,

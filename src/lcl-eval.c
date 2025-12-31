@@ -111,8 +111,8 @@ cleanup:
   return rc;
 }
 
-int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p, int argc,
-                       lcl_value **argv, lcl_value **out) {
+int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
+                       int argc, lcl_value **argv, lcl_value **out) {
   int i;
   int rc;
   lcl_env saved = interp->env;
@@ -145,6 +145,12 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p, int argc,
    * hash_table_put will handle the refcount increment. */
   for (i = 0; i < p->nupvals; i++) {
     hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
+  }
+
+  /* Inject self-reference binding for named lambdas.
+   * This allows self-recursion without capturing via upvalue (no cycles). */
+  if (p->self_name != NULL) {
+    hash_table_put(child->locals, p->self_name, proc_val);
   }
 
   for (i = 0; i < argc; i++) {
@@ -302,8 +308,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     if (callee->type == LCL_CPROC) {
       rc = callee->as.c_proc.fn->fn.proc(interp, argc, argv, out);
     } else if (callee->type == LCL_PROC) {
-      rc = lcl_call_user_proc(interp, (lcl_proc *)callee->as.procedure.proc,
-                              argc, argv, out);
+      rc = lcl_call_user_proc(interp, callee,
+                              (lcl_proc *)callee->as.procedure.proc, argc, argv,
+                              out);
     } else {
       rc = LCL_RC_ERR;
     }
