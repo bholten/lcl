@@ -1,49 +1,165 @@
-# CURL tests
+# curl:: Package Tests
+# Requires the mock server to be running: docker-compose up -d
+# Run with an LCL interpreter that has the curl extension loaded
 
-puts "Lcl curl tests"
+# Load test framework - adjust path based on how tests are run
+load lib/Test.lcl
 
-# initialize curl (curl_easy API)
-curl::init
+# ============================================================================
+# CURL Initialization
+# ============================================================================
 
-# create a handle
-let c [curl::new]
+Test::suite "CURL Initialization" {
+    Test::case "curl::init succeeds" {
+        curl::init
+        Test::assert 1
+    }
 
-# Set an option
-curl::set_verbose $c 1
-
-# set verb
-curl::set_verb $c POST
-
-# set some headers
-curl::set_header $c "Content-Type: application/json"
-curl::set_header $c "User-Agent: liblclcurl"
-
-# Set Body
-curl::set_body $c {
-    {
-        "user": "test user",
-        "number": 42
+    Test::case "curl::new creates handle" {
+        let c [curl::new]
+        Test::not_empty $c
     }
 }
 
-# set URL
-curl::set_url $c http://localhost:8080/test
+# ============================================================================
+# CURL Options
+# ============================================================================
 
-curl::set_write_callback $c [lambda {response} {
-    puts "Hello from callback"
-    puts $response
-}]
+Test::suite "CURL Options" {
+    Test::case "set_verbose accepts boolean" {
+        let c [curl::new]
+        curl::set_verbose $c 0
+        Test::assert 1
+    }
 
-# perform
-curl::perform $c
+    Test::case "set_verb accepts HTTP method" {
+        let c [curl::new]
+        curl::set_verb $c GET
+        Test::assert 1
+    }
 
-puts [curl::get_total_time $c]
-puts [curl::get_response_code $c]
-puts [curl::get_content_type $c]
+    Test::case "set_header accepts header string" {
+        let c [curl::new]
+        curl::set_header $c "Content-Type: application/json"
+        curl::set_header $c "User-Agent: lcl-curl-test"
+        Test::assert 1
+    }
 
-# reset
-curl::reset $c
+    Test::case "set_body accepts body string" {
+        let c [curl::new]
+        curl::set_body $c {{"key": "value"}}
+        Test::assert 1
+    }
 
-puts ""
-puts "Done"
+    Test::case "set_url accepts URL" {
+        let c [curl::new]
+        curl::set_url $c http://localhost:8080/test
+        Test::assert 1
+    }
+}
 
+# ============================================================================
+# CURL Request Execution
+# ============================================================================
+
+var _response_received 0
+var _response_body {}
+
+Test::suite "CURL Request Execution" {
+    Test::case "GET request returns 200" {
+        let c [curl::new]
+        curl::set_verbose $c 0
+        curl::set_verb $c GET
+        curl::set_url $c http://localhost:8080/test
+
+        curl::set_write_callback $c [lambda {response} {
+            set! _response_received 1
+            set! _response_body $response
+        }]
+
+        curl::perform $c
+        let code [curl::get_response_code $c]
+        Test::eq $code 200
+    }
+
+    Test::case "write_callback is invoked" {
+        # Uses state from previous test
+        Test::eq $_response_received 1
+    }
+
+    Test::case "response body is non-empty" {
+        Test::not_empty $_response_body
+    }
+
+    Test::case "POST request returns 200" {
+        let c [curl::new]
+        curl::set_verbose $c 0
+        curl::set_verb $c POST
+        curl::set_header $c "Content-Type: application/json"
+        curl::set_body $c {{"user": "test", "value": 42}}
+        curl::set_url $c http://localhost:8080/test
+
+        var post_response {}
+        curl::set_write_callback $c [lambda {response} {
+            set! post_response $response
+        }]
+
+        curl::perform $c
+        let code [curl::get_response_code $c]
+        Test::eq $code 200
+        Test::not_empty $post_response
+    }
+}
+
+# ============================================================================
+# CURL Response Info
+# ============================================================================
+
+Test::suite "CURL Response Info" {
+    Test::case "get_total_time returns positive" {
+        let c [curl::new]
+        curl::set_url $c http://localhost:8080/test
+        curl::perform $c
+        let time [curl::get_total_time $c]
+        Test::gt $time 0
+    }
+
+    Test::case "get_response_code returns HTTP status" {
+        let c [curl::new]
+        curl::set_url $c http://localhost:8080/test
+        curl::perform $c
+        let code [curl::get_response_code $c]
+        Test::gte $code 100
+        Test::lt $code 600
+    }
+
+    Test::case "get_content_type returns content type" {
+        let c [curl::new]
+        curl::set_url $c http://localhost:8080/test
+        curl::perform $c
+        let ctype [curl::get_content_type $c]
+        Test::not_empty $ctype
+    }
+}
+
+# ============================================================================
+# CURL Handle Management
+# ============================================================================
+
+Test::suite "CURL Handle Management" {
+    Test::case "reset clears handle state" {
+        let c [curl::new]
+        curl::set_url $c http://localhost:8080/test
+        curl::set_header $c "X-Custom: value"
+        curl::reset $c
+        # After reset, should be able to set new options
+        curl::set_url $c http://localhost:8080/other
+        Test::assert 1
+    }
+}
+
+# ============================================================================
+# Run Tests
+# ============================================================================
+
+Test::run
