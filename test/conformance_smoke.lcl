@@ -1,1691 +1,1283 @@
-# Lcl Conformance Smoke (MVP)
-# This script assumes the host registered the core stdlib:
-#   let, ref, var (sugar), set!, +, puts, lambda, proc, return
+# Lcl Conformance Smoke Tests
+# This test suite covers core LCL functionality using the Test framework.
+# Run with: ./lcl test/conformance_smoke.lcl
 
-puts "=== Lcl Conformance Smoke ==="
+load lib/Test.lcl
 
-puts ""
-puts "-- immutability & substitution --"
-let x 10
-puts "x=$x"                    ;# expect: x=10
-assert {== $x 10}
+# ============================================================================
+# Immutability & Substitution
+# ============================================================================
 
-puts ""
-puts "-- cells (var/ref) & set! --"
-var n 0                        ;# let n [ref 0]
-set! n [+ $n 1]
-puts "n=$n"                    ;# expect: n=1
-assert {== $n 1}
-
-puts ""
-puts "-- quoting and subcommand substitution --"
-let a 10
-let s "x=$a [ + 1 2 ]"
-puts $s                        ;# expect: x=10 3
-assert {== $s {x=10 3}}
-let t {x=$a [ + 1 2 ]}
-puts $t                        ;# expect: x=$a [ + 1 2 ]
-assert {== $t {x=$a [ + 1 2 ]}}
-
-puts ""
-puts "-- escape sequences in strings --"
-# \n produces actual newline
-let esc_nl "line1\nline2"
-assert {== [len $esc_nl] 11}
-
-# \t produces actual tab
-let esc_tab "col1\tcol2"
-assert {== [len $esc_tab] 9}
-
-# \\ produces single backslash
-let esc_bs "a\\b"
-assert {== [len $esc_bs] 3}
-
-# \" allows embedded quotes
-let esc_qt "say \"hi\""
-assert {== [len $esc_qt] 8}
-
-# \$ prevents variable substitution
-let esc_var 100
-let esc_dol "\$esc_var"
-assert {== $esc_dol {$esc_var}}
-
-# \[ prevents command substitution
-let esc_brk "\[+ 1 2\]"
-assert {== $esc_brk {[+ 1 2]}}
-
-# escape sequences also work in unquoted words
-let esc_unq hello\nworld
-assert {== [len $esc_unq] 11}
-
-# braced strings do NOT process escapes (literal)
-let esc_brace {a\nb}
-assert {== [len $esc_brace] 4}
-assert {== $esc_brace {a\nb}}
-
-puts ""
-puts "-- user proc, return, and closures --"
-proc add {a b} { return [+ $a $b] }
-puts "add(20,22)=[add 20 22]"  ;# expect: add(20,22)=42
-assert {== [add 20 22] 42}
-
-proc makeCounter {start} {
-  var n $start
-  return [lambda {} { set! n [+ $n 1]; $n }]
+Test::suite "Immutability & Substitution" {
+    Test::case "let creates immutable binding" {
+        let x 10
+        Test::eq $x 10
+    }
 }
-let c [makeCounter 10]
-puts [$c]                      ;# expect: 11
-assert {== [$c] 12}            ;# second call returns 12
-puts [$c]                      ;# expect: 13 (continues incrementing)
 
-let lam [lambda {x} { + $x 10 }]
-puts "lam 10 = [$lam 10]"
-assert {== 20 [$lam 10]}
+# ============================================================================
+# Cells (var/ref) & set!
+# ============================================================================
 
-let lambda_counter [lambda {start} {
-    var n $start
-
-    return [lambda {} {
+Test::suite "Cells (var/ref) & set!" {
+    Test::case "var creates mutable binding" {
+        var n 0
         set! n [+ $n 1]
-        return $n
-    }]
-}]
-
-let lam_count [$lambda_counter 10]
-$lam_count
-$lam_count
-$lam_count
-let final_count [$lam_count]
-assert {== $final_count 14}
-
-puts ""
-puts "-- namespaces (optional stdlib) --"
-namespace eval math {
-    let ten 10
-}
-puts $math::ten
-assert {== $math::ten 10}
-# expect: 10
-puts ${math::ten}
-assert {== ${math::ten} 10}
-# expect: 10
-
-puts ""
-puts "-- eval --"
-# basic eval
-puts [eval {+ 1 2}]            ;# expect: 3
-assert {== [eval {+ 1 2}] 3}
-
-# eval accesses outer variables (same frame)
-let ev_x 42
-puts [eval {+ $ev_x 1}]        ;# expect: 43
-assert {== [eval {+ $ev_x 1}] 43}
-
-# eval defines variables in current frame
-eval {let ev_y 100}
-puts $ev_y                     ;# expect: 100
-assert {== $ev_y 100}
-
-# eval with multiple args (joined with spaces)
-let ev_cmd1 "let ev_z"
-let ev_cmd2 "200"
-eval $ev_cmd1 $ev_cmd2
-puts $ev_z                     ;# expect: 200
-assert {== $ev_z 200}
-
-# return inside eval in a proc
-proc testEvalReturn {} {
-  eval { return 999 }
-  puts "ERROR: should not reach"
-}
-puts [testEvalReturn]          ;# expect: 999
-assert {== [testEvalReturn] 999}
-
-puts ""
-puts "-- subst --"
-# variable substitution
-let sub_x 42
-puts [subst {x is $sub_x}]     ;# expect: x is 42
-assert {== [subst {x is $sub_x}] {x is 42}}
-
-# subcommand substitution
-puts [subst {sum=[+ 1 2]}]     ;# expect: sum=3
-assert {== [subst {sum=[+ 1 2]}] {sum=3}}
-
-# ${name} form
-let sub_foo bar
-puts [subst {${sub_foo}!}]     ;# expect: bar!
-assert {== [subst {${sub_foo}!}] {bar!}}
-
-# backslash escapes
-puts [subst {a\tb}]            ;# expect: a	b (tab)
-puts [subst {literal \$x}]     ;# expect: literal $x
-assert {== [subst {literal \$x}] {literal $x}}
-
-# braces and quotes are literal (not grouping)
-puts [subst {braces {} ok}]    ;# expect: braces {} ok
-assert {== [subst {braces {} ok}] {braces {} ok}}
-
-puts ""
-puts "-- namespace eval --"
-# define values in namespace
-namespace eval myns {
-  let val 100
-}
-puts $myns::val                ;# expect: 100
-assert {== $myns::val 100}
-
-# define procs in namespace
-namespace eval funcs {
-  proc double {n} { return [+ $n $n] }
-}
-puts [funcs::double 7]         ;# expect: 14
-assert {== [funcs::double 7] 14}
-namespace eval funcs {
-    puts [double 8]
-}                              ;# expect: 16
-
-# nested namespace path (creates intermediates)
-namespace eval outer::inner::leaf {
-  let deep 42
-}
-puts $outer::inner::leaf::deep       ;# expect: 42
-assert {== $outer::inner::leaf::deep 42}
-
-# multiple evals on same namespace
-namespace eval ns1 { let x 1 }
-namespace eval ns1 { let y 2 }
-puts $ns1::x                   ;# expect: 1
-assert {== $ns1::x 1}
-puts $ns1::y                   ;# expect: 2
-assert {== $ns1::y 2}
-
-puts ""
-puts "-- load --"
-# load a file and call its procs
-load test/conformance_lib.lcl
-puts [lib_add 10 20]           ;# expect: 30
-assert {== [lib_add 10 20] 30}
-puts $LIB_CONST                ;# expect: 42
-assert {== $LIB_CONST 42}
-
-# load into namespace (import pattern)
-namespace eval imported {
-  load test/conformance_lib.lcl
-}
-puts [imported::lib_add 5 5]   ;# expect: 10
-assert {== [imported::lib_add 5 5] 10}
-puts $imported::LIB_CONST      ;# expect: 42
-assert {== $imported::LIB_CONST 42}
-
-puts ""
-puts "-- list operations --"
-# list creation and length
-let mylist [list a b c d e]
-puts [len $mylist]             ;# expect: 5
-assert {== [len $mylist] 5}
-
-# get - get elements by index
-puts [get $mylist 0]           ;# expect: a
-assert {== [get $mylist 0] a}
-puts [get $mylist 2]           ;# expect: c
-assert {== [get $mylist 2] c}
-puts [get $mylist 4]           ;# expect: e
-assert {== [get $mylist 4] e}
-
-# List::slice - extract slice
-let slice [List::slice $mylist 1 4]
-puts [len $slice]              ;# expect: 3
-assert {== [len $slice] 3}
-puts [get $slice 0]            ;# expect: b
-assert {== [get $slice 0] b}
-puts [get $slice 2]            ;# expect: d
-assert {== [get $slice 2] d}
-
-# List::concat - concatenate lists
-let list1 [list 1 2]
-let list2 [list 3 4]
-let combined [List::concat $list1 $list2]
-puts [len $combined]           ;# expect: 4
-assert {== [len $combined] 4}
-puts [get $combined 0]         ;# expect: 1
-assert {== [get $combined 0] 1}
-puts [get $combined 3]         ;# expect: 4
-assert {== [get $combined 3] 4}
-
-# String::join - join list with separator
-puts [String::join $mylist -]  ;# expect: a-b-c-d-e
-assert {== [String::join $mylist -] {a-b-c-d-e}}
-puts [String::join $mylist {}] ;# expect: abcde
-assert {== [String::join $mylist {}] {abcde}}
-
-# String::split - split string into list
-let parts [String::split "hello,world,test" ","]
-puts [len $parts]              ;# expect: 3
-assert {== [len $parts] 3}
-puts [get $parts 0]            ;# expect: hello
-assert {== [get $parts 0] hello}
-puts [get $parts 1]            ;# expect: world
-assert {== [get $parts 1] world}
-puts [get $parts 2]            ;# expect: test
-assert {== [get $parts 2] test}
-
-# List::push - append to list (functional style)
-let nums [list 1 2 3]
-let nums [List::push $nums 4]
-let nums [List::push $nums 5]
-puts [len $nums]               ;# expect: 5
-assert {== [len $nums] 5}
-puts [get $nums 3]             ;# expect: 4
-assert {== [get $nums 3] 4}
-puts [get $nums 4]             ;# expect: 5
-assert {== [get $nums 4] 5}
-
-# put - modify element (functional style)
-let items [list a b c]
-let items [put $items 1 B]
-puts [get $items 0]            ;# expect: a
-assert {== [get $items 0] a}
-puts [get $items 1]            ;# expect: B
-assert {== [get $items 1] B}
-puts [get $items 2]            ;# expect: c
-assert {== [get $items 2] c}
-
-# nested list indexing
-let nested [list [list x y] [list z w]]
-puts [get [get $nested 0] 0]   ;# expect: x
-assert {== [get [get $nested 0] 0] x}
-puts [get [get $nested 0] 1]   ;# expect: y
-assert {== [get [get $nested 0] 1] y}
-puts [get [get $nested 1] 0]   ;# expect: z
-assert {== [get [get $nested 1] 0] z}
-
-puts ""
-puts "-- dict operations --"
-# dict create and size
-let d [dict a 1 b 2 c 3]
-puts [len $d]                  ;# expect: 3
-assert {== [len $d] 3}
-
-# get - access by key
-puts [get $d a]                ;# expect: 1
-assert {== [get $d a] 1}
-puts [get $d b]                ;# expect: 2
-assert {== [get $d b] 2}
-puts [get $d c]                ;# expect: 3
-assert {== [get $d c] 3}
-
-# has? - check key existence
-puts [has? $d a]               ;# expect: 1
-assert {== [has? $d a] 1}
-puts [has? $d missing]         ;# expect: 0
-assert {== [has? $d missing] 0}
-
-# Dict::keys (order may vary, but count should be 3)
-let ks [Dict::keys $d]
-puts [len $ks]                 ;# expect: 3
-assert {== [len $ks] 3}
-
-# Dict::values (order may vary, but count should be 3)
-let vs [Dict::values $d]
-puts [len $vs]                 ;# expect: 3
-assert {== [len $vs] 3}
-
-# put - functional update
-var md [dict x 10]
-set! md [put $md x 20]
-puts [get $md x]               ;# expect: 20
-assert {== [get $md x] 20}
-
-# put adds new key
-set! md [put $md y 30]
-puts [get $md y]               ;# expect: 30
-assert {== [get $md y] 30}
-puts [len $md]                 ;# expect: 2
-assert {== [len $md] 2}
-
-# del - functional remove
-set! md [del $md x]
-puts [len $md]                 ;# expect: 1
-assert {== [len $md] 1}
-puts [has? $md x]              ;# expect: 0
-assert {== [has? $md x] 0}
-
-# empty dict
-let empty [dict]
-puts [len $empty]              ;# expect: 0
-assert {== [len $empty] 0}
-
-# nested dict get
-let nested [dict outer [dict inner 42]]
-puts [get [get $nested outer] inner]  ;# expect: 42
-assert {== [get [get $nested outer] inner] 42}
-
-# nested dict update
-var nd [dict outer [dict inner 0]]
-set! nd [put $nd outer [put [get $nd outer] inner 99]]
-puts [get [get $nd outer] inner]      ;# expect: 99
-assert {== [get [get $nd outer] inner] 99}
-
-puts ""
-puts "-- if/elseif/else --"
-# simple true
-if 1 { puts yes }                    ;# expect: yes
-
-# simple false (no output)
-if 0 { puts ERROR }
-
-# if-else
-if 0 { puts ERROR } else { puts no } ;# expect: no
-
-# elseif chain
-if 0 {
-  puts ERROR
-} elseif 1 {
-  puts elseif
-} else {
-  puts ERROR
-}                                    ;# expect: elseif
-
-# computed condition
-let cond_x 5
-if [+ $cond_x 0] { puts nonzero }    ;# expect: nonzero
-
-# string truthiness
-if hello { puts truthy }             ;# expect: truthy
-
-# empty string is false
-if {} { puts ERROR } else { puts empty } ;# expect: empty
-
-# if returns last value in body
-let if_result [if 1 { + 10 20 }]
-puts $if_result                      ;# expect: 30
-assert {== $if_result 30}
-
-puts ""
-puts "-- while --"
-# basic countdown
-var w_i 3
-while $w_i {
-  puts $w_i
-  set! w_i [+ $w_i -1]
-}                                    ;# expect: 3 2 1
-assert {== $w_i 0}
-
-# condition false initially (no output)
-while 0 { puts ERROR }
-
-# test re-evaluated each iteration
-var w_n 2
-while $w_n {
-  set! w_n [+ $w_n -1]
-}
-puts "w_n=$w_n"                      ;# expect: w_n=0
-assert {== $w_n 0}
-
-# while returns last body value
-var w_x 3
-let w_result [while $w_x { set! w_x [+ $w_x -1] }]
-puts "w_result=$w_result"            ;# expect: w_result=0
-assert {== $w_result 0}
-
-puts ""
-puts "-- for --"
-# basic for loop
-for {var f_i 3} {$f_i} {set! f_i [+ $f_i -1]} {
-  puts $f_i
-}                                    ;# expect: 3 2 1
-assert {== $f_i 0}
-
-# condition false initially (no output)
-for {var f_j 0} {$f_j} {set! f_j [+ $f_j -1]} {
-  puts ERROR
-}
-
-# empty start (use existing var)
-var f_k 2
-for {} {$f_k} {set! f_k [+ $f_k -1]} {
-  puts "k=$f_k"
-}                                    ;# expect: k=2 k=1
-assert {== $f_k 0}
-
-# for returns last body value
-let f_result [for {var f_m 3} {$f_m} {set! f_m [+ $f_m -1]} { $f_m }]
-puts "f_result=$f_result"            ;# expect: f_result=1
-assert {== $f_result 1}
-
-puts ""
-puts "-- foreach --"
-# basic foreach over list
-foreach fe_x [list a b c] {
-  puts $fe_x
-}                                    ;# expect: a b c
-
-# foreach over list variable
-let fe_items [list 1 2 3]
-foreach fe_item $fe_items {
-  puts $fe_item
-}                                    ;# expect: 1 2 3
-
-# empty list (no output)
-foreach fe_y [list] {
-  puts ERROR
-}
-
-# foreach returns last body value
-let fe_result [foreach fe_z [list x y z] { $fe_z }]
-puts "fe_result=$fe_result"          ;# expect: fe_result=z
-assert {== $fe_result z}
-
-# edge case: variable name equals value (tests eval fix)
-let fe_edge {}
-foreach fe_v [list a b fe_v] {
-  let fe_edge $fe_v
-}
-puts "fe_edge=$fe_edge"              ;# expect: fe_edge=fe_v
-assert {== $fe_edge fe_v}
-
-puts ""
-puts "-- break --"
-# break in while loop
-var brk_i 5
-while 1 {
-  puts $brk_i
-  set! brk_i [+ $brk_i -1]
-  if $brk_i { } else { break }
-}                                    ;# expect: 5 4 3 2 1
-assert {== $brk_i 0}
-
-# break in for loop (exits immediately)
-for {var brk_j 1} {1} {set! brk_j [+ $brk_j 1]} {
-  puts "for_brk"
-  break
-}                                    ;# expect: for_brk
-assert {== $brk_j 1}
-
-# break in foreach (exits after first)
-foreach brk_x [list a b c] {
-  puts "fe_brk=$brk_x"
-  break
-}                                    ;# expect: fe_brk=a
-assert {== $brk_x a}
-
-puts ""
-puts "-- continue --"
-# continue in while loop (skip when i=2)
-var cont_i 3
-while $cont_i {
-  let cur $cont_i
-  set! cont_i [+ $cont_i -1]
-  if [+ $cur -2] { } else { continue }
-  puts "cw=$cur"
-}                                    ;# expect: cw=3 cw=1
-assert {== $cont_i 0}
-
-# continue in for loop (skip when j=2)
-var cont_j 3
-for {} {$cont_j} {set! cont_j [+ $cont_j -1]} {
-  if [+ $cont_j -2] { } else { continue }
-  puts "cf=$cont_j"
-}                                    ;# expect: cf=3 cf=1
-assert {== $cont_j 0}
-
-# continue in foreach (skips puts ERROR)
-var cont_n 0
-foreach cont_x [list a b c] {
-  set! cont_n [+ $cont_n 1]
-  continue
-  puts ERROR
-}
-puts "cont_n=$cont_n"                ;# expect: cont_n=3
-assert {== $cont_n 3}
-
-puts ""
-puts "-- error handling --"
-# catch success - returns 0
-let err_caught [catch { + 1 2 }]
-assert {== $err_caught 0}
-
-# catch error - returns 1
-let err_caught2 [catch { error "test error" }]
-assert {== $err_caught2 1}
-
-# catch with result variable (success case)
-if [catch { + 10 20 } err_res err_msg] {
-  puts "ERROR: expected success"
-} else {
-  assert {== $err_res 30}
-}
-
-# catch with error variable (error case)
-if [catch { error "my error" } err_res2 err_msg2] {
-  assert {== $err_msg2 {my error}}
-} else {
-  puts "ERROR: expected error"
-}
-
-# error in nested proc
-proc err_may_fail {x} {
-  if [== $x 0] {
-    error "cannot be zero"
-  }
-  return [+ $x 1]
-}
-
-# catch nested error
-if [catch { err_may_fail 0 } err_res3 err_msg3] {
-  assert {== $err_msg3 {cannot be zero}}
-} else {
-  puts "ERROR: expected nested error"
-}
-
-# catch nested success
-if [catch { err_may_fail 5 } err_res4 err_msg4] {
-  puts "ERROR: unexpected error"
-} else {
-  assert {== $err_res4 6}
-}
-
-# catch propagates return (not caught as error)
-proc err_test_return {} {
-  return 42
-}
-if [catch { err_test_return } err_ret_res err_ret_msg] {
-  puts "ERROR: return should not be caught as error"
-} else {
-  assert {== $err_ret_res 42}
-}
-
-puts ""
-puts "-- @ expansion operator --"
-# expand list to multi-argument operator
-let exp_nums [list 1 2 3 4 5]
-let exp_sum [+ @$exp_nums]
-puts "sum=$exp_sum"                    ;# expect: sum=15
-assert {== $exp_sum 15}
-
-# expand in list construction
-let exp_a [list 1 2]
-let exp_b [list 3 4]
-let exp_combined [list @$exp_a @$exp_b]
-puts [len $exp_combined]               ;# expect: 4
-assert {== [len $exp_combined] 4}
-assert {== $exp_combined [list 1 2 3 4]}
-
-# expand single non-list value
-let exp_single 42
-let exp_result [+ 1 @$exp_single]
-puts "single=$exp_result"              ;# expect: single=43
-assert {== $exp_result 43}
-
-# expand empty list
-let exp_empty [list]
-let exp_with_empty [list a @$exp_empty b]
-puts [len $exp_with_empty]             ;# expect: 2
-assert {== [len $exp_with_empty] 2}
-assert {== $exp_with_empty [list a b]}
-
-# expand with braced list literal
-let exp_braced @{x y z}
-puts $exp_braced                       ;# expect: x y z
-assert {== $exp_braced {x y z}}
-
-# expand in proc arguments
-proc exp_sum3 {a b c} { + $a [+ $b $c] }
-let exp_args [list 10 20 30]
-puts [exp_sum3 @$exp_args]             ;# expect: 60
-assert {== [exp_sum3 @$exp_args] 60}
-
-# multiple expansions in one command
-let exp_x [list 1 2]
-let exp_y [list 3 4]
-let exp_multi [+ @$exp_x @$exp_y]
-puts "multi=$exp_multi"                ;# expect: multi=10
-assert {== $exp_multi 10}
-
-# expand nested list (only one level)
-let exp_nested [list [list a b] [list c d]]
-let exp_flat [list @$exp_nested]
-puts [len $exp_flat]                   ;# expect: 2 (the inner lists)
-assert {== [len $exp_flat] 2}
-
-puts ""
-puts "-- equality operators --"
-# == value equality
-puts [== 1 1]                        ;# expect: 1
-assert {== 1 1}
-puts [== 1 2]                        ;# expect: 0
-assert {== [== 1 2] 0}
-puts [== hello hello]                ;# expect: 1
-assert {== hello hello}
-puts [== hello world]                ;# expect: 0
-assert {== [== hello world] 0}
-
-# Numeric string promotion (both "1" and "1.0" parse as numbers)
-puts [== 1 1.0]                      ;# expect: 1 (both parse as 1.0)
-assert {== 1 1.0}
-
-# Numeric promotion (both actual floats from +)
-let eq_f1 [+ 0 1]
-let eq_f2 [+ 0 1.0]
-puts [== $eq_f1 $eq_f2]              ;# expect: 1
-assert {== $eq_f1 $eq_f2}
-
-# List deep equality
-let eq_l1 [list 1 2 3]
-let eq_l2 [list 1 2 3]
-let eq_l3 [list 1 2 4]
-puts [== $eq_l1 $eq_l2]              ;# expect: 1
-assert {== $eq_l1 $eq_l2}
-puts [== $eq_l1 $eq_l3]              ;# expect: 0
-assert {== [== $eq_l1 $eq_l3] 0}
-
-# Dict deep equality
-let eq_d1 [dict a 1 b 2]
-let eq_d2 [dict a 1 b 2]
-let eq_d3 [dict a 1 b 3]
-puts [== $eq_d1 $eq_d2]              ;# expect: 1
-assert {== $eq_d1 $eq_d2}
-puts [== $eq_d1 $eq_d3]              ;# expect: 0
-assert {== [== $eq_d1 $eq_d3] 0}
-
-# != value inequality
-puts [!= 1 1]                        ;# expect: 0
-assert {== [!= 1 1] 0}
-puts [!= 1 2]                        ;# expect: 1
-assert {!= 1 2}
-
-# same? identity equality
-let eq_x 42
-puts [same? $eq_x $eq_x]             ;# expect: 1
-assert {same? $eq_x $eq_x}
-let eq_y 42
-puts [same? $eq_x $eq_y]             ;# expect: 0
-assert {== [same? $eq_x $eq_y] 0}
-
-# not-same? identity inequality
-puts [not-same? $eq_x $eq_y]         ;# expect: 1
-assert {not-same? $eq_x $eq_y}
-puts [not-same? $eq_x $eq_x]         ;# expect: 0
-assert {== [not-same? $eq_x $eq_x] 0}
-
-# cell? predicate
-puts [cell? [ref 1]]                 ;# expect: 1
-assert {cell? [ref 1]}
-puts [cell? 1]                       ;# expect: 0
-assert {== [cell? 1] 0}
-
-# same-binding? for cell bindings
-var eq_p 100
-var eq_q 200
-puts [same-binding? eq_p eq_p]       ;# expect: 1
-assert {same-binding? eq_p eq_p}
-puts [same-binding? eq_p eq_q]       ;# expect: 0
-assert {== [same-binding? eq_p eq_q] 0}
-
-# binding-cell returns the cell object
-let eq_pcell [binding-cell eq_p]
-let eq_pcell2 [binding-cell eq_p]
-puts [same? $eq_pcell $eq_pcell2]    ;# expect: 1
-assert {same? $eq_pcell $eq_pcell2}
-
-# Proc identity via getvar
-proc eq_f {} { 1 }
-proc eq_g {} { 1 }
-let eq_fp [getvar eq_f]
-let eq_gp [getvar eq_g]
-puts [== $eq_fp $eq_gp]              ;# expect: 0
-assert {== [== $eq_fp $eq_gp] 0}
-puts [same? $eq_fp $eq_fp]           ;# expect: 1
-assert {same? $eq_fp $eq_fp}
-
-puts ""
-puts "-- equality with control flow --"
-
-# while with == condition: count down until value equals target
-var ecf_i 5
-var ecf_target 2
-while [!= $ecf_i $ecf_target] {
-  puts "ecf_i=$ecf_i"
-  set! ecf_i [+ $ecf_i -1]
-}
-puts "reached=$ecf_target"           ;# expect: ecf_i=5 ecf_i=4 ecf_i=3 reached=2
-assert {== $ecf_i $ecf_target}
-
-# for loop building list, then compare
-var ecf_built [list]
-for {var ecf_j 1} {[!= $ecf_j 4]} {set! ecf_j [+ $ecf_j 1]} {
-  set! ecf_built [List::push $ecf_built $ecf_j]
-}
-let ecf_expected [list 1 2 3]
-puts [== $ecf_built $ecf_expected]   ;# expect: 1
-assert {== $ecf_built $ecf_expected}
-
-# foreach with == to find matching element
-let ecf_haystack [list apple banana cherry date]
-var ecf_found 0
-foreach ecf_item $ecf_haystack {
-  if [== $ecf_item cherry] {
-    set! ecf_found 1
-    break
-  }
-}
-puts "found=$ecf_found"              ;# expect: found=1
-assert {== $ecf_found 1}
-
-# foreach with != to skip specific elements
-var ecf_kept [list]
-foreach ecf_x [list a skip b skip c] {
-  if [!= $ecf_x skip] {
-    set! ecf_kept [List::push $ecf_kept $ecf_x]
-  }
-}
-puts [== $ecf_kept [list a b c]]     ;# expect: 1
-assert {== $ecf_kept [list a b c]}
-
-# while with same? to detect same binding
-var ecf_obj [list 1 2 3]
-var ecf_iters 0
-while [same-binding? ecf_obj ecf_obj] {
-  set! ecf_iters [+ $ecf_iters 1]
-  if [== $ecf_iters 3] {
-    break
-  }
-}
-puts "iters=$ecf_iters"              ;# expect: iters=3
-assert {== $ecf_iters 3}
-
-# cell? predicate in loop
-var ecf_cell_count 0
-let ecf_cell1 [ref 10]
-let ecf_cell2 [ref 20]
-let ecf_notcell 30
-foreach ecf_item [list $ecf_cell1 $ecf_cell2 $ecf_notcell] {
-  if [cell? $ecf_item] {
-    set! ecf_cell_count [+ $ecf_cell_count 1]
-  }
-}
-# Note: cells in lists are dereferenced when accessed with $, so count=0
-puts "cell_count=$ecf_cell_count"    ;# expect: cell_count=0
-assert {== $ecf_cell_count 0}
-
-# for loop comparing list elements pairwise
-let ecf_a [list 1 2 3 4]
-let ecf_b [list 1 2 9 4]
-var ecf_diff_idx -1
-for {var ecf_k 0} {[!= $ecf_k [len $ecf_a]]} {set! ecf_k [+ $ecf_k 1]} {
-  if [!= [get $ecf_a $ecf_k] [get $ecf_b $ecf_k]] {
-    set! ecf_diff_idx $ecf_k
-    break
-  }
-}
-puts "diff_idx=$ecf_diff_idx"        ;# expect: diff_idx=2
-assert {== $ecf_diff_idx 2}
-
-# nested loops with equality checks - find common elements
-let ecf_set1 [list a b c d]
-let ecf_set2 [list c d e f]
-var ecf_common [list]
-foreach ecf_s1 $ecf_set1 {
-  foreach ecf_s2 $ecf_set2 {
-    if [== $ecf_s1 $ecf_s2] {
-      set! ecf_common [List::push $ecf_common $ecf_s1]
-      break
+        Test::eq $n 1
     }
-  }
-}
-puts [== $ecf_common [list c d]]     ;# expect: 1
-assert {== $ecf_common [list c d]}
 
-# while loop with dict equality
-var ecf_d [dict count 0]
-while [!= [get $ecf_d count] 3] {
-  set! ecf_d [put $ecf_d count [+ [get $ecf_d count] 1]]
-}
-puts [get $ecf_d count]              ;# expect: 3
-assert {== [get $ecf_d count] 3}
-
-# continue with equality check
-var ecf_sum 0
-foreach ecf_n [list 1 2 3 4 5] {
-  if [== $ecf_n 3] {
-    continue
-  }
-  set! ecf_sum [+ $ecf_sum $ecf_n]
-}
-puts "sum=$ecf_sum"                  ;# expect: sum=12 (1+2+4+5)
-assert {== $ecf_sum 12}
-
-puts ""
-puts "-- lexical scoping --"
-
-# Basic closure capture: proc captures variable from definition scope
-let sc_outer 100
-proc sc_get_outer {} {
-  $sc_outer
-}
-puts [sc_get_outer]                  ;# expect: 100
-assert {== [sc_get_outer] 100}
-
-# Shadowing: inner binding shadows outer
-let sc_shadow outer
-proc sc_test_shadow {} {
-  let sc_shadow inner
-  $sc_shadow
-}
-puts [sc_test_shadow]                ;# expect: inner
-assert {== [sc_test_shadow] inner}
-puts $sc_shadow                      ;# expect: outer (unchanged)
-assert {== $sc_shadow outer}
-
-# Closure captures the value at definition time
-# Rebinding in the same frame does NOT update what closures see
-let sc_capture_val A
-proc sc_capture_test {} {
-  $sc_capture_val
-}
-let sc_capture_val B
-puts [sc_capture_test]               ;# expect: A (captured at definition)
-assert {== [sc_capture_test] A}
-
-# Cell mutation through closure
-var sc_counter 0
-proc sc_incr {} {
-  set! sc_counter [+ $sc_counter 1]
-  $sc_counter
-}
-puts [sc_incr]                       ;# expect: 1
-assert {== [sc_incr] 2}
-puts [sc_incr]                       ;# expect: 3
-assert {== $sc_counter 3}
-
-# Multiple closures sharing same cell
-var sc_shared 0
-proc sc_add {n} {
-  set! sc_shared [+ $sc_shared $n]
-}
-proc sc_get_shared {} {
-  $sc_shared
-}
-sc_add 10
-sc_add 5
-puts [sc_get_shared]                 ;# expect: 15
-assert {== [sc_get_shared] 15}
-
-# Nested closures (closure returning closure)
-proc sc_make_adder {x} {
-  lambda {y} {
-    + $x $y
-  }
-}
-let sc_add5 [sc_make_adder 5]
-let sc_add10 [sc_make_adder 10]
-puts [$sc_add5 3]                    ;# expect: 8
-assert {== [$sc_add5 3] 8}
-puts [$sc_add10 3]                   ;# expect: 13
-assert {== [$sc_add10 3] 13}
-
-# Counter factory - each call creates independent counter
-proc sc_make_counter {} {
-  var n 0
-  lambda {} {
-    set! n [+ $n 1]
-    $n
-  }
-}
-let sc_c1 [sc_make_counter]
-let sc_c2 [sc_make_counter]
-puts [$sc_c1]                        ;# expect: 1
-assert {== [$sc_c1] 2}
-puts [$sc_c2]                        ;# expect: 1 (independent)
-assert {== [$sc_c2] 2}
-puts [$sc_c1]                        ;# expect: 3
-assert {== [$sc_c1] 4}
-
-# Let rebinding in same scope
-let sc_rebind first
-let sc_rebind second
-puts $sc_rebind                      ;# expect: second
-assert {== $sc_rebind second}
-
-# Proc parameter shadows outer binding
-let sc_param_test outer_value
-proc sc_param_shadow {sc_param_test} {
-  $sc_param_test
-}
-puts [sc_param_shadow inner_value]   ;# expect: inner_value
-assert {== [sc_param_shadow inner_value] inner_value}
-puts $sc_param_test                  ;# expect: outer_value
-assert {== $sc_param_test outer_value}
-
-# Nested proc definitions with shadowing
-let sc_nest_val level0
-proc sc_outer_proc {} {
-  let sc_nest_val level1
-  proc sc_inner_proc {} {
-    $sc_nest_val
-  }
-  sc_inner_proc
-}
-puts [sc_outer_proc]                 ;# expect: level1
-assert {== [sc_outer_proc] level1}
-
-# Loop variable scoping - foreach rebinds in current frame
-let sc_loop_var before
-foreach sc_loop_var [list a b c] {
-  # loop var is rebound each iteration
-}
-puts $sc_loop_var                    ;# expect: c (last iteration value)
-assert {== $sc_loop_var c}
-
-# Loop variable scoping - for rebinds in current frame
-let sc_for_i before_for
-for {let sc_for_i 0} {[!= $sc_for_i 3]} {let sc_for_i [+ $sc_for_i 1]} {
-  # for loop
-}
-puts $sc_for_i                       ;# expect: 3 (final value)
-assert {== $sc_for_i 3}
-
-# Closures capture value at definition time
-# Each closure captures its own iteration value
-var sc_closures [list]
-foreach sc_iter_val [list 1 2 3] {
-  set! sc_closures [List::push $sc_closures [lambda {} { $sc_iter_val }]]
-}
-# Each sees its own captured value
-puts [[get $sc_closures 0]]          ;# expect: 1
-assert {== [[get $sc_closures 0]] 1}
-puts [[get $sc_closures 1]]          ;# expect: 2
-assert {== [[get $sc_closures 1]] 2}
-puts [[get $sc_closures 2]]          ;# expect: 3
-assert {== [[get $sc_closures 2]] 3}
-
-# Evil: deeply nested scope chain
-let sc_deep0 d0
-proc sc_deep_test {} {
-  let sc_deep1 d1
-  proc sc_deep_inner {} {
-    let sc_deep2 d2
-    proc sc_deepest {} {
-      # can access all outer scopes
-      list $sc_deep0 $sc_deep1 $sc_deep2
+    Test::case "ref creates cell" {
+        # cell? on direct ref output (not via variable, which dereferences)
+        Test::assert [cell? [ref 42]]
     }
-    sc_deepest
-  }
-  sc_deep_inner
 }
-puts [== [sc_deep_test] [list d0 d1 d2]]  ;# expect: 1
-assert {== [sc_deep_test] [list d0 d1 d2]}
 
-# Evil: mutual recursion with closures
-var sc_is_even_fn {}
-var sc_is_odd_fn {}
-set! sc_is_even_fn [lambda {n} {
-  if [== $n 0] { return 1 }
-  [$sc_is_odd_fn [+ $n -1]]
-}]
-set! sc_is_odd_fn [lambda {n} {
-  if [== $n 0] { return 0 }
-  [$sc_is_even_fn [+ $n -1]]
-}]
-puts [$sc_is_even_fn 4]              ;# expect: 1
-assert {== [$sc_is_even_fn 4] 1}
-puts [$sc_is_even_fn 3]              ;# expect: 0
-assert {== [$sc_is_even_fn 3] 0}
-puts [$sc_is_odd_fn 3]               ;# expect: 1
-assert {== [$sc_is_odd_fn 3] 1}
+# ============================================================================
+# Quoting and Subcommand Substitution
+# ============================================================================
 
-# Evil: closure captures closure
-let sc_inner_fn [lambda {x} { + $x 1 }]
-let sc_outer_fn [lambda {y} { [$sc_inner_fn $y] }]
-puts [$sc_outer_fn 10]               ;# expect: 11
-assert {== [$sc_outer_fn 10] 11}
+Test::suite "Quoting and Subcommand Substitution" {
+    Test::case "quoted string with substitution" {
+        let a 10
+        let s "x=$a [ + 1 2 ]"
+        Test::eq $s {x=10 3}
+    }
 
-# Evil: self-referential through cell
-var sc_factorial {}
-set! sc_factorial [lambda {n} {
-  if [== $n 0] { return 1 }
-  + 0 [* $n [$sc_factorial [+ $n -1]]]
-}]
-# Note: need * operator, skip if not available
-# puts [$sc_factorial 5]             ;# would expect: 120
-
-# Verify proc doesn't pollute global scope
-proc sc_local_only {} {
-  let sc_very_local secret
-  $sc_very_local
+    Test::case "braced string is literal" {
+        let a 10
+        let t {x=$a [ + 1 2 ]}
+        Test::eq $t {x=$a [ + 1 2 ]}
+    }
 }
-puts [sc_local_only]                 ;# expect: secret
-assert {== [sc_local_only] secret}
-# sc_very_local should not exist here
 
-# Closure over parameter
-proc sc_make_multiplier {factor} {
-  lambda {x} {
-    + 0 $factor
-    # Simplified: just return factor (no * operator)
-  }
+# ============================================================================
+# Escape Sequences
+# ============================================================================
+
+Test::suite "Escape Sequences" {
+    Test::case "newline escape" {
+        let esc_nl "line1\nline2"
+        Test::eq [len $esc_nl] 11
+    }
+
+    Test::case "tab escape" {
+        let esc_tab "col1\tcol2"
+        Test::eq [len $esc_tab] 9
+    }
+
+    Test::case "backslash escape" {
+        let esc_bs "a\\b"
+        Test::eq [len $esc_bs] 3
+    }
+
+    Test::case "quote escape" {
+        let esc_qt "say \"hi\""
+        Test::eq [len $esc_qt] 8
+    }
+
+    Test::case "dollar escape prevents substitution" {
+        let esc_var 100
+        let esc_dol "\$esc_var"
+        Test::eq $esc_dol {$esc_var}
+    }
+
+    Test::case "bracket escape prevents command substitution" {
+        let esc_brk "\[+ 1 2\]"
+        Test::eq $esc_brk {[+ 1 2]}
+    }
+
+    Test::case "escape in unquoted words" {
+        let esc_unq hello\nworld
+        Test::eq [len $esc_unq] 11
+    }
+
+    Test::case "braced strings are literal (no escapes)" {
+        let esc_brace {a\nb}
+        Test::eq [len $esc_brace] 4
+        Test::eq $esc_brace {a\nb}
+    }
 }
-let sc_triple [sc_make_multiplier 3]
-puts [$sc_triple 10]                 ;# expect: 3
-assert {== [$sc_triple 10] 3}
 
-# Evil: shadowing with var vs let
-let sc_shadow_type immutable
-proc sc_shadow_var_let {} {
-  var sc_shadow_type mutable
-  set! sc_shadow_type changed
-  $sc_shadow_type
+# ============================================================================
+# User Procs, Return, and Closures
+# ============================================================================
+
+Test::suite "User Procs" {
+    Test::case "simple proc with return" {
+        proc add {a b} { return [+ $a $b] }
+        Test::eq [add 20 22] 42
+    }
+
+    Test::case "closure counter" {
+        proc makeCounter {start} {
+            var n $start
+            return [lambda {} { set! n [+ $n 1]; $n }]
+        }
+        let c [makeCounter 10]
+        Test::eq [$c] 11
+        Test::eq [$c] 12
+    }
+
+    Test::case "lambda expression" {
+        let lam [lambda {x} { + $x 10 }]
+        Test::eq [$lam 10] 20
+    }
+
+    Test::case "nested lambda closure" {
+        let lambda_counter [lambda {start} {
+            var n $start
+            return [lambda {} {
+                set! n [+ $n 1]
+                return $n
+            }]
+        }]
+        let lam_count [$lambda_counter 10]
+        $lam_count
+        $lam_count
+        $lam_count
+        Test::eq [$lam_count] 14
+    }
 }
-puts [sc_shadow_var_let]             ;# expect: changed
-assert {== [sc_shadow_var_let] changed}
-puts $sc_shadow_type                 ;# expect: immutable
-assert {== $sc_shadow_type immutable}
 
-puts ""
-puts "-- threading operators --"
+# ============================================================================
+# Namespaces
+# ============================================================================
 
-# -> (thread-first): threads value as first argument
-let th_d [dict a 1 b 2 c 3]
-puts [-> $th_d {get b}]              ;# expect: 2
-assert {== [-> $th_d {get b}] 2}
-puts [-> $th_d {get a}]              ;# expect: 1
-assert {== [-> $th_d {get a}] 1}
+Test::suite "Namespaces" {
+    Test::case "namespace eval creates binding" {
+        namespace eval math {
+            let ten 10
+        }
+        Test::eq $math::ten 10
+    }
 
-# -> with multiple forms (chained)
-let th_d2 [-> $th_d {put d 4} {del a}]
-puts [has? $th_d2 d]                 ;# expect: 1
-assert {== [has? $th_d2 d] 1}
-puts [has? $th_d2 a]                 ;# expect: 0
-assert {== [has? $th_d2 a] 0}
-
-# -> with list operations
-let th_lst [list 1 2 3]
-puts [-> $th_lst {get 1}]            ;# expect: 2
-assert {== [-> $th_lst {get 1}] 2}
-puts [-> $th_lst {List::push 4} {List::reverse}]  ;# expect: 4 3 2 1
-
-# -> with len
-puts [-> $th_lst {len}]              ;# expect: 3
-assert {== [-> $th_lst {len}] 3}
-
-# -> identity (no forms)
-puts [-> 42]                         ;# expect: 42
-assert {== [-> 42] 42}
-
-# -> with string operations
-puts [-> hello {String::upper}]      ;# expect: HELLO
-assert {== [-> hello {String::upper}] HELLO}
-
-# ->> (thread-last): threads value as last argument
-proc th_greet {greeting name} {
-  return "$greeting, $name!"
+    Test::case "braced variable form" {
+        namespace eval math2 {
+            let val 42
+        }
+        Test::eq ${math2::val} 42
+    }
 }
-puts [->> World {th_greet Hello}]    ;# expect: Hello, World!
-assert {== [->> World {th_greet Hello}] {Hello, World!}}
 
-# ->> with custom transformation proc
-proc th_add_n {n lst} {
-  var result [list]
-  foreach x $lst {
-    set! result [List::push $result [+ $x $n]]
-  }
-  return $result
+# ============================================================================
+# Eval
+# ============================================================================
+
+Test::suite "Eval" {
+    Test::case "basic eval" {
+        Test::eq [eval {+ 1 2}] 3
+    }
+
+    Test::case "eval accesses outer variables" {
+        let ev_x 42
+        Test::eq [eval {+ $ev_x 1}] 43
+    }
+
+    Test::case "eval defines in current frame" {
+        eval {let ev_y 100}
+        Test::eq $ev_y 100
+    }
+
+    Test::case "eval with multiple args" {
+        let ev_cmd1 "let ev_z"
+        let ev_cmd2 "200"
+        eval $ev_cmd1 $ev_cmd2
+        Test::eq $ev_z 200
+    }
+
+    Test::case "return inside eval in proc" {
+        proc testEvalReturn {} {
+            eval { return 999 }
+        }
+        Test::eq [testEvalReturn] 999
+    }
 }
-puts [->> $th_lst {th_add_n 10}]     ;# expect: 11 12 13
-
-# ->> chained
-puts [->> $th_lst {th_add_n 10} {th_add_n 5}]  ;# expect: 16 17 18
-
-# ->> identity (no forms)
-puts [->> hello]                     ;# expect: hello
-assert {== [->> hello] hello}
-
-# ->> with String::find (haystack needle) - needle threaded last
-puts [->> llo {String::find hello}]  ;# expect: 2
-assert {== [->> llo {String::find hello}] 2}
-
-# Nested threading
-let th_nested [dict x [dict y 42]]
-puts [-> $th_nested {get x} {get y}] ;# expect: 42
-assert {== [-> $th_nested {get x} {get y}] 42}
-
-# Thread result used in expression
-let th_val [+ 10 [-> $th_d {get c}]]
-puts $th_val                         ;# expect: 13
-assert {== $th_val 13}
-
-# -> with lambda in variable
-let th_inc [lambda {x} {+ $x 1}]
-puts [-> 10 {$th_inc}]               ;# expect: 11
-assert {== [-> 10 {$th_inc}] 11}
-
-# -> with lambda with extra args
-let th_add [lambda {a b} {+ $a $b}]
-puts [-> 10 {$th_add 5}]             ;# expect: 15
-assert {== [-> 10 {$th_add 5}] 15}
-
-# -> with inline lambda
-puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;# expect: 110
-assert {== [-> 10 {[lambda {x} {+ $x 100}]}] 110}
-
-# -> chain with lambdas
-let th_dbl [lambda {x} {+ $x $x}]
-puts [-> 5 {$th_inc} {$th_dbl}]      ;# expect: 12
-assert {== [-> 5 {$th_inc} {$th_dbl}] 12}
-
-# ->> with lambda
-let th_greet2 [lambda {g n} {return "$g, $n!"}]
-puts [->> World {$th_greet2 Hello}]  ;# expect: Hello, World!
-assert {== [->> World {$th_greet2 Hello}] {Hello, World!}}
-
-# ->> with inline lambda
-puts [->> 10 {[lambda {x} {+ $x 5}]}]  ;# expect: 15
-assert {== [->> 10 {[lambda {x} {+ $x 5}]}] 15}
-
-puts ""
-puts "-- functional primitives --"
-
-# List::map
-let fp_lst [list 1 2 3 4 5]
-let fp_doubled [List::map [lambda {x} {* $x 2}] $fp_lst]
-puts $fp_doubled                     ;# expect: 2 4 6 8 10
-assert {== $fp_doubled [list 2 4 6 8 10]}
-
-# List::filter
-let fp_evens [List::filter [lambda {x} {== [% $x 2] 0}] $fp_lst]
-puts $fp_evens                       ;# expect: 2 4
-assert {== $fp_evens [list 2 4]}
-
-# List::reduce
-let fp_sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] $fp_lst]
-puts $fp_sum                         ;# expect: 15
-assert {== $fp_sum 15}
-
-# Dict::map (values multiplied by 10)
-let fp_d [dict a 1 b 2 c 3]
-let fp_d_mapped [Dict::map [lambda {k v} {* $v 10}] $fp_d]
-puts [len [Dict::keys $fp_d_mapped]] ;# expect: 3
-assert {== [len [Dict::keys $fp_d_mapped]] 3}
-
-# Dict::filter (values > 1)
-let fp_d_filtered [Dict::filter [lambda {k v} {> $v 1}] $fp_d]
-puts [len [Dict::keys $fp_d_filtered]]  ;# expect: 2
-assert {== [len [Dict::keys $fp_d_filtered]] 2}
-
-# Dict::reduce (sum all values)
-let fp_d_sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] $fp_d]
-puts $fp_d_sum                       ;# expect: 6
-assert {== $fp_d_sum 6}
-
-puts ""
-puts "-- List:: namespace functions --"
-
-# List::new (same as list command)
-let ln_lst [List::new a b c]
-puts $ln_lst                         ;# expect: a b c
-assert {== $ln_lst [list a b c]}
-
-# List::push - append element
-let ln_pushed [List::push [list 1 2] 3]
-puts $ln_pushed                      ;# expect: 1 2 3
-assert {== $ln_pushed [list 1 2 3]}
-
-# List::push - append to empty list
-let ln_pushed_empty [List::push [list] x]
-puts $ln_pushed_empty                ;# expect: x
-assert {== $ln_pushed_empty [list x]}
-
-# List::pop - remove last element
-let ln_popped [List::pop [list a b c]]
-puts $ln_popped                      ;# expect: a b
-assert {== $ln_popped [list a b]}
-
-# List::pop - single element list becomes empty
-let ln_popped_one [List::pop [list x]]
-puts [len $ln_popped_one]            ;# expect: 0
-assert {== [len $ln_popped_one] 0}
-
-# List::slice - extract sublist [start, end)
-let ln_sliced [List::slice [list a b c d e] 1 4]
-puts $ln_sliced                      ;# expect: b c d
-assert {== $ln_sliced [list b c d]}
-
-# List::slice - from beginning
-let ln_slice_start [List::slice [list 1 2 3 4 5] 0 3]
-puts $ln_slice_start                 ;# expect: 1 2 3
-assert {== $ln_slice_start [list 1 2 3]}
-
-# List::slice - to end
-let ln_slice_end [List::slice [list 1 2 3 4 5] 3 5]
-puts $ln_slice_end                   ;# expect: 4 5
-assert {== $ln_slice_end [list 4 5]}
-
-# List::concat - concatenate two lists
-let ln_concat [List::concat [list a b] [list c d]]
-puts $ln_concat                      ;# expect: a b c d
-assert {== $ln_concat [list a b c d]}
-
-# List::concat - with empty list
-let ln_concat_empty [List::concat [list 1 2] [list]]
-puts $ln_concat_empty                ;# expect: 1 2
-assert {== $ln_concat_empty [list 1 2]}
-
-# List::reverse - reverse list
-let ln_rev [List::reverse [list 1 2 3 4]]
-puts $ln_rev                         ;# expect: 4 3 2 1
-assert {== $ln_rev [list 4 3 2 1]}
-
-# List::reverse - single element
-let ln_rev_one [List::reverse [list x]]
-puts $ln_rev_one                     ;# expect: x
-assert {== $ln_rev_one [list x]}
-
-# List::reverse - empty list
-let ln_rev_empty [List::reverse [list]]
-puts [len $ln_rev_empty]             ;# expect: 0
-assert {== [len $ln_rev_empty] 0}
-
-# List::index - get element at index (alias for get)
-let ln_idx [List::index [list a b c d] 2]
-puts $ln_idx                         ;# expect: c
-assert {== $ln_idx c}
-
-# List::range - generate numeric range [start, end)
-let ln_range [List::range 1 5]
-puts $ln_range                       ;# expect: 1 2 3 4
-assert {== $ln_range [list 1 2 3 4]}
-
-# List::range - with step
-let ln_range_step [List::range 0 10 2]
-puts $ln_range_step                  ;# expect: 0 2 4 6 8
-assert {== $ln_range_step [list 0 2 4 6 8]}
-
-# List::range - negative step (count down)
-let ln_range_down [List::range 5 0 -1]
-puts $ln_range_down                  ;# expect: 5 4 3 2 1
-assert {== $ln_range_down [list 5 4 3 2 1]}
-
-# List::range - single element
-let ln_range_one [List::range 5 6]
-puts $ln_range_one                   ;# expect: 5
-assert {== $ln_range_one [list 5]}
-
-# List::range - empty (start >= end with positive step)
-let ln_range_empty [List::range 5 5]
-puts [len $ln_range_empty]           ;# expect: 0
-assert {== [len $ln_range_empty] 0}
-
-# List::range - starting from zero
-let ln_range_zero [List::range 0 3]
-puts $ln_range_zero                  ;# expect: 0 1 2
-assert {== $ln_range_zero [list 0 1 2]}
-
-# List::range - negative numbers
-let ln_range_neg [List::range -2 2]
-puts $ln_range_neg                   ;# expect: -2 -1 0 1
-assert {== $ln_range_neg [list -2 -1 0 1]}
-
-# List::map - transform elements
-let ln_mapped [List::map [lambda {x} {+ $x 10}] [list 1 2 3]]
-puts $ln_mapped                      ;# expect: 11 12 13
-assert {== $ln_mapped [list 11 12 13]}
-
-# List::map - empty list
-let ln_map_empty [List::map [lambda {x} {* $x 2}] [list]]
-puts [len $ln_map_empty]             ;# expect: 0
-assert {== [len $ln_map_empty] 0}
-
-# List::filter - filter elements
-let ln_filtered [List::filter [lambda {x} {> $x 2}] [list 1 2 3 4 5]]
-puts $ln_filtered                    ;# expect: 3 4 5
-assert {== $ln_filtered [list 3 4 5]}
-
-# List::filter - no matches
-let ln_filter_none [List::filter [lambda {x} {> $x 100}] [list 1 2 3]]
-puts [len $ln_filter_none]           ;# expect: 0
-assert {== [len $ln_filter_none] 0}
-
-# List::reduce - fold with accumulator
-let ln_sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] [list 1 2 3 4]]
-puts $ln_sum                         ;# expect: 10
-assert {== $ln_sum 10}
-
-# List::reduce - string concatenation
-let ln_concat_str [List::reduce {} [lambda {acc x} {return "$acc$x"}] [list a b c]]
-puts $ln_concat_str                  ;# expect: abc
-assert {== $ln_concat_str abc}
-
-puts ""
-puts "-- Dict:: namespace functions --"
-
-# Dict::new (same as dict command)
-let dn_d [Dict::new x 1 y 2]
-puts [len $dn_d]                     ;# expect: 2
-assert {== [len $dn_d] 2}
-assert {== [get $dn_d x] 1}
-assert {== [get $dn_d y] 2}
-
-# Dict::keys - get all keys
-let dn_keys [Dict::keys [dict a 1 b 2 c 3]]
-puts [len $dn_keys]                  ;# expect: 3
-assert {== [len $dn_keys] 3}
-
-# Dict::values - get all values
-let dn_vals [Dict::values [dict a 10 b 20 c 30]]
-puts [len $dn_vals]                  ;# expect: 3
-assert {== [len $dn_vals] 3}
-
-# Dict::items - get key-value pairs as list of lists
-let dn_items [Dict::items [dict x 1 y 2]]
-puts [len $dn_items]                 ;# expect: 2
-assert {== [len $dn_items] 2}
-# Each item is a 2-element list [key value]
-let dn_first_item [get $dn_items 0]
-puts [len $dn_first_item]            ;# expect: 2
-assert {== [len $dn_first_item] 2}
-
-# Dict::merge - merge two dicts (second wins on conflict)
-let dn_d1 [dict a 1 b 2]
-let dn_d2 [dict b 20 c 30]
-let dn_merged [Dict::merge $dn_d1 $dn_d2]
-puts [len $dn_merged]                ;# expect: 3
-assert {== [len $dn_merged] 3}
-puts [get $dn_merged a]              ;# expect: 1
-assert {== [get $dn_merged a] 1}
-puts [get $dn_merged b]              ;# expect: 20 (from d2)
-assert {== [get $dn_merged b] 20}
-puts [get $dn_merged c]              ;# expect: 30
-assert {== [get $dn_merged c] 30}
-
-# Dict::merge - with empty dict
-let dn_merge_empty [Dict::merge [dict a 1] [dict]]
-puts [len $dn_merge_empty]           ;# expect: 1
-assert {== [len $dn_merge_empty] 1}
-
-# Dict::map - transform values
-let dn_mapped [Dict::map [lambda {k v} {* $v 2}] [dict a 1 b 2 c 3]]
-puts [get $dn_mapped a]              ;# expect: 2
-assert {== [get $dn_mapped a] 2}
-puts [get $dn_mapped b]              ;# expect: 4
-assert {== [get $dn_mapped b] 4}
-puts [get $dn_mapped c]              ;# expect: 6
-assert {== [get $dn_mapped c] 6}
-
-# Dict::filter - filter entries by predicate
-let dn_filtered [Dict::filter [lambda {k v} {> $v 1}] [dict a 1 b 2 c 3]]
-puts [len [Dict::keys $dn_filtered]] ;# expect: 2
-assert {== [len [Dict::keys $dn_filtered]] 2}
-assert {== [has? $dn_filtered a] 0}
-assert {== [has? $dn_filtered b] 1}
-assert {== [has? $dn_filtered c] 1}
-
-# Dict::filter - by key
-let dn_filter_key [Dict::filter [lambda {k v} {!= $k skip}] [dict keep 1 skip 2 also 3]]
-puts [len [Dict::keys $dn_filter_key]]  ;# expect: 2
-assert {== [len [Dict::keys $dn_filter_key]] 2}
-assert {== [has? $dn_filter_key skip] 0}
-
-# Dict::reduce - fold over entries
-let dn_sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] [dict a 1 b 2 c 3]]
-puts $dn_sum                         ;# expect: 6
-assert {== $dn_sum 6}
-
-# Dict::reduce - collect keys
-let dn_keys_str [Dict::reduce {} [lambda {acc k v} {return "$acc$k"}] [dict x 1 y 2 z 3]]
-puts [len $dn_keys_str]              ;# expect: 3 (length of "xyz")
-assert {== [len $dn_keys_str] 3}
-
-puts ""
-puts "-- String:: namespace functions --"
-
-# String::upper - convert to uppercase
-puts [String::upper hello]           ;# expect: HELLO
-assert {== [String::upper hello] HELLO}
-puts [String::upper HeLLo]           ;# expect: HELLO
-assert {== [String::upper HeLLo] HELLO}
-
-# String::upper - with numbers (unchanged)
-puts [String::upper abc123]          ;# expect: ABC123
-assert {== [String::upper abc123] ABC123}
-
-# String::lower - convert to lowercase
-puts [String::lower HELLO]           ;# expect: hello
-assert {== [String::lower HELLO] hello}
-puts [String::lower HeLLo]           ;# expect: hello
-assert {== [String::lower HeLLo] hello}
-
-# String::lower - with numbers (unchanged)
-puts [String::lower ABC123]          ;# expect: abc123
-assert {== [String::lower ABC123] abc123}
-
-# String::find - find substring position
-puts [String::find hello ll]         ;# expect: 2
-assert {== [String::find hello ll] 2}
-puts [String::find hello h]          ;# expect: 0
-assert {== [String::find hello h] 0}
-puts [String::find hello o]          ;# expect: 4
-assert {== [String::find hello o] 4}
-
-# String::find - not found returns -1
-puts [String::find hello xyz]        ;# expect: -1
-assert {== [String::find hello xyz] -1}
-
-# String::replace - replace substring
-puts [String::replace hello ll LL]   ;# expect: heLLo
-assert {== [String::replace hello ll LL] heLLo}
-
-# String::replace - replace at start
-puts [String::replace hello he HE]   ;# expect: HEllo
-assert {== [String::replace hello he HE] HEllo}
-
-# String::replace - replace at end
-puts [String::replace hello lo LO]   ;# expect: helLO
-assert {== [String::replace hello lo LO] helLO}
-
-# String::replace - replace with empty (deletion)
-puts [String::replace hello ll {}]   ;# expect: heo
-assert {== [String::replace hello ll {}] heo}
-
-# String::replace - no match (unchanged)
-puts [String::replace hello xyz ZZZ] ;# expect: hello
-assert {== [String::replace hello xyz ZZZ] hello}
-
-# String::split - split by delimiter
-let sn_parts [String::split "a,b,c" ","]
-puts $sn_parts                       ;# expect: a b c
-assert {== $sn_parts [list a b c]}
-
-# String::split - note: uses first char of delimiter only
-let sn_parts2 [String::split "a:b:c" ":"]
-puts $sn_parts2                      ;# expect: a b c
-assert {== $sn_parts2 [list a b c]}
-
-# String::split - no delimiter found
-let sn_nosplit [String::split hello ","]
-puts $sn_nosplit                     ;# expect: hello (single element list)
-assert {== [len $sn_nosplit] 1}
-assert {== [get $sn_nosplit 0] hello}
-
-# String::split - split by space
-let sn_words [String::split "one two three" " "]
-puts $sn_words                       ;# expect: one two three
-assert {== $sn_words [list one two three]}
-
-# String::join - join list with delimiter
-puts [String::join [list a b c] -]   ;# expect: a-b-c
-assert {== [String::join [list a b c] -] a-b-c}
-
-# String::join - join with empty delimiter
-puts [String::join [list x y z] {}]  ;# expect: xyz
-assert {== [String::join [list x y z] {}] xyz}
-
-# String::join - join with multi-char delimiter
-puts [String::join [list 1 2 3] ", "] ;# expect: 1, 2, 3
-assert {== [String::join [list 1 2 3] ", "] {1, 2, 3}}
-
-# String::join - single element list
-puts [String::join [list only] -]    ;# expect: only
-assert {== [String::join [list only] -] only}
-
-# String::join - empty list
-puts [String::join [list] -]         ;# expect: (empty string)
-assert {== [String::join [list] -] {}}
-
-# Round-trip: split then join
-let sn_original "hello world test"
-let sn_roundtrip [String::join [String::split $sn_original " "] " "]
-puts $sn_roundtrip                   ;# expect: hello world test
-assert {== $sn_roundtrip $sn_original}
-
-# String::length - get string length
-puts [String::length hello]          ;# expect: 5
-assert {== [String::length hello] 5}
-puts [String::length {}]             ;# expect: 0
-assert {== [String::length {}] 0}
-puts [String::length "hello world"]  ;# expect: 11
-assert {== [String::length "hello world"] 11}
-
-# String::index - get character at index
-puts [String::index hello 0]         ;# expect: h
-assert {== [String::index hello 0] h}
-puts [String::index hello 4]         ;# expect: o
-assert {== [String::index hello 4] o}
-puts [String::index hello 2]         ;# expect: l
-assert {== [String::index hello 2] l}
-
-# String::index - negative index (from end)
-puts [String::index hello -1]        ;# expect: o
-assert {== [String::index hello -1] o}
-puts [String::index hello -2]        ;# expect: l
-assert {== [String::index hello -2] l}
-
-# String::range - extract substring [start, end)
-puts [String::range hello 1 4]       ;# expect: ell
-assert {== [String::range hello 1 4] ell}
-puts [String::range hello 0 2]       ;# expect: he
-assert {== [String::range hello 0 2] he}
-puts [String::range hello 3 5]       ;# expect: lo
-assert {== [String::range hello 3 5] lo}
-
-# String::range - negative indices
-puts [String::range hello 0 -1]      ;# expect: hell (up to but not including last)
-assert {== [String::range hello 0 -1] hell}
-puts [String::range hello -3 -1]     ;# expect: ll
-assert {== [String::range hello -3 -1] ll}
-
-# String::trim - remove leading/trailing whitespace
-puts [String::trim "  hello  "]      ;# expect: hello
-assert {== [String::trim "  hello  "] hello}
-puts [String::trim "\thello\n"]      ;# expect: hello
-assert {== [String::trim "\thello\n"] hello}
-puts [String::trim hello]            ;# expect: hello (no change)
-assert {== [String::trim hello] hello}
-puts [String::trim "   "]            ;# expect: (empty)
-assert {== [String::trim "   "] {}}
-
-puts ""
-puts "-- List:: additional functions --"
-
-# List::sort - lexicographic sort
-let ls_unsorted [list banana apple cherry]
-let ls_sorted [List::sort $ls_unsorted]
-puts $ls_sorted                      ;# expect: apple banana cherry
-assert {== [get $ls_sorted 0] apple}
-assert {== [get $ls_sorted 1] banana}
-assert {== [get $ls_sorted 2] cherry}
-
-# List::sort - numbers sorted as strings
-let ls_nums [list 10 2 1 20]
-let ls_nums_sorted [List::sort $ls_nums]
-puts $ls_nums_sorted                 ;# expect: 1 10 2 20 (string order)
-assert {== [get $ls_nums_sorted 0] 1}
-assert {== [get $ls_nums_sorted 1] 10}
-
-# List::sort - empty list
-let ls_empty_sort [List::sort [list]]
-assert {== [len $ls_empty_sort] 0}
-
-# List::sort_by - sort with custom comparator
-let ls_nums2 [list 10 2 5 1 20]
-let ls_cmp [lambda {a b} { if [< $a $b] { return -1 }; if [> $a $b] { return 1 }; return 0 }]
-let ls_numeric_sorted [List::sort_by $ls_cmp $ls_nums2]
-puts $ls_numeric_sorted              ;# expect: 1 2 5 10 20
-assert {== [get $ls_numeric_sorted 0] 1}
-assert {== [get $ls_numeric_sorted 1] 2}
-assert {== [get $ls_numeric_sorted 2] 5}
-assert {== [get $ls_numeric_sorted 3] 10}
-assert {== [get $ls_numeric_sorted 4] 20}
-
-# List::sort_by - descending order
-let ls_desc_cmp [lambda {a b} { if [> $a $b] { return -1 }; if [< $a $b] { return 1 }; return 0 }]
-let ls_desc_sorted [List::sort_by $ls_desc_cmp $ls_nums2]
-puts $ls_desc_sorted                 ;# expect: 20 10 5 2 1
-assert {== [get $ls_desc_sorted 0] 20}
-assert {== [get $ls_desc_sorted 4] 1}
-
-# List::find - find first element matching predicate
-let ls_find_lst [list 1 5 10 15 20]
-let ls_found [List::find [lambda {x} {> $x 8}] $ls_find_lst]
-puts $ls_found                       ;# expect: 10
-assert {== $ls_found 10}
-
-# List::find - returns empty when not found
-let ls_not_found [List::find [lambda {x} {> $x 100}] $ls_find_lst]
-assert {empty? $ls_not_found}
-
-# List::any - check if any element matches
-assert [List::any? [lambda {x} {> $x 15}] $ls_find_lst]
-assert [not [List::any? [lambda {x} {> $x 100}] $ls_find_lst]]
-
-# List::any - empty list returns false
-assert [not [List::any? [lambda {x} {== $x 1}] [list]]]
-
-# List::all - check if all elements match
-let ls_all_pos [list 1 2 3 4 5]
-assert [List::all? [lambda {x} {> $x 0}] $ls_all_pos]
-assert [not [List::all? [lambda {x} {> $x 3}] $ls_all_pos]]
-
-# List::all - empty list returns true (vacuous truth)
-assert [List::all? [lambda {x} {== $x impossible}] [list]]
-
-# List::unique - remove duplicates
-let ls_dupes [list a b a c b d a]
-let ls_unique [List::unique $ls_dupes]
-puts $ls_unique                      ;# expect: a b c d
-assert {== [len $ls_unique] 4}
-
-# List::unique - preserves order of first occurrence
-assert {== [get $ls_unique 0] a}
-assert {== [get $ls_unique 1] b}
-assert {== [get $ls_unique 2] c}
-assert {== [get $ls_unique 3] d}
-
-# List::unique - already unique list unchanged
-let ls_already_unique [list x y z]
-assert {== [List::unique $ls_already_unique] $ls_already_unique}
-
-# List::flatten - flatten nested lists
-let ls_nested [list [list 1 2] [list 3 4] 5]
-let ls_flat [List::flatten $ls_nested]
-puts $ls_flat                        ;# expect: 1 2 3 4 5
-assert {== [len $ls_flat] 5}
-assert {== [get $ls_flat 0] 1}
-assert {== [get $ls_flat 2] 3}
-assert {== [get $ls_flat 4] 5}
-
-# List::flatten - already flat list unchanged
-let ls_already_flat [list a b c]
-assert {== [List::flatten $ls_already_flat] $ls_already_flat}
-
-# List::flatten - empty list
-assert {== [len [List::flatten [list]]] 0}
-
-# List::flatten - only one level deep
-let ls_deep [list [list [list a b]]]
-let ls_flat_deep [List::flatten $ls_deep]
-puts [len $ls_flat_deep]             ;# expect: 1 (the inner [list a b])
-assert {== [len $ls_flat_deep] 1}
-
-puts ""
-puts "=== Done ==="
+
+# ============================================================================
+# Subst
+# ============================================================================
+
+Test::suite "Subst" {
+    Test::case "variable substitution" {
+        let sub_x 42
+        Test::eq [subst {x is $sub_x}] {x is 42}
+    }
+
+    Test::case "subcommand substitution" {
+        Test::eq [subst {sum=[+ 1 2]}] {sum=3}
+    }
+
+    Test::case "braced variable form" {
+        let sub_foo bar
+        Test::eq [subst {${sub_foo}!}] {bar!}
+    }
+
+    Test::case "backslash escapes" {
+        Test::eq [subst {literal \$x}] {literal $x}
+    }
+
+    Test::case "braces are literal" {
+        Test::eq [subst {braces {} ok}] {braces {} ok}
+    }
+}
+
+# ============================================================================
+# Namespace Eval
+# ============================================================================
+
+Test::suite "Namespace Eval" {
+    Test::case "define values in namespace" {
+        namespace eval myns {
+            let val 100
+        }
+        Test::eq $myns::val 100
+    }
+
+    Test::case "define procs in namespace" {
+        namespace eval funcs {
+            proc double {n} { return [+ $n $n] }
+        }
+        Test::eq [funcs::double 7] 14
+    }
+
+    Test::case "nested namespace path" {
+        namespace eval outer::inner::leaf {
+            let deep 42
+        }
+        Test::eq $outer::inner::leaf::deep 42
+    }
+
+    Test::case "multiple evals on same namespace" {
+        namespace eval ns1 { let x 1 }
+        namespace eval ns1 { let y 2 }
+        Test::eq $ns1::x 1
+        Test::eq $ns1::y 2
+    }
+}
+
+# ============================================================================
+# Load
+# ============================================================================
+
+Test::suite "Load" {
+    Test::case "load file and call procs" {
+        load test/conformance_lib.lcl
+        Test::eq [lib_add 10 20] 30
+        Test::eq $LIB_CONST 42
+    }
+
+    Test::case "load into namespace" {
+        namespace eval imported {
+            load test/conformance_lib.lcl
+        }
+        Test::eq [imported::lib_add 5 5] 10
+        Test::eq $imported::LIB_CONST 42
+    }
+}
+
+# ============================================================================
+# List Operations
+# ============================================================================
+
+Test::suite "List Operations" {
+    Test::case "list creation and length" {
+        let mylist [list a b c d e]
+        Test::eq [len $mylist] 5
+    }
+
+    Test::case "get elements by index" {
+        let mylist [list a b c d e]
+        Test::eq [get $mylist 0] a
+        Test::eq [get $mylist 2] c
+        Test::eq [get $mylist 4] e
+    }
+
+    Test::case "List::slice" {
+        let mylist [list a b c d e]
+        let slice [List::slice $mylist 1 4]
+        Test::eq [len $slice] 3
+        Test::eq [get $slice 0] b
+        Test::eq [get $slice 2] d
+    }
+
+    Test::case "List::concat" {
+        let list1 [list 1 2]
+        let list2 [list 3 4]
+        let combined [List::concat $list1 $list2]
+        Test::eq [len $combined] 4
+        Test::eq [get $combined 0] 1
+        Test::eq [get $combined 3] 4
+    }
+
+    Test::case "String::join" {
+        let mylist [list a b c d e]
+        Test::eq [String::join $mylist -] {a-b-c-d-e}
+        Test::eq [String::join $mylist {}] {abcde}
+    }
+
+    Test::case "String::split" {
+        let parts [String::split "hello,world,test" ","]
+        Test::eq [len $parts] 3
+        Test::eq [get $parts 0] hello
+        Test::eq [get $parts 1] world
+    }
+
+    Test::case "List::push" {
+        let nums [list 1 2 3]
+        let nums [List::push $nums 4]
+        let nums [List::push $nums 5]
+        Test::eq [len $nums] 5
+        Test::eq [get $nums 4] 5
+    }
+
+    Test::case "put modifies element" {
+        let items [list a b c]
+        let items [put $items 1 B]
+        Test::eq [get $items 0] a
+        Test::eq [get $items 1] B
+        Test::eq [get $items 2] c
+    }
+
+    Test::case "nested list indexing" {
+        let nested [list [list x y] [list z w]]
+        Test::eq [get [get $nested 0] 0] x
+        Test::eq [get [get $nested 0] 1] y
+        Test::eq [get [get $nested 1] 0] z
+    }
+}
+
+# ============================================================================
+# Dict Operations
+# ============================================================================
+
+Test::suite "Dict Operations" {
+    Test::case "dict create and size" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len $d] 3
+    }
+
+    Test::case "get by key" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [get $d a] 1
+        Test::eq [get $d b] 2
+        Test::eq [get $d c] 3
+    }
+
+    Test::case "has? checks key existence" {
+        let d [dict a 1 b 2]
+        Test::true [has? $d a]
+        Test::false [has? $d missing]
+    }
+
+    Test::case "Dict::keys" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len [Dict::keys $d]] 3
+    }
+
+    Test::case "Dict::values" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len [Dict::values $d]] 3
+    }
+
+    Test::case "put updates dict" {
+        var md [dict x 10]
+        set! md [put $md x 20]
+        Test::eq [get $md x] 20
+        set! md [put $md y 30]
+        Test::eq [get $md y] 30
+        Test::eq [len $md] 2
+    }
+
+    Test::case "del removes key" {
+        var md [dict x 10 y 20]
+        set! md [del $md x]
+        Test::eq [len $md] 1
+        Test::false [has? $md x]
+    }
+
+    Test::case "empty dict" {
+        let empty [dict]
+        Test::eq [len $empty] 0
+    }
+
+    Test::case "nested dict" {
+        let nested [dict outer [dict inner 42]]
+        Test::eq [get [get $nested outer] inner] 42
+    }
+}
+
+# ============================================================================
+# Control Flow: if/elseif/else
+# ============================================================================
+
+Test::suite "If/Elseif/Else" {
+    Test::case "simple true" {
+        var result 0
+        if 1 { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "simple false" {
+        var result 0
+        if 0 { set! result 1 }
+        Test::eq $result 0
+    }
+
+    Test::case "if-else" {
+        var result {}
+        if 0 { set! result yes } else { set! result no }
+        Test::eq $result no
+    }
+
+    Test::case "elseif chain" {
+        var result {}
+        if 0 {
+            set! result first
+        } elseif 1 {
+            set! result second
+        } else {
+            set! result third
+        }
+        Test::eq $result second
+    }
+
+    Test::case "computed condition" {
+        let x 5
+        var result 0
+        if [+ $x 0] { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "string truthiness" {
+        var result 0
+        if hello { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "empty string is false" {
+        var result 0
+        if {} { set! result 1 } else { set! result 2 }
+        Test::eq $result 2
+    }
+
+    Test::case "if returns last value" {
+        let result [if 1 { + 10 20 }]
+        Test::eq $result 30
+    }
+}
+
+# ============================================================================
+# Control Flow: while
+# ============================================================================
+
+Test::suite "While Loop" {
+    Test::case "basic countdown" {
+        var i 3
+        var results [list]
+        while $i {
+            set! results [List::push $results $i]
+            set! i [+ $i -1]
+        }
+        Test::eq $results [list 3 2 1]
+    }
+
+    Test::case "condition false initially" {
+        var ran 0
+        while 0 { set! ran 1 }
+        Test::eq $ran 0
+    }
+
+    Test::case "while returns last body value" {
+        var x 3
+        let result [while $x { set! x [+ $x -1] }]
+        Test::eq $result 0
+    }
+}
+
+# ============================================================================
+# Control Flow: for
+# ============================================================================
+
+Test::suite "For Loop" {
+    Test::case "basic for loop" {
+        var results [list]
+        for {var i 3} {$i} {set! i [+ $i -1]} {
+            set! results [List::push $results $i]
+        }
+        Test::eq $results [list 3 2 1]
+    }
+
+    Test::case "condition false initially" {
+        var ran 0
+        for {var j 0} {$j} {set! j [+ $j -1]} {
+            set! ran 1
+        }
+        Test::eq $ran 0
+    }
+
+    Test::case "for returns last body value" {
+        let result [for {var m 3} {$m} {set! m [+ $m -1]} { $m }]
+        Test::eq $result 1
+    }
+}
+
+# ============================================================================
+# Control Flow: foreach
+# ============================================================================
+
+Test::suite "Foreach Loop" {
+    Test::case "basic foreach" {
+        var results [list]
+        foreach x [list a b c] {
+            set! results [List::push $results $x]
+        }
+        Test::eq $results [list a b c]
+    }
+
+    Test::case "foreach over list variable" {
+        let items [list 1 2 3]
+        var sum 0
+        foreach item $items {
+            set! sum [+ $sum $item]
+        }
+        Test::eq $sum 6
+    }
+
+    Test::case "empty list" {
+        var ran 0
+        foreach y [list] {
+            set! ran 1
+        }
+        Test::eq $ran 0
+    }
+
+    Test::case "foreach returns last body value" {
+        let result [foreach z [list x y z] { $z }]
+        Test::eq $result z
+    }
+}
+
+# ============================================================================
+# Control Flow: break
+# ============================================================================
+
+Test::suite "Break" {
+    Test::case "break in while" {
+        var i 5
+        var results [list]
+        while 1 {
+            set! results [List::push $results $i]
+            set! i [+ $i -1]
+            if $i { } else { break }
+        }
+        Test::eq $results [list 5 4 3 2 1]
+    }
+
+    Test::case "break in for" {
+        var count 0
+        for {var j 1} {1} {set! j [+ $j 1]} {
+            set! count [+ $count 1]
+            break
+        }
+        Test::eq $count 1
+    }
+
+    Test::case "break in foreach" {
+        var first {}
+        foreach x [list a b c] {
+            set! first $x
+            break
+        }
+        Test::eq $first a
+    }
+}
+
+# ============================================================================
+# Control Flow: continue
+# ============================================================================
+
+Test::suite "Continue" {
+    Test::case "continue in while" {
+        var i 3
+        var results [list]
+        while $i {
+            let cur $i
+            set! i [+ $i -1]
+            if [== $cur 2] { continue }
+            set! results [List::push $results $cur]
+        }
+        Test::eq $results [list 3 1]
+    }
+
+    Test::case "continue in for" {
+        var results [list]
+        for {var j 3} {$j} {set! j [+ $j -1]} {
+            if [== $j 2] { continue }
+            set! results [List::push $results $j]
+        }
+        Test::eq $results [list 3 1]
+    }
+
+    Test::case "continue in foreach" {
+        var count 0
+        foreach x [list a b c] {
+            set! count [+ $count 1]
+            continue
+        }
+        Test::eq $count 3
+    }
+}
+
+# ============================================================================
+# Error Handling
+# ============================================================================
+
+Test::suite "Error Handling" {
+    Test::case "catch success returns 0" {
+        let caught [catch { + 1 2 }]
+        Test::eq $caught 0
+    }
+
+    Test::case "catch error returns 1" {
+        let caught [catch { error "test error" }]
+        Test::eq $caught 1
+    }
+
+    Test::case "catch with result variable (success)" {
+        if [catch { + 10 20 } res msg] {
+            Test::assert 0
+        } else {
+            Test::eq $res 30
+        }
+    }
+
+    Test::case "catch with error variable" {
+        if [catch { error "my error" } res msg] {
+            Test::eq $msg {my error}
+        } else {
+            Test::assert 0
+        }
+    }
+
+    Test::case "catch nested error" {
+        proc may_fail {x} {
+            if [== $x 0] {
+                error "cannot be zero"
+            }
+            return [+ $x 1]
+        }
+        if [catch { may_fail 0 } res msg] {
+            Test::eq $msg {cannot be zero}
+        } else {
+            Test::assert 0
+        }
+    }
+
+    Test::case "catch nested success" {
+        proc may_fail2 {x} {
+            if [== $x 0] {
+                error "cannot be zero"
+            }
+            return [+ $x 1]
+        }
+        if [catch { may_fail2 5 } res msg] {
+            Test::assert 0
+        } else {
+            Test::eq $res 6
+        }
+    }
+}
+
+# ============================================================================
+# @ Expansion Operator
+# ============================================================================
+
+Test::suite "@ Expansion Operator" {
+    Test::case "expand list to operator" {
+        let nums [list 1 2 3 4 5]
+        Test::eq [+ @$nums] 15
+    }
+
+    Test::case "expand in list construction" {
+        let a [list 1 2]
+        let b [list 3 4]
+        let combined [list @$a @$b]
+        Test::eq $combined [list 1 2 3 4]
+    }
+
+    Test::case "expand single value" {
+        let single 42
+        Test::eq [+ 1 @$single] 43
+    }
+
+    Test::case "expand empty list" {
+        let empty [list]
+        let result [list a @$empty b]
+        Test::eq $result [list a b]
+    }
+
+    Test::case "expand in proc arguments" {
+        proc sum3 {a b c} { + $a [+ $b $c] }
+        let args [list 10 20 30]
+        Test::eq [sum3 @$args] 60
+    }
+
+    Test::case "multiple expansions" {
+        let x [list 1 2]
+        let y [list 3 4]
+        Test::eq [+ @$x @$y] 10
+    }
+}
+
+# ============================================================================
+# Equality Operators
+# ============================================================================
+
+Test::suite "Equality Operators" {
+    Test::case "== value equality" {
+        Test::true [== 1 1]
+        Test::false [== 1 2]
+        Test::true [== hello hello]
+        Test::false [== hello world]
+    }
+
+    Test::case "numeric promotion" {
+        Test::true [== 1 1.0]
+    }
+
+    Test::case "list deep equality" {
+        let l1 [list 1 2 3]
+        let l2 [list 1 2 3]
+        let l3 [list 1 2 4]
+        Test::true [== $l1 $l2]
+        Test::false [== $l1 $l3]
+    }
+
+    Test::case "dict deep equality" {
+        let d1 [dict a 1 b 2]
+        let d2 [dict a 1 b 2]
+        let d3 [dict a 1 b 3]
+        Test::true [== $d1 $d2]
+        Test::false [== $d1 $d3]
+    }
+
+    Test::case "!= inequality" {
+        Test::false [!= 1 1]
+        Test::true [!= 1 2]
+    }
+
+    Test::case "same? identity" {
+        let x 42
+        Test::true [same? $x $x]
+        let y 42
+        Test::false [same? $x $y]
+    }
+
+    Test::case "cell? predicate" {
+        Test::true [cell? [ref 1]]
+        Test::false [cell? 1]
+    }
+
+    Test::case "same-binding? for cells" {
+        var p 100
+        var q 200
+        Test::true [same-binding? p p]
+        Test::false [same-binding? p q]
+    }
+}
+
+# ============================================================================
+# Equality with Control Flow
+# ============================================================================
+
+Test::suite "Equality with Control Flow" {
+    Test::case "while with != condition" {
+        var i 5
+        var target 2
+        while [!= $i $target] {
+            set! i [+ $i -1]
+        }
+        Test::eq $i $target
+    }
+
+    Test::case "for loop with list comparison" {
+        var built [list]
+        for {var j 1} {[!= $j 4]} {set! j [+ $j 1]} {
+            set! built [List::push $built $j]
+        }
+        Test::eq $built [list 1 2 3]
+    }
+
+    Test::case "foreach find matching element" {
+        let haystack [list apple banana cherry date]
+        var found 0
+        foreach item $haystack {
+            if [== $item cherry] {
+                set! found 1
+                break
+            }
+        }
+        Test::eq $found 1
+    }
+
+    Test::case "foreach filter with !=" {
+        var kept [list]
+        foreach x [list a skip b skip c] {
+            if [!= $x skip] {
+                set! kept [List::push $kept $x]
+            }
+        }
+        Test::eq $kept [list a b c]
+    }
+
+    Test::case "continue with equality check" {
+        var sum 0
+        foreach n [list 1 2 3 4 5] {
+            if [== $n 3] {
+                continue
+            }
+            set! sum [+ $sum $n]
+        }
+        Test::eq $sum 12
+    }
+}
+
+# ============================================================================
+# Lexical Scoping
+# ============================================================================
+
+Test::suite "Lexical Scoping" {
+    Test::case "closure captures outer variable" {
+        let outer 100
+        proc get_outer {} {
+            $outer
+        }
+        Test::eq [get_outer] 100
+    }
+
+    Test::case "shadowing" {
+        let shadow outer
+        proc test_shadow {} {
+            let shadow inner
+            $shadow
+        }
+        Test::eq [test_shadow] inner
+        Test::eq $shadow outer
+    }
+
+    Test::case "closure captures value at definition time" {
+        let capture_val A
+        proc capture_test {} {
+            $capture_val
+        }
+        let capture_val B
+        Test::eq [capture_test] A
+    }
+
+    Test::case "cell mutation through closure" {
+        var counter 0
+        proc incr_counter {} {
+            set! counter [+ $counter 1]
+            $counter
+        }
+        Test::eq [incr_counter] 1
+        Test::eq [incr_counter] 2
+        Test::eq $counter 2
+    }
+
+    Test::case "multiple closures sharing cell" {
+        var shared 0
+        proc add_to_shared {n} {
+            set! shared [+ $shared $n]
+        }
+        proc get_shared {} {
+            $shared
+        }
+        add_to_shared 10
+        add_to_shared 5
+        Test::eq [get_shared] 15
+    }
+
+    Test::case "nested closures" {
+        proc make_adder {x} {
+            lambda {y} {
+                + $x $y
+            }
+        }
+        let add5 [make_adder 5]
+        let add10 [make_adder 10]
+        Test::eq [$add5 3] 8
+        Test::eq [$add10 3] 13
+    }
+
+    Test::case "counter factory - independent counters" {
+        proc make_counter {} {
+            var n 0
+            lambda {} {
+                set! n [+ $n 1]
+                $n
+            }
+        }
+        let c1 [make_counter]
+        let c2 [make_counter]
+        Test::eq [$c1] 1
+        Test::eq [$c1] 2
+        Test::eq [$c2] 1
+    }
+
+    Test::case "proc parameter shadows outer" {
+        let param_test outer_value
+        proc param_shadow {param_test} {
+            $param_test
+        }
+        Test::eq [param_shadow inner_value] inner_value
+        Test::eq $param_test outer_value
+    }
+
+    Test::case "closures capture each iteration value" {
+        var closures [list]
+        foreach iter_val [list 1 2 3] {
+            set! closures [List::push $closures [lambda {} { $iter_val }]]
+        }
+        Test::eq [[get $closures 0]] 1
+        Test::eq [[get $closures 1]] 2
+        Test::eq [[get $closures 2]] 3
+    }
+
+    Test::case "mutual recursion with closures" {
+        var is_even_fn {}
+        var is_odd_fn {}
+        set! is_even_fn [lambda {n} {
+            if [== $n 0] { return 1 }
+            [$is_odd_fn [+ $n -1]]
+        }]
+        set! is_odd_fn [lambda {n} {
+            if [== $n 0] { return 0 }
+            [$is_even_fn [+ $n -1]]
+        }]
+        Test::eq [$is_even_fn 4] 1
+        Test::eq [$is_even_fn 3] 0
+        Test::eq [$is_odd_fn 3] 1
+    }
+}
+
+# ============================================================================
+# Threading Operators
+# ============================================================================
+
+Test::suite "Threading Operators" {
+    Test::case "-> thread-first with get" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [-> $d {get b}] 2
+    }
+
+    Test::case "-> chained" {
+        let d [dict a 1 b 2]
+        let d2 [-> $d {put c 3} {del a}]
+        Test::true [has? $d2 c]
+        Test::false [has? $d2 a]
+    }
+
+    Test::case "-> identity" {
+        Test::eq [-> 42] 42
+    }
+
+    Test::case "-> with String::upper" {
+        Test::eq [-> hello {String::upper}] HELLO
+    }
+
+    Test::case "->> thread-last" {
+        proc greet {greeting name} {
+            return "$greeting, $name!"
+        }
+        Test::eq [->> World {greet Hello}] {Hello, World!}
+    }
+
+    Test::case "->> identity" {
+        Test::eq [->> hello] hello
+    }
+
+    Test::case "-> with lambda" {
+        let inc [lambda {x} {+ $x 1}]
+        Test::eq [-> 10 {$inc}] 11
+    }
+
+    Test::case "-> with inline lambda" {
+        Test::eq [-> 10 {[lambda {x} {+ $x 100}]}] 110
+    }
+}
+
+# ============================================================================
+# Functional Primitives
+# ============================================================================
+
+Test::suite "Functional Primitives" {
+    Test::case "List::map" {
+        let lst [list 1 2 3 4 5]
+        let doubled [List::map [lambda {x} {* $x 2}] $lst]
+        Test::eq $doubled [list 2 4 6 8 10]
+    }
+
+    Test::case "List::filter" {
+        let lst [list 1 2 3 4 5]
+        let evens [List::filter [lambda {x} {== [% $x 2] 0}] $lst]
+        Test::eq $evens [list 2 4]
+    }
+
+    Test::case "List::reduce" {
+        let lst [list 1 2 3 4 5]
+        let sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] $lst]
+        Test::eq $sum 15
+    }
+
+    Test::case "Dict::map" {
+        let d [dict a 1 b 2 c 3]
+        let mapped [Dict::map [lambda {k v} {* $v 10}] $d]
+        Test::eq [len [Dict::keys $mapped]] 3
+    }
+
+    Test::case "Dict::filter" {
+        let d [dict a 1 b 2 c 3]
+        let filtered [Dict::filter [lambda {k v} {> $v 1}] $d]
+        Test::eq [len [Dict::keys $filtered]] 2
+    }
+
+    Test::case "Dict::reduce" {
+        let d [dict a 1 b 2 c 3]
+        let sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] $d]
+        Test::eq $sum 6
+    }
+}
+
+# ============================================================================
+# List:: Namespace Functions
+# ============================================================================
+
+Test::suite "List:: Namespace" {
+    Test::case "List::new" {
+        Test::eq [List::new a b c] [list a b c]
+    }
+
+    Test::case "List::push" {
+        Test::eq [List::push [list 1 2] 3] [list 1 2 3]
+        Test::eq [List::push [list] x] [list x]
+    }
+
+    Test::case "List::pop" {
+        Test::eq [List::pop [list a b c]] [list a b]
+        Test::eq [len [List::pop [list x]]] 0
+    }
+
+    Test::case "List::slice" {
+        Test::eq [List::slice [list a b c d e] 1 4] [list b c d]
+        Test::eq [List::slice [list 1 2 3 4 5] 0 3] [list 1 2 3]
+    }
+
+    Test::case "List::concat" {
+        Test::eq [List::concat [list a b] [list c d]] [list a b c d]
+        Test::eq [List::concat [list 1 2] [list]] [list 1 2]
+    }
+
+    Test::case "List::reverse" {
+        Test::eq [List::reverse [list 1 2 3 4]] [list 4 3 2 1]
+        Test::eq [List::reverse [list x]] [list x]
+        Test::eq [len [List::reverse [list]]] 0
+    }
+
+    Test::case "List::index" {
+        Test::eq [List::index [list a b c d] 2] c
+    }
+
+    Test::case "List::range" {
+        Test::eq [List::range 1 5] [list 1 2 3 4]
+        Test::eq [List::range 0 10 2] [list 0 2 4 6 8]
+        Test::eq [List::range 5 0 -1] [list 5 4 3 2 1]
+        Test::eq [len [List::range 5 5]] 0
+    }
+
+    Test::case "List::sort" {
+        let sorted [List::sort [list banana apple cherry]]
+        Test::eq [get $sorted 0] apple
+        Test::eq [get $sorted 1] banana
+        Test::eq [get $sorted 2] cherry
+    }
+
+    Test::case "List::sort_by" {
+        let nums [list 10 2 5 1 20]
+        let cmp [lambda {a b} { if [< $a $b] { return -1 }; if [> $a $b] { return 1 }; return 0 }]
+        let sorted [List::sort_by $cmp $nums]
+        Test::eq $sorted [list 1 2 5 10 20]
+    }
+
+    Test::case "List::find" {
+        let lst [list 1 5 10 15 20]
+        Test::eq [List::find [lambda {x} {> $x 8}] $lst] 10
+        Test::empty [List::find [lambda {x} {> $x 100}] $lst]
+    }
+
+    Test::case "List::any?" {
+        let lst [list 1 2 3 4 5]
+        Test::true [List::any? [lambda {x} {> $x 4}] $lst]
+        Test::false [List::any? [lambda {x} {> $x 100}] $lst]
+        Test::false [List::any? [lambda {x} {== $x 1}] [list]]
+    }
+
+    Test::case "List::all?" {
+        let lst [list 1 2 3 4 5]
+        Test::true [List::all? [lambda {x} {> $x 0}] $lst]
+        Test::false [List::all? [lambda {x} {> $x 3}] $lst]
+        Test::true [List::all? [lambda {x} {== $x impossible}] [list]]
+    }
+
+    Test::case "List::unique" {
+        let dupes [list a b a c b d a]
+        let unique [List::unique $dupes]
+        Test::eq [len $unique] 4
+        Test::eq [get $unique 0] a
+        Test::eq [get $unique 1] b
+        Test::eq [get $unique 2] c
+        Test::eq [get $unique 3] d
+    }
+
+    Test::case "List::flatten" {
+        let nested [list [list 1 2] [list 3 4] 5]
+        let flat [List::flatten $nested]
+        Test::eq [len $flat] 5
+        Test::eq [get $flat 0] 1
+        Test::eq [get $flat 4] 5
+    }
+}
+
+# ============================================================================
+# Dict:: Namespace Functions
+# ============================================================================
+
+Test::suite "Dict:: Namespace" {
+    Test::case "Dict::new" {
+        let d [Dict::new x 1 y 2]
+        Test::eq [len $d] 2
+        Test::eq [get $d x] 1
+    }
+
+    Test::case "Dict::keys" {
+        Test::eq [len [Dict::keys [dict a 1 b 2 c 3]]] 3
+    }
+
+    Test::case "Dict::values" {
+        Test::eq [len [Dict::values [dict a 10 b 20 c 30]]] 3
+    }
+
+    Test::case "Dict::items" {
+        let items [Dict::items [dict x 1 y 2]]
+        Test::eq [len $items] 2
+        Test::eq [len [get $items 0]] 2
+    }
+
+    Test::case "Dict::merge" {
+        let d1 [dict a 1 b 2]
+        let d2 [dict b 20 c 30]
+        let merged [Dict::merge $d1 $d2]
+        Test::eq [len $merged] 3
+        Test::eq [get $merged a] 1
+        Test::eq [get $merged b] 20
+        Test::eq [get $merged c] 30
+    }
+
+    Test::case "Dict::map" {
+        let mapped [Dict::map [lambda {k v} {* $v 2}] [dict a 1 b 2 c 3]]
+        Test::eq [get $mapped a] 2
+        Test::eq [get $mapped b] 4
+        Test::eq [get $mapped c] 6
+    }
+
+    Test::case "Dict::filter" {
+        let filtered [Dict::filter [lambda {k v} {> $v 1}] [dict a 1 b 2 c 3]]
+        Test::eq [len [Dict::keys $filtered]] 2
+        Test::false [has? $filtered a]
+        Test::true [has? $filtered b]
+    }
+
+    Test::case "Dict::reduce" {
+        let sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] [dict a 1 b 2 c 3]]
+        Test::eq $sum 6
+    }
+}
+
+# ============================================================================
+# String:: Namespace Functions
+# ============================================================================
+
+Test::suite "String:: Namespace" {
+    Test::case "String::upper" {
+        Test::eq [String::upper hello] HELLO
+        Test::eq [String::upper HeLLo] HELLO
+        Test::eq [String::upper abc123] ABC123
+    }
+
+    Test::case "String::lower" {
+        Test::eq [String::lower HELLO] hello
+        Test::eq [String::lower HeLLo] hello
+        Test::eq [String::lower ABC123] abc123
+    }
+
+    Test::case "String::find" {
+        Test::eq [String::find hello ll] 2
+        Test::eq [String::find hello h] 0
+        Test::eq [String::find hello o] 4
+        Test::eq [String::find hello xyz] -1
+    }
+
+    Test::case "String::replace" {
+        Test::eq [String::replace hello ll LL] heLLo
+        Test::eq [String::replace hello he HE] HEllo
+        Test::eq [String::replace hello lo LO] helLO
+        Test::eq [String::replace hello ll {}] heo
+        Test::eq [String::replace hello xyz ZZZ] hello
+    }
+
+    Test::case "String::split" {
+        Test::eq [String::split "a,b,c" ","] [list a b c]
+        Test::eq [len [String::split hello ","]] 1
+    }
+
+    Test::case "String::join" {
+        Test::eq [String::join [list a b c] -] a-b-c
+        Test::eq [String::join [list x y z] {}] xyz
+        Test::eq [String::join [list 1 2 3] ", "] {1, 2, 3}
+        Test::eq [String::join [list only] -] only
+        Test::eq [String::join [list] -] {}
+    }
+
+    Test::case "String::length" {
+        Test::eq [String::length hello] 5
+        Test::eq [String::length {}] 0
+        Test::eq [String::length "hello world"] 11
+    }
+
+    Test::case "String::index" {
+        Test::eq [String::index hello 0] h
+        Test::eq [String::index hello 4] o
+        Test::eq [String::index hello -1] o
+        Test::eq [String::index hello -2] l
+    }
+
+    Test::case "String::range" {
+        Test::eq [String::range hello 1 4] ell
+        Test::eq [String::range hello 0 2] he
+        Test::eq [String::range hello 0 -1] hell
+        Test::eq [String::range hello -3 -1] ll
+    }
+
+    Test::case "String::trim" {
+        Test::eq [String::trim "  hello  "] hello
+        Test::eq [String::trim "\thello\n"] hello
+        Test::eq [String::trim hello] hello
+        Test::eq [String::trim "   "] {}
+    }
+}
+
+# ============================================================================
+# Run All Tests
+# ============================================================================
+
+Test::run
