@@ -31,8 +31,24 @@ lcl_interp *lcl_interp_new(void) {
   interp->err_line = 0;
   interp->depth = 0;
   interp->max_depth = MAX_DEPTH;
+  interp->pending_tail.argv = NULL;
+  interp->pending_tail.argc = 0;
+  interp->pending_tail.valid = 0;
+  interp->in_tail_position = 0;
 
   return interp;
+}
+
+static void clear_pending_tail(lcl_interp *interp) {
+  int i;
+  if (!interp->pending_tail.valid) return;
+  for (i = 0; i < interp->pending_tail.argc; i++) {
+    lcl_ref_dec(interp->pending_tail.argv[i]);
+  }
+  free(interp->pending_tail.argv);
+  interp->pending_tail.argv = NULL;
+  interp->pending_tail.argc = 0;
+  interp->pending_tail.valid = 0;
 }
 
 void lcl_interp_free(lcl_interp *interp) {
@@ -40,6 +56,7 @@ void lcl_interp_free(lcl_interp *interp) {
 
   lcl_ref_dec(interp->last);
   LCL_ERR_CLEAR(interp);
+  clear_pending_tail(interp);
 
   /* Clear frame contents first to break circular references
    * (procs in frame have closures that reference the frame) */

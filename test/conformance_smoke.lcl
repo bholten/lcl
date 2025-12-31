@@ -1327,6 +1327,51 @@ Test::suite "String:: Namespace" {
 }
 
 # ============================================================================
+# Tail Call Optimization
+# ============================================================================
+
+Test::suite "Tail Call Optimization" {
+    Test::case "deep self-recursion doesn't overflow" {
+        proc count {n} {
+            if [== $n 0] { 0 } else { [count [- $n 1]] }
+        }
+        # Would overflow without TCO (default max_depth is 1024)
+        Test::eq [count 5000] 0
+    }
+
+    Test::case "tail position in if branch" {
+        proc factorial {n acc} {
+            if [<= $n 1] { $acc } else { [factorial [- $n 1] [* $n $acc]] }
+        }
+        Test::eq [factorial 10 1] 3628800
+    }
+
+    Test::case "named lambda gets TCO" {
+        let sum_to [lambda sum_to {n acc} {
+            if [== $n 0] { $acc } else { [sum_to [- $n 1] [+ $n $acc]] }
+        }]
+        Test::eq [sum_to 1000 0] 500500
+    }
+
+    Test::case "non-tail call still works" {
+        proc sum {n} {
+            if [== $n 0] { 0 } else { [+ $n [sum [- $n 1]]] }
+        }
+        # Not a tail call - + happens after recursive call
+        Test::eq [sum 10] 55
+    }
+
+    Test::case "anonymous lambda no TCO" {
+        # Anonymous lambdas have no self_name so can't do TCO
+        # This should work for small n but would overflow for large n
+        let anon [lambda {n} {
+            if [== $n 0] { $n } else { [$anon [- $n 1]] }
+        }]
+        Test::eq [$anon 10] 0
+    }
+}
+
+# ============================================================================
 # Run All Tests
 # ============================================================================
 

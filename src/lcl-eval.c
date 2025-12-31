@@ -9,6 +9,22 @@
 
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out);
 
+/* ============================================================================
+ * Tail Call Optimization Helpers
+ * ============================================================================
+ */
+
+/* Set up a pending tail call with the given arguments */
+static void setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
+  int i;
+  interp->pending_tail.argv = malloc(sizeof(lcl_value *) * (size_t)argc);
+  interp->pending_tail.argc = argc;
+  for (i = 0; i < argc; i++) {
+    interp->pending_tail.argv[i] = lcl_ref_inc(argv[i]);
+  }
+  interp->pending_tail.valid = 1;
+}
+
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
                       lcl_value ***argv_out) {
   int i;
@@ -117,61 +133,106 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
   int i;
   int rc;
   lcl_env saved = interp->env;
-  /* Use caller's frame as parent for command lookup - no cycle because proc
-   * doesn't store a reference to this frame (uses upvalues instead) */
-  lcl_frame *child = lcl_frame_new(saved.frame);
+  int saved_tail_position = interp->in_tail_position;
 
-  if (!child) {
-    return LCL_RC_ERR;
-  }
+  /* TCO trampoline: loop on self-recursive tail calls */
+  lcl_value **current_argv = argv;
+  int current_argc = argc;
+  int owns_argv = 0; /* We don't own the initial argv, caller does */
 
-  interp->env.frame = child;
-  if (p->capture_ns && p->captured_ns) {
-    if (interp->env.current_ns) {
-      lcl_ref_dec(interp->env.current_ns);
+  for (;;) {
+    /* Use caller's frame as parent for command lookup - no cycle because proc
+     * doesn't store a reference to this frame (uses upvalues instead) */
+    lcl_frame *child = lcl_frame_new(saved.frame);
+
+    if (!child) {
+      if (owns_argv) {
+        for (i = 0; i < current_argc; i++)
+          lcl_ref_dec(current_argv[i]);
+        free(current_argv);
+      }
+      return LCL_RC_ERR;
     }
 
-    interp->env.current_ns = lcl_ref_inc(p->captured_ns);
-  }
+    interp->env.frame = child;
+    if (p->capture_ns && p->captured_ns) {
+      if (interp->env.current_ns) {
+        lcl_ref_dec(interp->env.current_ns);
+      }
+      interp->env.current_ns = lcl_ref_inc(p->captured_ns);
+    }
 
-  if ((int)lcl_list_len(p->params) != argc) {
-    LCL_ERR_MSG(interp, "wrong number of arguments");
+    if ((int)lcl_list_len(p->params) != current_argc) {
+      LCL_ERR_MSG(interp, "wrong number of arguments");
+      interp->env = saved;
+      lcl_frame_ref_dec(child);
+      if (owns_argv) {
+        for (i = 0; i < current_argc; i++)
+          lcl_ref_dec(current_argv[i]);
+        free(current_argv);
+      }
+      return LCL_RC_ERR;
+    }
+
+    /* Inject upvalues into the child frame as regular bindings.
+     * hash_table_put will handle the refcount increment. */
+    for (i = 0; i < p->nupvals; i++) {
+      hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
+    }
+
+    /* Inject self-reference binding for named lambdas.
+     * This allows self-recursion without capturing via upvalue (no cycles). */
+    if (p->self_name != NULL) {
+      hash_table_put(child->locals, p->self_name, proc_val);
+    }
+
+    for (i = 0; i < current_argc; i++) {
+      lcl_value *nameV = NULL;
+      const char *pname;
+
+      lcl_list_get(p->params, i, &nameV);
+      pname = lcl_value_to_string(nameV);
+      lcl_env_let(&interp->env, pname, current_argv[i]);
+      lcl_ref_dec(nameV);
+    }
+
+    /* Body is in tail position for TCO detection */
+    interp->in_tail_position = 1;
+    rc = lcl_eval_program(interp, (lcl_program *)p->body, out);
+    interp->in_tail_position = saved_tail_position;
+
+    /* Restore env and free frame */
     interp->env = saved;
     lcl_frame_ref_dec(child);
 
-    return LCL_RC_ERR;
+    /* Free previous iteration's args if we owned them */
+    if (owns_argv) {
+      for (i = 0; i < current_argc; i++)
+        lcl_ref_dec(current_argv[i]);
+      free(current_argv);
+      owns_argv = 0;
+    }
+
+    if (rc == LCL_RC_RETURN) {
+      rc = LCL_RC_OK;
+      break;
+    }
+
+    if (rc == LCL_RC_TAILCALL) {
+      /* Self-recursive tail call - grab pending args and loop */
+      current_argv = interp->pending_tail.argv;
+      current_argc = interp->pending_tail.argc;
+      owns_argv = 1;
+      /* Mark as consumed (don't free in clear_tail_call) */
+      interp->pending_tail.argv = NULL;
+      interp->pending_tail.argc = 0;
+      interp->pending_tail.valid = 0;
+      continue; /* Loop without incrementing depth! */
+    }
+
+    /* Normal completion or error */
+    break;
   }
-
-  /* Inject upvalues into the child frame as regular bindings.
-   * hash_table_put will handle the refcount increment. */
-  for (i = 0; i < p->nupvals; i++) {
-    hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
-  }
-
-  /* Inject self-reference binding for named lambdas.
-   * This allows self-recursion without capturing via upvalue (no cycles). */
-  if (p->self_name != NULL) {
-    hash_table_put(child->locals, p->self_name, proc_val);
-  }
-
-  for (i = 0; i < argc; i++) {
-    lcl_value *nameV = NULL;
-    const char *pname;
-
-    lcl_list_get(p->params, i, &nameV);
-    pname = lcl_value_to_string(nameV);
-    lcl_env_let(&interp->env, pname, argv[i]);
-    lcl_ref_dec(nameV);
-  }
-
-  rc = lcl_eval_program(interp, (lcl_program *)p->body, out);
-
-  if (rc == LCL_RC_RETURN) {
-    rc = LCL_RC_OK;
-  }
-
-  interp->env = saved;
-  lcl_frame_ref_dec(child);
 
   return rc;
 }
@@ -214,6 +275,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
                         lcl_value **out) {
   lcl_value *callee = NULL;
   int rc;
+  int saved_tail_position = interp->in_tail_position;
 
   if (cmd->argc == 0) {
     *out = lcl_value_new_string("");
@@ -221,8 +283,24 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
+  /* Special case: single-word command that's just a subcommand.
+   * The subcommand's result IS this command's result, so it IS in tail position.
+   * We evaluate it directly without clearing tail position. */
+  if (cmd->argc == 1 && cmd->w[0].np == 1 &&
+      cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
+    rc = lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, out);
+    /* Propagate TAILCALL and other return codes */
+    return rc;
+  }
+
+  /* Command name evaluation is NOT in tail position */
+  interp->in_tail_position = 0;
+
   rc = lcl_eval_word(interp, &cmd->w[0], &callee);
-  if (rc != LCL_RC_OK) return rc;
+  if (rc != LCL_RC_OK) {
+    interp->in_tail_position = saved_tail_position;
+    return rc;
+  }
 
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
@@ -279,6 +357,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     if (spec_argc > 0) {
       raw = (const lcl_word **)malloc((size_t)spec_argc * sizeof(*raw));
       if (!raw) {
+        interp->in_tail_position = saved_tail_position;
         lcl_ref_dec(callee);
         return LCL_RC_ERR;
       }
@@ -287,6 +366,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       }
     }
 
+    /* Restore tail position for special forms (e.g., if) to propagate */
+    interp->in_tail_position = saved_tail_position;
     rc = callee->as.c_proc.fn->fn.spec(interp, spec_argc, raw, out);
     free(raw);
     lcl_ref_dec(callee);
@@ -294,6 +375,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return rc;
   }
 
+  /* Argument evaluation is NOT in tail position (already cleared above) */
   {
     int argc = 0;
     int i;
@@ -301,17 +383,40 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     rc = build_argv(interp, cmd, &argc, &argv);
 
     if (rc != LCL_RC_OK) {
+      interp->in_tail_position = saved_tail_position;
       lcl_ref_dec(callee);
 
       return rc;
     }
 
+    /* Restore tail position for the actual call */
+    interp->in_tail_position = saved_tail_position;
+
     if (callee->type == LCL_CPROC) {
       rc = callee->as.c_proc.fn->fn.proc(interp, argc, argv, out);
     } else if (callee->type == LCL_PROC) {
-      rc = lcl_call_user_proc(interp, callee,
-                              (lcl_proc *)callee->as.procedure.proc, argc, argv,
-                              out);
+      lcl_proc *p = (lcl_proc *)callee->as.procedure.proc;
+
+      /* Check for self-recursive tail call */
+      if (saved_tail_position && p->self_name != NULL) {
+        lcl_value *self_val = NULL;
+        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) == LCL_OK) {
+          if (self_val == callee) {
+            /* Self-recursive tail call! Set up continuation and return */
+            setup_tail_call(interp, argc, argv);
+            lcl_ref_dec(self_val);
+            for (i = 0; i < argc; i++)
+              lcl_ref_dec(argv[i]);
+            free(argv);
+            lcl_ref_dec(callee);
+            *out = NULL;
+            return LCL_RC_TAILCALL;
+          }
+          lcl_ref_dec(self_val);
+        }
+      }
+
+      rc = lcl_call_user_proc(interp, callee, p, argc, argv, out);
     } else {
       rc = LCL_RC_ERR;
     }
@@ -514,6 +619,7 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
   int i;
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
+  int saved_tail_position = interp->in_tail_position;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     LCL_ERR_MSG(interp, "maximum recursion depth exceeded");
@@ -524,6 +630,7 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
 
   for (i = 0; i < pr->ncmd; i++) {
     lcl_command *cmd = &pr->cmd[i];
+    int is_last_cmd = (i == pr->ncmd - 1);
 
     /* Track current position for error reporting */
     interp->cur_file = pr->file;
@@ -534,7 +641,19 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
       last = NULL;
     }
 
+    /* Only the last command in the program is in tail position
+     * (and only if we were already in tail position context) */
+    interp->in_tail_position = saved_tail_position && is_last_cmd;
+
     rc = lcl_call_from_words(interp, cmd, &last);
+
+    /* Propagate TAILCALL up to the trampoline in lcl_call_user_proc */
+    if (rc == LCL_RC_TAILCALL) {
+      interp->in_tail_position = saved_tail_position;
+      interp->depth--;
+      if (out) *out = NULL;
+      return rc;
+    }
 
     /* Propagate RETURN - let caller (e.g., lcl_call_user_proc) handle it */
     if (rc == LCL_RC_RETURN) {
@@ -552,6 +671,7 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     }
   }
 
+  interp->in_tail_position = saved_tail_position;
   interp->depth--;
 
   if (out) {

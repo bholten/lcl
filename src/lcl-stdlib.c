@@ -1042,10 +1042,13 @@ static int lcl_value_is_true(lcl_value *v) {
 /* if condition body ?elseif condition body ...? ?else body? */
 int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   int i = 0;
+  int saved_tail_position = interp->in_tail_position;
 
   if (argc < 2) {
     return LCL_RC_ERR;
   }
+
+  interp->in_tail_position = 0;
 
   while (i < argc) {
     lcl_value *cond_v = NULL;
@@ -1060,6 +1063,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
       const char *kw_str;
 
       if (lcl_eval_word_to_str(interp, args[i], &kw) != LCL_RC_OK) {
+        interp->in_tail_position = saved_tail_position;
         return LCL_RC_ERR;
       }
 
@@ -1069,11 +1073,13 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
         lcl_ref_dec(kw);
 
         if (i + 1 >= argc) {
+          interp->in_tail_position = saved_tail_position;
           return LCL_RC_ERR; /* else requires body */
         }
 
         /* Evaluate else body */
         if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
+          interp->in_tail_position = saved_tail_position;
           return LCL_RC_ERR;
         }
 
@@ -1081,9 +1087,12 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
         lcl_ref_dec(body_v);
 
         if (!body_p) {
+          interp->in_tail_position = saved_tail_position;
           return LCL_RC_ERR;
         }
 
+        /* Body IS in tail position if the if itself was */
+        interp->in_tail_position = saved_tail_position;
         rc = lcl_eval_program(interp, body_p, out);
         lcl_program_free(body_p);
 
@@ -1095,16 +1104,19 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
         i++; /* skip 'elseif', process condition+body below */
 
         if (i + 1 >= argc) {
+          interp->in_tail_position = saved_tail_position;
           return LCL_RC_ERR; /* elseif requires condition and body */
         }
       } else {
         lcl_ref_dec(kw);
+        interp->in_tail_position = saved_tail_position;
         return LCL_RC_ERR; /* unexpected token */
       }
     }
 
-    /* Evaluate condition */
+    /* Evaluate condition (not in tail position) */
     if (lcl_eval_word(interp, args[i], &cond_v) != LCL_RC_OK) {
+      interp->in_tail_position = saved_tail_position;
       return LCL_RC_ERR;
     }
 
@@ -1114,6 +1126,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
     if (is_true) {
       /* Evaluate body */
       if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
+        interp->in_tail_position = saved_tail_position;
         return LCL_RC_ERR;
       }
 
@@ -1121,9 +1134,12 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
       lcl_ref_dec(body_v);
 
       if (!body_p) {
+        interp->in_tail_position = saved_tail_position;
         return LCL_RC_ERR;
       }
 
+      /* Body IS in tail position if the if itself was */
+      interp->in_tail_position = saved_tail_position;
       rc = lcl_eval_program(interp, body_p, out);
       lcl_program_free(body_p);
 
@@ -1135,6 +1151,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   }
 
   /* No condition was true and no else clause */
+  interp->in_tail_position = saved_tail_position;
   *out = lcl_string_new("");
   return LCL_RC_OK;
 }

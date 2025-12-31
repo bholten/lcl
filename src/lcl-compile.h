@@ -17,7 +17,8 @@ typedef enum {
   LCL_RC_ERR,
   LCL_RC_RETURN,
   LCL_RC_BREAK,
-  LCL_RC_CONTINUE
+  LCL_RC_CONTINUE,
+  LCL_RC_TAILCALL
 } lcl_return_code;
 
 typedef struct {
@@ -56,6 +57,12 @@ lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out);
 lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 
+typedef struct {
+  lcl_value **argv;     /* Arguments for pending tail call (each refcounted) */
+  int argc;             /* Number of arguments */
+  int valid;            /* 1 if a tail call is pending */
+} lcl_tailcall;
+
 struct lcl_interp {
   lcl_env env;
   lcl_value  *last;
@@ -69,6 +76,8 @@ struct lcl_interp {
   int depth;
   int max_depth;
   void *user_data;
+  lcl_tailcall pending_tail;
+  int in_tail_position;
 };
 
 #define LCL_ERR_CLEAR(interp) do { \
