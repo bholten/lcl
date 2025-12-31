@@ -1,6 +1,8 @@
 #include <memory.h>
+#include <string.h>
 
 #include "lcl-lex.h"
+#include "str-compat.h"
 
 void lcl_program_free(lcl_program *p) {
   int i;
@@ -12,6 +14,7 @@ void lcl_program_free(lcl_program *p) {
   }
 
   free(p->cmd);
+  free(p->file);
   free(p);
 }
 
@@ -24,7 +27,11 @@ lcl_program *lcl_program_compile(const char *src, const char *file) {
 
   if (!p) return NULL;
 
-  p->file = file;
+  p->file = file ? strdup(file) : NULL;
+  if (file && !p->file) {
+    free(p);
+    return NULL;
+  }
 
   for (;;) {
     lcl_command cmd;

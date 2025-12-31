@@ -1,4 +1,5 @@
 #include <memory.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "lcl-compile.h"
@@ -95,30 +96,34 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
 /* Build upvalues by capturing referenced variables from current environment.
  * params_list: list of parameter names (to exclude from capture)
  * self_name: name for self-reference (to exclude from capture), or NULL
- * Returns array of upvalues, sets *nout to count. Returns NULL on error. */
-lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                                lcl_value *params_list, const char *self_name,
-                                int *nout) {
+ * upvals_out: receives the upvalues array (may be NULL if no captures needed)
+ * nout: receives the count
+ * Returns LCL_RC_OK on success, LCL_RC_ERR on error (with message set). */
+int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
+                       lcl_value *params_list, const char *self_name,
+                       lcl_upvalue **upvals_out, int *nout) {
   name_set vars;
   lcl_upvalue *upvals = NULL;
   int i, j, nupvals = 0;
 
   name_set_init(&vars);
   *nout = 0;
+  *upvals_out = NULL;
 
   /* Collect all variable references from the body */
   collect_free_vars_program(body, &vars);
 
   if (vars.count == 0) {
     name_set_free(&vars);
-    return NULL; /* No upvalues needed */
+    return LCL_RC_OK; /* No upvalues needed */
   }
 
   /* Allocate upvalues array (may be larger than needed) */
   upvals = calloc((size_t)vars.count, sizeof(lcl_upvalue));
   if (!upvals) {
     name_set_free(&vars);
-    return NULL;
+    LCL_ERR_MSG(interp, "out of memory");
+    return LCL_RC_ERR;
   }
 
   /* For each collected name, try to capture it */
@@ -153,6 +158,7 @@ lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
       upvals[nupvals].name = strdup(name);
       if (!upvals[nupvals].name) {
         lcl_ref_dec(val);
+        LCL_ERR_MSG(interp, "out of memory");
         goto error;
       }
 
@@ -166,31 +172,38 @@ lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
         upvals[nupvals].value = val; /* Already incref'd by get_value */
       }
       nupvals++;
+    } else {
+      /* (Bugfixed here):
+       * Variable not found in current environment.
+       * This could be either:
+       * 1. A forward reference (variable will be defined later in outer scope)
+       * 2. A local variable that will be defined within this proc's body
+       * We can't distinguish these at parse time, so we skip and let runtime
+       * handle it. If it's a true forward reference, runtime will error. */
     }
-    /* If not found, skip it - will be looked up dynamically (globals, etc.) */
   }
 
   name_set_free(&vars);
 
-  /* Shrink array if we captured fewer than collected */
   if (nupvals == 0) {
     free(upvals);
     *nout = 0;
-    return NULL;
+    *upvals_out = NULL;
+    return LCL_RC_OK;
   }
 
   *nout = nupvals;
-  return upvals;
+  *upvals_out = upvals;
+  return LCL_RC_OK;
 
 error:
-  /* Clean up on error */
   for (j = 0; j < nupvals; j++) {
     free(upvals[j].name);
     lcl_ref_dec(upvals[j].value);
   }
   free(upvals);
   name_set_free(&vars);
-  return NULL;
+  return LCL_RC_ERR;
 }
 
 /* ============================================================================
@@ -205,7 +218,6 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
 
   if (!p) return NULL;
 
-  /* Store self-reference name if provided */
   if (self_name) {
     p->self_name = strdup(self_name);
     if (!p->self_name) {
@@ -216,7 +228,6 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
     p->self_name = NULL;
   }
 
-  /* Store upvalues (already have incremented refcounts from caller) */
   p->upvals = upvals;
   p->nupvals = nupvals;
   p->params = lcl_ref_inc(params);
@@ -226,7 +237,6 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
 
   v = (lcl_value *)calloc(1, sizeof(*v));
   if (!v) {
-    /* Clean up on failure */
     int i;
     for (i = 0; i < nupvals; i++) {
       free(upvals[i].name);

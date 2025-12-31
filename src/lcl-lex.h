@@ -19,7 +19,7 @@ typedef struct {
   lcl_command *cmd;
   int ncmd;
   int cap;
-  const char *file;
+  char *file; /* Owned string - freed by lcl_program_free */
 } lcl_program;
 
 void lcl_program_free(lcl_program *p);

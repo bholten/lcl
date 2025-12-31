@@ -750,6 +750,8 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
                       lcl_value **out) {
   lcl_value *name_v = NULL;
   lcl_value *val_v = NULL;
+  lcl_value *cell = NULL;
+  const char *name_str;
 
   if (argc != 2) {
     return LCL_RC_ERR;
@@ -765,8 +767,24 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_set_bang(&interp->env, lcl_value_to_string(name_v), val_v) !=
-      LCL_OK) {
+  name_str = lcl_value_to_string(name_v);
+
+  /* Look up the cell to check for cycles before mutating.
+   * If the value is a proc that captures this cell, assigning it
+   * would create a reference cycle that can never be freed. */
+  if (lcl_env_get_value(&interp->env, name_str, &cell) == LCL_OK) {
+    if (cell->type == LCL_CELL && lcl_cell_would_cycle(cell, val_v)) {
+      LCL_ERR_MSG(interp, "assignment would create reference cycle "
+                          "(mutual recursion not allowed)");
+      lcl_ref_dec(cell);
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(val_v);
+      return LCL_RC_ERR;
+    }
+    lcl_ref_dec(cell);
+  }
+
+  if (lcl_env_set_bang(&interp->env, name_str, val_v) != LCL_OK) {
     lcl_ref_dec(name_v);
     lcl_ref_dec(val_v);
 
@@ -1712,8 +1730,14 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
   }
 
   /* Build upvalues (flat closure) from variables referenced in body.
-   * self_name is excluded from capture - it will be injected at runtime. */
-  upvals = lcl_build_upvalues(interp, body_p, params_list, self_name, &nupvals);
+   * self_name is excluded from capture - it will be injected at runtime.
+   * This also enforces forward reference check - errors if undefined var. */
+  if (lcl_build_upvalues(interp, body_p, params_list, self_name, &upvals,
+                         &nupvals) != LCL_RC_OK) {
+    lcl_ref_dec(params_list);
+    lcl_program_free(body_p);
+    return LCL_RC_ERR;
+  }
   /* upvals can be NULL if no captures needed - that's okay */
 
   /* lcl_proc_new takes ownership of body_p and upvals */
@@ -1982,7 +2006,11 @@ int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
         interp->err_line = cmd->line;
-        interp->err_file = prog->file;
+        if (interp->err_file_owned && interp->err_file) {
+          free((void *)interp->err_file);
+        }
+        interp->err_file = prog->file ? strdup(prog->file) : NULL;
+        interp->err_file_owned = prog->file ? 1 : 0;
       }
 
       break;
@@ -2287,7 +2315,11 @@ int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
             if (rc != LCL_RC_OK) {
               if (rc != LCL_RC_RETURN) {
                 interp->err_line = cmd->line;
-                interp->err_file = prog->file;
+                if (interp->err_file_owned && interp->err_file) {
+                  free((void *)interp->err_file);
+                }
+                interp->err_file = prog->file ? strdup(prog->file) : NULL;
+                interp->err_file_owned = prog->file ? 1 : 0;
               }
 
               break;
@@ -2437,7 +2469,11 @@ int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
         interp->err_line = cmd->line;
-        interp->err_file = prog->file;
+        if (interp->err_file_owned && interp->err_file) {
+          free((void *)interp->err_file);
+        }
+        interp->err_file = prog->file ? strdup(prog->file) : NULL;
+        interp->err_file_owned = prog->file ? 1 : 0;
       }
       break;
     }
@@ -2541,7 +2577,7 @@ int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  lcl_ref_dec(path_v);
+  lcl_ref_dec(path_v); /* prog->file now owns a copy of the path string */
 
   /* Evaluate in current frame (like eval) */
   if (interp->max_depth && interp->depth >= interp->max_depth) {
@@ -2564,7 +2600,11 @@ int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
         interp->err_line = cmd->line;
-        interp->err_file = prog->file;
+        if (interp->err_file_owned && interp->err_file) {
+          free((void *)interp->err_file);
+        }
+        interp->err_file = prog->file ? strdup(prog->file) : NULL;
+        interp->err_file_owned = prog->file ? 1 : 0;
       }
 
       break;

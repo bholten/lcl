@@ -992,20 +992,22 @@ Test::suite "Lexical Scoping" {
         Test::eq [[get $closures 2]] 3
     }
 
-    Test::case "mutual recursion with closures" {
+    Test::case "mutual recursion is rejected" {
+        # Mutual recursion creates reference cycles that cannot be freed
+        # with reference counting (no GC). LCL detects and rejects this.
         var is_even_fn {}
         var is_odd_fn {}
         set! is_even_fn [lambda {n} {
             if [== $n 0] { return 1 }
             [$is_odd_fn [+ $n -1]]
         }]
-        set! is_odd_fn [lambda {n} {
-            if [== $n 0] { return 0 }
-            [$is_even_fn [+ $n -1]]
-        }]
-        Test::eq [$is_even_fn 4] 1
-        Test::eq [$is_even_fn 3] 0
-        Test::eq [$is_odd_fn 3] 1
+        # This should fail - is_odd_fn captures is_even_fn which captures is_odd_fn
+        Test::raises {
+            set! is_odd_fn [lambda {n} {
+                if [== $n 0] { return 0 }
+                [$is_even_fn [+ $n -1]]
+            }]
+        }
     }
 }
 

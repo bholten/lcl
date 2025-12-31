@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "lcl-compile.h"
+#include "str-compat.h"
 #include "lcl-eval.h"
 #include "lcl-values.h"
 
@@ -102,7 +103,8 @@ const char *lcl_interp_error_msg(lcl_interp *interp) {
 void lcl_set_error(lcl_interp *interp, const char *msg) {
   if (!interp) return;
   LCL_ERR_CLEAR(interp);
-  interp->err_file = interp->cur_file;
+  interp->err_file = interp->cur_file ? strdup(interp->cur_file) : NULL;
+  interp->err_file_owned = interp->cur_file ? 1 : 0;
   interp->err_line = interp->cur_line;
   interp->err_msg = msg;
 }

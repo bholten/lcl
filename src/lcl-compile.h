@@ -62,40 +62,47 @@ struct lcl_interp {
   const char *cur_file;
   int cur_line;
   const char *err_msg;
-  int err_msg_owned;      /* 1 if err_msg was strdup'd and needs freeing */
+  int err_msg_owned;
   const char *err_file;
+  int err_file_owned;
   int err_line;
   int depth;
   int max_depth;
-  void *user_data;        /* Application-specific context for C extensions */
+  void *user_data;
 };
 
-/* Helper to clear any owned error message */
 #define LCL_ERR_CLEAR(interp) do { \
   if ((interp)->err_msg_owned && (interp)->err_msg) { \
     free((void *)(interp)->err_msg); \
   } \
+  if ((interp)->err_file_owned && (interp)->err_file) { \
+    free((void *)(interp)->err_file); \
+  } \
   (interp)->err_msg = NULL; \
   (interp)->err_msg_owned = 0; \
+  (interp)->err_file = NULL; \
+  (interp)->err_file_owned = 0; \
 } while(0)
 
 #define LCL_ERR(interp) do { \
   LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
+  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
   (interp)->err_line = (interp)->cur_line; \
 } while(0)
 
 #define LCL_ERR_MSG(interp, msg) do { \
   LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
+  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
   (interp)->err_line = (interp)->cur_line; \
   (interp)->err_msg = (msg); \
 } while(0)
 
-/* Use this for dynamically allocated messages (will be freed) */
 #define LCL_ERR_MSG_DUP(interp, msg) do { \
   LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file; \
+  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
+  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
   (interp)->err_line = (interp)->cur_line; \
   (interp)->err_msg = strdup(msg); \
   (interp)->err_msg_owned = 1; \
@@ -128,7 +135,6 @@ typedef struct {
   } fn;
 } lcl_c_func;
 
-/* Upvalue: a captured variable from the enclosing scope */
 typedef struct {
   char *name;           /* Variable name (owned, must be freed) */
   int is_cell;          /* 1 if cell (mutable), 0 if immutable value */
@@ -148,9 +154,11 @@ typedef struct {
 /* Build upvalues by capturing referenced variables from current environment.
  * params_list: list of parameter names (to exclude from capture)
  * self_name: name for self-reference (to exclude from capture), or NULL
- * Returns array of upvalues, sets *nout to count. Returns NULL on error or if no upvalues. */
-lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                                lcl_value *params_list, const char *self_name,
-                                int *nout);
+ * upvals_out: receives the upvalues array (may be NULL if no captures needed)
+ * nout: receives the count
+ * Returns LCL_RC_OK on success, LCL_RC_ERR on error (undefined variable). */
+int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
+                       lcl_value *params_list, const char *self_name,
+                       lcl_upvalue **upvals_out, int *nout);
 
 #endif

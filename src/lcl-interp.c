@@ -27,6 +27,7 @@ lcl_interp *lcl_interp_new(void) {
   interp->err_msg = NULL;
   interp->err_msg_owned = 0;
   interp->err_file = NULL;
+  interp->err_file_owned = 0;
   interp->err_line = 0;
   interp->depth = 0;
   interp->max_depth = MAX_DEPTH;

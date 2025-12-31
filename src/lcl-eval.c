@@ -5,6 +5,7 @@
 #include "lcl-eval.h"
 #include "lcl-lex.h"
 #include "lcl-values.h"
+#include "str-compat.h"
 
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out);
 
@@ -543,7 +544,8 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     if (rc != LCL_RC_OK) {
       /* Set error location if not already set by LCL_ERR/LCL_ERR_MSG */
       if (!interp->err_file) {
-        interp->err_file = pr->file;
+        interp->err_file = pr->file ? strdup(pr->file) : NULL;
+        interp->err_file_owned = pr->file ? 1 : 0;
         interp->err_line = cmd->line;
       }
       break;
