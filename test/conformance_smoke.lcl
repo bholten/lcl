@@ -1372,6 +1372,70 @@ Test::suite "Tail Call Optimization" {
 }
 
 # ============================================================================
+# Type Conversion
+# ============================================================================
+
+Test::suite "Type Conversion" {
+    Test::case "int from integer string" {
+        Test::eq [int 42] 42
+        Test::eq [int -10] -10
+        Test::eq [int 0] 0
+    }
+
+    Test::case "int from float string truncates" {
+        Test::eq [int 3.14] 3
+        Test::eq [int 3.99] 3
+        Test::eq [int -2.7] -2
+    }
+
+    Test::case "int from float value truncates" {
+        let f [float 3.14]
+        Test::eq [int $f] 3
+    }
+
+    Test::case "int preserves int value" {
+        let i [int 42]
+        Test::eq [int $i] 42
+        Test::true [int? [int 42]]
+    }
+
+    Test::case "float from float string" {
+        let f [float 3.14]
+        Test::true [float? $f]
+    }
+
+    Test::case "float from integer" {
+        let f [float 42]
+        Test::true [float? $f]
+    }
+
+    Test::case "float preserves float value" {
+        let f [float 3.14]
+        Test::true [float? [float $f]]
+    }
+
+    Test::case "numeric sort ascending" {
+        let nums [list 1 10 2 20 3]
+        let sorted [List::sort_by [lambda {a b} { > [int $a] [int $b] }] $nums]
+        Test::eq [get $sorted 0] 1
+        Test::eq [get $sorted 1] 2
+        Test::eq [get $sorted 2] 3
+        Test::eq [get $sorted 3] 10
+        Test::eq [get $sorted 4] 20
+    }
+
+    Test::case "numeric sort descending" {
+        let nums [list 1 10 2 20 3]
+        let sorted [List::sort_by [lambda {a b} { < [int $a] [int $b] }] $nums]
+        Test::eq [get $sorted 0] 20
+        Test::eq [get $sorted 1] 10
+        Test::eq [get $sorted 2] 3
+        Test::eq [get $sorted 3] 2
+        Test::eq [get $sorted 4] 1
+    }
+}
+
+# ============================================================================
 # Run All Tests
 # ============================================================================
 

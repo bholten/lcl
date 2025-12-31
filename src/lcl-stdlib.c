@@ -3689,6 +3689,76 @@ int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
+/* int x - convert value to integer */
+int c_to_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  long val;
+  float fval;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "int requires exactly one argument");
+    return LCL_RC_ERR;
+  }
+
+  /* If already an int, just return it */
+  if (argv[0]->type == LCL_INT) {
+    *out = lcl_ref_inc(argv[0]);
+    return LCL_RC_OK;
+  }
+
+  /* If float, truncate to int */
+  if (argv[0]->type == LCL_FLOAT) {
+    *out = lcl_int_new((long)argv[0]->as.f);
+    return LCL_RC_OK;
+  }
+
+  /* Try to parse as integer first */
+  if (lcl_value_to_int(argv[0], &val) == LCL_OK) {
+    *out = lcl_int_new(val);
+    return LCL_RC_OK;
+  }
+
+  /* Try to parse as float and truncate */
+  if (lcl_value_to_float(argv[0], &fval) == LCL_OK) {
+    *out = lcl_int_new((long)fval);
+    return LCL_RC_OK;
+  }
+
+  LCL_ERR_MSG(interp, "cannot convert to integer");
+  return LCL_RC_ERR;
+}
+
+/* float x - convert value to float */
+int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
+  float val;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "float requires exactly one argument");
+    return LCL_RC_ERR;
+  }
+
+  /* If already a float, just return it */
+  if (argv[0]->type == LCL_FLOAT) {
+    *out = lcl_ref_inc(argv[0]);
+    return LCL_RC_OK;
+  }
+
+  /* If int, promote to float */
+  if (argv[0]->type == LCL_INT) {
+    *out = lcl_float_new((double)argv[0]->as.i);
+    return LCL_RC_OK;
+  }
+
+  /* Try to parse as float */
+  if (lcl_value_to_float(argv[0], &val) != LCL_OK) {
+    LCL_ERR_MSG(interp, "cannot convert to float");
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_float_new((double)val);
+  return LCL_RC_OK;
+}
+
 /* ============================================================================
  * Namespaced List Operations
  * ============================================================================
@@ -5121,6 +5191,9 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "float?", c_is_float);
   lcl_register_proc(interp, "cell?", c_is_cell);
   lcl_register_proc(interp, "proc?", c_is_proc);
+
+  lcl_register_proc(interp, "int", c_to_int);
+  lcl_register_proc(interp, "float", c_to_float);
 
   lcl_register_proc(interp, "let", c_let);
   lcl_register_proc(interp, "ref", c_ref);
