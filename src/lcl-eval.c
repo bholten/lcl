@@ -283,17 +283,54 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
-  /* Special case: single-word command that's just a subcommand.
-   * The subcommand's result IS this command's result, so it IS in tail position.
-   * We evaluate it directly without clearing tail position. */
+  /* Bugfix here:
+   *
+   * Special case: single-word command that's just a subcommand.
+   * The subcommand's result IS this command's result, so it IS in tail
+   * position. We evaluate it directly without clearing tail position.
+   *
+   * However, if the result is callable (PROC/CPROC), we need to call it
+   * to support [[...]] syntax (call the result of inner subcommand). */
   if (cmd->argc == 1 && cmd->w[0].np == 1 &&
       cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
-    rc = lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, out);
-    /* Propagate TAILCALL and other return codes */
-    return rc;
+    lcl_value *result = NULL;
+    rc = lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, &result);
+    if (rc != LCL_RC_OK) {
+      return rc;
+    }
+
+    if (result->type == LCL_PROC) {
+      lcl_proc *p = (lcl_proc *)result->as.procedure.proc;
+
+      if (saved_tail_position && p->self_name != NULL) {
+        lcl_value *self_val = NULL;
+        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) ==
+            LCL_OK) {
+          if (self_val == result) {
+            setup_tail_call(interp, 0, NULL);
+            lcl_ref_dec(self_val);
+            lcl_ref_dec(result);
+            *out = NULL;
+            return LCL_RC_TAILCALL;
+          }
+
+          lcl_ref_dec(self_val);
+        }
+      }
+
+      rc = lcl_call_user_proc(interp, result, p, 0, NULL, out);
+      lcl_ref_dec(result);
+      return rc;
+    } else if (result->type == LCL_CPROC) {
+      rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
+      lcl_ref_dec(result);
+      return rc;
+    }
+
+    *out = result;
+    return LCL_RC_OK;
   }
 
-  /* Command name evaluation is NOT in tail position */
   interp->in_tail_position = 0;
 
   rc = lcl_eval_word(interp, &cmd->w[0], &callee);
@@ -400,7 +437,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       /* Check for self-recursive tail call */
       if (saved_tail_position && p->self_name != NULL) {
         lcl_value *self_val = NULL;
-        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) == LCL_OK) {
+        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) ==
+            LCL_OK) {
           if (self_val == callee) {
             /* Self-recursive tail call! Set up continuation and return */
             setup_tail_call(interp, argc, argv);

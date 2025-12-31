@@ -8,9 +8,9 @@
 #include <stdlib.h>
 
 #include "lcl-compile.h"
-#include "str-compat.h"
 #include "lcl-eval.h"
 #include "lcl-values.h"
+#include "str-compat.h"
 
 /* Helper: read entire file into a malloc'd string */
 static char *api_read_file(const char *path) {

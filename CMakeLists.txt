@@ -165,6 +165,10 @@ if(LCL_BUILD_TESTS)
     target_link_libraries(lcl-test PRIVATE lcl_shared)
   endif()
 
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
+  endif()
+
   if(LCL_ENABLE_ASAN)
     target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
   endif()

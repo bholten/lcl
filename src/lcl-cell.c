@@ -25,7 +25,9 @@ static void cell_set_init(cell_set *s) {
   s->cap = 0;
 }
 
-static void cell_set_free(cell_set *s) { free(s->cells); }
+static void cell_set_free(cell_set *s) {
+  free(s->cells);
+}
 
 static int cell_set_contains(cell_set *s, lcl_value *cell) {
   int i;
@@ -51,9 +53,11 @@ static int cell_set_add(cell_set *s, lcl_value *cell) {
   return 1;
 }
 
-static int cycle_check_value(lcl_value *target, lcl_value *val, cell_set *visited);
+static int cycle_check_value(lcl_value *target, lcl_value *val,
+                             cell_set *visited);
 
-static int cycle_check_proc(lcl_value *target, lcl_proc *proc, cell_set *visited) {
+static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
+                            cell_set *visited) {
   int i;
 
   if (!proc || !proc->upvals) return 0;
@@ -82,7 +86,8 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc, cell_set *visited
   return 0;
 }
 
-static int cycle_check_value(lcl_value *target, lcl_value *val, cell_set *visited) {
+static int cycle_check_value(lcl_value *target, lcl_value *val,
+                             cell_set *visited) {
   if (!val) return 0;
 
   if (val->type == LCL_PROC) {

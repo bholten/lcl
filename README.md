@@ -347,6 +347,29 @@ int main() {
 
 Link with `-llcl` or include the source files directly.
 
+## Known Limitations
+
+### No Mutual Recursion
+
+Lcl uses **reference counting** for memory management (no garbage collector). This is a deliberate design choice for embeddability—GC adds complexity, unpredictable pauses, and makes integration with host applications harder.
+
+However, reference counting cannot handle reference cycles. When two procedures reference each other (mutual recursion), they create a cycle that can never be freed:
+
+```tcl
+# This is REJECTED at definition time:
+proc even? {n} { if [== $n 0] { 1 } else { [odd? [- $n 1]] } }
+proc odd? {n} { if [== $n 0] { 0 } else { [even? [- $n 1]] } }
+```
+
+Lcl detects this pattern and raises an error rather than silently leaking memory.
+
+**Workarounds:**
+- Pass procedures as arguments instead of capturing them
+- Use a dispatch table or trampolining pattern
+- Restructure to use a single recursive procedure
+
+Self-recursion works fine (a proc calling itself), and Lcl includes tail call optimization for self-recursive procedures.
+
 ## Project Status
 
 Lcl is **pre-alpha** software. While the core language is functional, expect:
