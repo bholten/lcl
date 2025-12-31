@@ -21,8 +21,8 @@ static size_t mask(const hash_table *ht) {
   return ht->cap - 1;
 }
 
-static ssize_t hash_find(hash_table *ht, const char *key,
-                         unsigned long hk, size_t *first_tomb) {
+static ssize_t hash_find(hash_table *ht, const char *key, unsigned long hk,
+                         size_t *first_tomb) {
   size_t m = mask(ht);
   size_t i = hk & m;
   *first_tomb = (size_t)-1;
@@ -113,8 +113,7 @@ void hash_table_free(hash_table *ht) {
     if (e->state == H_FULL) {
       lcl_ref_dec(e->value);
       free(e->key);
-    }
-    else if (e->state == H_TOMB) {
+    } else if (e->state == H_TOMB) {
       free(e->key);
     }
   }
@@ -166,8 +165,7 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
   return 1;
 }
 
-int hash_table_get(hash_table *ht, const char *key,
-                       lcl_value **out) {
+int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
   unsigned long hk = fnv1a(key);
   size_t first_tomb;
   ssize_t idx = hash_find(ht, key, hk, &first_tomb);
@@ -215,15 +213,15 @@ int hash_table_delete(hash_table *ht, const char *key) {
   return 1;
 }
 
-int hash_table_iterate(hash_table *ht, hash_iter *it,
-                       const char **key, lcl_value **value) {
+int hash_table_iterate(hash_table *ht, hash_iter *it, const char **key,
+                       lcl_value **value) {
   size_t i = it->i;
 
   while (i < ht->cap) {
     hash_entry *e = &ht->slots[i++];
 
     if (e->state == H_FULL) {
-      it->i =  i;
+      it->i = i;
       *key = e->key;
       *value = lcl_ref_inc(e->value);
       return 1;

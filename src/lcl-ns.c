@@ -3,13 +3,14 @@
 
 #include "lcl-values.h"
 
-static lcl_result ns_def_take(lcl_value *ns, const char *name, lcl_value *value) {
+static lcl_result ns_def_take(lcl_value *ns, const char *name,
+                              lcl_value *value) {
   if (!ns || ns->type != LCL_NAMESPACE) return LCL_ERROR;
 
   if (!hash_table_put(ns->as.namespace.namespace, name, value)) {
     return LCL_ERROR;
   }
-  
+
   return LCL_OK;
 }
 
@@ -72,7 +73,8 @@ lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out) {
   return LCL_OK;
 }
 
-const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs, const char **rhs) {
+const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
+                         const char **rhs) {
   size_t n;
   const char *p = strstr(q, "::");
 
@@ -91,4 +93,3 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs, const char **rhs
 
   return *rhs;
 }
-

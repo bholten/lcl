@@ -9,7 +9,7 @@ lcl_value *lcl_ref_inc(lcl_value *value) {
     value->refc++;
 #ifdef DEBUG_REFC
     fprintf(stderr, "INC %s rc = %d\n", value->str_repr, value->refc);
-#endif    
+#endif
   }
 
   return value;
@@ -25,7 +25,7 @@ void lcl_ref_dec(lcl_value *value) {
 
   free(value->str_repr);
 
-  switch(value->type) {
+  switch (value->type) {
   case LCL_LIST: {
     int i;
 
@@ -75,8 +75,7 @@ void lcl_ref_dec(lcl_value *value) {
     free((void *)value->as.opaque.type_tag);
   } break;
 
-  default:
-    break;
+  default: break;
   }
 
   free(value);

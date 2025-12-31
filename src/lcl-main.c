@@ -3,8 +3,8 @@
 #include <string.h>
 
 #include "lcl-compile.h"
-#include "lcl-values.h"
 #include "lcl-eval.h"
+#include "lcl-values.h"
 
 #ifdef LCL_HAVE_CURL
 #include <lcl-curl.h>

@@ -87,7 +87,6 @@ lcl_result lcl_dict_del(lcl_value **dict_io, const char *key) {
   free(dict->str_repr);
   dict->str_repr = NULL;
 
-
   if (!hash_table_delete(dict->as.dict.dictionary, key)) {
     return LCL_ERROR;
   }
@@ -95,8 +94,8 @@ lcl_result lcl_dict_del(lcl_value **dict_io, const char *key) {
   return LCL_OK;
 }
 
-lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it, const char **key,
-                  lcl_value **value) {
+lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
+                         const char **key, lcl_value **value) {
   const lcl_value *dict = *dict_io;
   hash_iter hit;
   int found;
@@ -106,7 +105,7 @@ lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it, const char 
   hit.i = it->i;
 
   found = hash_table_iterate(dict->as.dict.dictionary, &hit, key, value);
-  it->i = hit.i;  /* Save iterator position */
+  it->i = hit.i; /* Save iterator position */
 
   return found ? LCL_OK : LCL_ERROR;
 }

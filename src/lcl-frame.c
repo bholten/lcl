@@ -33,7 +33,7 @@ lcl_frame *lcl_frame_new_ns(lcl_frame *parent, hash_table *ns_locals) {
   if (!f) return NULL;
 
   f->refc = 1;
-  f->locals = ns_locals;  /* Borrowed from namespace */
+  f->locals = ns_locals; /* Borrowed from namespace */
   f->parent = lcl_frame_ref_inc(parent);
   f->owns_locals = 0;
 
@@ -58,7 +58,7 @@ static int lambda_captures_frame_cell(lcl_value *lambda, hash_table *locals) {
       if (hash_table_get(locals, p->upvals[i].name, &found)) {
         if (found == upval) {
           lcl_ref_dec(found);
-          return 1;  /* This lambda captures a cell from our frame */
+          return 1; /* This lambda captures a cell from our frame */
         }
         lcl_ref_dec(found);
       }
@@ -102,12 +102,12 @@ void lcl_frame_free(lcl_frame *f) {
 
 lcl_frame *lcl_frame_ref_inc(lcl_frame *f) {
   if (f) {
-    f->refc++;    
+    f->refc++;
 #ifdef DEBUG_REFC
     fprintf(stderr, "INC FRAME REF rc = %d\n", f->refc);
 #endif
   }
-  
+
   return f;
 }
 

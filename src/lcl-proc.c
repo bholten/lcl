@@ -2,13 +2,14 @@
 #include <string.h>
 
 #include "lcl-compile.h"
-#include "lcl-values.h"
 #include "lcl-lex.h"
+#include "lcl-values.h"
 #include "str-compat.h"
 
 /* ============================================================================
  * Free Variable Extraction
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /* Simple string set for deduplication */
 typedef struct {
@@ -68,9 +69,7 @@ static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
   for (i = 0; i < w->np; i++) {
     lcl_word_piece *wp = &w->wp[i];
     switch (wp->kind) {
-    case LCL_WP_VAR:
-      name_set_add(vars, wp->as.var.name);
-      break;
+    case LCL_WP_VAR: name_set_add(vars, wp->as.var.name); break;
     case LCL_WP_SUBCMD:
       collect_free_vars_program(wp->as.sub.program, vars);
       break;
@@ -97,7 +96,7 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
  * params_list: list of parameter names (to exclude from capture)
  * Returns array of upvalues, sets *nout to count. Returns NULL on error. */
 lcl_upvalue *lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                                 lcl_value *params_list, int *nout) {
+                                lcl_value *params_list, int *nout) {
   name_set vars;
   lcl_upvalue *upvals = NULL;
   int i, j, nupvals = 0;
@@ -189,10 +188,11 @@ error:
 
 /* ============================================================================
  * Proc Creation
- * ============================================================================ */
+ * ============================================================================
+ */
 
-lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals,
-                        lcl_value *params, lcl_program *body) {
+lcl_value *lcl_proc_new(lcl_upvalue *upvals, int nupvals, lcl_value *params,
+                        lcl_program *body) {
   lcl_proc *p = (lcl_proc *)calloc(1, sizeof(*p));
   lcl_value *v;
 
@@ -295,4 +295,3 @@ lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn) {
 
   return proc;
 }
-

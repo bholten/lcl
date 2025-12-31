@@ -54,7 +54,7 @@ static void lcl_reify_str_float(lcl_value *value) {
 
 /* Check if string needs bracing for Tcl-like list output */
 static int needs_braces(const char *s) {
-  if (!s || !*s) return 1;  /* empty string needs braces */
+  if (!s || !*s) return 1; /* empty string needs braces */
   while (*s) {
     char c = *s++;
     if (c == ' ' || c == '\t' || c == '\n' || c == '{' || c == '}' ||
@@ -78,10 +78,10 @@ static void lcl_reify_str_list(lcl_value *value) {
     if (lcl_list_get(value, i, &elem) != LCL_OK) continue;
     s = lcl_value_to_string(elem);
     total += strlen(s);
-    if (needs_braces(s)) total += 2;  /* for {} */
+    if (needs_braces(s)) total += 2; /* for {} */
     lcl_ref_dec(elem);
   }
-  total += len;  /* for spaces */
+  total += len; /* for spaces */
 
   buf = (char *)malloc(total + 1);
   if (!buf) return;
@@ -123,7 +123,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
   /* First pass: calculate size */
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
-    total += strlen(key) + strlen(vs) + 2;  /* key, value, spaces */
+    total += strlen(key) + strlen(vs) + 2; /* key, value, spaces */
     if (needs_braces(key)) total += 2;
     if (needs_braces(vs)) total += 2;
     lcl_ref_dec(val);
@@ -167,25 +167,16 @@ const char *lcl_value_to_string(lcl_value *value) {
   if (!value) return "";
   if (!value->str_repr) {
     switch (value->type) {
-    case LCL_INT:
-      lcl_reify_str_int(value);
-      break;
-    case LCL_FLOAT:
-      lcl_reify_str_float(value);
-      break;
-    case LCL_STRING:
-      break;
-    case LCL_LIST:
-      lcl_reify_str_list(value);
-      break;
-    case LCL_DICT:
-      lcl_reify_str_dict(value);
-      break;
+    case LCL_INT: lcl_reify_str_int(value); break;
+    case LCL_FLOAT: lcl_reify_str_float(value); break;
+    case LCL_STRING: break;
+    case LCL_LIST: lcl_reify_str_list(value); break;
+    case LCL_DICT: lcl_reify_str_dict(value); break;
     case LCL_OPAQUE: {
       const char *tag = value->as.opaque.type_tag;
 
       if (tag) {
-        size_t len = strlen(tag) + 10;  /* "<opaque:>" + tag + null */
+        size_t len = strlen(tag) + 10; /* "<opaque:>" + tag + null */
         value->str_repr = (char *)malloc(len);
 
         if (value->str_repr) {
@@ -228,9 +219,9 @@ lcl_value *lcl_value_new_string(const char *str) {
 
     memcpy(value->str_repr, str, n + 1);
   }
-  
+
   value->type = LCL_STRING;
   value->refc = 1;
 
-  return value;  
+  return value;
 }

@@ -41,13 +41,14 @@ static lcl_result lcl_list_ensure_cap(lcl_value *list, size_t need) {
     newcap *= 2;
   }
 
-  newitems = (lcl_value **)realloc(list->as.list.items, newcap * sizeof(*newitems));
+  newitems =
+      (lcl_value **)realloc(list->as.list.items, newcap * sizeof(*newitems));
 
   if (!newitems) return LCL_ERROR;
 
   list->as.list.items = newitems;
   list->as.list.cap = newcap;
-  
+
   return LCL_OK;
 }
 

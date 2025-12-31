@@ -35,22 +35,19 @@ lcl_program *lcl_program_compile(const char *src, const char *file) {
       lcl_command_free(&cmd);
       lcl_program_free(p);
       return NULL;
-    case 0:
-      return p;
+    case 0: return p;
     case 1:
       if (!lcl_program_push_command(p, &cmd)) {
         lcl_program_free(p);
         return NULL;
-      }  
+      }
       break;
-    default:
-      break;
+    default: break;
     }
-  }  
+  }
 }
 
-int lcl_program_push_command(lcl_program *p,
-                             lcl_command *src) {
+int lcl_program_push_command(lcl_program *p, lcl_command *src) {
   int idx;
 
   if (p->ncmd >= p->cap) {

@@ -5,9 +5,9 @@
  * in LCL values with type safety and automatic cleanup.
  */
 
+#include "lcl-values.h"
 #include <stdlib.h>
 #include <string.h>
-#include "lcl-values.h"
 
 /*
  * Create a new opaque value wrapping a C pointer.

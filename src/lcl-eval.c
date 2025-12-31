@@ -1,13 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lcl-eval.h"
 #include "lcl-compile.h"
+#include "lcl-eval.h"
 #include "lcl-lex.h"
 #include "lcl-values.h"
 
-int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
-                  lcl_value **out);
+int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out);
 
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
                       lcl_value ***argv_out) {
@@ -46,7 +45,8 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
 
         if (argc + (int)len > cap) {
           int new_cap = argc + (int)len + 8;
-          lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+          lcl_value **new_argv =
+              (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
           if (!new_argv) {
             lcl_ref_dec(val);
             rc = LCL_RC_ERR;
@@ -70,7 +70,8 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
         /* Not a list - just add as single argument */
         if (argc >= cap) {
           int new_cap = cap * 2 + 1;
-          lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+          lcl_value **new_argv =
+              (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
           if (!new_argv) {
             lcl_ref_dec(val);
             rc = LCL_RC_ERR;
@@ -84,7 +85,8 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
     } else {
       if (argc >= cap) {
         int new_cap = cap * 2 + 1;
-        lcl_value **new_argv = (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+        lcl_value **new_argv =
+            (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
         if (!new_argv) {
           lcl_ref_dec(val);
           rc = LCL_RC_ERR;
@@ -109,8 +111,8 @@ cleanup:
   return rc;
 }
 
-int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
-                       int argc, lcl_value **argv, lcl_value **out) {
+int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p, int argc,
+                       lcl_value **argv, lcl_value **out) {
   int i;
   int rc;
   lcl_env saved = interp->env;
@@ -167,8 +169,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_proc *p,
   return rc;
 }
 
-int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
-                  lcl_value **out) {
+int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
   if (w && w->np == 1) {
     lcl_word_piece *wp = &w->wp[0];
 
@@ -195,8 +196,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w,
     case LCL_WP_SUBCMD: {
       return lcl_eval_program(interp, wp->as.sub.program, out);
     }
-    case LCL_WP_LIT:
-      break;
+    case LCL_WP_LIT: break;
     }
   }
 
@@ -220,8 +220,10 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
-    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) != LCL_OK) {
-      /* If lookup fails and this is a single-word command, return the value itself */
+    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) !=
+        LCL_OK) {
+      /* If lookup fails and this is a single-word command, return the value
+       * itself */
       if (cmd->argc == 1) {
         *out = name;
         return LCL_RC_OK;
@@ -252,7 +254,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     {
       lcl_value *name = callee;
       callee = NULL;
-      if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) != LCL_OK) {
+      if (lcl_env_get_command(&interp->env, lcl_value_to_string(name),
+                              &callee) != LCL_OK) {
         lcl_ref_dec(name);
         return LCL_RC_ERR;
       }
@@ -260,7 +263,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     }
   }
 
-  if (callee->type == LCL_CPROC && callee->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+  if (callee->type == LCL_CPROC &&
+      callee->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
     int spec_argc = cmd->argc - 1;
     const lcl_word **raw = NULL;
     int i;
@@ -291,7 +295,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(callee);
-      
+
       return rc;
     }
 
@@ -304,16 +308,17 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       rc = LCL_RC_ERR;
     }
 
-    for (i = 0; i < argc; i++) lcl_ref_dec(argv[i]);
+    for (i = 0; i < argc; i++)
+      lcl_ref_dec(argv[i]);
     free(argv);
     lcl_ref_dec(callee);
-    
+
     return rc;
   }
 }
 
-int lcl_eval_string_file(lcl_interp *interp, const char *src,
-                         const char *file, lcl_value **out) {
+int lcl_eval_string_file(lcl_interp *interp, const char *src, const char *file,
+                         lcl_value **out) {
   lcl_program *P = lcl_program_compile(src, file ? file : "<string>");
   int rc;
 
@@ -329,8 +334,7 @@ int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out) {
   return lcl_eval_string_file(interp, src, NULL, out);
 }
 
-int lcl_eval_word_to_str(lcl_interp *interp,
-                         const lcl_word *w,
+int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
                          lcl_value **out) {
   char *buf = NULL;
   size_t len = 0;
@@ -363,9 +367,13 @@ int lcl_eval_word_to_str(lcl_interp *interp,
       if (need > cap) {
         size_t newcap = cap ? cap * 2 : 64;
         char *newbuf;
-        while (newcap < need) newcap *= 2;
+        while (newcap < need)
+          newcap *= 2;
         newbuf = (char *)realloc(buf, newcap);
-        if (!newbuf) { free(buf); return LCL_RC_ERR; }
+        if (!newbuf) {
+          free(buf);
+          return LCL_RC_ERR;
+        }
         buf = newbuf;
         cap = newcap;
       }
@@ -484,7 +492,7 @@ int lcl_eval_word_to_str(lcl_interp *interp,
 
       buf = newbuf;
     }
-    
+
     buf[len] = '\0';
     *out = lcl_value_new_string(buf);
     free(buf);
@@ -539,10 +547,9 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
 
   if (out) {
     *out = last;
-  }
-  else if (last) {
+  } else if (last) {
     lcl_ref_dec(last);
-  }  
-  
+  }
+
   return rc;
 }

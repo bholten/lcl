@@ -13,15 +13,9 @@ void lcl_command_free(lcl_command *cmd) {
       lcl_word_piece *pc = &w->wp[j];
 
       switch (pc->kind) {
-      case LCL_WP_LIT:
-        free(pc->as.lit.s);
-        break;
-      case LCL_WP_VAR:
-        free(pc->as.var.name);
-        break;
-      case LCL_WP_SUBCMD:
-        lcl_program_free(pc->as.sub.program);
-        break;
+      case LCL_WP_LIT: free(pc->as.lit.s); break;
+      case LCL_WP_VAR: free(pc->as.var.name); break;
+      case LCL_WP_SUBCMD: lcl_program_free(pc->as.sub.program); break;
       }
     }
 
@@ -49,6 +43,6 @@ int lcl_command_push_word(lcl_command *cmd, lcl_word *w) {
   idx = cmd->argc++;
   cmd->w[idx] = *w;
   memset(w, 0, sizeof(*w));
-  
+
   return 1;
 }

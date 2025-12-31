@@ -6,8 +6,7 @@
 #include "str-compat.h"
 
 /** TODO this needs to be better **/
-static int lcl_word_push_word_piece(lcl_word *word,
-                                    lcl_word_piece wp) {
+static int lcl_word_push_word_piece(lcl_word *word, lcl_word_piece wp) {
   int idx;
 
   if (word->np >= word->cap) {
@@ -33,17 +32,10 @@ static int lcl_word_push_word_piece(lcl_word *word,
 
 void lcl_word_piece_free(lcl_word_piece *wp) {
   switch (wp->kind) {
-  case LCL_WP_LIT:
-    free(wp->as.lit.s);
-    break;
-  case LCL_WP_VAR:
-    free(wp->as.var.name);
-    break;
-  case LCL_WP_SUBCMD:
-    lcl_program_free(wp->as.sub.program);
-    break;
-  default:
-    break;
+  case LCL_WP_LIT: free(wp->as.lit.s); break;
+  case LCL_WP_VAR: free(wp->as.var.name); break;
+  case LCL_WP_SUBCMD: lcl_program_free(wp->as.sub.program); break;
+  default: break;
   }
 
   free(wp);
@@ -87,7 +79,7 @@ int lcl_word_add_var(lcl_word *w, const char *name) {
 
   lcl_word_push_word_piece(w, wp);
 
-  return 1;  
+  return 1;
 }
 
 int lcl_word_add_sub(lcl_word *w, lcl_program *sub) {

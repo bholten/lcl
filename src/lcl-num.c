@@ -26,20 +26,16 @@ lcl_value *lcl_float_new(const float f) {
   v->refc = 1;
   v->as.f = f;
 
-  lcl_value_to_string(v);  
+  lcl_value_to_string(v);
 
-  return v;  
+  return v;
 }
 
 lcl_result lcl_value_to_int(lcl_value *value, long *out) {
   switch (value->type) {
-  case LCL_INT:
-    *out = value->as.i;
-    return LCL_OK;
+  case LCL_INT: *out = value->as.i; return LCL_OK;
 
-  case LCL_FLOAT:
-    *out = (long)value->as.f;
-    return LCL_OK;
+  case LCL_FLOAT: *out = (long)value->as.f; return LCL_OK;
 
   case LCL_STRING: {
     char *endptr;
@@ -52,8 +48,7 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
     break;
   }
 
-  default:
-    break;
+  default: break;
   }
 
   return LCL_ERROR;
@@ -61,13 +56,9 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
 
 lcl_result lcl_value_to_float(lcl_value *value, float *out) {
   switch (value->type) {
-  case LCL_INT:
-    *out = (float)value->as.i;
-    return LCL_OK;
+  case LCL_INT: *out = (float)value->as.i; return LCL_OK;
 
-  case LCL_FLOAT:
-    *out = value->as.f;
-    return LCL_OK;
+  case LCL_FLOAT: *out = value->as.f; return LCL_OK;
 
   case LCL_STRING: {
     const char *str = lcl_value_to_string(value);
@@ -80,8 +71,7 @@ lcl_result lcl_value_to_float(lcl_value *value, float *out) {
     break;
   }
 
-  default:
-    break;
+  default: break;
   }
 
   return LCL_ERROR;

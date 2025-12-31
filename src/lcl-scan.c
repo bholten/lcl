@@ -6,11 +6,8 @@
 #include "str-compat.h"
 
 static int is_name(int c) {
-  return (c == '_' ||
-          c == ':' ||
-          (c >= 'a' && c <= 'z') ||
-          (c >= 'A' && c <= 'Z') ||
-          (c>='0' && c<='9'));
+  return (c == '_' || c == ':' || (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
 }
 
 static void skip_cmd_ws_and_comments(lcl_scan *sc) {
@@ -126,11 +123,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   while (sc->i < sc->len) {
     char c = sc->s[sc->i];
 
-    if (!in_quotes && (c == ' ' ||
-                       c == '\t' ||
-                       c == '\r' ||
-                       c == ';' ||
-                       c == '\n')) {
+    if (!in_quotes &&
+        (c == ' ' || c == '\t' || c == '\r' || c == ';' || c == '\n')) {
       break;
     }
 
@@ -182,7 +176,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
       } else {
         long j = sc->i;
 
-        if (j < sc->len && (isalpha((unsigned char)sc->s[j]) || sc->s[j] == '_')) {
+        if (j < sc->len &&
+            (isalpha((unsigned char)sc->s[j]) || sc->s[j] == '_')) {
           char *varname;
           int ok;
 
@@ -231,16 +226,13 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
           if (d == '\n') {
             sc->line++;
-          }
-          else if (d == '[') {
+          } else if (d == '[') {
             depth++;
-          }
-          else if (d == ']') {
+          } else if (d == ']') {
             depth--;
 
             if (!depth) break;
-          }
-          else if (d == '{') {
+          } else if (d == '{') {
             long k = 1;
 
             while (sc->i < sc->len && k) {
@@ -248,18 +240,15 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
               if (e == '{') {
                 k++;
-              }
-              else if (e == '}') {
+              } else if (e == '}') {
                 k--;
-              }
-              else if (e == '\n') {
+              } else if (e == '\n') {
                 sc->line++;
               }
             }
 
             if (k) return -1;
-          }
-          else if (d == '"') {
+          } else if (d == '"') {
             while (sc->i < sc->len) {
               char e = sc->s[sc->i++];
 
@@ -337,22 +326,22 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
         /* Handle escape sequences */
         switch (next) {
-          case 'n':  esc_char = '\n'; break;
-          case 't':  esc_char = '\t'; break;
-          case 'r':  esc_char = '\r'; break;
-          case '\\': esc_char = '\\'; break;
-          case '"':  esc_char = '"';  break;
-          case '$':  esc_char = '$';  break;
-          case '[':  esc_char = '[';  break;
-          case ']':  esc_char = ']';  break;
-          case '{':  esc_char = '{';  break;
-          case '}':  esc_char = '}';  break;
-          default:
-            /* Unknown escape - keep the escaped character only */
-            is_escape = 0;
-            sc->i++;
-            start = sc->i;
-            continue;
+        case 'n': esc_char = '\n'; break;
+        case 't': esc_char = '\t'; break;
+        case 'r': esc_char = '\r'; break;
+        case '\\': esc_char = '\\'; break;
+        case '"': esc_char = '"'; break;
+        case '$': esc_char = '$'; break;
+        case '[': esc_char = '['; break;
+        case ']': esc_char = ']'; break;
+        case '{': esc_char = '{'; break;
+        case '}': esc_char = '}'; break;
+        default:
+          /* Unknown escape - keep the escaped character only */
+          is_escape = 0;
+          sc->i++;
+          start = sc->i;
+          continue;
         }
 
         if (is_escape) {
@@ -411,8 +400,8 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
   }
 
   cmd->argc = 0;
-  cmd->cap  = 0;
-  cmd->w    = NULL;
+  cmd->cap = 0;
+  cmd->w = NULL;
   cmd->line = (int)sc->line;
 
   sc->at_cmd_start = 0;
@@ -455,7 +444,7 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
       break;
     }
 
-    if (!lcl_command_push_word(cmd, &w))  {
+    if (!lcl_command_push_word(cmd, &w)) {
       return -1;
     }
 

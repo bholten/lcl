@@ -44,12 +44,12 @@ int lcl_str_reserve(lcl_str *st, size_t need) {
   return 1;
 }
 
-int lcl_str_putc(lcl_str  *st, int c) {
+int lcl_str_putc(lcl_str *st, int c) {
   if (!lcl_str_reserve(st, 1)) return 0;
 
   st->buf[st->len++] = (char)c;
   st->buf[st->len] = '\0';
-  
+
   return 1;
 }
 

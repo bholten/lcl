@@ -9,7 +9,7 @@
 lcl_interp *lcl_interp_new(void) {
   lcl_interp *interp = (lcl_interp *)calloc(1, sizeof(*interp));
   lcl_env *env = NULL;
-  
+
   if (!interp) return NULL;
 
   env = lcl_env_new();
@@ -20,7 +20,7 @@ lcl_interp *lcl_interp_new(void) {
   }
 
   interp->env = *env;
-  free(env);  /* free the struct, contents now owned by interp->env */
+  free(env); /* free the struct, contents now owned by interp->env */
   interp->last = NULL;
   interp->cur_file = NULL;
   interp->cur_line = 0;

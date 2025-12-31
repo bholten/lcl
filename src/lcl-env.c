@@ -1,8 +1,8 @@
-#include <stdio.h>
-#include <string.h>
 #include "hash-table.h"
 #include "lcl-compile.h"
 #include "lcl-values.h"
+#include <stdio.h>
+#include <string.h>
 
 void lcl_env_free(lcl_env *env) {
   if (!env) return;
@@ -81,7 +81,8 @@ lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value) {
 }
 
 /* Simple lookup without qualified names */
-static lcl_result env_get_simple(lcl_env *env, const char *key, lcl_value **out) {
+static lcl_result env_get_simple(lcl_env *env, const char *key,
+                                 lcl_value **out) {
   lcl_value *b = NULL;
 
   if (lcl_frame_get_binding(env->frame, key, &b)) {
@@ -166,7 +167,8 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
 }
 
 /* Helper: try set! on a cell in the frame chain (simple name) */
-static lcl_result env_set_bang_simple(lcl_env *env, const char *name, lcl_value *value) {
+static lcl_result env_set_bang_simple(lcl_env *env, const char *name,
+                                      lcl_value *value) {
   lcl_frame *f = env->frame;
 
   while (f) {

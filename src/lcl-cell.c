@@ -30,7 +30,7 @@ lcl_result lcl_cell_set(lcl_value *cell, lcl_value *v) {
     return LCL_ERROR;
   }
 
-  {  
+  {
     lcl_value *old = cell->as.cell.inner;
     cell->as.cell.inner = lcl_ref_inc(v);
     lcl_ref_dec(old);
@@ -40,6 +40,6 @@ lcl_result lcl_cell_set(lcl_value *cell, lcl_value *v) {
       cell->str_repr = NULL;
     }
   }
-  
+
   return LCL_OK;
 }
