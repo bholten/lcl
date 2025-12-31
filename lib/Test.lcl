@@ -127,6 +127,20 @@ proc Test::not_empty {val} {
     }
 }
 
+# Assertion: value is opaque
+proc Test::opaque {val} {
+    if [not [opaque? $val]] {
+        error "expected opaque value"
+    }
+}
+
+# Assertion: value is not opaque
+proc Test::not_opaque {val} {
+    if [opaque? $val] {
+        error "expected non-opaque value"
+    }
+}
+
 # Assertion: code raises an error
 proc Test::raises {body} {
     if [catch { eval $body } _result _err] {

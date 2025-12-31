@@ -17,7 +17,7 @@ Test::suite "CURL Initialization" {
 
     Test::case "curl::new creates handle" {
         let c [curl::new]
-        Test::not_empty $c
+        Test::opaque $c
     }
 }
 

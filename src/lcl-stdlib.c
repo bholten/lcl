@@ -3387,6 +3387,11 @@ int c_empty(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     *out = lcl_int_new(strlen(lcl_value_to_string(argv[0])) == 0 ? 1 : 0);
     return LCL_RC_OK;
 
+  case LCL_OPAQUE:
+    /* Opaque handles are non-empty if they exist (contain a C pointer) */
+    *out = lcl_int_new(0);
+    return LCL_RC_OK;
+
   default: return LCL_RC_ERR;
   }
 }
@@ -3610,6 +3615,17 @@ int c_is_string(lcl_interp *interp, int argc, lcl_value **argv,
   if (argc != 1) return LCL_RC_ERR;
 
   *out = lcl_int_new(argv[0]->type == LCL_STRING ? 1 : 0);
+
+  return LCL_RC_OK;
+}
+
+int c_is_opaque(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
+  (void)interp;
+
+  if (argc != 1) return LCL_RC_ERR;
+
+  *out = lcl_int_new(argv[0]->type == LCL_OPAQUE ? 1 : 0);
 
   return LCL_RC_OK;
 }
@@ -5099,6 +5115,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "list?", c_is_list);
   lcl_register_proc(interp, "dict?", c_is_dict);
   lcl_register_proc(interp, "string?", c_is_string);
+  lcl_register_proc(interp, "opaque?", c_is_opaque);
   lcl_register_proc(interp, "number?", c_is_number);
   lcl_register_proc(interp, "int?", c_is_int);
   lcl_register_proc(interp, "float?", c_is_float);

@@ -12,12 +12,12 @@
 Test::suite "Standard Streams" {
     Test::case "io::stdout returns handle" {
         let stdout [io::stdout]
-        Test::not_empty $stdout
+        Test::opaque $stdout
     }
 
     Test::case "io::stderr returns handle" {
         let stderr [io::stderr]
-        Test::not_empty $stderr
+        Test::opaque $stderr
     }
 
     Test::case "io::fputs writes to stdout" {
