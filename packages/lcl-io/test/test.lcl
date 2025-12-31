@@ -1,37 +1,170 @@
-puts "testing io"
+puts "=== Testing io:: package ==="
 
-# open a file
-let h [io::open_file packages/lcl-io/include/lcl-io.h rt]
+puts ""
+puts "-- io::stdout, io::stderr, io::fputs --"
+io::fputs [io::stderr] "Hello, stderr!\n"
+io::fputs [io::stdout] "Hello, stdout!\n"
 
-var end 1
+puts ""
+puts "-- io::getenv --"
+let path [io::getenv PATH]
+puts "PATH length: [String::length $path]"
+assert {> [String::length $path] 0} "PATH should not be empty"
 
-while {$end} {
-    let line [io::fgets $h 1024]
-    puts $line
+puts ""
+puts "-- io::getcwd, io::chdir --"
+let original_cwd [io::getcwd]
+puts "Current dir: $original_cwd"
+assert {> [String::length $original_cwd] 0} "getcwd should return non-empty"
+
+io::chdir /tmp
+let tmp_cwd [io::getcwd]
+puts "After chdir /tmp: $tmp_cwd"
+assert {== $tmp_cwd /tmp} "chdir to /tmp should work"
+
+# Change back to original directory
+io::chdir $original_cwd
+assert {== [io::getcwd] $original_cwd} "chdir back to original"
+
+puts ""
+puts "-- io::mkdir, io::rmdir --"
+let test_dir "/tmp/lcl_io_test_dir"
+
+# Clean up from any previous failed runs
+if [io::exists? $test_dir] {
+    io::rmdir $test_dir
 }
 
-# close file
-io::close_file $h
+io::mkdir $test_dir
+puts "Created $test_dir"
+assert [io::exists? $test_dir] "mkdir should create directory"
+assert [io::dir? $test_dir] "should be a directory"
 
-# open again
-let file packages/lcl-io/src/lcl-io.c
-let contents [io::read_file $file]
+io::rmdir $test_dir
+puts "Removed $test_dir"
+assert [not [io::exists? $test_dir]] "rmdir should remove directory"
 
-puts "contents"
-puts $contents
+puts ""
+puts "-- io::write_file, io::read_file, io::file_size --"
+let test_file "/tmp/lcl_io_test.txt"
+let test_content "Hello, LCL IO!"
 
-# test stderr and stdout
-io::fputs [io::stderr] "Hello, stderr!\n"
-io::fputs [io::stdout] "Hello, stdout\n"
+io::write_file $test_file $test_content
+puts "Wrote test file"
+assert [io::exists? $test_file] "write_file should create file"
+assert [io::file? $test_file] "should be a file"
 
-puts "Testing glob"
-puts "glob *.md"
-puts [io::glob *.md]
+let read_content [io::read_file $test_file]
+puts "Read: $read_content"
+assert {== $read_content $test_content} "read_file should match written content"
 
-puts "glob *."
-puts [io::glob *]
+let size [io::file_size $test_file]
+puts "File size: $size"
+assert {== $size [String::length $test_content]} "file_size should match content length"
 
-puts "Testing getenv"
-puts [io::getenv PATH]
+puts ""
+puts "-- io::file_mtime --"
+let mtime [io::file_mtime $test_file]
+puts "Modification time: $mtime"
+assert {> $mtime 0} "mtime should be positive"
 
-puts "== done =="
+puts ""
+puts "-- io::copy --"
+let copy_file "/tmp/lcl_io_test_copy.txt"
+io::copy $test_file $copy_file
+puts "Copied to $copy_file"
+assert [io::exists? $copy_file] "copy should create destination file"
+assert {== [io::read_file $copy_file] $test_content} "copied content should match"
+
+puts ""
+puts "-- io::rename --"
+let renamed_file "/tmp/lcl_io_test_renamed.txt"
+io::rename $copy_file $renamed_file
+puts "Renamed to $renamed_file"
+assert [not [io::exists? $copy_file]] "old name should not exist"
+assert [io::exists? $renamed_file] "new name should exist"
+assert {== [io::read_file $renamed_file] $test_content} "renamed file content should match"
+
+puts ""
+puts "-- io::remove --"
+io::remove $test_file
+io::remove $renamed_file
+puts "Removed test files"
+assert [not [io::exists? $test_file]] "remove should delete file"
+assert [not [io::exists? $renamed_file]] "remove should delete renamed file"
+
+puts ""
+puts "-- io::readdir --"
+let test_dir2 "/tmp/lcl_io_test_dir2"
+io::mkdir $test_dir2
+io::write_file "$test_dir2/file1.txt" "one"
+io::write_file "$test_dir2/file2.txt" "two"
+io::write_file "$test_dir2/file3.txt" "three"
+
+let files [io::readdir $test_dir2]
+puts "Directory contents: $files"
+assert {== [len $files] 3} "readdir should return 3 files"
+
+# Clean up
+io::remove "$test_dir2/file1.txt"
+io::remove "$test_dir2/file2.txt"
+io::remove "$test_dir2/file3.txt"
+io::rmdir $test_dir2
+
+puts ""
+puts "-- io::is_file?, io::is_dir?, io::exists? --"
+# Test on non-existent path
+assert [not [io::exists? "/tmp/nonexistent_lcl_test"]] "non-existent should not exist"
+assert [not [io::file? "/tmp/nonexistent_lcl_test"]] "non-existent should not be file"
+assert [not [io::dir? "/tmp/nonexistent_lcl_test"]] "non-existent should not be dir"
+
+# Test on /tmp (known directory)
+assert [io::exists? /tmp] "/tmp should exist"
+assert [io::dir? /tmp] "/tmp should be a directory"
+assert [not [io::file? /tmp]] "/tmp should not be a file"
+
+puts ""
+puts "-- io::glob --"
+# Create some test files for glob
+io::write_file "/tmp/lcl_glob_test1.txt" "1"
+io::write_file "/tmp/lcl_glob_test2.txt" "2"
+let glob_files [io::glob "/tmp/lcl_glob_test*.txt"]
+puts "Glob found: [len $glob_files] files"
+assert {>= [len $glob_files] 2} "glob should find at least 2 files"
+
+# Clean up glob test files
+io::remove "/tmp/lcl_glob_test1.txt"
+io::remove "/tmp/lcl_glob_test2.txt"
+
+puts ""
+puts "-- io::open_file, io::fgets, io::fputs, io::close_file --"
+let fh_test "/tmp/lcl_fh_test.txt"
+let fh [io::open_file $fh_test w]
+io::fputs $fh "line one\n"
+io::fputs $fh "line two\n"
+io::close_file $fh
+
+let fh_read [io::open_file $fh_test r]
+let line1 [io::fgets $fh_read 1024]
+let line2 [io::fgets $fh_read 1024]
+io::close_file $fh_read
+
+puts "Line 1: [String::trim $line1]"
+puts "Line 2: [String::trim $line2]"
+assert {== [String::trim $line1] {line one}} "fgets should read first line"
+assert {== [String::trim $line2] {line two}} "fgets should read second line"
+
+io::remove $fh_test
+
+puts ""
+puts "-- io::flush --"
+let flush_test "/tmp/lcl_flush_test.txt"
+let fh_flush [io::open_file $flush_test w]
+io::fputs $fh_flush "test data"
+io::flush $fh_flush
+io::close_file $fh_flush
+assert [io::exists? $flush_test] "flush should work without error"
+io::remove $flush_test
+
+puts ""
+puts "=== All io:: tests passed! ==="

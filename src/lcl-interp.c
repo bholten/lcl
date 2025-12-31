@@ -50,3 +50,13 @@ void lcl_interp_free(lcl_interp *interp) {
 
   free(interp);
 }
+
+void lcl_interp_set_user_data(lcl_interp *interp, void *data) {
+  if (interp) {
+    interp->user_data = data;
+  }
+}
+
+void *lcl_interp_get_user_data(lcl_interp *interp) {
+  return interp ? interp->user_data : NULL;
+}

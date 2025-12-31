@@ -75,6 +75,23 @@ void lcl_interp_free(lcl_interp *interp);
  */
 void lcl_register_core(lcl_interp *interp);
 
+/*
+ * Set application-specific user data on the interpreter.
+ * This pointer can be retrieved later via lcl_interp_get_user_data().
+ * Useful for passing context to C procedures without global state.
+ *
+ * The interpreter does NOT take ownership of the data; the caller is
+ * responsible for managing its lifetime and freeing it after the
+ * interpreter is freed.
+ */
+void lcl_interp_set_user_data(lcl_interp *interp, void *data);
+
+/*
+ * Get the application-specific user data from the interpreter.
+ * Returns NULL if no user data was set.
+ */
+void *lcl_interp_get_user_data(lcl_interp *interp);
+
 /* ============================================================================
  * Evaluation
  * ============================================================================ */

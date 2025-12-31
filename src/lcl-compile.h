@@ -67,6 +67,7 @@ struct lcl_interp {
   int err_line;
   int depth;
   int max_depth;
+  void *user_data;        /* Application-specific context for C extensions */
 };
 
 /* Helper to clear any owned error message */

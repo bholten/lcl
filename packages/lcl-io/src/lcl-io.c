@@ -1,8 +1,12 @@
+#include <dirent.h>
 #include <errno.h>
 #include <glob.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <lcl.h>
 
@@ -340,6 +344,310 @@ int c_io_glob(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_ERR;
 }
 
+/* io::mkdir path ?mode? - create directory with optional mode (default 0755) */
+int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  long mode = 0755;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (argc >= 2) {
+    if (lcl_value_to_int(argv[1], &mode) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+  }
+
+  if (mkdir(path, (mode_t)mode) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* io::rmdir path - remove empty directory */
+int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (rmdir(path) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* io::remove path - remove file */
+int c_io_remove(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (remove(path) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* io::rename old new - rename/move file or directory */
+int c_io_rename(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *old_path;
+  const char *new_path;
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  old_path = lcl_value_to_string(argv[0]);
+  new_path = lcl_value_to_string(argv[1]);
+
+  if (rename(old_path, new_path) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* io::exists? path - check if file or directory exists */
+int c_io_exists(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  struct stat st;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (stat(path, &st) == 0) {
+    *out = lcl_int_new(1);
+  } else {
+    *out = lcl_int_new(0);
+  }
+
+  return LCL_RC_OK;
+}
+
+/* io::is_file? path - check if path is a regular file */
+int c_io_is_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  struct stat st;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
+    *out = lcl_int_new(1);
+  } else {
+    *out = lcl_int_new(0);
+  }
+
+  return LCL_RC_OK;
+}
+
+/* io::is_dir? path - check if path is a directory */
+int c_io_is_dir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  struct stat st;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+    *out = lcl_int_new(1);
+  } else {
+    *out = lcl_int_new(0);
+  }
+
+  return LCL_RC_OK;
+}
+
+/* io::file_size path - get file size in bytes */
+int c_io_file_size(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  struct stat st;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (stat(path, &st) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new((long)st.st_size);
+  return LCL_RC_OK;
+}
+
+/* io::readdir path - list directory contents */
+int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  DIR *dir;
+  struct dirent *entry;
+  lcl_value *result;
+  lcl_value *item;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+  dir = opendir(path);
+
+  if (!dir) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+
+  while ((entry = readdir(dir)) != NULL) {
+    /* Skip . and .. */
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+    item = lcl_string_new(entry->d_name);
+    lcl_list_push(&result, item);
+    lcl_ref_dec(item);
+  }
+
+  closedir(dir);
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* io::getcwd - get current working directory */
+int c_io_getcwd(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  char *cwd;
+  char buf[4096];
+  (void)interp;
+  (void)argc;
+  (void)argv;
+
+  cwd = getcwd(buf, sizeof(buf));
+
+  if (!cwd) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(cwd);
+  return LCL_RC_OK;
+}
+
+/* io::chdir path - change current working directory */
+int c_io_chdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (chdir(path) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/* io::file_mtime path - get file modification time (Unix timestamp) */
+int c_io_file_mtime(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *path;
+  struct stat st;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(argv[0]);
+
+  if (stat(path, &st) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new((long)st.st_mtime);
+  return LCL_RC_OK;
+}
+
+/* io::copy src dst - copy file contents */
+int c_io_copy(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+  const char *src_path;
+  const char *dst_path;
+  FILE *src;
+  FILE *dst;
+  char buf[8192];
+  size_t n;
+  (void)interp;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  src_path = lcl_value_to_string(argv[0]);
+  dst_path = lcl_value_to_string(argv[1]);
+
+  src = fopen(src_path, "rb");
+  if (!src) {
+    return LCL_RC_ERR;
+  }
+
+  dst = fopen(dst_path, "wb");
+  if (!dst) {
+    fclose(src);
+    return LCL_RC_ERR;
+  }
+
+  while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
+    if (fwrite(buf, 1, n, dst) != n) {
+      fclose(src);
+      fclose(dst);
+      return LCL_RC_ERR;
+    }
+  }
+
+  fclose(src);
+  fclose(dst);
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 void lcl_register_io(lcl_interp *interp) {
   lcl_value *io_ns = lcl_ns_new(IO_NS);
   lcl_define_take(interp, IO_NS, io_ns);
@@ -354,6 +662,27 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_ns_def(io_ns, "stderr", lcl_c_proc_new("io::stderr", c_io_stderr));
   lcl_ns_def(io_ns, "stdin", lcl_c_proc_new("io::stdin", c_io_stdin));
   lcl_ns_def(io_ns, "flush", lcl_c_proc_new("io::flush", c_io_flush));
-  lcl_ns_def(io_ns, "getenv", lcl_c_proc_new("io::flush", c_io_getenv));
+  lcl_ns_def(io_ns, "getenv", lcl_c_proc_new("io::getenv", c_io_getenv));
   lcl_ns_def(io_ns, "glob", lcl_c_proc_new("io::glob", c_io_glob));
+
+  /* Directory operations */
+  lcl_ns_def(io_ns, "mkdir", lcl_c_proc_new("io::mkdir", c_io_mkdir));
+  lcl_ns_def(io_ns, "rmdir", lcl_c_proc_new("io::rmdir", c_io_rmdir));
+  lcl_ns_def(io_ns, "readdir", lcl_c_proc_new("io::readdir", c_io_readdir));
+
+  /* File operations */
+  lcl_ns_def(io_ns, "remove", lcl_c_proc_new("io::remove", c_io_remove));
+  lcl_ns_def(io_ns, "rename", lcl_c_proc_new("io::rename", c_io_rename));
+  lcl_ns_def(io_ns, "copy", lcl_c_proc_new("io::copy", c_io_copy));
+
+  /* File/directory info */
+  lcl_ns_def(io_ns, "exists?", lcl_c_proc_new("io::exists?", c_io_exists));
+  lcl_ns_def(io_ns, "file?", lcl_c_proc_new("io::file?", c_io_is_file));
+  lcl_ns_def(io_ns, "dir?", lcl_c_proc_new("io::dir?", c_io_is_dir));
+  lcl_ns_def(io_ns, "file_size", lcl_c_proc_new("io::file_size", c_io_file_size));
+  lcl_ns_def(io_ns, "file_mtime", lcl_c_proc_new("io::file_mtime", c_io_file_mtime));
+
+  /* Working directory */
+  lcl_ns_def(io_ns, "getcwd", lcl_c_proc_new("io::getcwd", c_io_getcwd));
+  lcl_ns_def(io_ns, "chdir", lcl_c_proc_new("io::chdir", c_io_chdir));
 }

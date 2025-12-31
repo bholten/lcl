@@ -1538,5 +1538,154 @@ let sn_roundtrip [String::join [String::split $sn_original " "] " "]
 puts $sn_roundtrip                   ;# expect: hello world test
 assert {== $sn_roundtrip $sn_original}
 
+# String::length - get string length
+puts [String::length hello]          ;# expect: 5
+assert {== [String::length hello] 5}
+puts [String::length {}]             ;# expect: 0
+assert {== [String::length {}] 0}
+puts [String::length "hello world"]  ;# expect: 11
+assert {== [String::length "hello world"] 11}
+
+# String::index - get character at index
+puts [String::index hello 0]         ;# expect: h
+assert {== [String::index hello 0] h}
+puts [String::index hello 4]         ;# expect: o
+assert {== [String::index hello 4] o}
+puts [String::index hello 2]         ;# expect: l
+assert {== [String::index hello 2] l}
+
+# String::index - negative index (from end)
+puts [String::index hello -1]        ;# expect: o
+assert {== [String::index hello -1] o}
+puts [String::index hello -2]        ;# expect: l
+assert {== [String::index hello -2] l}
+
+# String::range - extract substring [start, end)
+puts [String::range hello 1 4]       ;# expect: ell
+assert {== [String::range hello 1 4] ell}
+puts [String::range hello 0 2]       ;# expect: he
+assert {== [String::range hello 0 2] he}
+puts [String::range hello 3 5]       ;# expect: lo
+assert {== [String::range hello 3 5] lo}
+
+# String::range - negative indices
+puts [String::range hello 0 -1]      ;# expect: hell (up to but not including last)
+assert {== [String::range hello 0 -1] hell}
+puts [String::range hello -3 -1]     ;# expect: ll
+assert {== [String::range hello -3 -1] ll}
+
+# String::trim - remove leading/trailing whitespace
+puts [String::trim "  hello  "]      ;# expect: hello
+assert {== [String::trim "  hello  "] hello}
+puts [String::trim "\thello\n"]      ;# expect: hello
+assert {== [String::trim "\thello\n"] hello}
+puts [String::trim hello]            ;# expect: hello (no change)
+assert {== [String::trim hello] hello}
+puts [String::trim "   "]            ;# expect: (empty)
+assert {== [String::trim "   "] {}}
+
+puts ""
+puts "-- List:: additional functions --"
+
+# List::sort - lexicographic sort
+let ls_unsorted [list banana apple cherry]
+let ls_sorted [List::sort $ls_unsorted]
+puts $ls_sorted                      ;# expect: apple banana cherry
+assert {== [get $ls_sorted 0] apple}
+assert {== [get $ls_sorted 1] banana}
+assert {== [get $ls_sorted 2] cherry}
+
+# List::sort - numbers sorted as strings
+let ls_nums [list 10 2 1 20]
+let ls_nums_sorted [List::sort $ls_nums]
+puts $ls_nums_sorted                 ;# expect: 1 10 2 20 (string order)
+assert {== [get $ls_nums_sorted 0] 1}
+assert {== [get $ls_nums_sorted 1] 10}
+
+# List::sort - empty list
+let ls_empty_sort [List::sort [list]]
+assert {== [len $ls_empty_sort] 0}
+
+# List::sort_by - sort with custom comparator
+let ls_nums2 [list 10 2 5 1 20]
+let ls_cmp [lambda {a b} { if [< $a $b] { return -1 }; if [> $a $b] { return 1 }; return 0 }]
+let ls_numeric_sorted [List::sort_by $ls_cmp $ls_nums2]
+puts $ls_numeric_sorted              ;# expect: 1 2 5 10 20
+assert {== [get $ls_numeric_sorted 0] 1}
+assert {== [get $ls_numeric_sorted 1] 2}
+assert {== [get $ls_numeric_sorted 2] 5}
+assert {== [get $ls_numeric_sorted 3] 10}
+assert {== [get $ls_numeric_sorted 4] 20}
+
+# List::sort_by - descending order
+let ls_desc_cmp [lambda {a b} { if [> $a $b] { return -1 }; if [< $a $b] { return 1 }; return 0 }]
+let ls_desc_sorted [List::sort_by $ls_desc_cmp $ls_nums2]
+puts $ls_desc_sorted                 ;# expect: 20 10 5 2 1
+assert {== [get $ls_desc_sorted 0] 20}
+assert {== [get $ls_desc_sorted 4] 1}
+
+# List::find - find first element matching predicate
+let ls_find_lst [list 1 5 10 15 20]
+let ls_found [List::find [lambda {x} {> $x 8}] $ls_find_lst]
+puts $ls_found                       ;# expect: 10
+assert {== $ls_found 10}
+
+# List::find - returns empty when not found
+let ls_not_found [List::find [lambda {x} {> $x 100}] $ls_find_lst]
+assert {empty? $ls_not_found}
+
+# List::any - check if any element matches
+assert [List::any? [lambda {x} {> $x 15}] $ls_find_lst]
+assert [not [List::any? [lambda {x} {> $x 100}] $ls_find_lst]]
+
+# List::any - empty list returns false
+assert [not [List::any? [lambda {x} {== $x 1}] [list]]]
+
+# List::all - check if all elements match
+let ls_all_pos [list 1 2 3 4 5]
+assert [List::all? [lambda {x} {> $x 0}] $ls_all_pos]
+assert [not [List::all? [lambda {x} {> $x 3}] $ls_all_pos]]
+
+# List::all - empty list returns true (vacuous truth)
+assert [List::all? [lambda {x} {== $x impossible}] [list]]
+
+# List::unique - remove duplicates
+let ls_dupes [list a b a c b d a]
+let ls_unique [List::unique $ls_dupes]
+puts $ls_unique                      ;# expect: a b c d
+assert {== [len $ls_unique] 4}
+
+# List::unique - preserves order of first occurrence
+assert {== [get $ls_unique 0] a}
+assert {== [get $ls_unique 1] b}
+assert {== [get $ls_unique 2] c}
+assert {== [get $ls_unique 3] d}
+
+# List::unique - already unique list unchanged
+let ls_already_unique [list x y z]
+assert {== [List::unique $ls_already_unique] $ls_already_unique}
+
+# List::flatten - flatten nested lists
+let ls_nested [list [list 1 2] [list 3 4] 5]
+let ls_flat [List::flatten $ls_nested]
+puts $ls_flat                        ;# expect: 1 2 3 4 5
+assert {== [len $ls_flat] 5}
+assert {== [get $ls_flat 0] 1}
+assert {== [get $ls_flat 2] 3}
+assert {== [get $ls_flat 4] 5}
+
+# List::flatten - already flat list unchanged
+let ls_already_flat [list a b c]
+assert {== [List::flatten $ls_already_flat] $ls_already_flat}
+
+# List::flatten - empty list
+assert {== [len [List::flatten [list]]] 0}
+
+# List::flatten - only one level deep
+let ls_deep [list [list [list a b]]]
+let ls_flat_deep [List::flatten $ls_deep]
+puts [len $ls_flat_deep]             ;# expect: 1 (the inner [list a b])
+assert {== [len $ls_flat_deep] 1}
+
 puts ""
 puts "=== Done ==="
