@@ -165,29 +165,94 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
   return LCL_OK;
 }
 
-lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
-  if (!env) return LCL_ERROR;
+/* Helper: try set! on a cell in the frame chain (simple name) */
+static lcl_result env_set_bang_simple(lcl_env *env, const char *name, lcl_value *value) {
+  lcl_frame *f = env->frame;
 
-  {
-    lcl_frame *f = env->frame;
+  while (f) {
+    lcl_value *b = NULL;
 
-    while (f) {
-      lcl_value *b = NULL;
-
-      if (hash_table_get(f->locals, name, &b)) {
-        if (b->type == LCL_CELL) {
-          lcl_result r = lcl_cell_set(b, value);
-          lcl_ref_dec(b);
-          return r;
-        }
-
+    if (hash_table_get(f->locals, name, &b)) {
+      if (b->type == LCL_CELL) {
+        lcl_result r = lcl_cell_set(b, value);
         lcl_ref_dec(b);
-        return LCL_ERROR;
+        return r;
       }
 
-      f = f->parent;
+      lcl_ref_dec(b);
+      return LCL_ERROR;
     }
 
+    f = f->parent;
+  }
+
+  return LCL_ERROR;
+}
+
+lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
+  char first[256];
+  const char *rest = NULL;
+  lcl_value *current = NULL;
+
+  if (!env) return LCL_ERROR;
+
+  /* First try simple lookup in frame chain */
+  if (env_set_bang_simple(env, name, value) == LCL_OK) {
+    return LCL_OK;
+  }
+
+  /* Check for qualified name (contains ::) */
+  if (!lcl_ns_split(name, first, sizeof(first), &rest)) {
+    /* No ::, simple lookup already failed */
     return LCL_ERROR;
   }
+
+  /* Look up first part in env */
+  if (env_get_simple(env, first, &current) != LCL_OK) {
+    return LCL_ERROR;
+  }
+
+  /* Walk through qualified path until we reach the final part */
+  while (rest && *rest) {
+    lcl_value *next = NULL;
+    char part[256];
+    const char *next_rest = NULL;
+
+    if (current->type != LCL_NAMESPACE) {
+      lcl_ref_dec(current);
+      return LCL_ERROR;
+    }
+
+    /* Try to split rest into part::next_rest */
+    if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
+      /* More parts to go - keep walking */
+      if (lcl_ns_get(current, part, &next) != LCL_OK) {
+        lcl_ref_dec(current);
+        return LCL_ERROR;
+      }
+      lcl_ref_dec(current);
+      current = next;
+      rest = next_rest;
+    } else {
+      /* rest is the final part - look it up and set! if it's a cell */
+      if (lcl_ns_get(current, rest, &next) != LCL_OK) {
+        lcl_ref_dec(current);
+        return LCL_ERROR;
+      }
+      lcl_ref_dec(current);
+
+      if (next->type == LCL_CELL) {
+        lcl_result r = lcl_cell_set(next, value);
+        lcl_ref_dec(next);
+        return r;
+      }
+
+      lcl_ref_dec(next);
+      return LCL_ERROR;
+    }
+  }
+
+  /* Shouldn't reach here normally */
+  lcl_ref_dec(current);
+  return LCL_ERROR;
 }
