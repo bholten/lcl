@@ -1,9 +1,9 @@
 # curl:: Package Tests
 # Requires the mock server to be running: docker-compose up -d
 # Run with an LCL interpreter that has the curl extension loaded
-
-# Load test framework - adjust path based on how tests are run
-load lib/Test.lcl
+#
+# Test framework (Test::suite, Test::case, etc.) is embedded when built
+# with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
 
 # ============================================================================
 # CURL Initialization

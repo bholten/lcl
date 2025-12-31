@@ -6,13 +6,20 @@ SRCS = src/hash-table.c src/lcl-api.c src/lcl-cell.c src/lcl-command.c \
        src/lcl-scan.c src/lcl-stdlib.c src/lcl-str.c src/lcl-string.c \
        src/lcl-word.c src/str-compat.c
 
-.PHONY: debug test clean
+.PHONY: debug debug-test test clean test-framework
 
 lcl: $(SRCS) src/lcl-main.c
 	gcc $(CFLAGS) -O2 -o lcl $(SRCS) src/lcl-main.c
 
 debug: $(SRCS) src/lcl-main.c
 	gcc $(CFLAGS) -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -o lcl $(SRCS) src/lcl-main.c
+
+# Build with embedded Test framework (Test::suite, Test::case, etc.)
+src/test-framework-data.h: lib/Test.lcl
+	xxd -i lib/Test.lcl > src/test-framework-data.h
+
+debug-test: src/test-framework-data.h $(SRCS) src/lcl-main.c
+	gcc $(CFLAGS) -Isrc -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DLCL_HAVE_TEST -o lcl-test $(SRCS) src/lcl-main.c
 
 test: $(SRCS) test/lcl-test.c
 	gcc $(CFLAGS) -Isrc -O0 -g -fsanitize=address,undefined -fno-omit-frame-pointer -DLCL_TEST -DDEBUG_REFC -o lcl-test $(SRCS) test/lcl-test.c

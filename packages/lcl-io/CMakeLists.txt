@@ -50,10 +50,33 @@ target_link_libraries(lcl_io
 # Standalone build: create test executable
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   option(LCL_IO_BUILD_TESTS "Build test executable" ON)
+  option(LCL_IO_EMBED_TEST_FRAMEWORK "Embed Test framework in test executable" ON)
 
   if(LCL_IO_BUILD_TESTS)
-    add_executable(lcl-curl-test src/lcl-test.c)
-    target_link_libraries(lcl-curl-test PRIVATE lcl_io lcl::lcl libcurl)
+    add_executable(lcl-io-test src/lcl-test.c)
+    target_link_libraries(lcl-io-test PRIVATE lcl_io lcl::lcl)
+
+    if(LCL_IO_EMBED_TEST_FRAMEWORK)
+      # Generate test-framework-data.h from Test.lcl using xxd
+      find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+      set(TEST_FRAMEWORK_SRC ${lcl_SOURCE_DIR}/lib/Test.lcl)
+      set(TEST_FRAMEWORK_DATA ${CMAKE_CURRENT_BINARY_DIR}/test-framework-data.h)
+
+      add_custom_command(
+        OUTPUT ${TEST_FRAMEWORK_DATA}
+        COMMAND ${XXD_EXECUTABLE} -i lib/Test.lcl > ${TEST_FRAMEWORK_DATA}
+        WORKING_DIRECTORY ${lcl_SOURCE_DIR}
+        DEPENDS ${TEST_FRAMEWORK_SRC}
+        COMMENT "Generating test-framework-data.h from Test.lcl"
+      )
+
+      add_custom_target(generate_test_framework_data DEPENDS ${TEST_FRAMEWORK_DATA})
+      add_dependencies(lcl-io-test generate_test_framework_data)
+
+      target_include_directories(lcl-io-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+      target_compile_definitions(lcl-io-test PRIVATE LCL_HAVE_TEST)
+    endif()
   endif()
 
   # Installation rules for standalone build
