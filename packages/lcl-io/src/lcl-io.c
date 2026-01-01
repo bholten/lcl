@@ -59,7 +59,8 @@ static char *read_file(const char *path) {
   return buf;
 }
 
-int c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
   const char *filename;
   const char *file_perm;
   FILE *handle;
@@ -85,7 +86,8 @@ int c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
   return LCL_RC_OK;
 }
 
-int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   FILE *handle = NULL;
   (void)interp;
 
@@ -93,7 +95,8 @@ int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **
     return LCL_RC_ERR;
   }
 
-  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
+      LCL_OK) {
     return LCL_RC_ERR;
   }
 
@@ -115,7 +118,8 @@ int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **
   return LCL_RC_OK;
 }
 
-int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   FILE *handle = NULL;
   long buff_size;
   char *buff;
@@ -131,7 +135,8 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
     return LCL_RC_ERR;
   }
 
-  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
+      LCL_OK) {
     return LCL_RC_ERR;
   }
 
@@ -152,7 +157,8 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
-int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   FILE *handle = NULL;
   const char *str;
 
@@ -162,7 +168,8 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
     return LCL_RC_ERR;
   }
 
-  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
+      LCL_OK) {
     return LCL_RC_ERR;
   }
 
@@ -180,7 +187,8 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
-int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
   char *contents = NULL;
   const char *path;
 
@@ -205,7 +213,8 @@ int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
   return LCL_RC_OK;
 }
 
-int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   const char *path;
   const char *contents;
   size_t len;
@@ -236,7 +245,8 @@ int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **
   return LCL_RC_OK;
 }
 
-int c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -245,7 +255,8 @@ int c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
   return LCL_RC_OK;
 }
 
-int c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -254,7 +265,8 @@ int c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
   return LCL_RC_OK;
 }
 
-int c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -263,7 +275,8 @@ int c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
-int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   FILE *handle = NULL;
 
   (void)interp;
@@ -272,7 +285,8 @@ int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
     return LCL_RC_ERR;
   }
 
-  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void**)&handle) != LCL_OK) {
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
+      LCL_OK) {
     return LCL_RC_ERR;
   }
 
@@ -288,7 +302,8 @@ int c_io_flush(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
   return LCL_RC_OK;
 }
 
-int c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   const char *env;
   const char *env_val;
   (void)interp;
@@ -345,7 +360,8 @@ int c_io_glob(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* io::mkdir path ?mode? - create directory with optional mode (default 0755) */
-int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   const char *path;
   long mode = 0755;
   (void)interp;
@@ -371,7 +387,8 @@ int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
 }
 
 /* io::rmdir path - remove empty directory */
-int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   const char *path;
   (void)interp;
 
@@ -390,7 +407,8 @@ int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
 }
 
 /* io::remove path - remove file */
-int c_io_remove(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   const char *path;
   (void)interp;
 
@@ -409,7 +427,8 @@ int c_io_remove(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
 }
 
 /* io::rename old new - rename/move file or directory */
-int c_io_rename(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   const char *old_path;
   const char *new_path;
   (void)interp;
@@ -430,7 +449,8 @@ int c_io_rename(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
 }
 
 /* io::exists? path - check if file or directory exists */
-int c_io_exists(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_exists(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   const char *path;
   struct stat st;
   (void)interp;
@@ -451,7 +471,8 @@ int c_io_exists(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
 }
 
 /* io::is_file? path - check if path is a regular file */
-int c_io_is_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_is_file(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   const char *path;
   struct stat st;
   (void)interp;
@@ -472,7 +493,8 @@ int c_io_is_file(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
 }
 
 /* io::is_dir? path - check if path is a directory */
-int c_io_is_dir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_is_dir(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   const char *path;
   struct stat st;
   (void)interp;
@@ -493,7 +515,8 @@ int c_io_is_dir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
 }
 
 /* io::file_size path - get file size in bytes */
-int c_io_file_size(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_file_size(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
   const char *path;
   struct stat st;
   (void)interp;
@@ -513,7 +536,8 @@ int c_io_file_size(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **o
 }
 
 /* io::readdir path - list directory contents */
-int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   const char *path;
   DIR *dir;
   struct dirent *entry;
@@ -550,7 +574,8 @@ int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out
 }
 
 /* io::getcwd - get current working directory */
-int c_io_getcwd(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_getcwd(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   char *cwd;
   char buf[4096];
   (void)interp;
@@ -568,7 +593,8 @@ int c_io_getcwd(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
 }
 
 /* io::chdir path - change current working directory */
-int c_io_chdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_chdir(lcl_interp *interp, int argc, lcl_value **argv,
+               lcl_value **out) {
   const char *path;
   (void)interp;
 
@@ -587,7 +613,8 @@ int c_io_chdir(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) 
 }
 
 /* io::file_mtime path - get file modification time (Unix timestamp) */
-int c_io_file_mtime(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+int c_io_file_mtime(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   const char *path;
   struct stat st;
   (void)interp;
@@ -652,12 +679,16 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_value *io_ns = lcl_ns_new(IO_NS);
   lcl_define_take(interp, IO_NS, io_ns);
 
-  lcl_ns_def(io_ns, "open_file", lcl_c_proc_new("io::open_file", c_io_open_file));
-  lcl_ns_def(io_ns, "close_file", lcl_c_proc_new("io::close_file", c_io_close_file));
+  lcl_ns_def(io_ns, "open_file",
+             lcl_c_proc_new("io::open_file", c_io_open_file));
+  lcl_ns_def(io_ns, "close_file",
+             lcl_c_proc_new("io::close_file", c_io_close_file));
   lcl_ns_def(io_ns, "fgets", lcl_c_proc_new("io::fgets", c_io_fgets));
   lcl_ns_def(io_ns, "fputs", lcl_c_proc_new("io::fputs", c_io_fputs));
-  lcl_ns_def(io_ns, "read_file", lcl_c_proc_new("io::read_file", c_io_read_file));
-  lcl_ns_def(io_ns, "write_file", lcl_c_proc_new("io::write_file", c_io_write_file));
+  lcl_ns_def(io_ns, "read_file",
+             lcl_c_proc_new("io::read_file", c_io_read_file));
+  lcl_ns_def(io_ns, "write_file",
+             lcl_c_proc_new("io::write_file", c_io_write_file));
   lcl_ns_def(io_ns, "stdout", lcl_c_proc_new("io::stdout", c_io_stdout));
   lcl_ns_def(io_ns, "stderr", lcl_c_proc_new("io::stderr", c_io_stderr));
   lcl_ns_def(io_ns, "stdin", lcl_c_proc_new("io::stdin", c_io_stdin));
@@ -679,8 +710,10 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_ns_def(io_ns, "exists?", lcl_c_proc_new("io::exists?", c_io_exists));
   lcl_ns_def(io_ns, "file?", lcl_c_proc_new("io::file?", c_io_is_file));
   lcl_ns_def(io_ns, "dir?", lcl_c_proc_new("io::dir?", c_io_is_dir));
-  lcl_ns_def(io_ns, "file_size", lcl_c_proc_new("io::file_size", c_io_file_size));
-  lcl_ns_def(io_ns, "file_mtime", lcl_c_proc_new("io::file_mtime", c_io_file_mtime));
+  lcl_ns_def(io_ns, "file_size",
+             lcl_c_proc_new("io::file_size", c_io_file_size));
+  lcl_ns_def(io_ns, "file_mtime",
+             lcl_c_proc_new("io::file_mtime", c_io_file_mtime));
 
   /* Working directory */
   lcl_ns_def(io_ns, "getcwd", lcl_c_proc_new("io::getcwd", c_io_getcwd));

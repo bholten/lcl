@@ -27,7 +27,8 @@ extern "C" {
 
 /* ============================================================================
  * Opaque Types
- * ============================================================================ */
+ * ============================================================================
+ */
 
 typedef struct lcl_interp lcl_interp;
 typedef struct lcl_value lcl_value;
@@ -35,13 +36,11 @@ typedef struct lcl_frame lcl_frame;
 
 /* ============================================================================
  * Result Types
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /* Result for simple operations */
-typedef enum {
-  LCL_OK = 0,
-  LCL_ERROR = 1
-} lcl_result;
+typedef enum { LCL_OK = 0, LCL_ERROR = 1 } lcl_result;
 
 /* Return code for evaluation (includes control flow) */
 typedef enum {
@@ -54,7 +53,8 @@ typedef enum {
 
 /* ============================================================================
  * Interpreter Lifecycle
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Create a new LCL interpreter.
@@ -94,7 +94,8 @@ void *lcl_interp_get_user_data(lcl_interp *interp);
 
 /* ============================================================================
  * Evaluation
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Evaluate a string of LCL code.
@@ -123,7 +124,8 @@ int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out);
 
 /* ============================================================================
  * Error Information
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Get the file where an error occurred.
@@ -168,7 +170,8 @@ void lcl_clear_error(lcl_interp *interp);
  * from an lcl_* function (via an out parameter), you own a reference and
  * must call lcl_ref_dec when done. Use lcl_ref_inc to create additional
  * references.
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Increment the reference count of a value.
@@ -183,11 +186,34 @@ lcl_value *lcl_ref_inc(lcl_value *value);
 void lcl_ref_dec(lcl_value *value);
 
 /* ============================================================================
+ * Value introspection
+ *
+ * All lcl_value pointers store a value of a specific LCL_TYPE.
+ * ============================================================================
+ */
+
+typedef enum lcl_type {
+  LCL_STRING,
+  LCL_INT,
+  LCL_FLOAT,
+  LCL_LIST,
+  LCL_DICT,
+  LCL_CELL,
+  LCL_PROC,
+  LCL_CPROC,
+  LCL_NAMESPACE,
+  LCL_OPAQUE
+} lcl_type;
+
+lcl_type lcl_value_type_of(const lcl_value *value);
+
+/* ============================================================================
  * Value Creation
  *
  * All lcl_*_new functions return a value with refcount 1.
  * Returns NULL on allocation failure.
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Create a new string value.
@@ -216,7 +242,8 @@ lcl_value *lcl_ns_new(const char *name);
 
 /* ============================================================================
  * Value Access
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Get the string representation of any value.
@@ -238,7 +265,8 @@ lcl_result lcl_value_to_float(lcl_value *value, float *out);
 
 /* ============================================================================
  * List Operations
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Get the length of a list.
@@ -260,17 +288,24 @@ lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
 
 /* ============================================================================
  * Dictionary Operations
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
- * Get the number of pairs of a dictary.
+ * Create a new empty dictionary.
+ */
+lcl_value *lcl_dict_new(void);
+
+/*
+ * Get the number of pairs of a dictionary.
  */
 size_t lcl_dict_len(const lcl_value *dict);
 
 /*
  * Get an item from a dictionary by key.
  */
-lcl_result lcl_dict_get(const lcl_value *dict, const char *key, lcl_value **out);;
+lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
+                        lcl_value **out);
 
 /*
  * Puts a value into a dictionary with key.
@@ -282,9 +317,26 @@ lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
  */
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
 
+/*
+ * Get all keys from a dictionary as a list.
+ */
+lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
+
+/* ============================================================================
+ * Cell Operations
+ * ============================================================================
+ */
+
+/*
+ * Get the contents of a cell (mutable reference).
+ * Returns the value with +1 refcount.
+ */
+lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
+
 /* ============================================================================
  * Namespace Operations
- * ============================================================================ */
+ * ============================================================================
+ */
 
 lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
@@ -292,7 +344,8 @@ lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
 
 /* ============================================================================
  * Variable/Definition Access
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Define a value in the interpreter's current scope.
@@ -304,7 +357,8 @@ lcl_result lcl_define(lcl_interp *interp, const char *name, lcl_value *value);
  * Define a value in the interpreter's current scope (takes ownership).
  * The value's refcount is NOT incremented (caller's ref is transferred).
  */
-lcl_result lcl_define_take(lcl_interp *interp, const char *name, lcl_value *value);
+lcl_result lcl_define_take(lcl_interp *interp, const char *name,
+                           lcl_value *value);
 
 /*
  * Get a value from the interpreter by name.
@@ -324,7 +378,8 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
  * 2. Special forms (lcl_c_spec_fn): Arguments are passed as raw, unevaluated
  *    words. Use this for control structures that need to control evaluation,
  *    like "if", "while", "lambda", etc. Most extensions won't need this.
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Function signature for normal C procedures.
@@ -337,9 +392,7 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
  *
  * Return LCL_RC_OK on success, LCL_RC_ERR on error.
  */
-typedef int (*lcl_c_proc_fn)(lcl_interp *interp,
-                             int argc,
-                             lcl_value **argv,
+typedef int (*lcl_c_proc_fn)(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out);
 
 /*
@@ -353,10 +406,8 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
  * This is the primary way to extend LCL with C functions.
  *
  * Example:
- *   int my_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
- *       long a, b;
- *       if (argc != 2) return LCL_RC_ERR;
- *       lcl_value_to_int(argv[0], &a);
+ *   int my_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
+ * { long a, b; if (argc != 2) return LCL_RC_ERR; lcl_value_to_int(argv[0], &a);
  *       lcl_value_to_int(argv[1], &b);
  *       *out = lcl_int_new(a + b);
  *       return LCL_RC_OK;
@@ -364,7 +415,8 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
  *
  *   lcl_register_proc(interp, "my-add", my_add);
  */
-lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn fn);
+lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
+                             lcl_c_proc_fn fn);
 
 /* ============================================================================
  * Special Forms (Advanced)
@@ -372,7 +424,8 @@ lcl_result lcl_register_proc(lcl_interp *interp, const char *name, lcl_c_proc_fn
  * Special forms receive unevaluated arguments and control their own evaluation.
  * This is an advanced feature for implementing control structures.
  * Most C extensions should use lcl_register_proc() instead.
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /* Opaque type for unevaluated words (used by special forms) */
 typedef struct lcl_word lcl_word;
@@ -388,10 +441,8 @@ typedef struct lcl_word lcl_word;
  *
  * Special forms must evaluate their arguments manually using lcl_eval_word().
  */
-typedef int (*lcl_c_spec_fn)(lcl_interp *interp,
-                             int argc,
-                             const lcl_word **args,
-                             lcl_value **out);
+typedef int (*lcl_c_spec_fn)(lcl_interp *interp, int argc,
+                             const lcl_word **args, lcl_value **out);
 
 /*
  * Create a special form value.
@@ -401,13 +452,15 @@ lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);
 /*
  * Register a special form in the interpreter's global scope.
  */
-lcl_result lcl_register_spec(lcl_interp *interp, const char *name, lcl_c_spec_fn fn);
+lcl_result lcl_register_spec(lcl_interp *interp, const char *name,
+                             lcl_c_spec_fn fn);
 
 /*
  * Evaluate an unevaluated word to a value.
  * Used by special forms to selectively evaluate their arguments.
  */
-lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word, lcl_value **out);
+lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word,
+                              lcl_value **out);
 
 /* ============================================================================
  * Calling LCL Procedures from C
@@ -418,14 +471,10 @@ lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word, lcl_valu
  *
  * Example (CURL write callback):
  *
- *   size_t curl_write_wrapper(char *ptr, size_t size, size_t n, void *userdata) {
- *       struct curl_ctx *ctx = userdata;
- *       lcl_value *args[1];
- *       lcl_value *result = NULL;
- *       size_t bytes = size * n;
- *       char *data = malloc(bytes + 1);
- *       memcpy(data, ptr, bytes);
- *       data[bytes] = '\0';
+ *   size_t curl_write_wrapper(char *ptr, size_t size, size_t n, void *userdata)
+ * { struct curl_ctx *ctx = userdata; lcl_value *args[1]; lcl_value *result =
+ * NULL; size_t bytes = size * n; char *data = malloc(bytes + 1); memcpy(data,
+ * ptr, bytes); data[bytes] = '\0';
  *
  *       args[0] = lcl_string_new(data);
  *       free(data);
@@ -434,7 +483,8 @@ lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word, lcl_valu
  *       lcl_ref_dec(args[0]);
  *       return bytes;
  *   }
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Check if a value is callable (user procedure or C procedure).
@@ -460,11 +510,8 @@ int lcl_is_callable(lcl_value *value);
  *   - Decrementing argument refcounts after the call
  *   - Decrementing the result refcount when done
  */
-lcl_return_code lcl_call_proc(lcl_interp *interp,
-                              lcl_value *proc,
-                              int argc,
-                              lcl_value **argv,
-                              lcl_value **out);
+lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
+                              lcl_value **argv, lcl_value **out);
 
 /* ============================================================================
  * Opaque Values (C Extension Data)
@@ -495,7 +542,8 @@ lcl_return_code lcl_call_proc(lcl_interp *interp,
  *       curl_easy_setopt(ctx->curl, CURLOPT_URL, ...);
  *       ...
  *   }
- * ============================================================================ */
+ * ============================================================================
+ */
 
 /*
  * Finalizer function type - called when opaque value refcount reaches 0.
@@ -513,7 +561,8 @@ typedef void (*lcl_finalizer)(void *ptr);
  * Returns a new value with refcount 1, or NULL on allocation failure.
  * The type_tag string is copied internally.
  */
-lcl_value *lcl_opaque_new(void *ptr, const char *type_tag, lcl_finalizer finalizer);
+lcl_value *lcl_opaque_new(void *ptr, const char *type_tag,
+                          lcl_finalizer finalizer);
 
 /*
  * Extract a C pointer from an opaque value with type checking.
@@ -526,7 +575,8 @@ lcl_value *lcl_opaque_new(void *ptr, const char *type_tag, lcl_finalizer finaliz
  * Returns LCL_OK on success, LCL_ERROR if value is not an opaque
  * or if expected_type doesn't match the value's type_tag.
  */
-lcl_result lcl_opaque_get(lcl_value *value, const char *expected_type, void **out);
+lcl_result lcl_opaque_get(lcl_value *value, const char *expected_type,
+                          void **out);
 
 /*
  * Get the type tag of an opaque value.
@@ -539,7 +589,8 @@ const char *lcl_opaque_type(lcl_value *value);
  *
  * Frames are used internally for lexical scoping. You typically don't need
  * these unless implementing advanced features like closures from C.
- * ============================================================================ */
+ * ============================================================================
+ */
 
 lcl_frame *lcl_frame_ref_inc(lcl_frame *f);
 void lcl_frame_ref_dec(lcl_frame *f);

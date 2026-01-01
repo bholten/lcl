@@ -15,6 +15,7 @@ option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
 # Optional packages
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
 option(LCL_BUILD_IO "Build Lcl IO extension library" OFF)
+option(LCL_BUILD_JSON "Build Lcl with JSON library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -138,7 +139,6 @@ endif()
 if(LCL_BUILD_IO)
   add_subdirectory(packages/lcl-io)
 
-  # Add compile definition for conditional compilation
   if(LCL_BUILD_SHARED)
     target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_IO)
   endif()
@@ -146,10 +146,25 @@ if(LCL_BUILD_IO)
     target_compile_definitions(lcl_static PUBLIC LCL_HAVE_IO)
   endif()
 
-  # Link CLI against curl package
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_IO)
     target_link_libraries(lcl-cli PRIVATE lcl_io)
+  endif()
+endif()
+
+if(LCL_BUILD_JSON)
+  add_subdirectory(packages/lcl-json)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_JSON)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_JSON)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_JSON)
+    target_link_libraries(lcl-cli PRIVATE lcl_json)
   endif()
 endif()
 
