@@ -183,6 +183,27 @@ lcl_value *lcl_ref_inc(lcl_value *value);
 void lcl_ref_dec(lcl_value *value);
 
 /* ============================================================================
+ * Value introspection
+ *
+ * All lcl_value pointers store a value of a specific LCL_TYPE.
+ * ============================================================================ */
+
+  typedef enum lcl_type {
+    LCL_STRING,
+    LCL_INT,
+    LCL_FLOAT,
+    LCL_LIST,
+    LCL_DICT,
+    LCL_CELL,
+    LCL_PROC,
+    LCL_CPROC,
+    LCL_NAMESPACE,
+    LCL_OPAQUE
+  } lcl_type;
+
+  lcl_type lcl_value_type_of(const lcl_value *value);
+
+/* ============================================================================
  * Value Creation
  *
  * All lcl_*_new functions return a value with refcount 1.
@@ -263,14 +284,19 @@ lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
  * ============================================================================ */
 
 /*
- * Get the number of pairs of a dictary.
+ * Create a new empty dictionary.
+ */
+lcl_value *lcl_dict_new(void);
+
+/*
+ * Get the number of pairs of a dictionary.
  */
 size_t lcl_dict_len(const lcl_value *dict);
 
 /*
  * Get an item from a dictionary by key.
  */
-lcl_result lcl_dict_get(const lcl_value *dict, const char *key, lcl_value **out);;
+lcl_result lcl_dict_get(const lcl_value *dict, const char *key, lcl_value **out);
 
 /*
  * Puts a value into a dictionary with key.
@@ -281,6 +307,21 @@ lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
  * Deletes a value into a dictionary with key.
  */
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
+
+/*
+ * Get all keys from a dictionary as a list.
+ */
+lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
+
+/* ============================================================================
+ * Cell Operations
+ * ============================================================================ */
+
+/*
+ * Get the contents of a cell (mutable reference).
+ * Returns the value with +1 refcount.
+ */
+lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
 
 /* ============================================================================
  * Namespace Operations

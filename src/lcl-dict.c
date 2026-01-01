@@ -105,7 +105,40 @@ lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
   hit.i = it->i;
 
   found = hash_table_iterate(dict->as.dict.dictionary, &hit, key, value);
-  it->i = hit.i; /* Save iterator position */
+  it->i = hit.i;
 
   return found ? LCL_OK : LCL_ERROR;
+}
+
+lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out) {
+  lcl_value *list;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *value;
+
+  if (dict->type != LCL_DICT) return LCL_ERROR;
+
+  list = lcl_list_new();
+  if (!list) return LCL_ERROR;
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &value)) {
+    lcl_value *key_val = lcl_string_new(key);
+    lcl_ref_dec(value); /* bugfix: hash_table_iterate increments refcount */
+
+    if (!key_val) {
+      lcl_ref_dec(list);
+      return LCL_ERROR;
+    }
+
+    if (lcl_list_push(&list, key_val) != LCL_OK) {
+      lcl_ref_dec(key_val);
+      lcl_ref_dec(list);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(key_val);
+  }
+
+  *out = list;
+  return LCL_OK;
 }

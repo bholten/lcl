@@ -14,6 +14,10 @@
 #include <lcl-io.h>
 #endif
 
+#ifdef LCL_HAVE_JSON
+void lcl_register_json(lcl_interp *interp);
+#endif
+
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
@@ -70,6 +74,10 @@ int main(int argc, char **argv) {
 
 #ifdef LCL_HAVE_IO
   lcl_register_io(interp);
+#endif
+
+#ifdef LCL_HAVE_JSON
+  lcl_register_json(interp);
 #endif
 
 #ifdef LCL_HAVE_TEST

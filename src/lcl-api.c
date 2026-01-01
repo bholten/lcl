@@ -12,7 +12,6 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
-/* Helper: read entire file into a malloc'd string */
 static char *api_read_file(const char *path) {
   FILE *f;
   long len;
@@ -54,6 +53,15 @@ static char *api_read_file(const char *path) {
 
   buf[len] = '\0';
   return buf;
+}
+
+/* ============================================================================
+ * Type information
+ * ============================================================================
+ */
+
+lcl_type lcl_value_type_of(const lcl_value *value) {
+  return value->type;
 }
 
 /* ============================================================================

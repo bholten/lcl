@@ -1,0 +1,64 @@
+# Testing lcl-json
+# Requires:
+# -DBUILD_JSON
+# -DBUILD_TESTS
+
+Test::suite "Load JSON" {
+    Test::case "null values" {
+        let j {{"value": null}}
+        let decoded [json::decode $j]
+        let v [get $decoded value]
+        Test::eq [json::null? $v] 1
+    }
+
+    Test::case "boolean predicates" {
+        let j {{"t": true, "f": false}}
+        let decoded [json::decode $j]
+        Test::eq [json::bool? [get $decoded t]] 1
+        Test::eq [json::bool? [get $decoded f]] 1
+        Test::eq [json::null? [get $decoded t]] 0
+    }
+
+    Test::case "empty structures" {
+        Test::eq [json::encode [json::decode {{}}]] {{}}
+        Test::eq [json::encode [json::decode {[]}]] {[]}
+    }
+
+    Test::case "direct bool/null creation" {
+        let d [dict flag [json::true] empty [json::null]]
+        let encoded [json::encode $d]
+        let decoded [json::decode $encoded]
+        Test::eq [json::bool? [get $decoded flag]] 1
+        Test::eq [json::null? [get $decoded empty]] 1
+    }
+
+    Test::case "roundtrip JSON decode -> encode -> decode -> encode" {
+        let j {
+            {
+                "user": "Brennan",
+                "dogs": [ "Ted", "Yag" ],
+                "nested": {
+                    "name": "Foo",
+                    "b": false,
+                    "bar": {
+                        "number": 1,
+                        "float": 2.4,
+                        "nested_again": {
+                            "name2": "ABCD",
+                            "list_of_nums": [1, 2.4, 1.04, "test"]
+                        }
+                    },
+                    "d": true
+                }
+            }
+        }
+
+        let decoded1 [json::decode $j]
+        let encoded1 [json::encode $decoded1]
+        let decoded2 [json::decode $encoded1]
+        let encoded2 [json::encode $decoded2]
+        Test::eq $encoded1 $encoded2
+    }
+}
+
+Test::run
