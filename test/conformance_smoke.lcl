@@ -1436,6 +1436,64 @@ Test::suite "Type Conversion" {
 }
 
 # ============================================================================
+# Quasiquote
+# ============================================================================
+
+Test::suite "Quasiquote" {
+    Test::case "basic unquote with variable" {
+        let x 42
+        Test::eq [quasiquote {value is ,x}] {value is 42}
+    }
+
+    Test::case "unquote with command substitution" {
+        Test::eq [quasiquote {sum is ,[+ 1 2 3]}] {sum is 6}
+    }
+
+    Test::case "splice-unquote with string" {
+        let items {a b c}
+        Test::eq [quasiquote {list: ,@items end}] {list: a b c end}
+    }
+
+    Test::case "splice-unquote with list value" {
+        let mylist [list x y z]
+        Test::eq [quasiquote {items: ,@mylist done}] {items: x y z done}
+    }
+
+    Test::case "braced expression unquote" {
+        let name test
+        Test::eq [quasiquote {result: ,{name}}] {result: test}
+    }
+
+    Test::case "multiple unquotes" {
+        let a 1
+        let b 2
+        Test::eq [quasiquote {a=,a b=,b}] {a=1 b=2}
+    }
+
+    Test::case "unquote with computed value" {
+        let a 10
+        let b 20
+        Test::eq [quasiquote {total: ,[+ $a $b]}] {total: 30}
+    }
+
+    Test::case "defun macro pattern" {
+        # Macro returns code, caller evals it
+        proc defun {name params body} {
+            return [quasiquote {
+                proc ,name {,@params} {,body}
+            }]
+        }
+        eval [defun add2 {x y} { + $x $y }]
+        Test::eq [add2 3 4] 7
+    }
+
+    Test::case "backslash preserves comma" {
+        let x 42
+        Test::eq [quasiquote {value is \,x}] {value is ,x}
+    }
+}
+
+# ============================================================================
 # Run All Tests
 # ============================================================================
 

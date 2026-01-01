@@ -2388,6 +2388,253 @@ err:
   return LCL_RC_ERR;
 }
 
+/* quasiquote {template} - like subst but only substitutes ,expr and ,@expr */
+int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
+                 lcl_value **out) {
+  lcl_value *input_v = NULL;
+  const char *src;
+  size_t src_len;
+  size_t i;
+  char *result = NULL;
+  size_t result_len = 0;
+  size_t result_cap = 0;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "quasiquote requires exactly one argument");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word_to_str(interp, args[0], &input_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  src = lcl_value_to_string(input_v);
+  src_len = strlen(src);
+
+  for (i = 0; i < src_len;) {
+    char c = src[i];
+
+    /* Bugfix: backslash escape - copy only the escaped char (skip backslash) */
+    if (c == '\\' && i + 1 < src_len) {
+      if (!buf_append_char(&result, &result_len, &result_cap, src[i + 1])) {
+        goto qq_err;
+      }
+      i += 2;
+      continue;
+    }
+
+    /* Unquote: ,expr or ,@expr */
+    if (c == ',') {
+      int splice = 0;
+      size_t expr_start;
+      size_t expr_end;
+      char *expr_str = NULL;
+      lcl_value *val = NULL;
+
+      /* skip comma */
+      i++; 
+
+      /* Check for splice ,@ */
+      if (i < src_len && src[i] == '@') {
+        splice = 1;
+        i++;
+      }
+
+      if (i >= src_len) {
+        LCL_ERR_MSG(interp, "unexpected end after unquote");
+        goto qq_err;
+      }
+
+      /* Parse the expression to unquote */
+      if (src[i] == '{') {
+        /* ,{expr} or ,@{expr} - braced expression */
+        int depth = 1;
+        expr_start = ++i;
+
+        while (i < src_len && depth > 0) {
+          if (src[i] == '{') depth++;
+          else if (src[i] == '}') depth--;
+          else if (src[i] == '\\' && i + 1 < src_len) i++;
+          if (depth > 0) i++;
+        }
+
+        if (depth != 0) {
+          LCL_ERR_MSG(interp, "unterminated brace in unquote");
+          goto qq_err;
+        }
+
+        expr_end = i;
+        i++; /* skip closing } */
+      } else if (src[i] == '[') {
+        /* ,[cmd] or ,@[cmd] - command substitution */
+        int depth = 1;
+        expr_start = i; /* include the [ */
+        i++;
+
+        while (i < src_len && depth > 0) {
+          if (src[i] == '[') depth++;
+          else if (src[i] == ']') depth--;
+          else if (src[i] == '\\' && i + 1 < src_len) i++;
+          if (depth > 0) i++;
+        }
+
+        if (depth != 0) {
+          LCL_ERR_MSG(interp, "unterminated bracket in unquote");
+          goto qq_err;
+        }
+
+        i++; /* skip closing ] */
+        expr_end = i; /* include the ] */
+      } else if (is_name_start((unsigned char)src[i])) {
+        /* ,name or ,@name - simple variable name */
+        expr_start = i;
+        while (i < src_len && is_name_char((unsigned char)src[i])) {
+          i++;
+        }
+        expr_end = i;
+      } else {
+        LCL_ERR_MSG(interp, "invalid unquote expression");
+        goto qq_err;
+      }
+
+      /* Extract and evaluate the expression */
+      {
+        size_t expr_len = expr_end - expr_start;
+        expr_str = malloc(expr_len + 1);
+        if (!expr_str) goto qq_err;
+
+        memcpy(expr_str, src + expr_start, expr_len);
+        expr_str[expr_len] = '\0';
+
+        /* If it's a simple name (not [...]), wrap in $ for variable lookup */
+        if (expr_str[0] != '[') {
+          char *var_expr = malloc(expr_len + 2);
+          if (!var_expr) {
+            free(expr_str);
+            goto qq_err;
+          }
+          var_expr[0] = '$';
+          memcpy(var_expr + 1, expr_str, expr_len + 1);
+          free(expr_str);
+          expr_str = var_expr;
+        }
+
+        /* Compile and evaluate */
+        {
+          lcl_program *prog = lcl_program_compile(expr_str, "<quasiquote>");
+          const char *saved_file;
+          int saved_line;
+          int eval_rc;
+
+          free(expr_str);
+          expr_str = NULL;
+
+          if (!prog) {
+            LCL_ERR_MSG(interp, "failed to compile unquote expression");
+            goto qq_err;
+          }
+
+          /* Save interpreter context before eval - prog will be freed after */
+          saved_file = interp->cur_file;
+          saved_line = interp->cur_line;
+
+          eval_rc = lcl_eval_program(interp, prog, &val);
+
+          /* Restore context before freeing program (cur_file points into prog) */
+          interp->cur_file = saved_file;
+          interp->cur_line = saved_line;
+
+          lcl_program_free(prog);
+
+          if (eval_rc != LCL_RC_OK) {
+            goto qq_err;
+          }
+        }
+
+        /* Insert the value */
+        if (splice) {
+          /* ,@ - splice list elements (or parse string as list) */
+          lcl_value *list_val = val;
+
+          if (val->type != LCL_LIST) {
+            /* Parse string as whitespace-separated list (like params) */
+            list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
+            lcl_ref_dec(val);
+            if (!list_val) {
+              goto qq_err;
+            }
+            val = list_val;
+          }
+
+          {
+            size_t len = lcl_list_len(list_val);
+            size_t j;
+
+            for (j = 0; j < len; j++) {
+              lcl_value *elem = NULL;
+              const char *elem_str;
+
+              if (lcl_list_get(list_val, j, &elem) != LCL_OK) {
+                lcl_ref_dec(val);
+                goto qq_err;
+              }
+
+              elem_str = lcl_value_to_string(elem);
+
+              if (j > 0) {
+                if (!buf_append_char(&result, &result_len, &result_cap, ' ')) {
+                  lcl_ref_dec(elem);
+                  lcl_ref_dec(val);
+                  goto qq_err;
+                }
+              }
+
+              if (!buf_append(&result, &result_len, &result_cap, elem_str,
+                              strlen(elem_str))) {
+                lcl_ref_dec(elem);
+                lcl_ref_dec(val);
+                goto qq_err;
+              }
+
+              lcl_ref_dec(elem);
+            }
+          }
+        } else {
+          /* , - insert value as string */
+          const char *val_str = lcl_value_to_string(val);
+          if (!buf_append(&result, &result_len, &result_cap, val_str,
+                          strlen(val_str))) {
+            lcl_ref_dec(val);
+            goto qq_err;
+          }
+        }
+
+        lcl_ref_dec(val);
+      }
+
+      continue;
+    }
+
+    /* Regular character - copy as-is */
+    if (!buf_append_char(&result, &result_len, &result_cap, c)) {
+      goto qq_err;
+    }
+
+    i++;
+  }
+
+  lcl_ref_dec(input_v);
+  *out = lcl_value_new_string(result ? result : "");
+  free(result);
+
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+
+qq_err:
+  lcl_ref_dec(input_v);
+  free(result);
+  return LCL_RC_ERR;
+}
+
 int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
            lcl_value **out) {
   int i;
@@ -5209,6 +5456,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "eval", s_eval);
   lcl_register_spec(interp, "load", s_load);
   lcl_register_spec(interp, "subst", s_subst);
+  lcl_register_spec(interp, "quasiquote", s_quasiquote);
   lcl_register_spec(interp, "namespace", s_namespace);
   lcl_register_spec(interp, "->", s_thread_first);
   lcl_register_spec(interp, "->>", s_thread_last);
