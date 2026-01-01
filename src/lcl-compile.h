@@ -1,10 +1,10 @@
 #ifndef LCL_COMPILE_H
 #define LCL_COMPILE_H
 
-#include <stdlib.h>
 #include "hash-table.h"
 #include "lcl-lex.h"
 #include "str-compat.h"
+#include <stdlib.h>
 
 /* Forward declarations */
 typedef struct lcl_interp lcl_interp;
@@ -30,7 +30,7 @@ struct lcl_frame {
   struct lcl_frame *parent;
   hash_table *locals;
   int refc;
-  int owns_locals;  /* 0 if locals is borrowed (e.g., from a namespace) */
+  int owns_locals; /* 0 if locals is borrowed (e.g., from a namespace) */
 };
 
 lcl_frame *lcl_frame_new(lcl_frame *parent);
@@ -58,14 +58,14 @@ lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 
 typedef struct {
-  lcl_value **argv;     /* Arguments for pending tail call (each refcounted) */
-  int argc;             /* Number of arguments */
-  int valid;            /* 1 if a tail call is pending */
+  lcl_value **argv; /* Arguments for pending tail call (each refcounted) */
+  int argc;         /* Number of arguments */
+  int valid;        /* 1 if a tail call is pending */
 } lcl_tailcall;
 
 struct lcl_interp {
   lcl_env env;
-  lcl_value  *last;
+  lcl_value *last;
   const char *cur_file;
   int cur_line;
   const char *err_msg;
@@ -80,60 +80,60 @@ struct lcl_interp {
   int in_tail_position;
 };
 
-#define LCL_ERR_CLEAR(interp) do { \
-  if ((interp)->err_msg_owned && (interp)->err_msg) { \
-    free((void *)(interp)->err_msg); \
-  } \
-  if ((interp)->err_file_owned && (interp)->err_file) { \
-    free((void *)(interp)->err_file); \
-  } \
-  (interp)->err_msg = NULL; \
-  (interp)->err_msg_owned = 0; \
-  (interp)->err_file = NULL; \
-  (interp)->err_file_owned = 0; \
-} while(0)
+#define LCL_ERR_CLEAR(interp)                                                  \
+  do {                                                                         \
+    if ((interp)->err_msg_owned && (interp)->err_msg) {                        \
+      free((void *)(interp)->err_msg);                                         \
+    }                                                                          \
+    if ((interp)->err_file_owned && (interp)->err_file) {                      \
+      free((void *)(interp)->err_file);                                        \
+    }                                                                          \
+    (interp)->err_msg = NULL;                                                  \
+    (interp)->err_msg_owned = 0;                                               \
+    (interp)->err_file = NULL;                                                 \
+    (interp)->err_file_owned = 0;                                              \
+  } while (0)
 
-#define LCL_ERR(interp) do { \
-  LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
-  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
-  (interp)->err_line = (interp)->cur_line; \
-} while(0)
+#define LCL_ERR(interp)                                                        \
+  do {                                                                         \
+    LCL_ERR_CLEAR(interp);                                                     \
+    (interp)->err_file =                                                       \
+        (interp)->cur_file ? strdup((interp)->cur_file) : NULL;                \
+    (interp)->err_file_owned = (interp)->cur_file ? 1 : 0;                     \
+    (interp)->err_line = (interp)->cur_line;                                   \
+  } while (0)
 
-#define LCL_ERR_MSG(interp, msg) do { \
-  LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
-  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
-  (interp)->err_line = (interp)->cur_line; \
-  (interp)->err_msg = (msg); \
-} while(0)
+#define LCL_ERR_MSG(interp, msg)                                               \
+  do {                                                                         \
+    LCL_ERR_CLEAR(interp);                                                     \
+    (interp)->err_file =                                                       \
+        (interp)->cur_file ? strdup((interp)->cur_file) : NULL;                \
+    (interp)->err_file_owned = (interp)->cur_file ? 1 : 0;                     \
+    (interp)->err_line = (interp)->cur_line;                                   \
+    (interp)->err_msg = (msg);                                                 \
+  } while (0)
 
-#define LCL_ERR_MSG_DUP(interp, msg) do { \
-  LCL_ERR_CLEAR(interp); \
-  (interp)->err_file = (interp)->cur_file ? strdup((interp)->cur_file) : NULL; \
-  (interp)->err_file_owned = (interp)->cur_file ? 1 : 0; \
-  (interp)->err_line = (interp)->cur_line; \
-  (interp)->err_msg = strdup(msg); \
-  (interp)->err_msg_owned = 1; \
-} while(0)
+#define LCL_ERR_MSG_DUP(interp, msg)                                           \
+  do {                                                                         \
+    LCL_ERR_CLEAR(interp);                                                     \
+    (interp)->err_file =                                                       \
+        (interp)->cur_file ? strdup((interp)->cur_file) : NULL;                \
+    (interp)->err_file_owned = (interp)->cur_file ? 1 : 0;                     \
+    (interp)->err_line = (interp)->cur_line;                                   \
+    (interp)->err_msg = strdup(msg);                                           \
+    (interp)->err_msg_owned = 1;                                               \
+  } while (0)
 
 lcl_interp *lcl_interp_new(void);
 void lcl_interp_free(lcl_interp *interp);
 
-typedef int (*lcl_c_proc_fn)(lcl_interp *,
-                             int argc,
-                             lcl_value **argv,
+typedef int (*lcl_c_proc_fn)(lcl_interp *, int argc, lcl_value **argv,
                              lcl_value **out);
 
-typedef int (*lcl_c_spec_fn)(lcl_interp *,
-                             int argc,
-                             const lcl_word **args,
+typedef int (*lcl_c_spec_fn)(lcl_interp *, int argc, const lcl_word **args,
                              lcl_value **out);
 
-typedef enum {
-  LCL_CK_PROC,
-  LCL_CK_SPECIAL
-} lcl_c_kind;
+typedef enum { LCL_CK_PROC, LCL_CK_SPECIAL } lcl_c_kind;
 
 typedef struct {
   lcl_c_kind kind;
@@ -145,18 +145,18 @@ typedef struct {
 } lcl_c_func;
 
 typedef struct {
-  char *name;           /* Variable name (owned, must be freed) */
-  int is_cell;          /* 1 if cell (mutable), 0 if immutable value */
-  lcl_value *value;     /* The captured cell or value (refcounted) */
+  char *name;       /* Variable name (owned, must be freed) */
+  int is_cell;      /* 1 if cell (mutable), 0 if immutable value */
+  lcl_value *value; /* The captured cell or value (refcounted) */
 } lcl_upvalue;
 
 typedef struct {
-  char *self_name;      /* Name for self-reference (NULL if anonymous) */
-  lcl_upvalue *upvals;  /* Array of captured upvalues */
-  int nupvals;          /* Number of upvalues */
-  lcl_value *params;    /* Parameter names (list) */
-  lcl_program *body;    /* Compiled body */
-  int capture_ns;       /* Whether to capture current namespace */
+  char *self_name;        /* Name for self-reference (NULL if anonymous) */
+  lcl_upvalue *upvals;    /* Array of captured upvalues */
+  int nupvals;            /* Number of upvalues */
+  lcl_value *params;      /* Parameter names (list) */
+  lcl_program *body;      /* Compiled body */
+  int capture_ns;         /* Whether to capture current namespace */
   lcl_value *captured_ns; /* Captured namespace (if capture_ns) */
 } lcl_proc;
 

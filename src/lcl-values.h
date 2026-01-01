@@ -18,9 +18,7 @@ typedef enum lcl_type {
 
 typedef void (*lcl_finalizer)(void *ptr);
 
-typedef int (*lcl_cproc)(lcl_frame *env,
-                         int argc,
-                         lcl_value **argv,
+typedef int (*lcl_cproc)(lcl_frame *env, int argc, lcl_value **argv,
                          lcl_value **out);
 
 struct lcl_value {
@@ -84,11 +82,10 @@ lcl_value *lcl_dict_new(void);
 size_t lcl_dict_len(const lcl_value *dict);
 lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
                         lcl_value **out);
-lcl_result lcl_dict_put(lcl_value **dict_io, const char *key,
-                        lcl_value *value);
+lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
-lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it, const char **key,
-                         lcl_value **value);
+lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
+                         const char **key, lcl_value **value);
 
 lcl_value *lcl_cell_new(lcl_value *init);
 lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
@@ -98,7 +95,8 @@ int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value);
 lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
-const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs, const char **rhs);
+const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
+                         const char **rhs);
 
 const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);
@@ -109,7 +107,8 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);
 
-lcl_value *lcl_opaque_new(void *ptr, const char *type_tag, lcl_finalizer finalizer);
+lcl_value *lcl_opaque_new(void *ptr, const char *type_tag,
+                          lcl_finalizer finalizer);
 lcl_result lcl_opaque_get(lcl_value *v, const char *expected_type, void **out);
 const char *lcl_opaque_type(lcl_value *v);
 

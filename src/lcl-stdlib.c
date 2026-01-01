@@ -2432,7 +2432,7 @@ int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_value *val = NULL;
 
       /* skip comma */
-      i++; 
+      i++;
 
       /* Check for splice ,@ */
       if (i < src_len && src[i] == '@') {
@@ -2452,9 +2452,12 @@ int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
         expr_start = ++i;
 
         while (i < src_len && depth > 0) {
-          if (src[i] == '{') depth++;
-          else if (src[i] == '}') depth--;
-          else if (src[i] == '\\' && i + 1 < src_len) i++;
+          if (src[i] == '{')
+            depth++;
+          else if (src[i] == '}')
+            depth--;
+          else if (src[i] == '\\' && i + 1 < src_len)
+            i++;
           if (depth > 0) i++;
         }
 
@@ -2472,9 +2475,12 @@ int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
         i++;
 
         while (i < src_len && depth > 0) {
-          if (src[i] == '[') depth++;
-          else if (src[i] == ']') depth--;
-          else if (src[i] == '\\' && i + 1 < src_len) i++;
+          if (src[i] == '[')
+            depth++;
+          else if (src[i] == ']')
+            depth--;
+          else if (src[i] == '\\' && i + 1 < src_len)
+            i++;
           if (depth > 0) i++;
         }
 
@@ -2483,7 +2489,7 @@ int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
           goto qq_err;
         }
 
-        i++; /* skip closing ] */
+        i++;          /* skip closing ] */
         expr_end = i; /* include the ] */
       } else if (is_name_start((unsigned char)src[i])) {
         /* ,name or ,@name - simple variable name */
@@ -2540,7 +2546,8 @@ int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
 
           eval_rc = lcl_eval_program(interp, prog, &val);
 
-          /* Restore context before freeing program (cur_file points into prog) */
+          /* Restore context before freeing program (cur_file points into prog)
+           */
           interp->cur_file = saved_file;
           interp->cur_line = saved_line;
 

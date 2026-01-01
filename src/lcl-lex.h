@@ -26,11 +26,7 @@ void lcl_program_free(lcl_program *p);
 lcl_program *lcl_program_compile(const char *src, const char *file);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
-typedef enum {
-  LCL_WP_LIT,
-  LCL_WP_VAR,
-  LCL_WP_SUBCMD
-} lcl_word_piece_kind;
+typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
 
 typedef struct {
   lcl_word_piece_kind kind;
