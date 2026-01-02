@@ -7,7 +7,9 @@
 void lcl_program_free(lcl_program *p) {
   int i;
 
-  if (!p) return;
+  if (!p) {
+    return;
+  }
 
   for (i = 0; i < p->ncmd; i++) {
     lcl_command_free(&p->cmd[i]);
@@ -25,7 +27,9 @@ lcl_program *lcl_program_compile(const char *src, const char *file) {
   lcl_scan_init(&sc, src);
   p = (lcl_program *)calloc(1, sizeof(*p));
 
-  if (!p) return NULL;
+  if (!p) {
+    return NULL;
+  }
 
   p->file = file ? strdup(file) : NULL;
   if (file && !p->file) {
@@ -62,7 +66,9 @@ int lcl_program_push_command(lcl_program *p, lcl_command *src) {
     size_t bytes = (size_t)newcap * sizeof(*p->cmd);
     void *nv = realloc(p->cmd, bytes);
 
-    if (!nv) return 0;
+    if (!nv) {
+      return 0;
+    }
 
     p->cmd = (lcl_command *)nv;
     p->cap = newcap;

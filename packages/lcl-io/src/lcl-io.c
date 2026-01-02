@@ -21,7 +21,9 @@ static char *read_file(const char *path) {
 
   f = fopen(path, "rb");
 
-  if (!f) return NULL;
+  if (!f) {
+    return NULL;
+  }
 
   if (fseek(f, 0, SEEK_END) != 0) {
     fclose(f);

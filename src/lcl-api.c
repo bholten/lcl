@@ -1,9 +1,3 @@
-/*
- * LCL Public API Implementation
- *
- * This file implements the public API functions declared in include/lcl.h
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,7 +13,9 @@ static char *api_read_file(const char *path) {
   size_t nread;
 
   f = fopen(path, "rb");
-  if (!f) return NULL;
+  if (!f) {
+    return NULL;
+  }
 
   if (fseek(f, 0, SEEK_END) != 0) {
     fclose(f);
@@ -55,19 +51,9 @@ static char *api_read_file(const char *path) {
   return buf;
 }
 
-/* ============================================================================
- * Type information
- * ============================================================================
- */
-
 lcl_type lcl_value_type_of(const lcl_value *value) {
   return value->type;
 }
-
-/* ============================================================================
- * Evaluation
- * ============================================================================
- */
 
 int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
   char *src;
@@ -88,28 +74,31 @@ int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
   return rc;
 }
 
-/* ============================================================================
- * Error Information
- * ============================================================================
- */
-
 const char *lcl_interp_error_file(lcl_interp *interp) {
-  if (!interp) return NULL;
+  if (!interp) {
+    return NULL;
+  }
   return interp->err_file;
 }
 
 int lcl_interp_error_line(lcl_interp *interp) {
-  if (!interp) return 0;
+  if (!interp) {
+    return 0;
+  }
   return interp->err_line;
 }
 
 const char *lcl_interp_error_msg(lcl_interp *interp) {
-  if (!interp) return NULL;
+  if (!interp) {
+    return NULL;
+  }
   return interp->err_msg;
 }
 
 void lcl_set_error(lcl_interp *interp, const char *msg) {
-  if (!interp) return;
+  if (!interp) {
+    return;
+  }
   LCL_ERR_CLEAR(interp);
   interp->err_file = interp->cur_file ? strdup(interp->cur_file) : NULL;
   interp->err_file_owned = interp->cur_file ? 1 : 0;
@@ -118,30 +107,33 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
 }
 
 void lcl_clear_error(lcl_interp *interp) {
-  if (!interp) return;
+  if (!interp) {
+    return;
+  }
   LCL_ERR_CLEAR(interp);
   interp->err_file = NULL;
   interp->err_line = 0;
 }
 
-/* ============================================================================
- * Variable/Definition Access
- * ============================================================================
- */
-
 lcl_result lcl_define(lcl_interp *interp, const char *name, lcl_value *value) {
-  if (!interp || !name || !value) return LCL_ERROR;
+  if (!interp || !name || !value) {
+    return LCL_ERROR;
+  }
   return lcl_env_let(&interp->env, name, value);
 }
 
 lcl_result lcl_define_take(lcl_interp *interp, const char *name,
                            lcl_value *value) {
-  if (!interp || !name || !value) return LCL_ERROR;
+  if (!interp || !name || !value) {
+    return LCL_ERROR;
+  }
   return lcl_env_let_take(&interp->env, name, value);
 }
 
 lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out) {
-  if (!interp || !name || !out) return LCL_ERROR;
+  if (!interp || !name || !out) {
+    return LCL_ERROR;
+  }
   return lcl_env_get_value(&interp->env, name, out);
 }
 
@@ -154,10 +146,14 @@ lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
                              lcl_c_proc_fn fn) {
   lcl_value *proc;
 
-  if (!interp || !name || !fn) return LCL_ERROR;
+  if (!interp || !name || !fn) {
+    return LCL_ERROR;
+  }
 
   proc = lcl_c_proc_new(name, fn);
-  if (!proc) return LCL_ERROR;
+  if (!proc) {
+    return LCL_ERROR;
+  }
 
   return lcl_env_let_take(&interp->env, name, proc);
 }
@@ -166,21 +162,22 @@ lcl_result lcl_register_spec(lcl_interp *interp, const char *name,
                              lcl_c_spec_fn fn) {
   lcl_value *spec;
 
-  if (!interp || !name || !fn) return LCL_ERROR;
+  if (!interp || !name || !fn) {
+    return LCL_ERROR;
+  }
 
   spec = lcl_c_spec_new(name, fn);
-  if (!spec) return LCL_ERROR;
+  if (!spec) {
+    return LCL_ERROR;
+  }
 
   return lcl_env_let_take(&interp->env, name, spec);
 }
 
-/* ============================================================================
- * Calling LCL Procedures from C
- * ============================================================================
- */
-
 int lcl_is_callable(lcl_value *value) {
-  if (!value) return 0;
+  if (!value) {
+    return 0;
+  }
   return value->type == LCL_PROC || value->type == LCL_CPROC;
 }
 
@@ -189,29 +186,29 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
   lcl_return_code rc;
   lcl_value *dummy = NULL;
 
-  if (!interp || !proc) return LCL_RC_ERR;
+  if (!interp || !proc) {
+    return LCL_RC_ERR;
+  }
 
-  /* Use dummy if caller doesn't want result */
-  if (!out) out = &dummy;
+  if (!out) {
+    out = &dummy;
+  }
 
   if (proc->type == LCL_CPROC) {
-    /* For C procedures, only call normal procs (not special forms) */
     if (proc->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
-      return LCL_RC_ERR; /* Can't call special forms this way */
+      return LCL_RC_ERR;
     }
     rc = proc->as.c_proc.fn->fn.proc(interp, argc, argv, out);
   } else if (proc->type == LCL_PROC) {
     rc = lcl_call_user_proc(interp, proc, proc->as.procedure.proc, argc, argv,
                             out);
-    /* Convert RETURN to OK (normal proc return) */
     if (rc == LCL_RC_RETURN) {
       rc = LCL_RC_OK;
     }
   } else {
-    return LCL_RC_ERR; /* Not callable */
+    return LCL_RC_ERR;
   }
 
-  /* Clean up dummy if used */
   if (out == &dummy && dummy) {
     lcl_ref_dec(dummy);
   }

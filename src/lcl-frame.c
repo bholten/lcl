@@ -11,7 +11,9 @@ lcl_frame *lcl_frame_new(lcl_frame *parent) {
   lcl_frame *f = malloc(sizeof(*f));
   hash_table *locals;
 
-  if (!f) return NULL;
+  if (!f) {
+    return NULL;
+  }
 
   locals = hash_table_new();
   if (!locals) {
@@ -30,7 +32,9 @@ lcl_frame *lcl_frame_new(lcl_frame *parent) {
 lcl_frame *lcl_frame_new_ns(lcl_frame *parent, hash_table *ns_locals) {
   lcl_frame *f = malloc(sizeof(*f));
 
-  if (!f) return NULL;
+  if (!f) {
+    return NULL;
+  }
 
   f->refc = 1;
   f->locals = ns_locals; /* Borrowed from namespace */
@@ -47,13 +51,14 @@ static int lambda_captures_frame_cell(lcl_value *lambda, hash_table *locals) {
   int i;
   lcl_proc *p;
 
-  if (!lambda || lambda->type != LCL_PROC) return 0;
+  if (!lambda || lambda->type != LCL_PROC) {
+    return 0;
+  }
 
   p = lambda->as.procedure.proc;
   for (i = 0; i < p->nupvals; i++) {
     lcl_value *upval = p->upvals[i].value;
     if (upval && upval->type == LCL_CELL) {
-      /* Check if this cell is in our frame's locals */
       lcl_value *found = NULL;
       if (hash_table_get(locals, p->upvals[i].name, &found)) {
         if (found == upval) {
@@ -68,12 +73,15 @@ static int lambda_captures_frame_cell(lcl_value *lambda, hash_table *locals) {
 }
 
 void lcl_frame_free(lcl_frame *f) {
-  if (!f) return;
+  if (!f) {
+    return;
+  }
 
   if (f->parent) {
     lcl_frame_ref_dec(f->parent);
   }
 
+  /* Dragons bere here */
   if (f->locals && f->owns_locals) {
     /* Break cell->lambda cycles before freeing.
      * Clear any cell that contains a lambda capturing cells in this frame.
@@ -91,6 +99,7 @@ void lcl_frame_free(lcl_frame *f) {
           val->as.cell.inner = NULL;
         }
       }
+
       lcl_ref_dec(val); /* Balance the incref from hash_table_iterate */
     }
 
@@ -112,9 +121,13 @@ lcl_frame *lcl_frame_ref_inc(lcl_frame *f) {
 }
 
 void lcl_frame_ref_dec(lcl_frame *f) {
-  if (!f) return;
+  if (!f) {
+    return;
+  }
 
-  if (--f->refc) return;
+  if (--f->refc) {
+    return;
+  }
 
   lcl_frame_free(f);
 }
@@ -124,7 +137,9 @@ void lcl_frame_clear(lcl_frame *f) {
   const char *key;
   lcl_value *val;
 
-  if (!f || !f->locals) return;
+  if (!f || !f->locals) {
+    return;
+  }
 
   /* Break reference cycles through cells before freeing.
    * This handles mutual recursion cases where:

@@ -7,7 +7,9 @@
 lcl_value *lcl_string_new(const char *str) {
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
-  if (!v) return NULL;
+  if (!v) {
+    return NULL;
+  }
 
   if (str) {
     size_t n = strlen(str);
@@ -52,9 +54,10 @@ static void lcl_reify_str_float(lcl_value *value) {
   memcpy(value->str_repr, buf, (size_t)m + 1);
 }
 
-/* Check if string needs bracing for Tcl-like list output */
 static int needs_braces(const char *s) {
-  if (!s || !*s) return 1; /* empty string needs braces */
+  if (!s || !*s) {
+    return 1;
+  }
   while (*s) {
     char c = *s++;
     if (c == ' ' || c == '\t' || c == '\n' || c == '{' || c == '}' ||
@@ -69,22 +72,29 @@ static void lcl_reify_str_list(lcl_value *value) {
   size_t len = lcl_list_len(value);
   size_t total = 0;
   size_t i;
-  char *buf, *p;
+  char *buf;
+  char *p;
 
-  /* Calculate total size needed */
   for (i = 0; i < len; i++) {
     lcl_value *elem = NULL;
     const char *s;
-    if (lcl_list_get(value, i, &elem) != LCL_OK) continue;
+    if (lcl_list_get(value, i, &elem) != LCL_OK) {
+      continue;
+    }
     s = lcl_value_to_string(elem);
     total += strlen(s);
-    if (needs_braces(s)) total += 2; /* for {} */
+    if (needs_braces(s)) {
+      total += 2; /* for {} */
+    }
     lcl_ref_dec(elem);
   }
-  total += len; /* for spaces */
+  total += len;
 
   buf = (char *)malloc(total + 1);
-  if (!buf) return;
+
+  if (!buf) {
+    return;
+  }
 
   p = buf;
   for (i = 0; i < len; i++) {
@@ -93,20 +103,32 @@ static void lcl_reify_str_list(lcl_value *value) {
     size_t slen;
     int braced;
 
-    if (i > 0) *p++ = ' ';
+    if (i > 0) {
+      *p++ = ' ';
+    }
 
-    if (lcl_list_get(value, i, &elem) != LCL_OK) continue;
+    if (lcl_list_get(value, i, &elem) != LCL_OK) {
+      continue;
+    }
+
     s = lcl_value_to_string(elem);
     slen = strlen(s);
     braced = needs_braces(s);
 
-    if (braced) *p++ = '{';
+    if (braced) {
+      *p++ = '{';
+    }
+
     memcpy(p, s, slen);
     p += slen;
-    if (braced) *p++ = '}';
+
+    if (braced) {
+      *p++ = '}';
+    }
 
     lcl_ref_dec(elem);
   }
+
   *p = '\0';
 
   value->str_repr = buf;
@@ -117,20 +139,27 @@ static void lcl_reify_str_dict(lcl_value *value) {
   const char *key;
   lcl_value *val;
   size_t total = 0;
-  char *buf, *p;
+  char *buf;
+  char *p;
   int first = 1;
 
   /* First pass: calculate size */
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
     total += strlen(key) + strlen(vs) + 2; /* key, value, spaces */
-    if (needs_braces(key)) total += 2;
-    if (needs_braces(vs)) total += 2;
+    if (needs_braces(key)) {
+      total += 2;
+    }
+    if (needs_braces(vs)) {
+      total += 2;
+    }
     lcl_ref_dec(val);
   }
 
   buf = (char *)malloc(total + 1);
-  if (!buf) return;
+  if (!buf) {
+    return;
+  }
 
   p = buf;
   it.i = 0;
@@ -141,20 +170,35 @@ static void lcl_reify_str_dict(lcl_value *value) {
     int kbraced = needs_braces(key);
     int vbraced = needs_braces(vs);
 
-    if (!first) *p++ = ' ';
+    if (!first) {
+      *p++ = ' ';
+    }
+
     first = 0;
 
-    if (kbraced) *p++ = '{';
+    if (kbraced) {
+      *p++ = '{';
+    }
+
     memcpy(p, key, klen);
     p += klen;
-    if (kbraced) *p++ = '}';
+
+    if (kbraced) {
+      *p++ = '}';
+    }
 
     *p++ = ' ';
 
-    if (vbraced) *p++ = '{';
+    if (vbraced) {
+      *p++ = '{';
+    }
+
     memcpy(p, vs, vlen);
     p += vlen;
-    if (vbraced) *p++ = '}';
+
+    if (vbraced) {
+      *p++ = '}';
+    }
 
     lcl_ref_dec(val);
   }
@@ -164,7 +208,9 @@ static void lcl_reify_str_dict(lcl_value *value) {
 }
 
 const char *lcl_value_to_string(lcl_value *value) {
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
   if (!value->str_repr) {
     switch (value->type) {
     case LCL_INT: lcl_reify_str_int(value); break;
@@ -192,9 +238,10 @@ const char *lcl_value_to_string(lcl_value *value) {
     } break;
 
     default:
-      /* PROC, CPROC, NS, CELL - not directly stringifiable */
       value->str_repr = (char *)malloc(4);
-      if (!value->str_repr) return "";
+      if (!value->str_repr) {
+        return "";
+      }
       memcpy(value->str_repr, "<?>", 4);
       break;
     }
@@ -206,7 +253,9 @@ const char *lcl_value_to_string(lcl_value *value) {
 lcl_value *lcl_value_new_string(const char *str) {
   lcl_value *value = (lcl_value *)calloc(1, sizeof(*value));
 
-  if (!value) return NULL;
+  if (!value) {
+    return NULL;
+  }
 
   if (str) {
     size_t n = strlen(str);

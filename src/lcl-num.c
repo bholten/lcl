@@ -6,7 +6,9 @@
 lcl_value *lcl_int_new(const long n) {
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
-  if (!v) return NULL;
+  if (!v) {
+    return NULL;
+  }
 
   v->type = LCL_INT;
   v->refc = 1;
@@ -20,7 +22,9 @@ lcl_value *lcl_int_new(const long n) {
 lcl_value *lcl_float_new(const float f) {
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
-  if (!v) return NULL;
+  if (!v) {
+    return NULL;
+  }
 
   v->type = LCL_FLOAT;
   v->refc = 1;

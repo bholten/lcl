@@ -10,7 +10,9 @@ lcl_interp *lcl_interp_new(void) {
   lcl_interp *interp = (lcl_interp *)calloc(1, sizeof(*interp));
   lcl_env *env = NULL;
 
-  if (!interp) return NULL;
+  if (!interp) {
+    return NULL;
+  }
 
   env = lcl_env_new();
 
@@ -41,7 +43,9 @@ lcl_interp *lcl_interp_new(void) {
 
 static void clear_pending_tail(lcl_interp *interp) {
   int i;
-  if (!interp->pending_tail.valid) return;
+  if (!interp->pending_tail.valid) {
+    return;
+  }
   for (i = 0; i < interp->pending_tail.argc; i++) {
     lcl_ref_dec(interp->pending_tail.argv[i]);
   }
@@ -52,7 +56,9 @@ static void clear_pending_tail(lcl_interp *interp) {
 }
 
 void lcl_interp_free(lcl_interp *interp) {
-  if (!interp) return;
+  if (!interp) {
+    return;
+  }
 
   lcl_ref_dec(interp->last);
   LCL_ERR_CLEAR(interp);

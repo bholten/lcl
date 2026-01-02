@@ -16,8 +16,13 @@ lcl_value *lcl_ref_inc(lcl_value *value) {
 }
 
 void lcl_ref_dec(lcl_value *value) {
-  if (!value) return;
-  if (--value->refc) return;
+  if (!value) {
+    return;
+  }
+
+  if (--value->refc) {
+    return;
+  }
 
 #ifdef DEBUG_REFC
   fprintf(stderr, "DEC %s rc = %d\n", value->str_repr, value->refc);

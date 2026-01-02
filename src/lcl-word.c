@@ -16,7 +16,9 @@ static int lcl_word_push_word_piece(lcl_word *word, lcl_word_piece wp) {
       size_t bytes = (size_t)newcap * sizeof(*word->wp);
       void *p = realloc(word->wp, bytes);
 
-      if (!p) return 0;
+      if (!p) {
+        return 0;
+      }
 
       word->wp = (lcl_word_piece *)p;
       word->cap = newcap;

@@ -34,7 +34,9 @@ int lcl_command_push_word(lcl_command *cmd, lcl_word *w) {
     size_t bytes = (size_t)newcap * sizeof(*cmd->w);
     void *nv = realloc(cmd->w, bytes);
 
-    if (!nv) return 0;
+    if (!nv) {
+      return 0;
+    }
 
     cmd->w = (lcl_word *)nv;
     cmd->cap = newcap;

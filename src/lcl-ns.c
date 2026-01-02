@@ -5,7 +5,9 @@
 
 static lcl_result ns_def_take(lcl_value *ns, const char *name,
                               lcl_value *value) {
-  if (!ns || ns->type != LCL_NAMESPACE) return LCL_ERROR;
+  if (!ns || ns->type != LCL_NAMESPACE) {
+    return LCL_ERROR;
+  }
 
   if (!hash_table_put(ns->as.namespace.namespace, name, value)) {
     return LCL_ERROR;
@@ -18,7 +20,9 @@ lcl_value *lcl_ns_new(const char *qname) {
   hash_table *h;
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
-  if (!v) return NULL;
+  if (!v) {
+    return NULL;
+  }
 
   v->type = LCL_NAMESPACE;
   v->refc = 1;
@@ -64,7 +68,9 @@ lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {
 }
 
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out) {
-  if (!ns || ns->type != LCL_NAMESPACE) return LCL_ERROR;
+  if (!ns || ns->type != LCL_NAMESPACE) {
+    return LCL_ERROR;
+  }
 
   if (!hash_table_get(ns->as.namespace.namespace, name, out)) {
     return LCL_ERROR;
@@ -78,7 +84,9 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
   size_t n;
   const char *p = strstr(q, "::");
 
-  if (!p) return NULL;
+  if (!p) {
+    return NULL;
+  }
 
   n = (size_t)(p - q);
 

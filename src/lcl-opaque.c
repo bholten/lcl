@@ -1,13 +1,7 @@
-/*
- * lcl-opaque.c - Opaque values for C extension data
- *
- * Opaque values allow C extensions to wrap arbitrary C pointers
- * in LCL values with type safety and automatic cleanup.
- */
-
-#include "lcl-values.h"
 #include <stdlib.h>
 #include <string.h>
+
+#include "lcl-values.h"
 
 /*
  * Create a new opaque value wrapping a C pointer.
@@ -24,7 +18,9 @@ lcl_value *lcl_opaque_new(void *ptr, const char *type_tag,
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
   char *tag_copy = NULL;
 
-  if (!v) return NULL;
+  if (!v) {
+    return NULL;
+  }
 
   if (type_tag) {
     size_t len = strlen(type_tag);
@@ -87,5 +83,6 @@ const char *lcl_opaque_type(lcl_value *v) {
   if (!v || v->type != LCL_OPAQUE) {
     return NULL;
   }
+
   return v->as.opaque.type_tag;
 }

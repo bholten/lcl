@@ -7,12 +7,6 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
-/* ============================================================================
- * Free Variable Extraction
- * ============================================================================
- */
-
-/* Simple string set for deduplication */
 typedef struct {
   char **names;
   int count;
@@ -36,36 +30,45 @@ static void name_set_free(name_set *s) {
 static int name_set_contains(name_set *s, const char *name) {
   int i;
   for (i = 0; i < s->count; i++) {
-    if (strcmp(s->names[i], name) == 0) return 1;
+    if (strcmp(s->names[i], name) == 0) {
+      return 1;
+    }
   }
   return 0;
 }
 
 static int name_set_add(name_set *s, const char *name) {
   char *copy;
-  if (name_set_contains(s, name)) return 1; /* Already present */
+  if (name_set_contains(s, name)) {
+    return 1; /* Already present */
+  }
 
   if (s->count >= s->cap) {
     int newcap = s->cap ? s->cap * 2 : 8;
     char **newnames = realloc(s->names, (size_t)newcap * sizeof(char *));
-    if (!newnames) return 0;
+    if (!newnames) {
+      return 0;
+    }
     s->names = newnames;
     s->cap = newcap;
   }
 
   copy = strdup(name);
-  if (!copy) return 0;
+  if (!copy) {
+    return 0;
+  }
 
   s->names[s->count++] = copy;
   return 1;
 }
 
-/* Forward declaration */
 static void collect_free_vars_program(const lcl_program *prog, name_set *vars);
 
 static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
   int i;
-  if (!w) return;
+  if (!w) {
+    return;
+  }
 
   for (i = 0; i < w->np; i++) {
     lcl_word_piece *wp = &w->wp[i];
@@ -74,16 +77,17 @@ static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
     case LCL_WP_SUBCMD:
       collect_free_vars_program(wp->as.sub.program, vars);
       break;
-    case LCL_WP_LIT:
-      /* Literals don't reference variables */
-      break;
+    case LCL_WP_LIT: break;
     }
   }
 }
 
 static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
-  int i, j;
-  if (!prog) return;
+  int i;
+  int j;
+  if (!prog) {
+    return;
+  }
 
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
@@ -104,13 +108,14 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
                        lcl_upvalue **upvals_out, int *nout) {
   name_set vars;
   lcl_upvalue *upvals = NULL;
-  int i, j, nupvals = 0;
+  int i;
+  int j;
+  int nupvals = 0;
 
   name_set_init(&vars);
   *nout = 0;
   *upvals_out = NULL;
 
-  /* Collect all variable references from the body */
   collect_free_vars_program(body, &vars);
 
   if (vars.count == 0) {
@@ -118,15 +123,14 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
     return LCL_RC_OK; /* No upvalues needed */
   }
 
-  /* Allocate upvalues array (may be larger than needed) */
   upvals = calloc((size_t)vars.count, sizeof(lcl_upvalue));
+
   if (!upvals) {
     name_set_free(&vars);
     LCL_ERR_MSG(interp, "out of memory");
     return LCL_RC_ERR;
   }
 
-  /* For each collected name, try to capture it */
   for (i = 0; i < vars.count; i++) {
     const char *name = vars.names[i];
     lcl_value *val = NULL;
@@ -147,13 +151,16 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
             is_param = 1;
           }
           lcl_ref_dec(pname);
-          if (is_param) break;
+          if (is_param) {
+            break;
+          }
         }
       }
     }
-    if (is_param) continue;
+    if (is_param) {
+      continue;
+    }
 
-    /* Try to look up the variable in current environment */
     if (lcl_env_get_value(&interp->env, name, &val) == LCL_OK) {
       upvals[nupvals].name = strdup(name);
       if (!upvals[nupvals].name) {
@@ -163,11 +170,9 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
       }
 
       if (val->type == LCL_CELL) {
-        /* Capture the cell itself (for mutable variables) */
         upvals[nupvals].is_cell = 1;
         upvals[nupvals].value = val; /* Already incref'd by get_value */
       } else {
-        /* Capture the value directly (for immutable let bindings) */
         upvals[nupvals].is_cell = 0;
         upvals[nupvals].value = val; /* Already incref'd by get_value */
       }
@@ -206,17 +211,14 @@ error:
   return LCL_RC_ERR;
 }
 
-/* ============================================================================
- * Proc Creation
- * ============================================================================
- */
-
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
                         lcl_value *params, lcl_program *body) {
   lcl_proc *p = (lcl_proc *)calloc(1, sizeof(*p));
   lcl_value *v;
 
-  if (!p) return NULL;
+  if (!p) {
+    return NULL;
+  }
 
   if (self_name) {
     p->self_name = strdup(self_name);

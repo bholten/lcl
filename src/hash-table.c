@@ -87,7 +87,9 @@ static int hash_rehash(hash_table *ht, size_t newcap) {
 hash_table *hash_table_new(void) {
   hash_table *ht = (hash_table *)calloc(1, sizeof(*ht));
 
-  if (!ht) return NULL;
+  if (!ht) {
+    return NULL;
+  }
 
   ht->cap = 32;
   ht->len = 0;
@@ -105,7 +107,9 @@ hash_table *hash_table_new(void) {
 void hash_table_free(hash_table *ht) {
   size_t i;
 
-  if (!ht) return;
+  if (!ht) {
+    return;
+  }
 
   for (i = 0; i < ht->cap; i++) {
     hash_entry *e = &ht->slots[i];

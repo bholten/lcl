@@ -32,19 +32,25 @@ static void cell_set_free(cell_set *s) {
 static int cell_set_contains(cell_set *s, lcl_value *cell) {
   int i;
   for (i = 0; i < s->count; i++) {
-    if (s->cells[i] == cell) return 1;
+    if (s->cells[i] == cell) {
+      return 1;
+    }
   }
   return 0;
 }
 
 static int cell_set_add(cell_set *s, lcl_value *cell) {
-  if (cell_set_contains(s, cell)) return 1; /* Already present */
+  if (cell_set_contains(s, cell)) {
+    return 1; /* Already present */
+  }
 
   if (s->count >= s->cap) {
     int newcap = s->cap ? s->cap * 2 : 8;
     lcl_value **newcells =
         realloc(s->cells, (size_t)newcap * sizeof(lcl_value *));
-    if (!newcells) return 0;
+    if (!newcells) {
+      return 0;
+    }
     s->cells = newcells;
     s->cap = newcap;
   }
@@ -60,7 +66,9 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
                             cell_set *visited) {
   int i;
 
-  if (!proc || !proc->upvals) return 0;
+  if (!proc || !proc->upvals) {
+    return 0;
+  }
 
   for (i = 0; i < proc->nupvals; i++) {
     lcl_upvalue *uv = &proc->upvals[i];
@@ -72,8 +80,12 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
         return 1;
       }
 
-      if (cell_set_contains(visited, cell)) continue;
-      if (!cell_set_add(visited, cell)) continue;
+      if (cell_set_contains(visited, cell)) {
+        continue;
+      }
+      if (!cell_set_add(visited, cell)) {
+        continue;
+      }
 
       if (cell->type == LCL_CELL && cell->as.cell.inner) {
         if (cycle_check_value(target, cell->as.cell.inner, visited)) {
@@ -88,7 +100,9 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
 
 static int cycle_check_value(lcl_value *target, lcl_value *val,
                              cell_set *visited) {
-  if (!val) return 0;
+  if (!val) {
+    return 0;
+  }
 
   if (val->type == LCL_PROC) {
     return cycle_check_proc(target, val->as.procedure.proc, visited);
@@ -103,9 +117,13 @@ int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
   cell_set visited;
   int result;
 
-  if (!cell || cell->type != LCL_CELL || !value) return 0;
+  if (!cell || cell->type != LCL_CELL || !value) {
+    return 0;
+  }
 
-  if (value->type != LCL_PROC) return 0;
+  if (value->type != LCL_PROC) {
+    return 0;
+  }
 
   cell_set_init(&visited);
   result = cycle_check_proc(cell, value->as.procedure.proc, &visited);

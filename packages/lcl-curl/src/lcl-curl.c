@@ -22,7 +22,9 @@ struct curl_context *curl_context_new(void) {
   CURL *c = curl_easy_init();
   struct curl_context *ctx = NULL;
 
-  if (!c) return NULL;
+  if (!c) {
+    return NULL;
+  }
 
   ctx = calloc(1, sizeof(*ctx));
 
@@ -40,7 +42,9 @@ struct curl_context *curl_context_new(void) {
 }
 
 void curl_context_free(struct curl_context *ctx) {
-  if (!ctx) return;
+  if (!ctx) {
+    return;
+  }
 
   if (ctx->curl) {
     curl_easy_cleanup(ctx->curl);
@@ -64,7 +68,9 @@ int c_curl_new(lcl_interp *interp, int argc, lcl_value **argv,
   (void)interp;
   (void)argv;
 
-  if (argc > 0) return LCL_RC_ERR;
+  if (argc > 0) {
+    return LCL_RC_ERR;
+  }
 
   ctx = curl_context_new();
 
@@ -130,7 +136,8 @@ int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
     const char *val;                                                           \
     (void)interp;                                                              \
     (void)out;                                                                 \
-    if (argc < 2) return LCL_RC_ERR;                                           \
+    if (argc < 2)                                                              \
+      return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
     val = lcl_value_to_string(argv[1]);                                        \
@@ -146,10 +153,12 @@ int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
     long val;                                                                  \
     (void)interp;                                                              \
     (void)out;                                                                 \
-    if (argc < 2) return LCL_RC_ERR;                                           \
+    if (argc < 2)                                                              \
+      return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
-    if (lcl_value_to_int(argv[1], &val) != LCL_OK) return LCL_RC_ERR;          \
+    if (lcl_value_to_int(argv[1], &val) != LCL_OK)                             \
+      return LCL_RC_ERR;                                                       \
     return (curl_easy_setopt(ctx->curl, curl_opt, val) == CURLE_OK)            \
                ? LCL_RC_OK                                                     \
                : LCL_RC_ERR;                                                   \
@@ -188,7 +197,9 @@ int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
 
   rc = curl_easy_setopt(ctx->curl, CURLOPT_HTTPHEADER, ctx->headers);
 
-  if (rc != CURLE_OK) return LCL_RC_ERR;
+  if (rc != CURLE_OK) {
+    return LCL_RC_ERR;
+  }
 
   return LCL_RC_OK;
 }
@@ -221,7 +232,9 @@ int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
    */
   rc = curl_easy_setopt(ctx->curl, CURLOPT_COPYPOSTFIELDS, body);
 
-  if (rc != CURLE_OK) return LCL_RC_ERR;
+  if (rc != CURLE_OK) {
+    return LCL_RC_ERR;
+  }
 
   return LCL_RC_OK;
 }
@@ -326,7 +339,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
     struct curl_context *ctx;                                                  \
     long val;                                                                  \
     (void)interp;                                                              \
-    if (argc < 1) return LCL_RC_ERR;                                           \
+    if (argc < 1)                                                              \
+      return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
     if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
@@ -341,7 +355,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
     struct curl_context *ctx;                                                  \
     char *val = NULL;                                                          \
     (void)interp;                                                              \
-    if (argc < 1) return LCL_RC_ERR;                                           \
+    if (argc < 1)                                                              \
+      return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
     if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
@@ -356,7 +371,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
     struct curl_context *ctx;                                                  \
     double val;                                                                \
     (void)interp;                                                              \
-    if (argc < 1) return LCL_RC_ERR;                                           \
+    if (argc < 1)                                                              \
+      return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
     if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
@@ -418,7 +434,7 @@ size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb,
    */
   buf = malloc(realsize + 1);
   if (!buf) {
-    return 0; /* Signal error to CURL */
+    return 0;
   }
   memcpy(buf, contents, realsize);
   buf[realsize] = '\0';

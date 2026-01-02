@@ -5,7 +5,9 @@
 #include <string.h>
 
 void lcl_env_free(lcl_env *env) {
-  if (!env) return;
+  if (!env) {
+    return;
+  }
 
   if (env->frame) {
     lcl_frame_ref_dec(env->frame);
@@ -48,7 +50,9 @@ lcl_env *lcl_env_new(void) {
 }
 
 lcl_result lcl_env_let(lcl_env *env, const char *name, lcl_value *value) {
-  if (!env || !env->frame) return LCL_ERROR;
+  if (!env || !env->frame) {
+    return LCL_ERROR;
+  }
 
   if (!hash_table_put(env->frame->locals, name, value)) {
     return LCL_ERROR;
@@ -64,13 +68,17 @@ lcl_result lcl_env_let_take(lcl_env *env, const char *name, lcl_value *value) {
 }
 
 lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value) {
-  if (!env || !env->frame) return LCL_ERROR;
+  if (!env || !env->frame) {
+    return LCL_ERROR;
+  }
 
   {
     lcl_result r;
     lcl_value *cell = lcl_cell_new(value);
 
-    if (!cell) return LCL_ERROR;
+    if (!cell) {
+      return LCL_ERROR;
+    }
 
     r = hash_table_put(env->frame->locals, name, cell) ? LCL_RC_OK : LCL_ERROR;
 
@@ -80,7 +88,6 @@ lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value) {
   }
 }
 
-/* Simple lookup without qualified names */
 static lcl_result env_get_simple(lcl_env *env, const char *key,
                                  lcl_value **out) {
   lcl_value *b = NULL;
@@ -103,7 +110,9 @@ static lcl_result env_get_simple(lcl_env *env, const char *key,
 
 /* Lookup for command names - supports qualified names */
 lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out) {
-  if (!env || !out) return LCL_ERROR;
+  if (!env || !out) {
+    return LCL_ERROR;
+  }
   return lcl_env_get_value(env, key, out);
 }
 
@@ -112,25 +121,22 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
   const char *rest = NULL;
   lcl_value *current = NULL;
 
-  if (!env || !out) return LCL_ERROR;
+  if (!env || !out) {
+    return LCL_ERROR;
+  }
 
-  /* First try direct lookup (handles command names containing ::) */
   if (env_get_simple(env, key, out) == LCL_OK) {
     return LCL_OK;
   }
 
-  /* Check for qualified name (contains ::) */
   if (!lcl_ns_split(key, first, sizeof(first), &rest)) {
-    /* No ::, simple lookup already failed */
     return LCL_ERROR;
   }
 
-  /* Look up first part in env */
   if (env_get_simple(env, first, &current) != LCL_OK) {
     return LCL_ERROR;
   }
 
-  /* Walk through qualified path */
   while (rest && *rest) {
     lcl_value *next = NULL;
     char part[256];
@@ -141,7 +147,6 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
       return LCL_ERROR;
     }
 
-    /* Try to split rest into part::next_rest */
     if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
       if (lcl_ns_get(current, part, &next) != LCL_OK) {
         lcl_ref_dec(current);
@@ -151,7 +156,6 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
       current = next;
       rest = next_rest;
     } else {
-      /* rest is the final part */
       if (lcl_ns_get(current, rest, &next) != LCL_OK) {
         lcl_ref_dec(current);
         return LCL_ERROR;
@@ -166,7 +170,6 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
   return LCL_OK;
 }
 
-/* Helper: try set! on a cell in the frame chain (simple name) */
 static lcl_result env_set_bang_simple(lcl_env *env, const char *name,
                                       lcl_value *value) {
   lcl_frame *f = env->frame;
@@ -196,25 +199,22 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
   const char *rest = NULL;
   lcl_value *current = NULL;
 
-  if (!env) return LCL_ERROR;
+  if (!env) {
+    return LCL_ERROR;
+  }
 
-  /* First try simple lookup in frame chain */
   if (env_set_bang_simple(env, name, value) == LCL_OK) {
     return LCL_OK;
   }
 
-  /* Check for qualified name (contains ::) */
   if (!lcl_ns_split(name, first, sizeof(first), &rest)) {
-    /* No ::, simple lookup already failed */
     return LCL_ERROR;
   }
 
-  /* Look up first part in env */
   if (env_get_simple(env, first, &current) != LCL_OK) {
     return LCL_ERROR;
   }
 
-  /* Walk through qualified path until we reach the final part */
   while (rest && *rest) {
     lcl_value *next = NULL;
     char part[256];
@@ -225,9 +225,7 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
       return LCL_ERROR;
     }
 
-    /* Try to split rest into part::next_rest */
     if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
-      /* More parts to go - keep walking */
       if (lcl_ns_get(current, part, &next) != LCL_OK) {
         lcl_ref_dec(current);
         return LCL_ERROR;
@@ -254,7 +252,6 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
     }
   }
 
-  /* Shouldn't reach here normally */
   lcl_ref_dec(current);
   return LCL_ERROR;
 }

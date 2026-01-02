@@ -151,14 +151,20 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           j++;
         }
 
-        if (j >= sc->len) return -1;
-        if (j == sc->i) return -1;
+        if (j >= sc->len) {
+          return -1;
+        }
+        if (j == sc->i) {
+          return -1;
+        }
 
         {
           size_t n = (size_t)(j - sc->i);
           char *nm = (char *)malloc(n + 1);
 
-          if (!nm) return -1;
+          if (!nm) {
+            return -1;
+          }
 
           memcpy(nm, sc->s + sc->i, n);
           nm[n] = '\0';
@@ -231,7 +237,9 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           } else if (d == ']') {
             depth--;
 
-            if (!depth) break;
+            if (!depth) {
+              break;
+            }
           } else if (d == '{') {
             long k = 1;
 
@@ -247,12 +255,16 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
               }
             }
 
-            if (k) return -1;
+            if (k) {
+              return -1;
+            }
           } else if (d == '"') {
             while (sc->i < sc->len) {
               char e = sc->s[sc->i++];
 
-              if (e == '"') break;
+              if (e == '"') {
+                break;
+              }
               if (e == '\\' && sc->i < sc->len) {
                 sc->i++;
               } else if (e == '\n') {
@@ -262,7 +274,9 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           }
         }
 
-        if (depth) return -1;
+        if (depth) {
+          return -1;
+        }
 
         {
           char *subsrc = strndup(sc->s + begin, (size_t)(sc->i - begin - 1));
@@ -270,7 +284,9 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           free(subsrc);
         }
 
-        if (!sub) return -1;
+        if (!sub) {
+          return -1;
+        }
 
         if (!lcl_word_add_sub(w, sub)) {
           lcl_program_free(sub);
@@ -309,14 +325,12 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         char esc_char;
         int is_escape = 1;
 
-        /* Flush any accumulated literal before the backslash */
         if (sc->i > start) {
           if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
             return -1;
           }
         }
 
-        /* Line continuation */
         if (next == '\n') {
           sc->i += 2;
           sc->line++;
@@ -324,7 +338,6 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           continue;
         }
 
-        /* Handle escape sequences */
         switch (next) {
         case 'n': esc_char = '\n'; break;
         case 't': esc_char = '\t'; break;
@@ -337,7 +350,6 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         case '{': esc_char = '{'; break;
         case '}': esc_char = '}'; break;
         default:
-          /* Unknown escape - keep the escaped character only */
           is_escape = 0;
           sc->i++;
           start = sc->i;
@@ -368,7 +380,9 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     }
   }
 
-  if (in_quotes) return -1;
+  if (in_quotes) {
+    return -1;
+  }
 
   return (w->np > 0) ? 1 : 0;
 }
@@ -381,7 +395,9 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
   for (;;) {
     skip_cmd_ws_and_comments(sc);
 
-    if (sc->i >= sc->len) return 0;
+    if (sc->i >= sc->len) {
+      return 0;
+    }
 
     if (sc->s[sc->i] == ';') {
       sc->i++;

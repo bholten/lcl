@@ -20,7 +20,9 @@ static lcl_value *cjson_to_lcl(cJSON *json);
 static lcl_value *json_bool_new(int value) {
   struct json_bool_data *data = malloc(sizeof(struct json_bool_data));
 
-  if (!data) return NULL;
+  if (!data) {
+    return NULL;
+  }
 
   data->value = value ? 1 : 0;
 
@@ -38,7 +40,9 @@ static int json_bool_get(lcl_value *value, int *out) {
     return 0;
   }
 
-  if (out) *out = data->value;
+  if (out) {
+    *out = data->value;
+  }
 
   return 1;
 }
@@ -62,13 +66,17 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
 
   case LCL_INT: {
     long n;
-    if (lcl_value_to_int(value, &n) != LCL_OK) return NULL;
+    if (lcl_value_to_int(value, &n) != LCL_OK) {
+      return NULL;
+    }
     return cJSON_CreateNumber((double)n);
   }
 
   case LCL_FLOAT: {
     float f;
-    if (lcl_value_to_float(value, &f) != LCL_OK) return NULL;
+    if (lcl_value_to_float(value, &f) != LCL_OK) {
+      return NULL;
+    }
     return cJSON_CreateNumber((double)f);
   }
 
@@ -77,7 +85,9 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
     size_t len = lcl_list_len(value);
     size_t i;
 
-    if (!arr) return NULL;
+    if (!arr) {
+      return NULL;
+    }
 
     for (i = 0; i < len; i++) {
       lcl_value *elem = NULL;
@@ -107,7 +117,9 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
     lcl_value *keys = NULL;
     size_t len, i;
 
-    if (!obj) return NULL;
+    if (!obj) {
+      return NULL;
+    }
 
     if (lcl_dict_keys(value, &keys) != LCL_OK) {
       cJSON_Delete(obj);
@@ -218,7 +230,9 @@ static lcl_value *cjson_to_lcl(cJSON *json) {
     lcl_value *list = lcl_list_new();
     cJSON *elem;
 
-    if (!list) return NULL;
+    if (!list) {
+      return NULL;
+    }
 
     cJSON_ArrayForEach(elem, json) {
       lcl_value *lcl_elem = cjson_to_lcl(elem);
@@ -244,7 +258,9 @@ static lcl_value *cjson_to_lcl(cJSON *json) {
     lcl_value *dict = lcl_dict_new();
     cJSON *item;
 
-    if (!dict) return NULL;
+    if (!dict) {
+      return NULL;
+    }
 
     cJSON_ArrayForEach(item, json) {
       lcl_value *lcl_val = cjson_to_lcl(item);

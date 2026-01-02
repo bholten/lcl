@@ -3,7 +3,6 @@
 
 #include <stdlib.h>
 
-/* Forward declaration - full definition in lcl-values.h */
 typedef struct lcl_value lcl_value;
 
 enum { H_EMPTY = 0, H_FULL = 1, H_TOMB = 2 };

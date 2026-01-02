@@ -22,7 +22,9 @@ int lcl_str_reserve(lcl_str *st, size_t need) {
   size_t cap = st->cap ? st->cap : 64;
   char *p;
 
-  if (n <= st->cap) return 1;
+  if (n <= st->cap) {
+    return 1;
+  }
 
   while (cap < n) {
     size_t next = cap << 1;
@@ -36,7 +38,9 @@ int lcl_str_reserve(lcl_str *st, size_t need) {
 
   p = (char *)realloc(st->buf, cap);
 
-  if (!p) return 0;
+  if (!p) {
+    return 0;
+  }
 
   st->buf = p;
   st->cap = cap;
@@ -45,7 +49,9 @@ int lcl_str_reserve(lcl_str *st, size_t need) {
 }
 
 int lcl_str_putc(lcl_str *st, int c) {
-  if (!lcl_str_reserve(st, 1)) return 0;
+  if (!lcl_str_reserve(st, 1)) {
+    return 0;
+  }
 
   st->buf[st->len++] = (char)c;
   st->buf[st->len] = '\0';
@@ -58,8 +64,12 @@ int lcl_str_puts(lcl_str *st, const char *s) {
 }
 
 int lcl_str_write(lcl_str *str, const char *data, int n) {
-  if (n == 0) return 1;
-  if (!lcl_str_reserve(str, n)) return 0;
+  if (n == 0) {
+    return 1;
+  }
+  if (!lcl_str_reserve(str, n)) {
+    return 0;
+  }
 
   memcpy(str->buf + str->len, data, n);
   str->len += n;
