@@ -73,7 +73,7 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
   }
 
   case LCL_FLOAT: {
-    float f;
+    double f;
     if (lcl_value_to_float(value, &f) != LCL_OK) {
       return NULL;
     }

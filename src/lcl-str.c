@@ -63,10 +63,11 @@ int lcl_str_puts(lcl_str *st, const char *s) {
   return lcl_str_write(st, s, strlen(s));
 }
 
-int lcl_str_write(lcl_str *str, const char *data, int n) {
+int lcl_str_write(lcl_str *str, const char *data, size_t n) {
   if (n == 0) {
     return 1;
   }
+
   if (!lcl_str_reserve(str, n)) {
     return 0;
   }

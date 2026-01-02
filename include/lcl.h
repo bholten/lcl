@@ -228,7 +228,7 @@ lcl_value *lcl_int_new(long n);
 /*
  * Create a new float value.
  */
-lcl_value *lcl_float_new(float f);
+lcl_value *lcl_float_new(double f);
 
 /*
  * Create a new empty list.
@@ -261,7 +261,7 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out);
  * Convert a value to a float.
  * Returns LCL_OK on success, LCL_ERROR if the value cannot be converted.
  */
-lcl_result lcl_value_to_float(lcl_value *value, float *out);
+lcl_result lcl_value_to_float(lcl_value *value, double *out);
 
 /* ============================================================================
  * List Operations

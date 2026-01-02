@@ -32,7 +32,7 @@ void lcl_ref_dec(lcl_value *value) {
 
   switch (value->type) {
   case LCL_LIST: {
-    int i;
+    size_t i;
 
     for (i = 0; i < value->as.list.len; i++) {
       lcl_ref_dec(value->as.list.items[i]);
@@ -48,13 +48,14 @@ void lcl_ref_dec(lcl_value *value) {
   case LCL_PROC: {
     lcl_proc *p = value->as.procedure.proc;
     int i;
-    /* Free upvalues */
+
     for (i = 0; i < p->nupvals; i++) {
       free(p->upvals[i].name);
       lcl_ref_dec(p->upvals[i].value);
     }
+
     free(p->upvals);
-    free(p->self_name); /* NULL-safe */
+    free(p->self_name);
     lcl_ref_dec(p->params);
     lcl_ref_dec(p->captured_ns);
     lcl_program_free(p->body);

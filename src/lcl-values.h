@@ -30,8 +30,8 @@ struct lcl_value {
     double f;
     struct {
       lcl_value **items;
-      int len;
-      int cap;
+      size_t len;
+      size_t cap;
     } list;
     struct {
       hash_table *dictionary;
@@ -68,9 +68,9 @@ lcl_value *lcl_string_new(const char *str);
 const char *lcl_value_to_string(lcl_value *value);
 
 lcl_value *lcl_int_new(const long n);
-lcl_value *lcl_float_new(const float f);
+lcl_value *lcl_float_new(const double f);
 lcl_result lcl_value_to_int(lcl_value *value, long *out);
-lcl_result lcl_value_to_float(lcl_value *value, float *out);
+lcl_result lcl_value_to_float(lcl_value *value, double *out);
 
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);

@@ -19,7 +19,7 @@ lcl_value *lcl_int_new(const long n) {
   return v;
 }
 
-lcl_value *lcl_float_new(const float f) {
+lcl_value *lcl_float_new(const double f) {
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
   if (!v) {
@@ -58,9 +58,9 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
   return LCL_ERROR;
 }
 
-lcl_result lcl_value_to_float(lcl_value *value, float *out) {
+lcl_result lcl_value_to_float(lcl_value *value, double *out) {
   switch (value->type) {
-  case LCL_INT: *out = (float)value->as.i; return LCL_OK;
+  case LCL_INT: *out = (double)value->as.i; return LCL_OK;
 
   case LCL_FLOAT: *out = value->as.f; return LCL_OK;
 

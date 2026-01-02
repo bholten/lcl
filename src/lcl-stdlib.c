@@ -21,7 +21,8 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
 lcl_value *lcl_list_new_from_cwords(const char *words);
 static int lcl_value_is_true(lcl_value *v);
 
-int c_assert(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   const char *expr;
   lcl_value *result = NULL;
   (void)out;
@@ -55,7 +56,8 @@ int c_assert(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
   int i;
   (void)interp;
 
@@ -76,7 +78,8 @@ int c_puts(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_and(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_and(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   int b;
   int i;
   (void)interp;
@@ -98,7 +101,8 @@ ret:
   return LCL_RC_OK;
 }
 
-int c_or(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_or(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   int b;
   int i;
   (void)interp;
@@ -117,7 +121,8 @@ int c_or(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_not(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   int b;
   (void)interp;
 
@@ -131,10 +136,11 @@ int c_not(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  float sum = 0.0f;
+static int c_add(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
+  double sum = 0.0f;
   int i;
-  float v;
+  double v;
   (void)interp;
 
   for (i = 0; i < argc; i++) {
@@ -150,10 +156,11 @@ int c_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_sub(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  float result;
+static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
+  double result;
   int i;
-  float v;
+  double v;
   (void)interp;
 
   if (argc < 2) {
@@ -177,10 +184,11 @@ int c_sub(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_mult(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  float product = 1.0f;
+static int c_mult(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  double product = 1.0f;
   int i;
-  float v;
+  double v;
   (void)interp;
 
   for (i = 0; i < argc; i++) {
@@ -196,11 +204,12 @@ int c_mult(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_div(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_div(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
-  float result;
-  float numerator;
-  float divisor;
+  double result;
+  double numerator;
+  double divisor;
 
   if (argc != 2) {
     return LCL_RC_ERR;
@@ -225,7 +234,8 @@ int c_div(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_mod(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   long result;
   long dividend;
   long divisor;
@@ -250,10 +260,11 @@ int c_mod(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_lt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_lt(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   long result;
-  float left;
-  float right;
+  double left;
+  double right;
   (void)interp;
 
   if (argc != 2) {
@@ -275,10 +286,11 @@ int c_lt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_lte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_lte(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   long result;
-  float left;
-  float right;
+  double left;
+  double right;
   (void)interp;
 
   if (argc != 2) {
@@ -300,10 +312,11 @@ int c_lte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_gt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_gt(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
   long result;
-  float left;
-  float right;
+  double left;
+  double right;
   (void)interp;
 
   if (argc != 2) {
@@ -325,10 +338,11 @@ int c_gt(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_gte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_gte(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   long result;
-  float left;
-  float right;
+  double left;
+  double right;
   (void)interp;
 
   if (argc != 2) {
@@ -350,20 +364,16 @@ int c_gte(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-/* ============================================================================
- * Equality operators
- * ============================================================================
- */
-
 #define EQ_STACK_MAX 256
 
-typedef struct {
+struct eq_cycle_guard {
   lcl_value *a[EQ_STACK_MAX];
   lcl_value *b[EQ_STACK_MAX];
   int depth;
-} eq_cycle_guard;
+};
 
-static int eq_cycle_guard_check(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
+static int eq_cycle_guard_check(struct eq_cycle_guard *g, lcl_value *a,
+                                lcl_value *b) {
   int i;
 
   for (i = 0; i < g->depth; i++) {
@@ -378,7 +388,8 @@ static int eq_cycle_guard_check(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
   return 0;
 }
 
-static int eq_cycle_guard_push(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
+static int eq_cycle_guard_push(struct eq_cycle_guard *g, lcl_value *a,
+                               lcl_value *b) {
   if (g->depth >= EQ_STACK_MAX) {
     return 0;
   }
@@ -390,14 +401,14 @@ static int eq_cycle_guard_push(eq_cycle_guard *g, lcl_value *a, lcl_value *b) {
   return 1;
 }
 
-static void eq_cycle_guard_pop(eq_cycle_guard *g) {
+static void eq_cycle_guard_pop(struct eq_cycle_guard *g) {
   if (g->depth > 0) {
     g->depth--;
   }
 }
 
 static int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
-                                eq_cycle_guard *guard);
+                                struct eq_cycle_guard *guard);
 
 static lcl_value *deref_once(lcl_value *v) {
   if (v && v->type == LCL_CELL) {
@@ -406,7 +417,8 @@ static lcl_value *deref_once(lcl_value *v) {
   return v;
 }
 
-static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
+static int list_equal_deep(lcl_value *a, lcl_value *b,
+                           struct eq_cycle_guard *guard) {
   size_t len_a;
   size_t len_b;
   size_t i;
@@ -444,7 +456,8 @@ static int list_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
   return 1;
 }
 
-static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
+static int dict_equal_deep(lcl_value *a, lcl_value *b,
+                           struct eq_cycle_guard *guard) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val_a;
@@ -455,7 +468,6 @@ static int dict_equal_deep(lcl_value *a, lcl_value *b, eq_cycle_guard *guard) {
     return 0;
   }
 
-  /* Check all keys in a exist in b with equal values */
   while (hash_table_iterate(a->as.dict.dictionary, &it, &key, &val_a)) {
     if (lcl_dict_get(b, key, &val_b) != LCL_OK) {
       lcl_ref_dec(val_a);
@@ -509,8 +521,7 @@ static int value_to_double(lcl_value *v, double *out) {
 
 /* Main deep equality function */
 static int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
-                                eq_cycle_guard *guard) {
-  /* Deref cells once */
+                                struct eq_cycle_guard *guard) {
   a = deref_once(a);
   b = deref_once(b);
 
@@ -518,30 +529,25 @@ static int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
     return a == b;
   }
 
-  /* Same object = equal */
   if (a == b) {
     return 1;
   }
 
-  /* Check for cycles */
   if (eq_cycle_guard_check(guard, a, b)) {
     return 1;
   }
 
-  /* Handle numeric comparisons with promotion (including string-to-number) */
   {
     double da;
     double db;
     int a_is_num = value_to_double(a, &da);
     int b_is_num = value_to_double(b, &db);
 
-    /* If both can be numbers, compare numerically */
     if (a_is_num && b_is_num) {
       return da == db;
     }
   }
 
-  /* Type mismatch (non-numeric) = not equal */
   if (a->type != b->type) {
     return 0;
   }
@@ -574,7 +580,6 @@ static int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
       return result;
     }
 
-  /* Identity comparison for procs, cprocs, namespaces, cells */
   case LCL_PROC:
   case LCL_CPROC:
   case LCL_NAMESPACE:
@@ -584,9 +589,9 @@ static int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
   }
 }
 
-/* == : value equality */
-int c_eq(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  eq_cycle_guard guard = {{0}, {0}, 0};
+static int c_eq(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
+  struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)interp;
 
   if (argc != 2) {
@@ -597,9 +602,9 @@ int c_eq(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-/* != : value inequality */
-int c_ne(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  eq_cycle_guard guard = {{0}, {0}, 0};
+static int c_ne(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
+  struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)interp;
 
   if (argc != 2) {
@@ -611,7 +616,8 @@ int c_ne(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* same? : identity equality (no deref) */
-int c_same(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_same(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
   (void)interp;
 
   if (argc != 2) {
@@ -623,8 +629,8 @@ int c_same(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* not-same? : identity inequality */
-int c_not_same(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_not_same(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   (void)interp;
 
   if (argc != 2) {
@@ -636,7 +642,8 @@ int c_not_same(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* cell? : check if value is a cell */
-int c_is_cell(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_is_cell(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -648,8 +655,8 @@ int c_is_cell(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* binding-cell name : returns the cell object for a binding (special form) */
-int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
-                   lcl_value **out) {
+static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
+                          lcl_value **out) {
   lcl_value *name_v = NULL;
   lcl_value *binding = NULL;
   const char *name;
@@ -658,14 +665,12 @@ int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Evaluate the name argument */
   if (lcl_eval_word(interp, args[0], &name_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
   name = lcl_value_to_string(name_v);
 
-  /* Get the raw binding (not dereferenced) */
   if (lcl_env_get_value(&interp->env, name, &binding) != LCL_OK) {
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -673,7 +678,6 @@ int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
 
   lcl_ref_dec(name_v);
 
-  /* Must be a cell */
   if (binding->type != LCL_CELL) {
     lcl_ref_dec(binding);
     return LCL_RC_ERR;
@@ -684,8 +688,8 @@ int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 /* same-binding? name1 name2 : check if two bindings refer to the same cell */
-int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
-                   lcl_value **out) {
+static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
+                          lcl_value **out) {
   lcl_value *name1_v = NULL;
   lcl_value *name2_v = NULL;
   lcl_value *binding1 = NULL;
@@ -698,7 +702,6 @@ int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Evaluate name arguments */
   if (lcl_eval_word(interp, args[0], &name1_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
@@ -710,7 +713,6 @@ int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   name1 = lcl_value_to_string(name1_v);
   name2 = lcl_value_to_string(name2_v);
 
-  /* Get the raw bindings */
   if (lcl_env_get_value(&interp->env, name1, &binding1) != LCL_OK) {
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
@@ -724,7 +726,6 @@ int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Both must be cells */
   if (binding1->type != LCL_CELL || binding2->type != LCL_CELL) {
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
@@ -744,12 +745,12 @@ int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
-int c_let(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   if (argc != 2) {
     return LCL_RC_ERR;
   }
 
-  /* hash_table_put inside lcl_env_let will incref the value */
   if (lcl_env_let(&interp->env, lcl_value_to_string(argv[0]), argv[1]) !=
       LCL_OK) {
     return LCL_RC_ERR;
@@ -760,7 +761,8 @@ int c_let(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_ref(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_ref(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -772,7 +774,8 @@ int c_ref(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-int c_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_get(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   lcl_value *val = NULL;
 
   if (argc != 1) {
@@ -784,7 +787,6 @@ int c_get(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
     return LCL_RC_ERR;
   }
 
-  /* If the value is a cell, dereference it */
   if (val->type == LCL_CELL) {
     if (lcl_cell_get(val, out) != LCL_OK) {
       lcl_ref_dec(val);
@@ -814,7 +816,6 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Use lcl_eval_word to preserve value type (e.g., lists) */
   if (lcl_eval_word(interp, args[1], &val_v) != LCL_RC_OK) {
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -851,8 +852,8 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
-int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
-          lcl_value **out) {
+static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
+                 lcl_value **out) {
   lcl_value *name_v = NULL;
   lcl_value *init_v = NULL;
 
@@ -864,7 +865,6 @@ int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
     return LCL_RC_ERR;
   }
 
-  /* Use lcl_eval_word to preserve value type (e.g., lists) */
   if (lcl_eval_word(interp, argv[1], &init_v) != LCL_RC_OK) {
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -885,8 +885,8 @@ int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
   return LCL_RC_OK;
 }
 
-int s_return(lcl_interp *interp, int argc, const lcl_word **args,
-             lcl_value **out) {
+static int s_return(lcl_interp *interp, int argc, const lcl_word **args,
+                    lcl_value **out) {
   if (argc == 0) {
     *out = lcl_string_new("");
 
@@ -901,8 +901,8 @@ int s_return(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 /* break - exit from innermost loop */
-int s_break(lcl_interp *interp, int argc, const lcl_word **args,
-            lcl_value **out) {
+static int s_break(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
   (void)interp;
   (void)args;
 
@@ -915,8 +915,8 @@ int s_break(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 /* continue - skip to next iteration of innermost loop */
-int s_continue(lcl_interp *interp, int argc, const lcl_word **args,
-               lcl_value **out) {
+static int s_continue(lcl_interp *interp, int argc, const lcl_word **args,
+                      lcl_value **out) {
   (void)interp;
   (void)args;
 
@@ -949,8 +949,8 @@ int c_error(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
  * Usage: catch script ?resultVar? ?errorVar?
  * Returns: 0 if script succeeded, 1 if error occurred
  */
-int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
-            lcl_value **out) {
+static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
   lcl_value *script_v = NULL;
   lcl_program *prog = NULL;
   lcl_value *result = NULL;
@@ -982,14 +982,12 @@ int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(ev);
   }
 
-  /* Evaluate the script word to get the body */
   if (lcl_eval_word_to_str(interp, args[0], &script_v) != LCL_RC_OK) {
     free(result_var);
     free(error_var);
     return LCL_RC_ERR;
   }
 
-  /* Compile the script */
   prog = lcl_program_compile(lcl_value_to_string(script_v), "<catch>");
   lcl_ref_dec(script_v);
 
@@ -1000,7 +998,6 @@ int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Execute the script */
   rc = lcl_eval_program(interp, prog, &result);
   lcl_program_free(prog);
 
@@ -1027,7 +1024,6 @@ int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     free(result_var);
     free(error_var);
 
-    /* Return 1 to indicate error was caught */
     *out = lcl_int_new(1);
     return LCL_RC_OK;
 
@@ -1049,12 +1045,10 @@ int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     free(result_var);
     free(error_var);
 
-    /* Return 0 to indicate success */
     *out = lcl_int_new(0);
     return LCL_RC_OK;
 
   } else {
-    /* Other return codes (RETURN, BREAK, CONTINUE) - propagate them */
     free(result_var);
     free(error_var);
     *out = result;
@@ -1072,29 +1066,25 @@ static int lcl_value_is_true(lcl_value *v) {
     return 0;
   }
 
-  /* Integer type: non-zero is true */
   if (v->type == LCL_INT) {
     return v->as.i != 0;
   }
 
-  /* Float type: non-zero is true */
   if (v->type == LCL_FLOAT) {
     return v->as.f != 0.0;
   }
 
-  /* String: try to parse as number */
   s = lcl_value_to_string(v);
   if (!s || *s == '\0') {
     return 0; /* empty string is false */
   }
 
   n = strtol(s, &endptr, 10);
+
   if (*endptr == '\0') {
-    /* Successfully parsed as integer */
     return n != 0;
   }
 
-  /* Non-numeric non-empty string is true */
   return 1;
 }
 
@@ -1116,7 +1106,6 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
     int is_true;
     int rc;
 
-    /* Check for 'else' keyword (must be followed by body) */
     if (i > 0) {
       lcl_value *kw = NULL;
       const char *kw_str;
@@ -1133,10 +1122,9 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
 
         if (i + 1 >= argc) {
           interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR; /* else requires body */
+          return LCL_RC_ERR;
         }
 
-        /* Evaluate else body */
         if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
           interp->in_tail_position = saved_tail_position;
           return LCL_RC_ERR;
@@ -1160,20 +1148,19 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
 
       if (strcmp(kw_str, "elseif") == 0) {
         lcl_ref_dec(kw);
-        i++; /* skip 'elseif', process condition+body below */
+        i++;
 
         if (i + 1 >= argc) {
           interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR; /* elseif requires condition and body */
+          return LCL_RC_ERR;
         }
       } else {
         lcl_ref_dec(kw);
         interp->in_tail_position = saved_tail_position;
-        return LCL_RC_ERR; /* unexpected token */
+        return LCL_RC_ERR;
       }
     }
 
-    /* Evaluate condition (not in tail position) */
     if (lcl_eval_word(interp, args[i], &cond_v) != LCL_RC_OK) {
       interp->in_tail_position = saved_tail_position;
       return LCL_RC_ERR;
@@ -1183,7 +1170,6 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
     lcl_ref_dec(cond_v);
 
     if (is_true) {
-      /* Evaluate body */
       if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
         interp->in_tail_position = saved_tail_position;
         return LCL_RC_ERR;
@@ -1197,7 +1183,6 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
         return LCL_RC_ERR;
       }
 
-      /* Body IS in tail position if the if itself was */
       interp->in_tail_position = saved_tail_position;
       rc = lcl_eval_program(interp, body_p, out);
       lcl_program_free(body_p);
@@ -1205,11 +1190,9 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
       return rc;
     }
 
-    /* Condition was false, skip to next clause */
     i += 2;
   }
 
-  /* No condition was true and no else clause */
   interp->in_tail_position = saved_tail_position;
   *out = lcl_string_new("");
   return LCL_RC_OK;
@@ -1217,8 +1200,8 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
 
 /* while test body - loop while test is true, re-evaluating test each iteration
  */
-int s_while(lcl_interp *interp, int argc, const lcl_word **args,
-            lcl_value **out) {
+static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
   lcl_value *body_v = NULL;
   lcl_program *test_p = NULL;
   lcl_program *body_p = NULL;
@@ -1232,7 +1215,6 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
 
   test_is_braced = args[0]->braced;
 
-  /* If test is braced, compile it as a script to evaluate each iteration */
   if (test_is_braced) {
     lcl_value *test_v = NULL;
 
@@ -1248,7 +1230,6 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  /* Compile body script */
   if (lcl_eval_word_to_str(interp, args[1], &body_v) != LCL_RC_OK) {
     if (test_p) {
       lcl_program_free(test_p);
@@ -1268,12 +1249,10 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Loop while condition is true */
   for (;;) {
     lcl_value *cond_v = NULL;
     int is_true;
 
-    /* Evaluate test each iteration */
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);
 
@@ -1288,7 +1267,6 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
         return rc;
       }
     } else {
-      /* Non-braced: evaluate word directly (handles $var) */
       if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
         lcl_program_free(body_p);
 
@@ -1307,7 +1285,6 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
       break;
     }
 
-    /* Execute body */
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
@@ -1361,8 +1338,8 @@ int s_while(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 /* for start test next body - Tcl-style for loop */
-int s_for(lcl_interp *interp, int argc, const lcl_word **args,
-          lcl_value **out) {
+static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
+                 lcl_value **out) {
   lcl_value *start_v = NULL;
   lcl_value *body_v = NULL;
   lcl_value *next_v = NULL;
@@ -1381,7 +1358,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
   test_is_braced = args[1]->braced;
 
-  /* Compile start script */
   if (lcl_eval_word_to_str(interp, args[0], &start_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
@@ -1393,7 +1369,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* If test is braced, compile it as a script to evaluate each iteration */
   if (test_is_braced) {
     lcl_value *test_v = NULL;
 
@@ -1411,7 +1386,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  /* Compile next script (args[2]) */
   if (lcl_eval_word_to_str(interp, args[2], &next_v) != LCL_RC_OK) {
     lcl_program_free(start_p);
 
@@ -1435,7 +1409,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Compile body script (args[3]) */
   if (lcl_eval_word_to_str(interp, args[3], &body_v) != LCL_RC_OK) {
     lcl_program_free(start_p);
 
@@ -1463,7 +1436,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Execute start script once */
   rc = lcl_eval_program(interp, start_p, &tmp);
   lcl_program_free(start_p);
 
@@ -1482,12 +1454,10 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     return rc;
   }
 
-  /* Loop while condition is true */
   for (;;) {
     lcl_value *cond_v = NULL;
     int is_true;
 
-    /* Evaluate test each iteration */
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);
 
@@ -1503,7 +1473,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
         return rc;
       }
     } else {
-      /* Non-braced: evaluate word directly */
       if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
         lcl_program_free(body_p);
         lcl_program_free(next_p);
@@ -1523,7 +1492,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
       break;
     }
 
-    /* Execute body */
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
@@ -1536,7 +1504,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     if (rc == LCL_RC_CONTINUE) {
-      /* Still execute next before continuing */
       tmp = NULL;
       rc = lcl_eval_program(interp, next_p, &tmp);
 
@@ -1591,7 +1558,6 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
       return LCL_RC_RETURN;
     }
 
-    /* Execute next script */
     tmp = NULL;
     rc = lcl_eval_program(interp, next_p, &tmp);
 
@@ -1628,8 +1594,8 @@ int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 }
 
 /* foreach varname list body - iterate over list elements */
-int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
-              lcl_value **out) {
+static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
+                     lcl_value **out) {
   lcl_value *varname_v = NULL;
   lcl_value *list_v = NULL;
   lcl_value *body_v = NULL;
@@ -1881,8 +1847,8 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
   return LCL_RC_OK;
 }
 
-int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
-             lcl_value **out) {
+static int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
+                    lcl_value **out) {
   /*
    * Two forms:
    *   lambda {params} {body}        - anonymous (argc == 2, first arg braced)
@@ -2046,8 +2012,8 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
   return current;
 }
 
-int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
-                     lcl_value **out) {
+static int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
+                            lcl_value **out) {
   lcl_value *path_v = NULL;
   lcl_value *body_v = NULL;
   lcl_value *ns = NULL;
@@ -2149,8 +2115,8 @@ int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
   return rc;
 }
 
-int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
-                lcl_value **out) {
+static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out) {
   lcl_value *subcmd_v = NULL;
   const char *subcmd;
 
@@ -2175,8 +2141,8 @@ int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_ERR;
 }
 
-int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
-            lcl_value **out) {
+static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
   lcl_value *input_v = NULL;
   const char *src;
   size_t src_len;
@@ -2485,8 +2451,8 @@ err:
 }
 
 /* quasiquote {template} - like subst but only substitutes ,expr and ,@expr */
-int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
-                 lcl_value **out) {
+static int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
+                        lcl_value **out) {
   lcl_value *input_v = NULL;
   const char *src;
   size_t src_len;
@@ -2728,8 +2694,8 @@ qq_err:
   return LCL_RC_ERR;
 }
 
-int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
-           lcl_value **out) {
+static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
   int i;
   lcl_program *prog = NULL;
   lcl_return_code rc = LCL_RC_OK;
@@ -2852,7 +2818,6 @@ int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
   return rc;
 }
 
-/* Read entire file into a malloc'd string */
 static char *read_file(const char *path, size_t *out_len) {
   FILE *f;
   long len;
@@ -2903,8 +2868,8 @@ static char *read_file(const char *path, size_t *out_len) {
   return buf;
 }
 
-int s_load(lcl_interp *interp, int argc, const lcl_word **args,
-           lcl_value **out) {
+static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
   lcl_value *path_v = NULL;
   const char *path;
   char *src = NULL;
@@ -3012,8 +2977,8 @@ static const char *find_bracket_end(const char *s) {
  * value, allowing it to preserve type information (dict, list, etc.)
  * ============================================================================
  */
-int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
-                   lcl_value **out) {
+static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
+                          lcl_value **out) {
   lcl_value *current = NULL;
   lcl_value *form_v = NULL;
   int i;
@@ -3163,8 +3128,8 @@ int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
  *          ->> 10 {[lambda {x} ...]} becomes: [[lambda {x} ...] 10]
  * ============================================================================
  */
-int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
-                  lcl_value **out) {
+static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
+                         lcl_value **out) {
   lcl_value *current = NULL;
   lcl_value *form_v = NULL;
   int i;
@@ -3242,8 +3207,8 @@ int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
-int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
-           lcl_value **out) {
+static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
   /* proc name {params} {body}
    * Desugars to: let name [lambda name {params} {body}] */
   lcl_value *name_v = NULL;
@@ -3286,7 +3251,8 @@ int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
  */
 
 /* list ?value ...? - construct a list from arguments */
-int c_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_list(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
   lcl_value *list;
   int i;
   (void)interp;
@@ -3308,7 +3274,8 @@ int c_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* lindex list ?index ...? - get element(s) from list by index */
-int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   lcl_value *list;
   long idx;
   (void)interp;
@@ -3404,27 +3371,9 @@ int c_lindex(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   }
 }
 
-/* llength list - get list length */
-int c_llength(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  size_t len;
-  (void)interp;
-
-  if (argc != 1) {
-    return LCL_RC_ERR;
-  }
-
-  if (argv[0]->type != LCL_LIST) {
-    *out = lcl_int_new(1);
-    return LCL_RC_OK;
-  }
-
-  len = lcl_list_len(argv[0]);
-  *out = lcl_int_new((long)len);
-  return LCL_RC_OK;
-}
-
 /* List::range start end ?step? - generate numeric range [start, end) */
-int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   lcl_value *result;
   lcl_value *num;
   long start;
@@ -3494,53 +3443,9 @@ int c_lrange(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-/* concat ?list ...? - concatenate lists */
-int c_concat(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
-  lcl_value *result;
-  int i;
-  (void)interp;
-
-  result = lcl_list_new();
-
-  if (!result) {
-    return LCL_RC_ERR;
-  }
-
-  for (i = 0; i < argc; i++) {
-    lcl_value *arg = argv[i];
-
-    if (arg->type == LCL_LIST) {
-      size_t j;
-      size_t len = lcl_list_len(arg);
-      for (j = 0; j < len; j++) {
-        lcl_value *elem = NULL;
-        if (lcl_list_get(arg, j, &elem) == LCL_OK) {
-          if (lcl_list_push(&result, elem) != LCL_OK) {
-            lcl_ref_dec(elem);
-            lcl_ref_dec(result);
-
-            return LCL_RC_ERR;
-          }
-
-          lcl_ref_dec(elem);
-        }
-      }
-    } else {
-      /* Non-list - add as single element */
-      if (lcl_list_push(&result, arg) != LCL_OK) {
-        lcl_ref_dec(result);
-
-        return LCL_RC_ERR;
-      }
-    }
-  }
-
-  *out = result;
-  return LCL_RC_OK;
-}
-
 /* join list ?separator? - join list elements with separator (default space) */
-int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
   lcl_value *list;
   const char *sep = " ";
   size_t sep_len;
@@ -3609,7 +3514,8 @@ int c_join(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
 /* split string ?splitChars? - split string into list (default split on each
  * char) */
-int c_split(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
   const char *str;
   const char *split_chars = NULL;
   lcl_value *result;
@@ -3710,7 +3616,8 @@ int c_split(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
  */
 
 /* len x - returns length of list, dict, or string */
-int c_len(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_len(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -3735,7 +3642,8 @@ int c_len(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* empty? x - returns 1 if container is empty */
-int c_empty(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_empty(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -3762,8 +3670,8 @@ int c_empty(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* get x k [default] - get element by key/index */
-int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   (void)interp;
 
   if (argc < 2 || argc > 3) {
@@ -3838,7 +3746,8 @@ int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* put x k v - return new container with element added/replaced */
-int c_put(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_put(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
 
   if (argc != 3) {
@@ -3885,7 +3794,8 @@ int c_put(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* del x k - return new container without element */
-int c_del(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_del(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
 
   if (argc != 2) {
@@ -3910,7 +3820,8 @@ int c_del(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* has? x k - check if key/index exists */
-int c_has(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
+                 lcl_value **out) {
   (void)interp;
 
   if (argc != 2) {
@@ -3953,7 +3864,8 @@ int c_has(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
  * ============================================================================
  */
 
-int c_is_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_is_list(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -3965,7 +3877,8 @@ int c_is_list(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -3977,8 +3890,8 @@ int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_is_string(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_is_string(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -3990,8 +3903,8 @@ int c_is_string(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_is_opaque(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_is_opaque(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -4003,8 +3916,8 @@ int c_is_opaque(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -4031,7 +3944,8 @@ int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_is_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_is_int(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -4043,8 +3957,8 @@ int c_is_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_OK;
 }
 
-int c_is_float(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_is_float(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -4056,7 +3970,8 @@ int c_is_float(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -4070,9 +3985,10 @@ int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* int x - convert value to integer */
-int c_to_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
+static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
   long val;
-  float fval;
+  double fval;
 
   if (argc != 1) {
     LCL_ERR_MSG(interp, "int requires exactly one argument");
@@ -4104,9 +4020,9 @@ int c_to_int(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 }
 
 /* float x - convert value to float */
-int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
-  float val;
+static int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
+  double val;
 
   if (argc != 1) {
     LCL_ERR_MSG(interp, "float requires exactly one argument");
@@ -4206,8 +4122,8 @@ int c_list_pop(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* list::slice x start [end] - return sublist */
-int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
+static int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv,
+                        lcl_value **out) {
   long start;
   long end;
   size_t len;
@@ -4277,8 +4193,8 @@ int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* list::concat a b - return new list with elements from both */
-int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *result;
   size_t i;
   (void)interp;
@@ -4325,8 +4241,8 @@ int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* list::reverse x - return reversed list */
-int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   lcl_value *result;
   size_t len;
   size_t i;
@@ -4367,8 +4283,8 @@ int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
  */
 
 /* List::map f list - apply f to each element, return new list */
-int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   lcl_value *result;
@@ -4426,8 +4342,8 @@ int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::filter f list - keep elements where f returns true */
-int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   lcl_value *result;
@@ -4489,8 +4405,8 @@ int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::reduce init f list - fold list with f(acc, elem) */
-int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *init;
   lcl_value *func;
   lcl_value *list;
@@ -4546,8 +4462,8 @@ int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::sort list - sort list lexicographically by string value */
-int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   lcl_value *list;
   lcl_value *result;
   lcl_value **items;
@@ -4615,8 +4531,8 @@ int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::sort_by f list - sort using comparison function f(a, b) -> int */
-int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   lcl_value *result;
@@ -4717,8 +4633,8 @@ int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::find pred list - find first element where pred returns true */
-int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   size_t i;
@@ -4773,8 +4689,8 @@ int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::any pred list - return 1 if any element satisfies pred */
-int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   size_t i;
@@ -4828,8 +4744,8 @@ int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::all pred list - return 1 if all elements satisfy pred */
-int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   lcl_value *func;
   lcl_value *list;
   size_t i;
@@ -4883,8 +4799,8 @@ int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::unique list - return list with duplicates removed */
-int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *list;
   lcl_value *result;
   hash_table *seen;
@@ -4943,8 +4859,8 @@ int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* List::flatten list - flatten nested lists one level */
-int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   lcl_value *list;
   lcl_value *result;
   size_t i;
@@ -5002,8 +4918,8 @@ int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
  */
 
 /* dict::keys d - return list of keys */
-int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -5032,8 +4948,8 @@ int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* dict::values d - return list of values */
-int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -5061,8 +4977,8 @@ int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* dict::items d - return list of {key value} pairs */
-int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
+static int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv,
+                        lcl_value **out) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -5096,8 +5012,8 @@ int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* dict (constructor) - create dict from key-value pairs */
-int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
-                       lcl_value **out) {
+static int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
+                              lcl_value **out) {
   lcl_value *dict;
   int i;
   (void)interp;
@@ -5126,8 +5042,8 @@ int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* dict::merge a b - return new dict with entries from both (b overwrites a) */
-int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
+static int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv,
+                        lcl_value **out) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
@@ -5156,8 +5072,8 @@ int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv,
 
 /* Dict::map f d - apply f to each key-value pair, f receives key and value,
  * returns new value */
-int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   lcl_value *func;
   lcl_value *dict;
   lcl_value *result;
@@ -5207,8 +5123,8 @@ int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Dict::filter f d - keep entries where f(key, value) returns true */
-int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *func;
   lcl_value *dict;
   lcl_value *result;
@@ -5263,8 +5179,8 @@ int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Dict::reduce init f d - fold dict with f(acc, key, value) */
-int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   lcl_value *init;
   lcl_value *func;
   lcl_value *dict;
@@ -5322,8 +5238,8 @@ int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
  */
 
 /* string::upper s - return uppercase string */
-int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   const char *src;
   char *result;
   size_t i;
@@ -5346,7 +5262,7 @@ int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
     char c = src[i];
 
     if (c >= 'a' && c <= 'z') {
-      result[i] = c - 32;
+      result[i] = (char)(c - 32);
     } else {
       result[i] = c;
     }
@@ -5361,8 +5277,8 @@ int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* string::lower s - return lowercase string */
-int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   const char *src;
   char *result;
   size_t i;
@@ -5385,7 +5301,7 @@ int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
     char c = src[i];
 
     if (c >= 'A' && c <= 'Z') {
-      result[i] = c + 32;
+      result[i] = (char)(c + 32);
     } else {
       result[i] = c;
     }
@@ -5400,8 +5316,8 @@ int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* string::find s sub - return index of first occurrence or -1 */
-int c_string_find(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_string_find(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   const char *haystack;
   const char *needle;
   const char *found;
@@ -5426,8 +5342,8 @@ int c_string_find(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* string::replace s old new - return string with replacements */
-int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
-                     lcl_value **out) {
+static int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
+                            lcl_value **out) {
   const char *src;
   const char *old_str;
   const char *new_str;
@@ -5499,8 +5415,8 @@ int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* String::length s - return length of string */
-int c_string_length(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+static int c_string_length(lcl_interp *interp, int argc, lcl_value **argv,
+                           lcl_value **out) {
   const char *src;
   (void)interp;
 
@@ -5515,8 +5431,8 @@ int c_string_length(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* String::index s i - return character at index i as a string */
-int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   const char *src;
   long idx;
   size_t len;
@@ -5534,7 +5450,6 @@ int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  /* Handle negative indices (from end) */
   if (idx < 0) {
     idx = (long)len + idx;
   }
@@ -5552,8 +5467,8 @@ int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* String::range s start end - return substring from start to end (exclusive) */
-int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   const char *src;
   long start;
   long end;
@@ -5574,24 +5489,26 @@ int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  /* Handle negative indices */
   if (start < 0) {
     start = (long)len + start;
   }
+
   if (end < 0) {
     end = (long)len + end;
   }
 
-  /* Clamp to valid range */
   if (start < 0) {
     start = 0;
   }
+
   if (end < 0) {
     end = 0;
   }
+
   if ((size_t)start > len) {
     start = (long)len;
   }
+
   if ((size_t)end > len) {
     end = (long)len;
   }
@@ -5603,6 +5520,7 @@ int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
 
   sub_len = (size_t)(end - start);
   result = malloc(sub_len + 1);
+
   if (!result) {
     return LCL_RC_ERR;
   }
@@ -5617,8 +5535,8 @@ int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* String::trim s - remove leading and trailing whitespace */
-int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
   const char *src;
   const char *start;
   const char *end;
@@ -5631,9 +5549,8 @@ int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   src = lcl_value_to_string(argv[0]);
-
-  /* Skip leading whitespace */
   start = src;
+
   while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') {
     start++;
   }
@@ -5643,8 +5560,8 @@ int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  /* Find end of string, then back up past trailing whitespace */
   end = start + strlen(start) - 1;
+
   while (end > start &&
          (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
     end--;
@@ -5652,6 +5569,7 @@ int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
 
   len = (size_t)(end - start + 1);
   result = malloc(len + 1);
+
   if (!result) {
     return LCL_RC_ERR;
   }
