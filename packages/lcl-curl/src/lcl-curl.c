@@ -16,6 +16,13 @@ struct curl_context {
   lcl_interp *interp;
   struct curl_slist *headers;
   lcl_value *write_callback;
+  lcl_value *header_callback;
+
+  /* SSE support */
+  lcl_value *sse_callback;
+  char *sse_buffer;
+  size_t sse_buffer_len;
+  size_t sse_buffer_cap;
 };
 
 struct curl_context *curl_context_new(void) {
@@ -37,11 +44,16 @@ struct curl_context *curl_context_new(void) {
   ctx->headers = NULL;
   ctx->interp = NULL;
   ctx->write_callback = NULL;
+  ctx->header_callback = NULL;
+  ctx->sse_callback = NULL;
+  ctx->sse_buffer = NULL;
+  ctx->sse_buffer_len = 0;
+  ctx->sse_buffer_cap = 0;
 
   return ctx;
 }
 
-void curl_context_free(struct curl_context *ctx) {
+static void curl_context_free(struct curl_context *ctx) {
   if (!ctx) {
     return;
   }
@@ -58,11 +70,272 @@ void curl_context_free(struct curl_context *ctx) {
     lcl_ref_dec(ctx->write_callback);
   }
 
+  if (ctx->header_callback) {
+    lcl_ref_dec(ctx->header_callback);
+  }
+
+  if (ctx->sse_callback) {
+    lcl_ref_dec(ctx->sse_callback);
+  }
+
+  if (ctx->sse_buffer) {
+    free(ctx->sse_buffer);
+  }
+
   free(ctx);
 }
 
-int c_curl_new(lcl_interp *interp, int argc, lcl_value **argv,
-               lcl_value **out) {
+static void curl_context_sse_buffer_append(struct curl_context *ctx,
+                                           const char *contents, size_t size) {
+  size_t new_len = ctx->sse_buffer_len + size;
+
+  if (new_len + 1 > ctx->sse_buffer_cap) {
+    size_t new_cap = ctx->sse_buffer_cap == 0 ? 1024 : ctx->sse_buffer_cap * 2;
+    char *new_buf;
+
+    while (new_cap < new_len + 1) {
+      new_cap *= 2;
+    }
+
+    new_buf = realloc(ctx->sse_buffer, new_cap);
+
+    if (!new_buf) {
+      return;
+    }
+
+    ctx->sse_buffer = new_buf;
+    ctx->sse_buffer_cap = new_cap;
+  }
+
+  memcpy(ctx->sse_buffer + ctx->sse_buffer_len, contents, size);
+  ctx->sse_buffer_len = new_len;
+  ctx->sse_buffer[ctx->sse_buffer_len] = '\0';
+}
+
+/*
+ * Parse an SSE event into a dict with keys: event, data, id, retry
+ * SSE format:
+ *   event: <type>     - event type (default "message")
+ *   data: <content>   - event data (multiple lines joined with \n)
+ *   id: <id>          - event ID
+ *   retry: <ms>       - reconnection time
+ *   : <comment>       - ignored
+ */
+static lcl_value *parse_sse_event(const char *event_text) {
+  lcl_value *dict = lcl_dict_new();
+  lcl_value *event_type = NULL;
+  lcl_value *event_id = NULL;
+  lcl_value *retry_val = NULL;
+  char *data_buf = NULL;
+  size_t data_len = 0;
+  size_t data_cap = 0;
+  const char *line_start;
+  const char *line_end;
+  const char *p;
+
+  if (!dict) {
+    return NULL;
+  }
+
+  line_start = event_text;
+
+  while (*line_start) {
+    line_end = line_start;
+    while (*line_end && *line_end != '\n' && *line_end != '\r') {
+      line_end++;
+    }
+
+    if (*line_start == ':') {
+      goto next_line;
+    }
+
+    p = line_start;
+
+    while (p < line_end && *p != ':') {
+      p++;
+    }
+
+    if (p < line_end) {
+      size_t field_len = (size_t)(p - line_start);
+      const char *value_start = p + 1;
+      size_t value_len;
+
+      if (value_start < line_end && *value_start == ' ') {
+        value_start++;
+      }
+
+      value_len = (size_t)(line_end - value_start);
+
+      if (field_len == 5 && strncmp(line_start, "event", 5) == 0) {
+        /* event: <type> */
+        char *type_str = malloc(value_len + 1);
+        if (type_str) {
+          memcpy(type_str, value_start, value_len);
+          type_str[value_len] = '\0';
+          if (event_type) {
+            lcl_ref_dec(event_type);
+          }
+          event_type = lcl_string_new(type_str);
+          free(type_str);
+        }
+
+      } else if (field_len == 4 && strncmp(line_start, "data", 4) == 0) {
+        /* data: <content> - append to data buffer with \n separator */
+        size_t needed = data_len + value_len + 2; /* +1 for \n, +1 for \0 */
+
+        if (needed > data_cap) {
+          size_t new_cap = data_cap == 0 ? 256 : data_cap * 2;
+          char *new_buf;
+
+          while (new_cap < needed) {
+            new_cap *= 2;
+          }
+
+          new_buf = realloc(data_buf, new_cap);
+          if (!new_buf) {
+            goto cleanup;
+          }
+          data_buf = new_buf;
+          data_cap = new_cap;
+        }
+
+        if (data_len > 0) {
+          data_buf[data_len++] = '\n';
+        }
+        memcpy(data_buf + data_len, value_start, value_len);
+        data_len += value_len;
+        data_buf[data_len] = '\0';
+
+      } else if (field_len == 2 && strncmp(line_start, "id", 2) == 0) {
+        /* id: <id> */
+        char *id_str = malloc(value_len + 1);
+        if (id_str) {
+          memcpy(id_str, value_start, value_len);
+          id_str[value_len] = '\0';
+          if (event_id) {
+            lcl_ref_dec(event_id);
+          }
+          event_id = lcl_string_new(id_str);
+          free(id_str);
+        }
+
+      } else if (field_len == 5 && strncmp(line_start, "retry", 5) == 0) {
+        /* retry: <ms> */
+        char *retry_str = malloc(value_len + 1);
+        if (retry_str) {
+          long retry_ms;
+          memcpy(retry_str, value_start, value_len);
+          retry_str[value_len] = '\0';
+          retry_ms = strtol(retry_str, NULL, 10);
+          free(retry_str);
+          if (retry_val) {
+            lcl_ref_dec(retry_val);
+          }
+          retry_val = lcl_int_new(retry_ms);
+        }
+      }
+    }
+
+  next_line:
+    while (*line_end == '\r' || *line_end == '\n') {
+      line_end++;
+    }
+    line_start = line_end;
+  }
+
+  if (event_type) {
+    lcl_dict_put(&dict, "event", event_type);
+    lcl_ref_dec(event_type);
+  } else {
+    /* Note: default event type is "message" */
+    lcl_value *default_type = lcl_string_new("message");
+    if (default_type) {
+      lcl_dict_put(&dict, "event", default_type);
+      lcl_ref_dec(default_type);
+    }
+  }
+
+  if (data_buf && data_len > 0) {
+    lcl_value *data_val = lcl_string_new(data_buf);
+    if (data_val) {
+      lcl_dict_put(&dict, "data", data_val);
+      lcl_ref_dec(data_val);
+    }
+  }
+
+  if (event_id) {
+    lcl_dict_put(&dict, "id", event_id);
+    lcl_ref_dec(event_id);
+  }
+
+  if (retry_val) {
+    lcl_dict_put(&dict, "retry", retry_val);
+    lcl_ref_dec(retry_val);
+  }
+
+  free(data_buf);
+  return dict;
+
+cleanup:
+  free(data_buf);
+  if (event_type) {
+    lcl_ref_dec(event_type);
+  }
+  if (event_id) {
+    lcl_ref_dec(event_id);
+  }
+  if (retry_val) {
+    lcl_ref_dec(retry_val);
+  }
+  lcl_ref_dec(dict);
+  return NULL;
+}
+
+static void curl_context_dispatch_sse_event(struct curl_context *ctx,
+                                            const char *event_text) {
+  lcl_value *result = NULL;
+  lcl_value *parsed_event;
+
+  if (!ctx->sse_callback) {
+    return;
+  }
+
+  parsed_event = parse_sse_event(event_text);
+  if (!parsed_event) {
+    return;
+  }
+
+  lcl_call_proc(ctx->interp, ctx->sse_callback, 1, &parsed_event, &result);
+
+  if (result) {
+    lcl_ref_dec(result);
+  }
+  lcl_ref_dec(parsed_event);
+}
+
+static void curl_context_sse_buffer_shift(struct curl_context *ctx,
+                                          size_t consumed) {
+  if (consumed == 0) {
+    return;
+  }
+
+  if (consumed >= ctx->sse_buffer_len) {
+    /* All data consumed */
+    ctx->sse_buffer_len = 0;
+    if (ctx->sse_buffer) {
+      ctx->sse_buffer[0] = '\0';
+    }
+  } else {
+    /* Shift remaining data to start of buffer */
+    size_t remaining = ctx->sse_buffer_len - consumed;
+    memmove(ctx->sse_buffer, ctx->sse_buffer + consumed, remaining);
+    ctx->sse_buffer_len = remaining;
+    ctx->sse_buffer[ctx->sse_buffer_len] = '\0';
+  }
+}
+
+static int c_curl_new(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *c;
   (void)interp;
@@ -93,8 +366,8 @@ int c_curl_new(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_curl_init(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
+static int c_curl_init(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
   (void)argc;
   (void)argv;
   (void)interp;
@@ -107,8 +380,8 @@ int c_curl_init(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
+static int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
+                        lcl_value **out) {
   struct curl_context *ctx;
   (void)interp;
   (void)out;
@@ -126,12 +399,9 @@ int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/*
- * Helper macros for common option patterns
- */
 #define CURL_STRING_OPTION(fn_name, curl_opt)                                  \
-  int fn_name(lcl_interp *interp, int argc, lcl_value **argv,                  \
-              lcl_value **out) {                                               \
+  static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
+                     lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     const char *val;                                                           \
     (void)interp;                                                              \
@@ -147,8 +417,8 @@ int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
 #define CURL_LONG_OPTION(fn_name, curl_opt)                                    \
-  int fn_name(lcl_interp *interp, int argc, lcl_value **argv,                  \
-              lcl_value **out) {                                               \
+  static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
+                     lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     long val;                                                                  \
     (void)interp;                                                              \
@@ -170,8 +440,8 @@ int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
 CURL_STRING_OPTION(c_curl_set_verb, CURLOPT_CUSTOMREQUEST)
 CURL_STRING_OPTION(c_curl_set_url, CURLOPT_URL)
 
-int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
+                             lcl_value **out) {
   struct curl_context *ctx;
   const char *header;
   int i;
@@ -191,7 +461,6 @@ int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
 
   for (i = 1; i < argc; i++) {
     header = lcl_value_to_string(argv[i]);
-    printf("header = %s\n", header);
     ctx->headers = curl_slist_append(ctx->headers, header);
   }
 
@@ -204,8 +473,8 @@ int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+static int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
+                           lcl_value **out) {
   struct curl_context *ctx;
   const char *body;
   int rc;
@@ -334,8 +603,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
  * Info from last request
  */
 #define CURL_INFO_LONG(fn_name, curl_info)                                     \
-  int fn_name(lcl_interp *interp, int argc, lcl_value **argv,                  \
-              lcl_value **out) {                                               \
+  static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
+                     lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     long val;                                                                  \
     (void)interp;                                                              \
@@ -350,8 +619,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
   }
 
 #define CURL_INFO_STRING(fn_name, curl_info)                                   \
-  int fn_name(lcl_interp *interp, int argc, lcl_value **argv,                  \
-              lcl_value **out) {                                               \
+  static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
+                     lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     char *val = NULL;                                                          \
     (void)interp;                                                              \
@@ -366,8 +635,8 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
   }
 
 #define CURL_INFO_DOUBLE(fn_name, curl_info)                                   \
-  int fn_name(lcl_interp *interp, int argc, lcl_value **argv,                  \
-              lcl_value **out) {                                               \
+  static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
+                     lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     double val;                                                                \
     (void)interp;                                                              \
@@ -391,8 +660,8 @@ CURL_INFO_LONG(c_curl_get_info_num_connects, CURLINFO_NUM_CONNECTS)
 CURL_INFO_STRING(c_curl_get_info_primary_ip, CURLINFO_PRIMARY_IP)
 CURL_INFO_LONG(c_curl_get_info_primary_port, CURLINFO_PRIMARY_PORT)
 
-int c_curl_perform(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static int c_curl_perform(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
   struct curl_context *ctx;
   CURLcode result;
   (void)interp;
@@ -420,8 +689,8 @@ int c_curl_perform(lcl_interp *interp, int argc, lcl_value **argv,
 /*
  * Callbacks
  */
-size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb,
-                          void *userdata) {
+static size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb,
+                                 void *userdata) {
   size_t realsize = size * nmemb;
   struct curl_context *ctx = (struct curl_context *)userdata;
   lcl_value *result = NULL;
@@ -452,8 +721,8 @@ size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb,
   return realsize;
 }
 
-int c_curl_set_write_callback(lcl_interp *interp, int argc, lcl_value **argv,
-                              lcl_value **out) {
+static int c_curl_set_write_callback(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *callback_proc;
   (void)interp;
@@ -476,6 +745,132 @@ int c_curl_set_write_callback(lcl_interp *interp, int argc, lcl_value **argv,
   ctx->write_callback = lcl_ref_inc(callback_proc);
 
   curl_easy_setopt(ctx->curl, CURLOPT_WRITEFUNCTION, curl_write_wrapper);
+  curl_easy_setopt(ctx->curl, CURLOPT_WRITEDATA, (void *)ctx);
+
+  return LCL_RC_OK;
+}
+
+static size_t curl_sse_write_wrapper(char *contents, size_t size, size_t nmemb,
+                                     void *userdata) {
+  size_t realsize = size * nmemb;
+  struct curl_context *ctx = (struct curl_context *)userdata;
+  char *event_start = NULL;
+  char *event_end = NULL;
+
+  curl_context_sse_buffer_append(ctx, contents, realsize);
+  event_start = ctx->sse_buffer;
+
+  while ((event_end = strstr(event_start, "\n\n")) != NULL) {
+    size_t event_len = (size_t)(event_end - event_start);
+    char *event = malloc(event_len + 1);
+
+    if (event) {
+      memcpy(event, event_start, event_len);
+      event[event_len] = '\0';
+
+      curl_context_dispatch_sse_event(ctx, event);
+      free(event);
+    }
+
+    event_start = event_end + 2;
+  }
+
+  /* Shift consumed data out of buffer */
+  curl_context_sse_buffer_shift(ctx, (size_t)(event_start - ctx->sse_buffer));
+
+  return realsize;
+}
+
+static size_t curl_header_wrapper(char *contents, size_t size, size_t nmemb,
+                                  void *userdata) {
+  size_t realsize = size * nmemb;
+  struct curl_context *ctx = (struct curl_context *)userdata;
+  lcl_value *result = NULL;
+  lcl_value *arg;
+  char *buf;
+
+  if (!ctx->header_callback) {
+    return realsize;
+  }
+
+  /* Headers include trailing \r\n - create null-terminated copy */
+  buf = malloc(realsize + 1);
+  if (!buf) {
+    return 0;
+  }
+  memcpy(buf, contents, realsize);
+  buf[realsize] = '\0';
+
+  arg = lcl_string_new(buf);
+  free(buf);
+
+  if (!arg) {
+    return 0;
+  }
+
+  lcl_call_proc(ctx->interp, ctx->header_callback, 1, &arg, &result);
+
+  if (result) {
+    lcl_ref_dec(result);
+  }
+  lcl_ref_dec(arg);
+
+  return realsize;
+}
+
+static int c_curl_set_header_callback(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
+  struct curl_context *ctx;
+  lcl_value *callback_proc;
+  (void)interp;
+  (void)out;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  callback_proc = argv[1];
+
+  if (!lcl_is_callable(callback_proc)) {
+    return LCL_RC_ERR;
+  }
+
+  ctx->header_callback = lcl_ref_inc(callback_proc);
+
+  curl_easy_setopt(ctx->curl, CURLOPT_HEADERFUNCTION, curl_header_wrapper);
+  curl_easy_setopt(ctx->curl, CURLOPT_HEADERDATA, (void *)ctx);
+
+  return LCL_RC_OK;
+}
+
+static int c_curl_set_sse_callback(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
+  struct curl_context *ctx;
+  lcl_value *callback_proc;
+  (void)interp;
+  (void)out;
+
+  if (argc < 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  callback_proc = argv[1];
+
+  if (!lcl_is_callable(callback_proc)) {
+    return LCL_RC_ERR;
+  }
+
+  ctx->sse_callback = lcl_ref_inc(callback_proc);
+
+  curl_easy_setopt(ctx->curl, CURLOPT_WRITEFUNCTION, curl_sse_write_wrapper);
   curl_easy_setopt(ctx->curl, CURLOPT_WRITEDATA, (void *)ctx);
 
   return LCL_RC_OK;
@@ -674,6 +1069,11 @@ void lcl_register_curl(lcl_interp *interp) {
   lcl_ns_def(
       curl_ns, "set_write_callback",
       lcl_c_proc_new("curl::set_write_callback", c_curl_set_write_callback));
+  lcl_ns_def(
+      curl_ns, "set_header_callback",
+      lcl_c_proc_new("curl::set_header_callback", c_curl_set_header_callback));
+  lcl_ns_def(curl_ns, "set_sse_callback",
+             lcl_c_proc_new("curl::set_sse_callback", c_curl_set_sse_callback));
 
   /* Response info getters */
   lcl_ns_def(
