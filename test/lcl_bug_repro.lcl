@@ -1,0 +1,67 @@
+# LCL Bug: Tail-call breaks lambda closure when called from C callback
+#
+# When a proc uses `return [other_proc]` (tail call position), and
+# `other_proc` contains a lambda that is invoked as a callback from C,
+# the lambda's closure is corrupted.
+
+# ============================================================================
+# FAILING CASE: Direct return (tail call)
+# ============================================================================
+
+proc inner_failing {} {
+    var body {}
+
+    curl::init
+    let c [curl::new]
+    curl::set_url $c "https://httpbin.org/get"
+    curl::set_verb $c "GET"
+
+    curl::set_write_callback $c [lambda {chunk} {
+        set! body $chunk
+    }]
+
+    curl::perform $c
+    return $body
+}
+
+proc outer_failing {} {
+    return [inner_failing]  # Tail call - BREAKS the lambda
+}
+
+# ============================================================================
+# WORKING CASE: Intermediate binding
+# ============================================================================
+
+proc inner_working {} {
+    var body {}
+
+    curl::init
+    let c [curl::new]
+    curl::set_url $c "https://httpbin.org/get"
+    curl::set_verb $c "GET"
+
+    curl::set_write_callback $c [lambda {chunk} {
+        set! body $chunk
+    }]
+
+    curl::perform $c
+    return $body
+}
+
+proc outer_working {} {
+    let result [inner_working]  # Intermediate let - WORKS
+    return $result
+}
+
+# ============================================================================
+# Test both cases
+# ============================================================================
+
+puts "Testing WORKING case (let + return)..."
+let r1 [outer_working]
+puts "OK - body length: [String::length $r1]"
+
+puts ""
+puts "Testing FAILING case (direct return)..."
+let r2 [outer_failing]
+puts "OK - body length: [String::length $r2]"

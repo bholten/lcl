@@ -78,6 +78,7 @@ struct lcl_interp {
   void *user_data;
   lcl_tailcall pending_tail;
   int in_tail_position;
+  lcl_value *current_proc; /* Bugfix: currently executing proc, for TCO detection */
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

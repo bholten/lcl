@@ -130,14 +130,17 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
   int rc;
   lcl_env saved = interp->env;
   int saved_tail_position = interp->in_tail_position;
+  lcl_value *saved_current_proc = interp->current_proc;
 
-  /* TCO trampoline: loop on self-recursive tail calls */
   lcl_value **current_argv = argv;
   int current_argc = argc;
   int owns_argv = 0; /* We don't own the initial argv, caller does */
 
+  interp->current_proc = proc_val;
+
   for (;;) {
-    /* Use caller's frame as parent for command lookup - no cycle because proc
+    /* Bugfix:
+     * Use caller's frame as parent for command lookup - no cycle because proc
      * doesn't store a reference to this frame (uses upvalues instead) */
     lcl_frame *child = lcl_frame_new(saved.frame);
 
@@ -148,6 +151,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         }
         free(current_argv);
       }
+      interp->current_proc = saved_current_proc;
       return LCL_RC_ERR;
     }
 
@@ -169,10 +173,12 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         }
         free(current_argv);
       }
+      interp->current_proc = saved_current_proc;
       return LCL_RC_ERR;
     }
 
-    /* Inject upvalues into the child frame as regular bindings.
+    /* Bugfix:
+     * Inject upvalues into the child frame as regular bindings.
      * hash_table_put will handle the refcount increment. */
     for (i = 0; i < p->nupvals; i++) {
       hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
@@ -194,16 +200,12 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       lcl_ref_dec(nameV);
     }
 
-    /* Body is in tail position for TCO detection */
     interp->in_tail_position = 1;
     rc = lcl_eval_program(interp, (lcl_program *)p->body, out);
     interp->in_tail_position = saved_tail_position;
-
-    /* Restore env and free frame */
     interp->env = saved;
     lcl_frame_ref_dec(child);
 
-    /* Free previous iteration's args if we owned them */
     if (owns_argv) {
       for (i = 0; i < current_argc; i++) {
         lcl_ref_dec(current_argv[i]);
@@ -218,21 +220,19 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
     }
 
     if (rc == LCL_RC_TAILCALL) {
-      /* Self-recursive tail call - grab pending args and loop */
       current_argv = interp->pending_tail.argv;
       current_argc = interp->pending_tail.argc;
       owns_argv = 1;
-      /* Mark as consumed (don't free in clear_tail_call) */
       interp->pending_tail.argv = NULL;
       interp->pending_tail.argc = 0;
       interp->pending_tail.valid = 0;
-      continue; /* Loop without incrementing depth! */
+      continue;
     }
 
-    /* Normal completion or error */
     break;
   }
 
+  interp->current_proc = saved_current_proc;
   return rc;
 }
 
@@ -301,20 +301,13 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     if (result->type == LCL_PROC) {
       lcl_proc *p = (lcl_proc *)result->as.procedure.proc;
 
-      if (saved_tail_position && p->self_name != NULL) {
-        lcl_value *self_val = NULL;
-        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) ==
-            LCL_OK) {
-          if (self_val == result) {
-            setup_tail_call(interp, 0, NULL);
-            lcl_ref_dec(self_val);
-            lcl_ref_dec(result);
-            *out = NULL;
-            return LCL_RC_TAILCALL;
-          }
-
-          lcl_ref_dec(self_val);
-        }
+      /* Bugfix TCO: Check if this is a self-recursive tail call by comparing
+       * against the currently executing proc, not just name lookup. */
+      if (saved_tail_position && result == interp->current_proc) {
+        setup_tail_call(interp, 0, NULL);
+        lcl_ref_dec(result);
+        *out = NULL;
+        return LCL_RC_TAILCALL;
       }
 
       rc = lcl_call_user_proc(interp, result, p, 0, NULL, out);
@@ -423,7 +416,6 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       return rc;
     }
 
-    /* Restore tail position for the actual call */
     interp->in_tail_position = saved_tail_position;
 
     if (callee->type == LCL_CPROC) {
@@ -431,23 +423,17 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     } else if (callee->type == LCL_PROC) {
       lcl_proc *p = (lcl_proc *)callee->as.procedure.proc;
 
-      if (saved_tail_position && p->self_name != NULL) {
-        lcl_value *self_val = NULL;
-        if (lcl_env_get_value(&interp->env, p->self_name, &self_val) ==
-            LCL_OK) {
-          if (self_val == callee) {
-            setup_tail_call(interp, argc, argv);
-            lcl_ref_dec(self_val);
-            for (i = 0; i < argc; i++) {
-              lcl_ref_dec(argv[i]);
-            }
-            free(argv);
-            lcl_ref_dec(callee);
-            *out = NULL;
-            return LCL_RC_TAILCALL;
-          }
-          lcl_ref_dec(self_val);
+      /* TCO: Check if this is a self-recursive tail call by comparing
+       * against the currently executing proc, not just name lookup. */
+      if (saved_tail_position && callee == interp->current_proc) {
+        setup_tail_call(interp, argc, argv);
+        for (i = 0; i < argc; i++) {
+          lcl_ref_dec(argv[i]);
         }
+        free(argv);
+        lcl_ref_dec(callee);
+        *out = NULL;
+        return LCL_RC_TAILCALL;
       }
 
       rc = lcl_call_user_proc(interp, callee, p, argc, argv, out);

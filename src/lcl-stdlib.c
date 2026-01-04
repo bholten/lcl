@@ -887,13 +887,21 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
 
 static int s_return(lcl_interp *interp, int argc, const lcl_word **args,
                     lcl_value **out) {
+  int rc;
+
   if (argc == 0) {
     *out = lcl_string_new("");
-
     return LCL_RC_RETURN;
   }
 
-  if (lcl_eval_word(interp, args[0], out) == LCL_RC_OK) {
+  rc = lcl_eval_word(interp, args[0], out);
+
+  /* Bugfix: Propagate TAILCALL for self-recursive returns */
+  if (rc == LCL_RC_TAILCALL) {
+    return LCL_RC_TAILCALL;
+  }
+
+  if (rc == LCL_RC_OK) {
     return LCL_RC_RETURN;
   }
 
