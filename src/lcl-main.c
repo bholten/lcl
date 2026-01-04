@@ -18,6 +18,10 @@
 void lcl_register_json(lcl_interp *interp);
 #endif
 
+#ifdef LCL_HAVE_CRYPTO
+void lcl_register_crypto(lcl_interp *interp);
+#endif
+
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
@@ -78,6 +82,10 @@ int main(int argc, char **argv) {
 
 #ifdef LCL_HAVE_JSON
   lcl_register_json(interp);
+#endif
+
+#ifdef LCL_HAVE_CRYPTO
+  lcl_register_crypto(interp);
 #endif
 
 #ifdef LCL_HAVE_TEST

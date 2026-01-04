@@ -1,0 +1,40 @@
+# Test RSA-PSS and ECDSA signing
+
+# RSA test key (2048-bit)
+let rsa_key {-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+6ldVhGjCrQIh
+LH6wVWT/SF/scGZX/TDdjoHaNaVmiXd7PXWMyfzCLy2ohsxp2fmQSRF2v/zmLLHJ
+FTAxuGCASw1cC7SK8hJMu+Im1OL+DypZ8XLrTNLLixAobspPu25m0c6yd4gPnXUL
+zlmeI66KB2EnVp6Zm0C59XHpxcw5i0wBkXo8ORP5qoK5p4bvI2JpoVqS1ncMxGGU
+vpEUTY9k/KYpXAg7Ldi000fDIiu9BwmSSEdm0DLXmPJgzT9fouBouMvXCKSG5a5q
+5mRPQgO72qejJ0QLXLZPwhu8YwD+6ledAurnkxU1qohx1JuRfczGAx+yXQby2GlB
+JMAYe61pAgMBAAECggEAGz3GQcDnpITvPYXjJeIUITZV3vTthYyZK7lT31ZcSCnr
++efRHXUM3eBsJr86l7gEm4lG4VI6Zyrldgh8nKZEZB9RbrA043FFxIaNRHaH/9xw
+x0Nj3x39I2daYjU8z5eyWcrXhYZMzH2ZNUViauWIgtAparrkso0BSrIyaOWnuGYK
+PC0zeVc3hmFMBeHPkkXeHLko/2kT2twlKcJAT43wvLcLLAZltdtYAstpw7R68x15
+H5+XMxoP4nRpNQPCvJ90cXdOcH/3xsxJUAZcMiLmLbIBC/6DoXBfWbL+0ngOkD+M
+4E0No1jkp5haFdz99wwpULNWzp43X1vngX5EMNP4aQKBgQD90wyZTUoLFqHLlIWe
+EKl15bixpXXzbj8RAOsjGd3SCUPyFdk3K49t0y0Ag4qdOKwLZb18DfJYY5G63pJD
+YlKia7HD7b+g5p9sfDZqGVcoRRi5qyQn6BJ0ayjmpE1B1douDJXqA/MWbRsbppy3
+a8jWVUKAUNQ2Qjc6k6H/VNAehwKBgQDAjUEycY1Q5WutS0Mopv3mrVt/8HDnq5aP
+lLMf0Q5BdLG3cQnXWbk7K7nT2zUdHo+MPhRhdPlwegGa3Kv2OudYcdZur2uABNVD
+/HUPBVdPvWslc05wqENkT7zfdYWTbH7k2uPMObdkcZZVGUhk9VbtEpSBnZZNdk1x
+i8DnlvhgjwKBgQCfhVhRsIVsWpjsvTcMlCQseGePHhH3H757DTy6HrOOIUyWhKyz
+Q6ksuJ97xzACh2946kQgBxPcARfBfcgmmVCdy1k5bd4VXVusbpQ0MiDYqjRT2/8p
+JW0TxZU6/t+fFKu+bSJ6pGjOG1wCEMBFdnQOYB8fTa1RPGRBaC9TrRXvWQKBgAs9
+s9qwCmH4osqhJDCRXy1CXZ8geFbuC4IiWjq3R6/GkkF1Ve++izPLH7Qgjf8/M34q
+eaIe5BkO5l0WGOvtEGh3bN9VWl9E6PZpHKRd2XUMR98N1jx5dkW66fnZsIykvtu5
+c6cOj4hLoU0ihrluIT8B4K2Yd5faGjdQw1hB1go9AoGBALcl8Au86Ae0sVhpi730
+BYdndIpGV9iBq1k2CG5xhuhKkn94O3D6Vsiay1rrEZsOxE/Qk7wHuE1LoLfDc+si
+jHsc5I1AHIdcm0l0SA1Fp8foIBSFJ4YtmAAe+lKu2ZbdvtUkgjUp6SouCRqCrQVc
+W9gEujkvlmDLlWaNG5+PdPCk
+-----END PRIVATE KEY-----}
+
+puts "Testing crypto::sign_rsa_pss..."
+let message "Hello, HTTP Signatures!"
+let sig [crypto::sign_rsa_pss $rsa_key $message sha256]
+puts "RSA-PSS signature (hex): $sig"
+puts "Signature length: [String::length $sig] hex chars"
+
+puts ""
+puts "RSA-PSS signing test passed!"

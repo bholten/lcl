@@ -16,6 +16,7 @@ option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
 option(LCL_BUILD_IO "Build Lcl IO extension library" OFF)
 option(LCL_BUILD_JSON "Build Lcl with JSON library" OFF)
+option(LCL_BUILD_CRYPTO "Build Lcl with OpenSSL crypto bindings" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -165,6 +166,22 @@ if(LCL_BUILD_JSON)
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_JSON)
     target_link_libraries(lcl-cli PRIVATE lcl_json)
+  endif()
+endif()
+
+if(LCL_BUILD_CRYPTO)
+  add_subdirectory(packages/lcl-crypto)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_CRYPTO)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_CRYPTO)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_CRYPTO)
+    target_link_libraries(lcl-cli PRIVATE lcl_crypto)
   endif()
 endif()
 

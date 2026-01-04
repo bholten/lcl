@@ -1,0 +1,28 @@
+# Test crypto package functions
+
+puts "Testing crypto::sha256..."
+let hash1 [crypto::sha256 "hello world"]
+puts "SHA256 of 'hello world': $hash1"
+
+puts ""
+puts "Testing crypto::sha512..."
+let hash2 [crypto::sha512 "hello world"]
+puts "SHA512 of 'hello world': $hash2"
+
+puts ""
+puts "Testing crypto::hmac..."
+let hmac_result [crypto::hmac "secret-key" "message to sign" sha256]
+puts "HMAC-SHA256: $hmac_result"
+
+puts ""
+puts "Testing crypto::base64_encode..."
+let encoded [crypto::base64_encode "Hello, World!"]
+puts "Base64 encoded: $encoded"
+
+puts ""
+puts "Testing crypto::base64_decode..."
+let decoded [crypto::base64_decode $encoded]
+puts "Base64 decoded: $decoded"
+
+puts ""
+puts "All basic crypto tests passed!"
