@@ -5,11 +5,6 @@
 #include "lcl-lex.h"
 #include "str-compat.h"
 
-static int is_name(int c) {
-  return (c == '_' || c == ':' || (c >= 'a' && c <= 'z') ||
-          (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
-}
-
 static void skip_cmd_ws_and_comments(lcl_scan *sc) {
   while (sc->i < sc->len) {
     char c = sc->s[sc->i];
@@ -138,7 +133,6 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
       } else if (c == '\n') {
         sc->line++;
       } else if (c == '{') {
-        /* Skip balanced braces */
         long k = 1;
 
         while (sc->i < sc->len && k) {
@@ -222,7 +216,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     char *subsrc;
     size_t content_len;
 
-    sc->i += 2; /* skip #{ */
+    sc->i += 2;
     begin = sc->i;
 
     while (sc->i < sc->len) {
@@ -389,7 +383,24 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
           j++;
 
-          while (j < sc->len && is_name((unsigned char)sc->s[j])) {
+          while (j < sc->len) {
+            unsigned char ch = (unsigned char)sc->s[j];
+
+            /* Bugfix:
+             * We were parsing :$foo: to do lookup a variable named $foo:
+             * Only include colon if it's part of :: namespace separator
+             */
+            if (ch == ':') {
+              if (j + 1 < sc->len && sc->s[j + 1] == ':') {
+                j += 2;
+                continue;
+              }
+              break;
+            }
+
+            if (ch != '_' && !isalnum(ch)) {
+              break;
+            }
             j++;
           }
 
