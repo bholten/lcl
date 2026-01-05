@@ -10,8 +10,9 @@
 ;;
 ;; Quasiquote syntax:
 ;;   quasiquote { ... }  - template with unquoting
-;;   ,expr               - unquote: evaluate and insert result
-;;   ,@list              - splice-unquote: insert list elements
+;;   ,$var               - unquote variable: substitute variable value
+;;   ,[cmd]              - unquote command: evaluate and insert result
+;;   ,@$list             - splice-unquote: insert list elements
 ;;   \,                  - literal comma (escaped)
 ;;
 ;; Literal syntax:
@@ -22,7 +23,7 @@
 ;; - if conditions need [$it] not {$it} for proper evaluation
 ;; - if requires 'else' keyword for else branch
 ;; - Recursive macros: compute recursive call BEFORE quasiquote, then insert
-;;   via variable. E.g.: let rest_code [macro $rest]; quasiquote { ... ,rest_code }
+;;   via variable. E.g.: let rest_code [macro $rest]; quasiquote { ... ,$rest_code }
 ;; - Use () list literals for passing structured data to macros:
 ;;   [macro (({cond1} {body1}) ({cond2} {body2}))]
 
@@ -44,8 +45,8 @@ load lib/Test.lcl
 
 proc aif {condition then_body else_body} {
     quasiquote {
-        let it ,condition
-        if [$it] {,then_body} else {,else_body}
+        let it ,$condition
+        if [$it] {,$then_body} else {,$else_body}
     }
 }
 
@@ -58,8 +59,8 @@ proc aif {condition then_body else_body} {
 
 proc awhen {condition body} {
     quasiquote {
-        let it ,condition
-        if [$it] {,body}
+        let it ,$condition
+        if [$it] {,$body}
     }
 }
 
@@ -73,8 +74,8 @@ proc awhen {condition body} {
 proc awhile {condition body} {
     quasiquote {
         while {1} {
-            var it ,condition
-            if [$it] {,body} else {break}
+            var it ,$condition
+            if [$it] {,$body} else {break}
         }
     }
 }
@@ -94,8 +95,8 @@ proc awhile {condition body} {
 
 proc with-it {initial body} {
     quasiquote {
-        var it ,initial
-        ,body
+        var it ,$initial
+        ,$body
         $it
     }
 }
@@ -113,8 +114,8 @@ proc with-it {initial body} {
 proc collect {items transform} {
     quasiquote {
         var _result [list]
-        foreach it {,items} {
-            set! _result [List::push $_result ,transform]
+        foreach it {,$items} {
+            set! _result [List::push $_result ,$transform]
         }
         $_result
     }
@@ -133,8 +134,8 @@ proc collect {items transform} {
 proc select {items predicate} {
     quasiquote {
         var _result [list]
-        foreach it {,items} {
-            if [,predicate] {
+        foreach it {,$items} {
+            if [,$predicate] {
                 set! _result [List::push $_result $it]
             }
         }
@@ -168,8 +169,8 @@ proc cond {clauses} {
     let rest_code [cond $rest]
 
     quasiquote {
-        let it ,condition
-        if [$it] {,body} else {,rest_code}
+        let it ,$condition
+        if [$it] {,$body} else {,$rest_code}
     }
 }
 
@@ -293,8 +294,8 @@ proc pipeline {initial stages} {
     let rest_code [pipeline $first $rest]
 
     quasiquote {
-        let it ,initial
-        ,rest_code
+        let it ,$initial
+        ,$rest_code
     }
 }
 
@@ -317,7 +318,7 @@ Test::suite "Pipeline" {
 
 proc fn {body} {
     quasiquote {
-        lambda {it} {,body}
+        lambda {it} {,$body}
     }
 }
 
@@ -356,8 +357,8 @@ proc let* {bindings body} {
     let rest_code [let* $rest $body]
 
     quasiquote {
-        let ,name ,value
-        ,rest_code
+        let ,$name ,$value
+        ,$rest_code
     }
 }
 
@@ -379,7 +380,7 @@ Test::suite "Let Star" {
 
 proc unless {condition body} {
     quasiquote {
-        if [not ,condition] {,body}
+        if [not ,$condition] {,$body}
     }
 }
 
@@ -404,8 +405,8 @@ Test::suite "Unless" {
 proc dotimes {n body} {
     quasiquote {
         var it 0
-        while {[< $it ,n]} {
-            ,body
+        while {[< $it ,$n]} {
+            ,$body
             set! it [+ $it 1]
         }
     }

@@ -1,4 +1,4 @@
-# Test crypto package functions
+;; Test crypto package functions
 
 puts "Testing crypto::sha256..."
 let hash1 [crypto::sha256 "hello world"]

@@ -1,6 +1,6 @@
-# Test ECDSA signing
+;; Test ECDSA signing
 
-# EC P-256 test key
+;; EC P-256 test key
 let ec_key {-----BEGIN EC PRIVATE KEY-----
 MHcCAQEEIET4joyIKlAHzkDXcxINb1X2cG0VQLvXBn+w7VOTtCiOoAoGCCqGSM49
 AwEHoUQDQgAEARnCR7Af/nXPFHsyfrLgS8FtjrYTLIcGp3diMwelG37z0DFXpyuD

@@ -1,7 +1,7 @@
-# Testing lcl-json
-# Requires:
-# -DBUILD_JSON
-# -DBUILD_TESTS
+;; Testing lcl-json
+;; Requires:
+;; -DBUILD_JSON
+;; -DBUILD_TESTS
 
 Test::suite "Load JSON" {
     Test::case "null values" {

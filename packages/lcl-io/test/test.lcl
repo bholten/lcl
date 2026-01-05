@@ -1,13 +1,13 @@
-# io:: Package Tests
-# Run with an LCL interpreter that has the io extension loaded
-# From project root: ./lcl-io-test packages/lcl-io/test/test.lcl
-#
-# Test framework (Test::suite, Test::case, etc.) is embedded when built
-# with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
+;; io:: Package Tests
+;; Run with an LCL interpreter that has the io extension loaded
+;; From project root: ./lcl-io-test packages/lcl-io/test/test.lcl
+;;
+;; Test framework (Test::suite, Test::case, etc.) is embedded when built
+;; with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
 
-# ============================================================================
-# Standard Streams
-# ============================================================================
+;; ============================================================================
+;; Standard Streams
+;; ============================================================================
 
 Test::suite "Standard Streams" {
     Test::case "io::stdout returns handle" {
@@ -21,15 +21,15 @@ Test::suite "Standard Streams" {
     }
 
     Test::case "io::fputs writes to stdout" {
-        # Just verify it doesn't error - output goes to stdout
+        ;; Just verify it doesn't error - output goes to stdout
         io::fputs [io::stdout] "test output\n"
         Test::assert 1
     }
 }
 
-# ============================================================================
-# Environment
-# ============================================================================
+;; ============================================================================
+;; Environment
+;; ============================================================================
 
 Test::suite "Environment (io::getenv)" {
     Test::case "getenv returns PATH" {
@@ -43,9 +43,9 @@ Test::suite "Environment (io::getenv)" {
     }
 }
 
-# ============================================================================
-# Working Directory
-# ============================================================================
+;; ============================================================================
+;; Working Directory
+;; ============================================================================
 
 Test::suite "Working Directory" {
     Test::case "getcwd returns non-empty" {
@@ -62,13 +62,13 @@ Test::suite "Working Directory" {
     }
 }
 
-# ============================================================================
-# Directory Operations
-# ============================================================================
+;; ============================================================================
+;; Directory Operations
+;; ============================================================================
 
 Test::suite "Directory Operations" {
     Test::before {
-        # Clean up from any previous failed runs
+        ;; Clean up from any previous failed runs
         let test_dir "/tmp/lcl_io_test_dir"
         if [io::exists? $test_dir] {
             io::rmdir $test_dir
@@ -91,9 +91,9 @@ Test::suite "Directory Operations" {
     }
 }
 
-# ============================================================================
-# File Operations
-# ============================================================================
+;; ============================================================================
+;; File Operations
+;; ============================================================================
 
 Test::suite "File Operations" {
     Test::case "write_file and read_file" {
@@ -153,9 +153,9 @@ Test::suite "File Operations" {
     }
 }
 
-# ============================================================================
-# Directory Listing
-# ============================================================================
+;; ============================================================================
+;; Directory Listing
+;; ============================================================================
 
 Test::suite "Directory Listing (io::readdir)" {
     Test::case "readdir returns file list" {
@@ -168,7 +168,7 @@ Test::suite "Directory Listing (io::readdir)" {
         let files [io::readdir $test_dir]
         Test::eq [len $files] 3
 
-        # Clean up
+        ;; Clean up
         io::remove "$test_dir/file1.txt"
         io::remove "$test_dir/file2.txt"
         io::remove "$test_dir/file3.txt"
@@ -176,9 +176,9 @@ Test::suite "Directory Listing (io::readdir)" {
     }
 }
 
-# ============================================================================
-# File/Directory Predicates
-# ============================================================================
+;; ============================================================================
+;; File/Directory Predicates
+;; ============================================================================
 
 Test::suite "File Predicates" {
     Test::case "non-existent path" {
@@ -194,9 +194,9 @@ Test::suite "File Predicates" {
     }
 }
 
-# ============================================================================
-# Glob
-# ============================================================================
+;; ============================================================================
+;; Glob
+;; ============================================================================
 
 Test::suite "Glob (io::glob)" {
     Test::case "glob finds matching files" {
@@ -211,21 +211,21 @@ Test::suite "Glob (io::glob)" {
     }
 }
 
-# ============================================================================
-# File Handle Operations
-# ============================================================================
+;; ============================================================================
+;; File Handle Operations
+;; ============================================================================
 
 Test::suite "File Handle Operations" {
     Test::case "open, write, read lines" {
         let test_file "/tmp/lcl_fh_test.txt"
 
-        # Write with file handle
+        ;; Write with file handle
         let fh [io::open_file $test_file w]
         io::fputs $fh "line one\n"
         io::fputs $fh "line two\n"
         io::close_file $fh
 
-        # Read with file handle
+        ;; Read with file handle
         let fh_read [io::open_file $test_file r]
         let line1 [io::fgets $fh_read 1024]
         let line2 [io::fgets $fh_read 1024]
@@ -248,8 +248,8 @@ Test::suite "File Handle Operations" {
     }
 }
 
-# ============================================================================
-# Run Tests
-# ============================================================================
+;; ============================================================================
+;; Run Tests
+;; ============================================================================
 
 Test::run

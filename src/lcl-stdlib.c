@@ -1096,114 +1096,77 @@ static int lcl_value_is_true(lcl_value *v) {
   return 1;
 }
 
-/* if condition body ?elseif condition body ...? ?else body? */
+/* if condition {then-body} [else] [{else-body}]
+ *
+ * Simple two-branch conditional:
+ * - condition is evaluated (can be [expr], $var, or literal)
+ * - then-body executes if condition is truthy
+ * - else-body (optional) executes if condition is falsy
+ * - The 'else' keyword is optional for readability
+ *
+ * Valid forms:
+ *   if [cond] {then}                 - no else branch
+ *   if [cond] {then} {else}          - positional else
+ *   if [cond] {then} else {else}     - with else keyword
+ */
 int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
-  int i = 0;
   int saved_tail_position = interp->in_tail_position;
+  lcl_value *cond_v = NULL;
+  lcl_value *body_v = NULL;
+  lcl_program *body_p = NULL;
+  int is_true;
+  int rc;
+  int body_idx;
+  int else_body_idx = -1;
 
-  if (argc < 2) {
+  if (argc < 2 || argc > 4) {
     return LCL_RC_ERR;
+  }
+
+  if (argc == 3) {
+    else_body_idx = 2;
+  } else if (argc == 4) {
+    else_body_idx = 3;
   }
 
   interp->in_tail_position = 0;
 
-  while (i < argc) {
-    lcl_value *cond_v = NULL;
-    lcl_value *body_v = NULL;
-    lcl_program *body_p = NULL;
-    int is_true;
-    int rc;
+  if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
+    interp->in_tail_position = saved_tail_position;
+    return LCL_RC_ERR;
+  }
 
-    if (i > 0) {
-      lcl_value *kw = NULL;
-      const char *kw_str;
+  is_true = lcl_value_is_true(cond_v);
+  lcl_ref_dec(cond_v);
 
-      if (lcl_eval_word_to_str(interp, args[i], &kw) != LCL_RC_OK) {
-        interp->in_tail_position = saved_tail_position;
-        return LCL_RC_ERR;
-      }
+  if (is_true) {
+    body_idx = 1;
+  } else if (else_body_idx > 0) {
+    body_idx = else_body_idx;
+  } else {
+    interp->in_tail_position = saved_tail_position;
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
+  }
 
-      kw_str = lcl_value_to_string(kw);
+  if (lcl_eval_word_to_str(interp, args[body_idx], &body_v) != LCL_RC_OK) {
+    interp->in_tail_position = saved_tail_position;
+    return LCL_RC_ERR;
+  }
 
-      if (strcmp(kw_str, "else") == 0) {
-        lcl_ref_dec(kw);
+  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<if>");
+  lcl_ref_dec(body_v);
 
-        if (i + 1 >= argc) {
-          interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR;
-        }
-
-        if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
-          interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR;
-        }
-
-        body_p = lcl_program_compile(lcl_value_to_string(body_v), "<if-else>");
-        lcl_ref_dec(body_v);
-
-        if (!body_p) {
-          interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR;
-        }
-
-        /* Body IS in tail position if the if itself was */
-        interp->in_tail_position = saved_tail_position;
-        rc = lcl_eval_program(interp, body_p, out);
-        lcl_program_free(body_p);
-
-        return rc;
-      }
-
-      if (strcmp(kw_str, "elseif") == 0) {
-        lcl_ref_dec(kw);
-        i++;
-
-        if (i + 1 >= argc) {
-          interp->in_tail_position = saved_tail_position;
-          return LCL_RC_ERR;
-        }
-      } else {
-        lcl_ref_dec(kw);
-        interp->in_tail_position = saved_tail_position;
-        return LCL_RC_ERR;
-      }
-    }
-
-    if (lcl_eval_word(interp, args[i], &cond_v) != LCL_RC_OK) {
-      interp->in_tail_position = saved_tail_position;
-      return LCL_RC_ERR;
-    }
-
-    is_true = lcl_value_is_true(cond_v);
-    lcl_ref_dec(cond_v);
-
-    if (is_true) {
-      if (lcl_eval_word_to_str(interp, args[i + 1], &body_v) != LCL_RC_OK) {
-        interp->in_tail_position = saved_tail_position;
-        return LCL_RC_ERR;
-      }
-
-      body_p = lcl_program_compile(lcl_value_to_string(body_v), "<if>");
-      lcl_ref_dec(body_v);
-
-      if (!body_p) {
-        interp->in_tail_position = saved_tail_position;
-        return LCL_RC_ERR;
-      }
-
-      interp->in_tail_position = saved_tail_position;
-      rc = lcl_eval_program(interp, body_p, out);
-      lcl_program_free(body_p);
-
-      return rc;
-    }
-
-    i += 2;
+  if (!body_p) {
+    interp->in_tail_position = saved_tail_position;
+    return LCL_RC_ERR;
   }
 
   interp->in_tail_position = saved_tail_position;
-  *out = lcl_string_new("");
-  return LCL_RC_OK;
+  rc = lcl_eval_program(interp, body_p, out);
+  lcl_program_free(body_p);
+
+  return rc;
 }
 
 /* while test body - loop while test is true, re-evaluating test each iteration
@@ -2458,16 +2421,484 @@ err:
   return LCL_RC_ERR;
 }
 
-/* quasiquote {template} - like subst but only substitutes ,expr and ,@expr */
+/* quasiquote {template} - template with unquote (,expr) and splice (,@expr)
+ *
+ * Supports depth tracking for nested quasiquotes:
+ * - At depth 1: ,expr evaluates expr and inserts result
+ * - At depth > 1: ,expr passes through literally
+ * - ,,expr at depth 2: evaluates expr, outputs ,<result>
+ *
+ * Unquote takes one normal LCL word:
+ * - ,$var, ,${name}, ,[cmd], ,(list), ,#{dict}
+ */
+
+/* IR node types for quasiquote */
+typedef enum {
+  QQ_LITERAL,  /* Literal text */
+  QQ_EVAL,     /* ,expr - evaluate and insert */
+  QQ_SPLICE    /* ,@expr - evaluate and splice list elements */
+} qq_node_kind;
+
+typedef struct qq_node {
+  qq_node_kind kind;
+  char *text;          /* For LITERAL: the text; for EVAL/SPLICE: word source */
+  int prefix_commas;   /* For EVAL: number of commas to prepend to result */
+  struct qq_node *next;
+} qq_node;
+
+static void qq_node_free(qq_node *node) {
+  while (node) {
+    qq_node *next = node->next;
+    free(node->text);
+    free(node);
+    node = next;
+  }
+}
+
+static qq_node *qq_node_new(qq_node_kind kind, const char *text, size_t len) {
+  qq_node *node = (qq_node *)calloc(1, sizeof(qq_node));
+  if (!node) return NULL;
+  node->kind = kind;
+  if (text && len > 0) {
+    node->text = (char *)malloc(len + 1);
+    if (!node->text) {
+      free(node);
+      return NULL;
+    }
+    memcpy(node->text, text, len);
+    node->text[len] = '\0';
+  }
+  return node;
+}
+
+/* Skip balanced braces, returning position after closing brace */
+static size_t skip_braces(const char *src, size_t len, size_t start) {
+  int depth = 1;
+  size_t i = start;
+  while (i < len && depth > 0) {
+    if (src[i] == '{') depth++;
+    else if (src[i] == '}') depth--;
+    else if (src[i] == '\\' && i + 1 < len) i++;
+    if (depth > 0) i++;
+  }
+  return i;
+}
+
+/* Skip balanced brackets, returning position after closing bracket */
+static size_t skip_brackets(const char *src, size_t len, size_t start) {
+  int depth = 1;
+  size_t i = start;
+  while (i < len && depth > 0) {
+    if (src[i] == '[') depth++;
+    else if (src[i] == ']') depth--;
+    else if (src[i] == '\\' && i + 1 < len) i++;
+    if (depth > 0) i++;
+  }
+  return i;
+}
+
+/* Skip balanced parens, returning position after closing paren */
+static size_t skip_parens(const char *src, size_t len, size_t start) {
+  int depth = 1;
+  size_t i = start;
+  while (i < len && depth > 0) {
+    if (src[i] == '(') depth++;
+    else if (src[i] == ')') depth--;
+    else if (src[i] == '\\' && i + 1 < len) i++;
+    if (depth > 0) i++;
+  }
+  return i;
+}
+
+/* Check if string starts with "quasiquote" followed by whitespace and { */
+static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
+  const char *kw = "quasiquote";
+  size_t kw_len = 10;
+  size_t i;
+
+  if (pos + kw_len >= len) return 0;
+  if (memcmp(src + pos, kw, kw_len) != 0) return 0;
+
+  /* Must be followed by whitespace then { */
+  i = pos + kw_len;
+  while (i < len && (src[i] == ' ' || src[i] == '\t' || src[i] == '\n')) {
+    i++;
+  }
+  return (i < len && src[i] == '{');
+}
+
+/* Find matching } for quasiquote block starting at { */
+static size_t find_quasiquote_end(const char *src, size_t len, size_t start) {
+  return skip_braces(src, len, start + 1) + 1;
+}
+
+/* Parse a word after comma - returns end position, sets word_start/word_end */
+static int parse_unquote_word(const char *src, size_t len, size_t pos,
+                              size_t *word_start, size_t *word_end) {
+  size_t i = pos;
+
+  /* Skip whitespace after comma */
+  while (i < len && (src[i] == ' ' || src[i] == '\t')) {
+    i++;
+  }
+
+  if (i >= len) return 0;
+
+  *word_start = i;
+
+  /* $var or ${var} */
+  if (src[i] == '$') {
+    i++;
+    if (i < len && src[i] == '{') {
+      i++;
+      while (i < len && src[i] != '}') i++;
+      if (i < len) i++; /* skip } */
+    } else {
+      while (i < len && is_name_char((unsigned char)src[i])) i++;
+    }
+    *word_end = i;
+    return 1;
+  }
+
+  /* [command] */
+  if (src[i] == '[') {
+    i++;
+    i = skip_brackets(src, len, i);
+    if (i <= len) i++; /* include ] */
+    *word_end = i;
+    return 1;
+  }
+
+  /* {literal} */
+  if (src[i] == '{') {
+    i++;
+    i = skip_braces(src, len, i);
+    if (i <= len) i++; /* include } */
+    *word_end = i;
+    return 1;
+  }
+
+  /* (list) */
+  if (src[i] == '(') {
+    i++;
+    i = skip_parens(src, len, i);
+    if (i <= len) i++; /* include ) */
+    *word_end = i;
+    return 1;
+  }
+
+  /* #{dict} */
+  if (src[i] == '#' && i + 1 < len && src[i + 1] == '{') {
+    i += 2;
+    i = skip_braces(src, len, i);
+    if (i <= len) i++; /* include } */
+    *word_end = i;
+    return 1;
+  }
+
+  /* Invalid - unquote must be followed by a valid word */
+  return 0;
+}
+
+/* Recursive quasiquote parser with depth tracking */
+static qq_node *qq_parse(const char *src, size_t len, int depth,
+                         const char **err_msg) {
+  qq_node *head = NULL;
+  qq_node *tail = NULL;
+  size_t i = 0;
+  size_t lit_start = 0;
+
+  while (i < len) {
+    char c = src[i];
+
+    /* Backslash escape */
+    if (c == '\\' && i + 1 < len) {
+      /* Flush literal up to backslash */
+      if (i > lit_start) {
+        qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      }
+      /* Add escaped character */
+      {
+        qq_node *node = qq_node_new(QQ_LITERAL, src + i + 1, 1);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      }
+      i += 2;
+      lit_start = i;
+      continue;
+    }
+
+    /* Nested quasiquote - increases depth */
+    if (is_nested_quasiquote(src, len, i)) {
+      /* Flush literal */
+      if (i > lit_start) {
+        qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      }
+
+      /* Find the quasiquote keyword and opening brace */
+      {
+        size_t kw_start = i;
+        size_t brace_pos = i + 10; /* "quasiquote" */
+        size_t inner_start, inner_end;
+        qq_node *inner_nodes;
+        qq_node *node;
+
+        while (brace_pos < len && src[brace_pos] != '{') brace_pos++;
+        inner_start = brace_pos + 1;
+        inner_end = find_quasiquote_end(src, len, brace_pos) - 1;
+
+        /* Output "quasiquote {" literally */
+        node = qq_node_new(QQ_LITERAL, src + kw_start, inner_start - kw_start);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+
+        /* Recursively parse inner content at depth+1 */
+        inner_nodes = qq_parse(src + inner_start, inner_end - inner_start,
+                               depth + 1, err_msg);
+        if (!inner_nodes && *err_msg) {
+          qq_node_free(head);
+          return NULL;
+        }
+        if (inner_nodes) {
+          tail->next = inner_nodes;
+          while (tail->next) tail = tail->next;
+        }
+
+        /* Output closing "}" literally */
+        node = qq_node_new(QQ_LITERAL, "}", 1);
+        if (!node) goto parse_err;
+        tail->next = node;
+        tail = node;
+
+        i = inner_end + 1; /* after } */
+        lit_start = i;
+      }
+      continue;
+    }
+
+    /* Comma - unquote */
+    if (c == ',') {
+      int num_commas = 0;
+      int splice = 0;
+      size_t comma_start = i;
+      size_t word_start, word_end;
+
+      /* Flush literal */
+      if (i > lit_start) {
+        qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      }
+
+      /* Count consecutive commas */
+      while (i < len && src[i] == ',') {
+        num_commas++;
+        i++;
+      }
+
+      /* Check for @ (splice) */
+      if (i < len && src[i] == '@') {
+        splice = 1;
+        i++;
+      }
+
+      /* Parse the word after the comma(s) */
+      if (!parse_unquote_word(src, len, i, &word_start, &word_end)) {
+        *err_msg = "invalid unquote: expected $var, [cmd], {literal}, (list), or #{dict}";
+        qq_node_free(head);
+        return NULL;
+      }
+
+      /* Apply depth rules */
+      if (num_commas > depth) {
+        *err_msg = "too many unquotes for current quasiquote depth";
+        qq_node_free(head);
+        return NULL;
+      }
+
+      if (num_commas < depth) {
+        /* Output literally: commas + @ + word */
+        size_t total_len = (word_end - comma_start);
+        qq_node *node = qq_node_new(QQ_LITERAL, src + comma_start, total_len);
+        if (!node) goto parse_err;
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      } else {
+        /* num_commas == depth: evaluate */
+        qq_node *node;
+        if (splice) {
+          node = qq_node_new(QQ_SPLICE, src + word_start, word_end - word_start);
+        } else {
+          node = qq_node_new(QQ_EVAL, src + word_start, word_end - word_start);
+        }
+        if (!node) goto parse_err;
+        node->prefix_commas = num_commas - 1; /* commas to prepend */
+        if (tail) tail->next = node; else head = node;
+        tail = node;
+      }
+
+      i = word_end;
+      lit_start = i;
+      continue;
+    }
+
+    i++;
+  }
+
+  /* Flush remaining literal */
+  if (i > lit_start) {
+    qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+    if (!node) goto parse_err;
+    if (tail) tail->next = node; else head = node;
+    tail = node;
+  }
+
+  return head;
+
+parse_err:
+  *err_msg = "out of memory";
+  qq_node_free(head);
+  return NULL;
+}
+
+/* Build result string from IR, evaluating as needed */
+static int qq_build(lcl_interp *interp, qq_node *nodes,
+                    char **result, size_t *result_len, size_t *result_cap) {
+  qq_node *node;
+
+  for (node = nodes; node; node = node->next) {
+    switch (node->kind) {
+    case QQ_LITERAL:
+      if (node->text) {
+        if (!buf_append(result, result_len, result_cap,
+                        node->text, strlen(node->text))) {
+          return 0;
+        }
+      }
+      break;
+
+    case QQ_EVAL:
+    case QQ_SPLICE:
+      {
+        lcl_program *prog;
+        lcl_value *val = NULL;
+        const char *saved_file;
+        int saved_line;
+        int eval_rc;
+        int j;
+
+        /* Add prefix commas */
+        for (j = 0; j < node->prefix_commas; j++) {
+          if (!buf_append_char(result, result_len, result_cap, ',')) {
+            return 0;
+          }
+        }
+
+        /* Compile and evaluate the word */
+        prog = lcl_program_compile(node->text, "<quasiquote>");
+        if (!prog) {
+          LCL_ERR_MSG(interp, "failed to compile unquote expression");
+          return 0;
+        }
+
+        saved_file = interp->cur_file;
+        saved_line = interp->cur_line;
+
+        eval_rc = lcl_eval_program(interp, prog, &val);
+
+        interp->cur_file = saved_file;
+        interp->cur_line = saved_line;
+
+        lcl_program_free(prog);
+
+        if (eval_rc != LCL_RC_OK) {
+          return 0;
+        }
+
+        if (node->kind == QQ_SPLICE) {
+          /* Splice: insert list elements separated by spaces */
+          lcl_value *list_val = val;
+
+          if (val->type != LCL_LIST) {
+            list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
+            lcl_ref_dec(val);
+            if (!list_val) {
+              return 0;
+            }
+            val = list_val;
+          }
+
+          {
+            size_t len = lcl_list_len(list_val);
+            size_t k;
+
+            for (k = 0; k < len; k++) {
+              lcl_value *elem = NULL;
+              const char *elem_str;
+
+              if (lcl_list_get(list_val, k, &elem) != LCL_OK) {
+                lcl_ref_dec(val);
+                return 0;
+              }
+
+              elem_str = lcl_value_to_string(elem);
+
+              if (k > 0) {
+                if (!buf_append_char(result, result_len, result_cap, ' ')) {
+                  lcl_ref_dec(elem);
+                  lcl_ref_dec(val);
+                  return 0;
+                }
+              }
+
+              if (!buf_append(result, result_len, result_cap,
+                              elem_str, strlen(elem_str))) {
+                lcl_ref_dec(elem);
+                lcl_ref_dec(val);
+                return 0;
+              }
+
+              lcl_ref_dec(elem);
+            }
+          }
+        } else {
+          /* Eval: insert stringified value */
+          const char *val_str = lcl_value_to_string(val);
+          if (!buf_append(result, result_len, result_cap,
+                          val_str, strlen(val_str))) {
+            lcl_ref_dec(val);
+            return 0;
+          }
+        }
+
+        lcl_ref_dec(val);
+      }
+      break;
+    }
+  }
+
+  return 1;
+}
+
 static int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
                         lcl_value **out) {
   lcl_value *input_v = NULL;
   const char *src;
   size_t src_len;
-  size_t i;
   char *result = NULL;
   size_t result_len = 0;
   size_t result_cap = 0;
+  qq_node *ir = NULL;
+  const char *err_msg = NULL;
 
   if (argc != 1) {
     LCL_ERR_MSG(interp, "quasiquote requires exactly one argument");
@@ -2481,225 +2912,29 @@ static int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
   src = lcl_value_to_string(input_v);
   src_len = strlen(src);
 
-  for (i = 0; i < src_len;) {
-    char c = src[i];
-
-    /* Bugfix: backslash escape - copy only the escaped char (skip backslash) */
-    if (c == '\\' && i + 1 < src_len) {
-      if (!buf_append_char(&result, &result_len, &result_cap, src[i + 1])) {
-        goto qq_err;
-      }
-      i += 2;
-      continue;
-    }
-
-    if (c == ',') {
-      int splice = 0;
-      size_t expr_start;
-      size_t expr_end;
-      char *expr_str = NULL;
-      lcl_value *val = NULL;
-
-      i++;
-
-      if (i < src_len && src[i] == '@') {
-        splice = 1;
-        i++;
-      }
-
-      if (i >= src_len) {
-        LCL_ERR_MSG(interp, "unexpected end after unquote");
-        goto qq_err;
-      }
-
-      if (src[i] == '{') {
-        int depth = 1;
-        expr_start = ++i;
-
-        while (i < src_len && depth > 0) {
-          if (src[i] == '{') {
-            depth++;
-          } else if (src[i] == '}') {
-            depth--;
-          } else if (src[i] == '\\' && i + 1 < src_len) {
-            i++;
-          }
-          if (depth > 0) {
-            i++;
-          }
-        }
-
-        if (depth != 0) {
-          LCL_ERR_MSG(interp, "unterminated brace in unquote");
-          goto qq_err;
-        }
-
-        expr_end = i;
-        i++;
-      } else if (src[i] == '[') {
-        int depth = 1;
-        expr_start = i;
-        i++;
-
-        while (i < src_len && depth > 0) {
-          if (src[i] == '[') {
-            depth++;
-          } else if (src[i] == ']') {
-            depth--;
-          } else if (src[i] == '\\' && i + 1 < src_len) {
-            i++;
-          }
-          if (depth > 0) {
-            i++;
-          }
-        }
-
-        if (depth != 0) {
-          LCL_ERR_MSG(interp, "unterminated bracket in unquote");
-          goto qq_err;
-        }
-
-        i++;
-        expr_end = i;
-      } else if (is_name_start((unsigned char)src[i])) {
-        expr_start = i;
-        while (i < src_len && is_name_char((unsigned char)src[i])) {
-          i++;
-        }
-        expr_end = i;
-      } else {
-        LCL_ERR_MSG(interp, "invalid unquote expression");
-        goto qq_err;
-      }
-
-      {
-        size_t expr_len = expr_end - expr_start;
-        expr_str = malloc(expr_len + 1);
-        if (!expr_str) {
-          goto qq_err;
-        }
-
-        memcpy(expr_str, src + expr_start, expr_len);
-        expr_str[expr_len] = '\0';
-
-        if (expr_str[0] != '[') {
-          char *var_expr = malloc(expr_len + 2);
-          if (!var_expr) {
-            free(expr_str);
-            goto qq_err;
-          }
-          var_expr[0] = '$';
-          memcpy(var_expr + 1, expr_str, expr_len + 1);
-          free(expr_str);
-          expr_str = var_expr;
-        }
-
-        {
-          lcl_program *prog = lcl_program_compile(expr_str, "<quasiquote>");
-          const char *saved_file;
-          int saved_line;
-          int eval_rc;
-
-          free(expr_str);
-          expr_str = NULL;
-
-          if (!prog) {
-            LCL_ERR_MSG(interp, "failed to compile unquote expression");
-            goto qq_err;
-          }
-
-          saved_file = interp->cur_file;
-          saved_line = interp->cur_line;
-
-          eval_rc = lcl_eval_program(interp, prog, &val);
-
-          interp->cur_file = saved_file;
-          interp->cur_line = saved_line;
-
-          lcl_program_free(prog);
-
-          if (eval_rc != LCL_RC_OK) {
-            goto qq_err;
-          }
-        }
-
-        if (splice) {
-          lcl_value *list_val = val;
-
-          if (val->type != LCL_LIST) {
-            list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
-            lcl_ref_dec(val);
-            if (!list_val) {
-              goto qq_err;
-            }
-            val = list_val;
-          }
-
-          {
-            size_t len = lcl_list_len(list_val);
-            size_t j;
-
-            for (j = 0; j < len; j++) {
-              lcl_value *elem = NULL;
-              const char *elem_str;
-
-              if (lcl_list_get(list_val, j, &elem) != LCL_OK) {
-                lcl_ref_dec(val);
-                goto qq_err;
-              }
-
-              elem_str = lcl_value_to_string(elem);
-
-              if (j > 0) {
-                if (!buf_append_char(&result, &result_len, &result_cap, ' ')) {
-                  lcl_ref_dec(elem);
-                  lcl_ref_dec(val);
-                  goto qq_err;
-                }
-              }
-
-              if (!buf_append(&result, &result_len, &result_cap, elem_str,
-                              strlen(elem_str))) {
-                lcl_ref_dec(elem);
-                lcl_ref_dec(val);
-                goto qq_err;
-              }
-
-              lcl_ref_dec(elem);
-            }
-          }
-        } else {
-          const char *val_str = lcl_value_to_string(val);
-          if (!buf_append(&result, &result_len, &result_cap, val_str,
-                          strlen(val_str))) {
-            lcl_ref_dec(val);
-            goto qq_err;
-          }
-        }
-
-        lcl_ref_dec(val);
-      }
-
-      continue;
-    }
-
-    if (!buf_append_char(&result, &result_len, &result_cap, c)) {
-      goto qq_err;
-    }
-
-    i++;
+  /* Parse template into IR at depth 1 */
+  ir = qq_parse(src, src_len, 1, &err_msg);
+  if (!ir && err_msg) {
+    LCL_ERR_MSG(interp, err_msg);
+    lcl_ref_dec(input_v);
+    return LCL_RC_ERR;
   }
 
+  /* Build result from IR */
+  if (!qq_build(interp, ir, &result, &result_len, &result_cap)) {
+    qq_node_free(ir);
+    lcl_ref_dec(input_v);
+    free(result);
+    return LCL_RC_ERR;
+  }
+
+  qq_node_free(ir);
   lcl_ref_dec(input_v);
+
   *out = lcl_value_new_string(result ? result : "");
   free(result);
 
   return *out ? LCL_RC_OK : LCL_RC_ERR;
-
-qq_err:
-  lcl_ref_dec(input_v);
-  free(result);
-  return LCL_RC_ERR;
 }
 
 static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,

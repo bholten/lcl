@@ -455,10 +455,10 @@ Test::suite "Dict Operations" {
 }
 
 ;; ============================================================================
-;; Control Flow: if/elseif/else
+;; Control Flow: if/else
 ;; ============================================================================
 
-Test::suite "If/Elseif/Else" {
+Test::suite "If/Else" {
     Test::case "simple true" {
         var result 0
         if 1 { set! result 1 }
@@ -471,20 +471,28 @@ Test::suite "If/Elseif/Else" {
         Test::eq $result 0
     }
 
-    Test::case "if-else" {
+    Test::case "if-else with keyword" {
         var result {}
         if 0 { set! result yes } else { set! result no }
         Test::eq $result no
     }
 
-    Test::case "elseif chain" {
+    Test::case "if-else positional (no keyword)" {
+        var result {}
+        if 0 { set! result yes } { set! result no }
+        Test::eq $result no
+    }
+
+    Test::case "nested if (replaces elseif)" {
         var result {}
         if 0 {
             set! result first
-        } elseif 1 {
-            set! result second
-        } else {
-            set! result third
+        } {
+            if 1 {
+                set! result second
+            } {
+                set! result third
+            }
         }
         Test::eq $result second
     }
@@ -1442,7 +1450,7 @@ Test::suite "Type Conversion" {
 Test::suite "Quasiquote" {
     Test::case "basic unquote with variable" {
         let x 42
-        Test::eq [quasiquote {value is ,x}] {value is 42}
+        Test::eq [quasiquote {value is ,$x}] {value is 42}
     }
 
     Test::case "unquote with command substitution" {
@@ -1451,23 +1459,23 @@ Test::suite "Quasiquote" {
 
     Test::case "splice-unquote with string" {
         let items {a b c}
-        Test::eq [quasiquote {list: ,@items end}] {list: a b c end}
+        Test::eq [quasiquote {list: ,@$items end}] {list: a b c end}
     }
 
     Test::case "splice-unquote with list value" {
         let mylist [list x y z]
-        Test::eq [quasiquote {items: ,@mylist done}] {items: x y z done}
+        Test::eq [quasiquote {items: ,@$mylist done}] {items: x y z done}
     }
 
-    Test::case "braced expression unquote" {
-        let name test
-        Test::eq [quasiquote {result: ,{name}}] {result: test}
+    Test::case "braced literal unquote" {
+        ;; ,{...} inserts the literal text
+        Test::eq [quasiquote {result: ,{name}}] {result: name}
     }
 
     Test::case "multiple unquotes" {
         let a 1
         let b 2
-        Test::eq [quasiquote {a=,a b=,b}] {a=1 b=2}
+        Test::eq [quasiquote {a=,$a b=,$b}] {a=1 b=2}
     }
 
     Test::case "unquote with computed value" {
@@ -1480,7 +1488,7 @@ Test::suite "Quasiquote" {
         ;; Macro returns code, caller evals it
         proc defun {name params body} {
             return [quasiquote {
-                proc ,name {,@params} {,body}
+                proc ,$name {,@$params} {,$body}
             }]
         }
         eval [defun add2 {x y} { + $x $y }]
@@ -1490,6 +1498,30 @@ Test::suite "Quasiquote" {
     Test::case "backslash preserves comma" {
         let x 42
         Test::eq [quasiquote {value is \,x}] {value is ,x}
+    }
+
+    Test::case "nested quasiquote passes comma through" {
+        ;; At depth 2, a single comma should be preserved as literal
+        let x 42
+        Test::eq [quasiquote {quasiquote {value is ,$x}}] {quasiquote {value is ,$x}}
+    }
+
+    Test::case "nested quasiquote with double comma" {
+        ;; At depth 2, ,, evaluates outer and preserves inner comma
+        let x 42
+        Test::eq [quasiquote {quasiquote {value is ,,$x}}] {quasiquote {value is ,42}}
+    }
+
+    Test::case "list literal in unquote" {
+        ;; ,(a b c) evaluates list literal
+        Test::eq [quasiquote {items: ,(a b c)}] {items: a b c}
+    }
+
+    Test::case "dict literal in unquote" {
+        ;; ,#{...} evaluates dict literal
+        let d [quasiquote {data: ,#{name test val 123}}]
+        ;; The dict will be stringified - "name" is at position 6
+        Test::eq [String::find $d "name"] 6
     }
 }
 

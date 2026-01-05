@@ -1,6 +1,6 @@
-# Test RSA-PSS and ECDSA signing
+;; Test RSA-PSS and ECDSA signing
 
-# RSA test key (2048-bit)
+;; RSA test key (2048-bit)
 let rsa_key {-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC+6ldVhGjCrQIh
 LH6wVWT/SF/scGZX/TDdjoHaNaVmiXd7PXWMyfzCLy2ohsxp2fmQSRF2v/zmLLHJ

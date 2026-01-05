@@ -1,13 +1,13 @@
-# curl:: Package Tests
-# Requires the mock server to be running: docker-compose up -d
-# Run with an LCL interpreter that has the curl extension loaded
-#
-# Test framework (Test::suite, Test::case, etc.) is embedded when built
-# with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
+;; curl:: Package Tests
+;; Requires the mock server to be running: docker-compose up -d
+;; Run with an LCL interpreter that has the curl extension loaded
+;;
+;; Test framework (Test::suite, Test::case, etc.) is embedded when built
+;; with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
 
-# ============================================================================
-# CURL Initialization
-# ============================================================================
+;; ============================================================================
+;; CURL Initialization
+;; ============================================================================
 
 Test::suite "CURL Initialization" {
     Test::case "curl::init succeeds" {
@@ -21,9 +21,9 @@ Test::suite "CURL Initialization" {
     }
 }
 
-# ============================================================================
-# CURL Options
-# ============================================================================
+;; ============================================================================
+;; CURL Options
+;; ============================================================================
 
 Test::suite "CURL Options" {
     Test::case "set_verbose accepts boolean" {
@@ -58,9 +58,9 @@ Test::suite "CURL Options" {
     }
 }
 
-# ============================================================================
-# CURL Request Execution
-# ============================================================================
+;; ============================================================================
+;; CURL Request Execution
+;; ============================================================================
 
 var _response_received 0
 var _response_body {}
@@ -83,7 +83,7 @@ Test::suite "CURL Request Execution" {
     }
 
     Test::case "write_callback is invoked" {
-        # Uses state from previous test
+        ;; Uses state from previous test
         Test::eq $_response_received 1
     }
 
@@ -111,9 +111,9 @@ Test::suite "CURL Request Execution" {
     }
 }
 
-# ============================================================================
-# CURL SSE Callabck
-# ============================================================================
+;; ============================================================================
+;; CURL SSE Callabck
+;; ============================================================================
 
 var _sse_event_count 0
 var _sse_headers_count 0
@@ -147,9 +147,9 @@ Test::suite "CURL SSE and Header Callbacks" {
     }
 }
 
-# ============================================================================
-# CURL Response Info
-# ============================================================================
+;; ============================================================================
+;; CURL Response Info
+;; ============================================================================
 
 Test::suite "CURL Response Info" {
     Test::case "get_total_time returns positive" {
@@ -178,9 +178,9 @@ Test::suite "CURL Response Info" {
     }
 }
 
-# ============================================================================
-# CURL Handle Management
-# ============================================================================
+;; ============================================================================
+;; CURL Handle Management
+;; ============================================================================
 
 Test::suite "CURL Handle Management" {
     Test::case "reset clears handle state" {
@@ -188,14 +188,14 @@ Test::suite "CURL Handle Management" {
         curl::set_url $c http://localhost:8080/test
         curl::set_header $c "X-Custom: value"
         curl::reset $c
-        # After reset, should be able to set new options
+        ;; After reset, should be able to set new options
         curl::set_url $c http://localhost:8080/other
         Test::assert 1
     }
 }
 
-# ============================================================================
-# Run Tests
-# ============================================================================
+;; ============================================================================
+;; Run Tests
+;; ============================================================================
 
 Test::run
