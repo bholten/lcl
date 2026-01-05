@@ -56,6 +56,20 @@ cmake -B build && cmake --build build
 cmake -B build -DLCL_ENABLE_ASAN=ON && cmake --build build  # with sanitizers
 ```
 
+## Command Line
+
+```sh
+# Run a script file
+lcl script.lcl
+
+# Execute code directly with -c
+lcl -c 'puts [+ 1 2 3]'
+
+# Read script from stdin
+echo 'puts hello' | lcl -
+cat script.lcl | lcl -
+```
+
 ## Quick Start
 
 ```tcl
