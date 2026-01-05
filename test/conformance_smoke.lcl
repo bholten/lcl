@@ -573,7 +573,10 @@ Test::suite "Cond" {
 
     Test::case "cond with comparisons" {
         let n 5
-        let result [cond [== $n 0] {zero} [< $n 0] {negative} else {positive}]
+        let result [cond \
+                        [== $n 0] {zero} \
+                        [< $n 0] {negative} \
+                        else {positive}]
         Test::eq $result "positive"
     }
 
@@ -642,7 +645,10 @@ Test::suite "Case" {
         let op {add}
         let num1 10
         let num2 5
-        let result [case $op {add} [+ $num1 $num2] {sub} [- $num1 $num2] else {0}]
+        let result [case $op \
+                        {add} [+ $num1 $num2] \
+                        {sub} [- $num1 $num2] \
+                        else {0}]
         Test::eq $result 15
     }
 
@@ -654,7 +660,10 @@ Test::suite "Case" {
         }
         let target {y}
         ;; Only first two keys should be evaluated before match
-        let result [case $target [inc_and_return x] {X} [inc_and_return y] {Y} [inc_and_return z] {Z}]
+        let result [case $target \
+                        [inc_and_return x] {X} \
+                        [inc_and_return y] {Y} \
+                        [inc_and_return z] {Z}]
         Test::eq $result "Y"
         Test::eq $counter 2
     }

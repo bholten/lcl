@@ -208,12 +208,19 @@ if [< $x 0] {
 ;; cond - multi-branch conditional (like Scheme/Lisp)
 ;; Evaluates conditions in order, runs first truthy branch
 ;; Use 'else' for default case, errors if no match without else
-let result [cond [< $x 0] {negative} [== $x 0] {zero} else {positive}]
+let result [cond \
+             [< $x 0] {negative} \
+             [== $x 0] {zero} \
+             else {positive}]
 
 ;; case - value dispatch (like switch/match)
 ;; Compares value against keys, runs matching expression
 ;; Keys are evaluated, so $variables work
-let msg [case $op {add} [+ $a $b] {sub} [- $a $b] {mul} [* $a $b] else {unknown op}]
+let msg [case $op \
+         {add} [+ $a $b] \
+         {sub} [- $a $b] \
+         {mul} [* $a $b] \
+         else {unknown op}]
 
 ;; while
 var i 5
