@@ -1,45 +1,46 @@
-# Anaphoric Macros in LCL
-#
-# Anaphoric macros are macros that intentionally capture a variable (usually
-# called "it") and make it available in the macro body. This is a powerful
-# metaprogramming technique from Common Lisp.
-#
-# In LCL, macros return code that the caller evaluates with `eval`. Since
-# eval runs in the current frame (no new scope), bindings from the generated
-# code are visible to subsequent code.
-#
-# Quasiquote syntax:
-#   quasiquote { ... }  - template with unquoting
-#   ,expr               - unquote: evaluate and insert result
-#   ,@list              - splice-unquote: insert list elements
-#   \,                  - literal comma (escaped)
-#
-# Important notes:
-# - if conditions need [$it] not {$it} for proper evaluation
-# - if requires 'else' keyword for else branch
-# - Use len (not llength), get (not lindex), List::slice (not lrange)
-# - Use set! var [List::push $var item] (not lappend)
-# - Use set! dict [put $dict key val] (not dict::put)
-# - Recursive macros: compute recursive call BEFORE quasiquote, then insert
-#   via variable. E.g.: let rest_code [macro $rest]; quasiquote { ... ,rest_code }
-# - Passing list of clauses: use [list ...] not braces, e.g.:
-#   [macro [list [list {cond1} {body1}] [list {cond2} {body2}]]]
+;; Anaphoric Macros in LCL
+;;
+;; Anaphoric macros are macros that intentionally capture a variable (usually
+;; called "it") and make it available in the macro body. This is a powerful
+;; metaprogramming technique from Common Lisp.
+;;
+;; In LCL, macros return code that the caller evaluates with `eval`. Since
+;; eval runs in the current frame (no new scope), bindings from the generated
+;; code are visible to subsequent code.
+;;
+;; Quasiquote syntax:
+;;   quasiquote { ... }  - template with unquoting
+;;   ,expr               - unquote: evaluate and insert result
+;;   ,@list              - splice-unquote: insert list elements
+;;   \,                  - literal comma (escaped)
+;;
+;; Literal syntax:
+;;   (a b c)             - list literal, desugars to [list a b c]
+;;   #{key val ...}      - dict literal, desugars to [dict key val ...]
+;;
+;; Important notes:
+;; - if conditions need [$it] not {$it} for proper evaluation
+;; - if requires 'else' keyword for else branch
+;; - Recursive macros: compute recursive call BEFORE quasiquote, then insert
+;;   via variable. E.g.: let rest_code [macro $rest]; quasiquote { ... ,rest_code }
+;; - Use () list literals for passing structured data to macros:
+;;   [macro (({cond1} {body1}) ({cond2} {body2}))]
 
 load lib/Test.lcl
 
-# ============================================================================
-# aif - Anaphoric If
-# ============================================================================
-#
-# Like Common Lisp's aif: evaluates the condition once, binds it to $it,
-# then $it is available in both branches.
-#
-# Usage:
-#   eval [aif {[get $cache $key]} {
-#       puts "Cache hit: $it"
-#   } {
-#       puts "Cache miss"
-#   }]
+;; ============================================================================
+;; aif - Anaphoric If
+;; ============================================================================
+;;
+;; Like Common Lisp's aif: evaluates the condition once, binds it to $it,
+;; then $it is available in both branches.
+;;
+;; Usage:
+;;   eval [aif {[get $cache $key]} {
+;;       puts "Cache hit: $it"
+;;   } {
+;;       puts "Cache miss"
+;;   }]
 
 proc aif {condition then_body else_body} {
     quasiquote {
@@ -48,12 +49,12 @@ proc aif {condition then_body else_body} {
     }
 }
 
-# ============================================================================
-# awhen - Anaphoric When
-# ============================================================================
-#
-# Simpler version: only executes body when condition is truthy.
-# $it is bound to the condition result.
+;; ============================================================================
+;; awhen - Anaphoric When
+;; ============================================================================
+;;
+;; Simpler version: only executes body when condition is truthy.
+;; $it is bound to the condition result.
 
 proc awhen {condition body} {
     quasiquote {
@@ -62,12 +63,12 @@ proc awhen {condition body} {
     }
 }
 
-# ============================================================================
-# awhile - Anaphoric While
-# ============================================================================
-#
-# Loop while condition is truthy, with $it bound to condition result each
-# iteration. Note: uses var/set! since it changes each iteration.
+;; ============================================================================
+;; awhile - Anaphoric While
+;; ============================================================================
+;;
+;; Loop while condition is truthy, with $it bound to condition result each
+;; iteration. Note: uses var/set! since it changes each iteration.
 
 proc awhile {condition body} {
     quasiquote {
@@ -78,18 +79,18 @@ proc awhile {condition body} {
     }
 }
 
-# ============================================================================
-# with-it - Builder/Context Pattern
-# ============================================================================
-#
-# Creates a context where $it refers to a mutable value, allowing fluent
-# operations. Returns the final value of $it.
-#
-# Usage (note: initializer must be quoted so it becomes code):
-#   let person [eval [with-it {[dict]} {
-#       set! it [put $it name "Alice"]
-#       set! it [put $it age 30]
-#   }]]
+;; ============================================================================
+;; with-it - Builder/Context Pattern
+;; ============================================================================
+;;
+;; Creates a context where $it refers to a mutable value, allowing fluent
+;; operations. Returns the final value of $it.
+;;
+;; Usage (note: initializer must be quoted so it becomes code):
+;;   let person [eval [with-it {[dict]} {
+;;       set! it [put $it name "Alice"]
+;;       set! it [put $it age 30]
+;;   }]]
 
 proc with-it {initial body} {
     quasiquote {
@@ -99,15 +100,15 @@ proc with-it {initial body} {
     }
 }
 
-# ============================================================================
-# collect - List Comprehension with Anaphoric Variable
-# ============================================================================
-#
-# Transform each element of a list, with $it bound to current element.
-#
-# Usage:
-#   let squares [eval [collect {1 2 3 4 5} {[* $it $it]}]]
-#   # => {1 4 9 16 25}
+;; ============================================================================
+;; collect - List Comprehension with Anaphoric Variable
+;; ============================================================================
+;;
+;; Transform each element of a list, with $it bound to current element.
+;;
+;; Usage:
+;;   let squares [eval [collect {1 2 3 4 5} {[* $it $it]}]]
+;;   # => {1 4 9 16 25}
 
 proc collect {items transform} {
     quasiquote {
@@ -119,15 +120,15 @@ proc collect {items transform} {
     }
 }
 
-# ============================================================================
-# select - Filter with Anaphoric Variable
-# ============================================================================
-#
-# Filter elements where predicate is truthy, with $it bound to current element.
-#
-# Usage:
-#   let big [eval [select {1 2 3 4 5 6} {[> $it 3]}]]
-#   # => {4 5 6}
+;; ============================================================================
+;; select - Filter with Anaphoric Variable
+;; ============================================================================
+;;
+;; Filter elements where predicate is truthy, with $it bound to current element.
+;;
+;; Usage:
+;;   let big [eval [select {1 2 3 4 5 6} {[> $it 3]}]]
+;;   # => {4 5 6}
 
 proc select {items predicate} {
     quasiquote {
@@ -141,19 +142,19 @@ proc select {items predicate} {
     }
 }
 
-# ============================================================================
-# cond - Multi-branch Conditional (like Lisp cond)
-# ============================================================================
-#
-# Takes pairs of {condition body}. Evaluates conditions in order, runs
-# the body of the first truthy one. $it is bound to the condition result.
-#
-# Usage:
-#   eval [cond {
-#       {[< $x 0]}  {puts "negative"}
-#       {[== $x 0]} {puts "zero"}
-#       {1}         {puts "positive"}
-#   }]
+;; ============================================================================
+;; cond - Multi-branch Conditional (like Lisp cond)
+;; ============================================================================
+;;
+;; Takes pairs of {condition body}. Evaluates conditions in order, runs
+;; the body of the first truthy one. $it is bound to the condition result.
+;;
+;; Usage:
+;;   eval [cond {
+;;       {[< $x 0]}  {puts "negative"}
+;;       {[== $x 0]} {puts "zero"}
+;;       {1}         {puts "positive"}
+;;   }]
 
 proc cond {clauses} {
     if [== [len $clauses] 0] {
@@ -172,9 +173,9 @@ proc cond {clauses} {
     }
 }
 
-# ============================================================================
-# Tests
-# ============================================================================
+;; ============================================================================
+;; Tests
+;; ============================================================================
 
 Test::suite "Anaphoric Macros" {
 
@@ -215,7 +216,7 @@ Test::suite "Anaphoric Macros" {
     }
 
     Test::case "with-it builder pattern for dict" {
-        # Note: initializer must be quoted so it becomes code, not evaluated
+        ;; Note: initializer must be quoted so it becomes code, not evaluated
         let person [eval [with-it {[dict]} {
             set! it [put $it name "Bob"]
             set! it [put $it age 25]
@@ -250,37 +251,37 @@ Test::suite "Anaphoric Macros" {
             set! sum [+ $sum $it]
             set! count [- $count 1]
         }]
-        # 5 + 4 + 3 + 2 + 1 = 15
+        ;; 5 + 4 + 3 + 2 + 1 = 15
         Test::eq $sum 15
     }
 
     Test::case "cond multi-branch" {
         var x 5
         var result {}
-        eval [cond [list \
-            [list {[< $x 0]}  {set! result "negative"}] \
-            [list {[== $x 0]} {set! result "zero"}] \
-            [list {1}         {set! result "positive"}] \
-        ]]
+        eval [cond (
+            ({[< $x 0]}  {set! result "negative"})
+            ({[== $x 0]} {set! result "zero"})
+            ({1}         {set! result "positive"})
+        )]
         Test::eq $result "positive"
     }
 
     Test::case "cond binds it to matching condition" {
         var result 0
-        eval [cond [list \
-            [list {0}         {set! result "first"}] \
-            [list {[+ 10 20]} {set! result $it}] \
-            [list {1}         {set! result "default"}] \
-        ]]
+        eval [cond (
+            ({0}         {set! result "first"})
+            ({[+ 10 20]} {set! result $it})
+            ({1}         {set! result "default"})
+        )]
         Test::eq $result 30
     }
 }
 
-# ============================================================================
-# Advanced Example: Pipeline Macro
-# ============================================================================
-#
-# Compose transformations where each step can use $it
+;; ============================================================================
+;; Advanced Example: Pipeline Macro
+;; ============================================================================
+;;
+;; Compose transformations where each step can use $it
 
 proc pipeline {initial stages} {
     if [== [len $stages] 0] {
@@ -299,20 +300,20 @@ proc pipeline {initial stages} {
 
 Test::suite "Pipeline" {
     Test::case "pipeline threads value" {
-        let result [eval [pipeline 10 [list \
-            {[+ $it 5]} \
-            {[* $it 2]} \
-        ]]]
-        # (10 + 5) * 2 = 30
+        let result [eval [pipeline 10 (
+            {[+ $it 5]}
+            {[* $it 2]}
+        )]]
+        ;; (10 + 5) * 2 = 30
         Test::eq $result 30
     }
 }
 
-# ============================================================================
-# Example: Anaphoric Lambda
-# ============================================================================
-#
-# Create a lambda where $it refers to the single argument
+;; ============================================================================
+;; Example: Anaphoric Lambda
+;; ============================================================================
+;;
+;; Create a lambda where $it refers to the single argument
 
 proc fn {body} {
     quasiquote {
@@ -337,11 +338,11 @@ Test::suite "Anaphoric Lambda" {
     }
 }
 
-# ============================================================================
-# Example: Let-style Binding Chains
-# ============================================================================
-#
-# Bind multiple values in sequence, each can use previous bindings
+;; ============================================================================
+;; Example: Let-style Binding Chains
+;; ============================================================================
+;;
+;; Bind multiple values in sequence, each can use previous bindings
 
 proc let* {bindings body} {
     if [== [len $bindings] 0] {
@@ -362,19 +363,19 @@ proc let* {bindings body} {
 
 Test::suite "Let Star" {
     Test::case "let* chains bindings" {
-        let result [eval [let* [list \
-            [list a 10] \
-            [list b {[+ $a 5]}] \
-            [list c {[* $b 2]}] \
-        ] {$c}]]
-        # a=10, b=15, c=30
+        let result [eval [let* (
+            (a 10)
+            (b {[+ $a 5]})
+            (c {[* $b 2]})
+        ) {$c}]]
+        ;; a=10, b=15, c=30
         Test::eq $result 30
     }
 }
 
-# ============================================================================
-# Example: unless (negated if)
-# ============================================================================
+;; ============================================================================
+;; Example: unless (negated if)
+;; ============================================================================
 
 proc unless {condition body} {
     quasiquote {
@@ -396,9 +397,9 @@ Test::suite "Unless" {
     }
 }
 
-# ============================================================================
-# Example: dotimes (repeat n times)
-# ============================================================================
+;; ============================================================================
+;; Example: dotimes (repeat n times)
+;; ============================================================================
 
 proc dotimes {n body} {
     quasiquote {
@@ -416,7 +417,7 @@ Test::suite "Dotimes" {
         eval [dotimes 5 {
             set! sum [+ $sum $it]
         }]
-        # 0 + 1 + 2 + 3 + 4 = 10
+        ;; 0 + 1 + 2 + 3 + 4 = 10
         Test::eq $sum 10
     }
 }

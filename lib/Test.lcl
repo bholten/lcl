@@ -1,30 +1,30 @@
-# Test Framework for LCL
-#
-# A simple but capable test framework written in pure LCL.
-#
-# Usage:
-#   load lib/Test.lcl
-#
-#   Test::suite "My Feature" {
-#       Test::before {
-#           # Setup code runs before each test
-#       }
-#
-#       Test::case "should do something" {
-#           let result [my_func 1 2]
-#           Test::eq $result 3
-#       }
-#
-#       Test::case "should fail on bad input" {
-#           Test::raises {
-#               my_func "bad" "input"
-#           }
-#       }
-#   }
-#
-#   Test::run  ;# Run all suites and print results
+;; Test Framework for LCL
+;;
+;; A simple but capable test framework written in pure LCL.
+;;
+;; Usage:
+;;   load lib/Test.lcl
+;;
+;;   Test::suite "My Feature" {
+;;       Test::before {
+;;           # Setup code runs before each test
+;;       }
+;;
+;;       Test::case "should do something" {
+;;           let result [my_func 1 2]
+;;           Test::eq $result 3
+;;       }
+;;
+;;       Test::case "should fail on bad input" {
+;;           Test::raises {
+;;               my_func "bad" "input"
+;;           }
+;;       }
+;;   }
+;;
+;;   Test::run  ;# Run all suites and print results
 
-# Create namespace with internal state
+;; Create namespace with internal state
 namespace eval Test {
     var _suites [list]
     var _current_name {}
@@ -33,7 +33,7 @@ namespace eval Test {
     var _current_after {}
 }
 
-# Register a test suite
+;; Register a test suite
 proc Test::suite {name body} {
     set! Test::_current_name $name
     set! Test::_current_cases [list]
@@ -48,100 +48,100 @@ proc Test::suite {name body} {
     set! Test::_current_name {}
 }
 
-# Register a test case within the current suite
+;; Register a test case within the current suite
 proc Test::case {name body} {
     let case_data [dict name $name body $body]
     set! Test::_current_cases [List::push $Test::_current_cases $case_data]
 }
 
-# Set up code to run before each test in the current suite
+;; Set up code to run before each test in the current suite
 proc Test::before {body} {
     set! Test::_current_before $body
 }
 
-# Set up code to run after each test in the current suite
+;; Set up code to run after each test in the current suite
 proc Test::after {body} {
     set! Test::_current_after $body
 }
 
-# Assertion: two values are equal
+;; Assertion: two values are equal
 proc Test::eq {actual expected} {
     if [!= $actual $expected] {
         error "expected '$expected', got '$actual'"
     }
 }
 
-# Assertion: two values are equal (with custom message)
+;; Assertion: two values are equal (with custom message)
 proc Test::eq_msg {actual expected msg} {
     if [!= $actual $expected] {
         error $msg
     }
 }
 
-# Assertion: two values are not equal
+;; Assertion: two values are not equal
 proc Test::neq {actual unexpected} {
     if [== $actual $unexpected] {
         error "expected value to not equal '$unexpected'"
     }
 }
 
-# Assertion: condition is true
+;; Assertion: condition is true
 proc Test::assert {cond} {
     if [not $cond] {
         error "assertion failed"
     }
 }
 
-# Assertion: condition is true (with custom message)
+;; Assertion: condition is true (with custom message)
 proc Test::assert_msg {cond msg} {
     if [not $cond] {
         error $msg
     }
 }
 
-# Assertion: condition is true (alias for assert)
+;; Assertion: condition is true (alias for assert)
 proc Test::true {cond} {
     if [not $cond] {
         error "expected true, got false"
     }
 }
 
-# Assertion: condition is false
+;; Assertion: condition is false
 proc Test::false {cond} {
     if $cond {
         error "expected false, got true"
     }
 }
 
-# Assertion: value is empty (empty string or empty list)
+;; Assertion: value is empty (empty string or empty list)
 proc Test::empty {val} {
     if [not [empty? $val]] {
         error "expected empty value, got '$val'"
     }
 }
 
-# Assertion: value is not empty
+;; Assertion: value is not empty
 proc Test::not_empty {val} {
     if [empty? $val] {
         error "expected non-empty value"
     }
 }
 
-# Assertion: value is opaque
+;; Assertion: value is opaque
 proc Test::opaque {val} {
     if [not [opaque? $val]] {
         error "expected opaque value"
     }
 }
 
-# Assertion: value is not opaque
+;; Assertion: value is not opaque
 proc Test::not_opaque {val} {
     if [opaque? $val] {
         error "expected non-opaque value"
     }
 }
 
-# Assertion: code raises an error
+;; Assertion: code raises an error
 proc Test::raises {body} {
     if [catch { eval $body } _result _err] {
         return 1
@@ -150,7 +150,7 @@ proc Test::raises {body} {
     }
 }
 
-# Assertion: code raises an error containing specific text
+;; Assertion: code raises an error containing specific text
 proc Test::raises_with {body expected_text} {
     if [catch { eval $body } _result _err] {
         if [== [String::find $_err $expected_text] -1] {
@@ -162,35 +162,35 @@ proc Test::raises_with {body expected_text} {
     }
 }
 
-# Assertion: value is greater than expected
+;; Assertion: value is greater than expected
 proc Test::gt {actual expected} {
     if [not [> $actual $expected]] {
         error "expected $actual > $expected"
     }
 }
 
-# Assertion: value is less than expected
+;; Assertion: value is less than expected
 proc Test::lt {actual expected} {
     if [not [< $actual $expected]] {
         error "expected $actual < $expected"
     }
 }
 
-# Assertion: value is greater than or equal to expected
+;; Assertion: value is greater than or equal to expected
 proc Test::gte {actual expected} {
     if [not [>= $actual $expected]] {
         error "expected $actual >= $expected"
     }
 }
 
-# Assertion: value is less than or equal to expected
+;; Assertion: value is less than or equal to expected
 proc Test::lte {actual expected} {
     if [not [<= $actual $expected]] {
         error "expected $actual <= $expected"
     }
 }
 
-# Assertion: list contains element
+;; Assertion: list contains element
 proc Test::contains {lst elem} {
     var found 0
     foreach item $lst {
@@ -204,14 +204,14 @@ proc Test::contains {lst elem} {
     }
 }
 
-# Assertion: string contains substring
+;; Assertion: string contains substring
 proc Test::str_contains {haystack needle} {
     if [== [String::find $haystack $needle] -1] {
         error "string '$haystack' does not contain '$needle'"
     }
 }
 
-# Assertion: list has expected length
+;; Assertion: list has expected length
 proc Test::len_eq {lst expected} {
     let actual [len $lst]
     if [!= $actual $expected] {
@@ -219,12 +219,12 @@ proc Test::len_eq {lst expected} {
     }
 }
 
-# Skip the current test with a reason
+;; Skip the current test with a reason
 proc Test::skip {reason} {
     error "SKIP:$reason"
 }
 
-# Run all registered test suites
+;; Run all registered test suites
 proc Test::run {} {
     var passed 0
     var failed 0
@@ -247,7 +247,7 @@ proc Test::run {} {
             let case_name [get $test_case name]
             let body [get $test_case body]
 
-            # Run before hook if present
+            ;; Run before hook if present
             if [not [empty? $before_hook]] {
                 if [catch { eval $before_hook } _br _be] {
                     puts "  FAIL: $case_name (before hook failed)"
@@ -258,27 +258,27 @@ proc Test::run {} {
                 }
             }
 
-            # Run the test case
+            ;; Run the test case
             if [catch { eval $body } _result _err] {
-                # Check if this is a skip
+                ;; Check if this is a skip
                 if [== [String::find $_err "SKIP:"] 0] {
                     let reason [String::range $_err 5 [String::length $_err]]
                     puts "  SKIP: $case_name ($reason)"
                     set! skipped [+ $skipped 1]
                 } else {
-                    # Test failed
+                    ;; Test failed
                     puts "  FAIL: $case_name"
                     puts "        $_err"
                     set! failed [+ $failed 1]
                     set! failures [List::push $failures [dict suite $suite_name case $case_name error $_err]]
                 }
             } else {
-                # Test passed
+                ;; Test passed
                 puts "  PASS: $case_name"
                 set! passed [+ $passed 1]
             }
 
-            # Run after hook if present
+            ;; Run after hook if present
             if [not [empty? $after_hook]] {
                 catch { eval $after_hook }
             }
@@ -287,13 +287,13 @@ proc Test::run {} {
         puts ""
     }
 
-    # Print summary
+    ;; Print summary
     let total [+ $passed [+ $failed $skipped]]
     puts "========================================"
     puts "Results: $passed passed, $failed failed, $skipped skipped ($total total)"
     puts "========================================"
 
-    # Print failure details if any
+    ;; Print failure details if any
     if [> $failed 0] {
         puts ""
         puts "Failures:"
@@ -308,14 +308,14 @@ proc Test::run {} {
 
     puts ""
 
-    # Return exit code: 0 for success, 1 for failure
+    ;; Return exit code: 0 for success, 1 for failure
     if [> $failed 0] {
         return 1
     }
     return 0
 }
 
-# Clear all registered suites (useful for testing the framework itself)
+;; Clear all registered suites (useful for testing the framework itself)
 proc Test::reset {} {
     set! Test::_suites [list]
     set! Test::_current_name {}

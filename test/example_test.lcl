@@ -1,13 +1,13 @@
-# Example Test File using the Test Framework
-#
-# This demonstrates how to write tests using lib/Test.lcl
-# Run with: ./lcl test/example_test.lcl
+;; Example Test File using the Test Framework
+;;
+;; This demonstrates how to write tests using lib/Test.lcl
+;; Run with: ./lcl test/example_test.lcl
 
 load lib/Test.lcl
 
-# ============================================================================
-# Testing List:: functions
-# ============================================================================
+;; ============================================================================
+;; Testing List:: functions
+;; ============================================================================
 
 Test::suite "List::sort" {
     Test::case "sorts strings lexicographically" {
@@ -114,9 +114,9 @@ Test::suite "List::flatten" {
     }
 }
 
-# ============================================================================
-# Testing String:: functions
-# ============================================================================
+;; ============================================================================
+;; Testing String:: functions
+;; ============================================================================
 
 Test::suite "String::length" {
     Test::case "returns correct length" {
@@ -165,8 +165,8 @@ Test::suite "String::trim" {
     }
 }
 
-# ============================================================================
-# Run all tests
-# ============================================================================
+;; ============================================================================
+;; Run all tests
+;; ============================================================================
 
 Test::run

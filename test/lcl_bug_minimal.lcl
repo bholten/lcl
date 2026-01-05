@@ -1,8 +1,8 @@
-# Minimal LCL Bug Reproduction
-# Run with: lcl -e curl test/lcl_bug_minimal.lcl
-#
-# Bug: `return [proc]` in tail position corrupts lambda closures
-# when the lambda is invoked as a C callback.
+;; Minimal LCL Bug Reproduction
+;; Run with: lcl -e curl test/lcl_bug_minimal.lcl
+;;
+;; Bug: `return [proc]` in tail position corrupts lambda closures
+;; when the lambda is invoked as a C callback.
 
 proc do_request {} {
     var body {}
@@ -20,12 +20,12 @@ proc do_request {} {
     return $body
 }
 
-# WORKS: Called directly from top-level
+;; WORKS: Called directly from top-level
 puts "Test 1: Direct call from top-level..."
 let r1 [do_request]
 puts "OK - length: [String::length $r1]"
 
-# WORKS: Called from proc with let + return
+;; WORKS: Called from proc with let + return
 proc wrapper_ok {} {
     let result [do_request]
     return $result
@@ -35,7 +35,7 @@ puts "Test 2: Wrapped with let + return..."
 let r2 [wrapper_ok]
 puts "OK - length: [String::length $r2]"
 
-# FAILS: Called from proc with direct return (tail call)
+;; FAILS: Called from proc with direct return (tail call)
 proc wrapper_bad {} {
     return [do_request]
 }

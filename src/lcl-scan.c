@@ -11,8 +11,6 @@ static int is_name(int c) {
 }
 
 static void skip_cmd_ws_and_comments(lcl_scan *sc) {
-  int bol = sc->at_cmd_start;
-
   while (sc->i < sc->len) {
     char c = sc->s[sc->i];
 
@@ -24,11 +22,10 @@ static void skip_cmd_ws_and_comments(lcl_scan *sc) {
     if (c == '\n') {
       sc->i++;
       sc->line++;
-      bol = 1;
       continue;
     }
 
-    if (bol && c == '#') {
+    if (c == ';' && sc->i + 1 < sc->len && sc->s[sc->i + 1] == ';') {
       while (sc->i < sc->len && sc->s[sc->i] != '\n') {
         sc->i++;
       }
@@ -52,6 +49,14 @@ static void skip_intra_ws(lcl_scan *sc) {
     if (c == '\\' && sc->i + 1 < sc->len && sc->s[sc->i + 1] == '\n') {
       sc->i += 2;
       sc->line++;
+      continue;
+    }
+
+    /* ;; comment to end of line */
+    if (c == ';' && sc->i + 1 < sc->len && sc->s[sc->i + 1] == ';') {
+      while (sc->i < sc->len && sc->s[sc->i] != '\n') {
+        sc->i++;
+      }
       continue;
     }
 
@@ -107,6 +112,204 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     }
 
     w->braced = 1;
+
+    return 1;
+  }
+
+  /* () list literal - desugars to [list ...] */
+  if (sc->i < sc->len && sc->s[sc->i] == '(') {
+    long depth = 1;
+    long begin = ++sc->i;
+    lcl_program *sub;
+    char *subsrc;
+    size_t content_len;
+
+    while (sc->i < sc->len) {
+      char c = sc->s[sc->i++];
+
+      if (c == '(') {
+        depth++;
+      } else if (c == ')') {
+        depth--;
+
+        if (!depth) {
+          break;
+        }
+      } else if (c == '\n') {
+        sc->line++;
+      } else if (c == '{') {
+        /* Skip balanced braces */
+        long k = 1;
+
+        while (sc->i < sc->len && k) {
+          char e = sc->s[sc->i++];
+
+          if (e == '{') {
+            k++;
+          } else if (e == '}') {
+            k--;
+          } else if (e == '\n') {
+            sc->line++;
+          }
+        }
+
+        if (k) {
+          return -1;
+        }
+      } else if (c == '"') {
+        /* Skip quoted strings */
+        while (sc->i < sc->len) {
+          char e = sc->s[sc->i++];
+
+          if (e == '"') {
+            break;
+          }
+          if (e == '\\' && sc->i < sc->len) {
+            sc->i++;
+          } else if (e == '\n') {
+            sc->line++;
+          }
+        }
+      }
+    }
+
+    if (depth) {
+      return -1;
+    }
+
+    content_len = (size_t)(sc->i - begin - 1);
+    subsrc = (char *)malloc(5 + content_len + 1); /* "list " + content + NUL */
+
+    if (!subsrc) {
+      return -1;
+    }
+
+    memcpy(subsrc, "list ", 5);
+    memcpy(subsrc + 5, sc->s + begin, content_len);
+    subsrc[5 + content_len] = '\0';
+
+    /* Replace newlines with spaces to prevent command separation */
+    {
+      size_t j;
+      for (j = 5; j < 5 + content_len; j++) {
+        if (subsrc[j] == '\n') {
+          subsrc[j] = ' ';
+        }
+      }
+    }
+
+    sub = lcl_program_compile(subsrc, NULL);
+    free(subsrc);
+
+    if (!sub) {
+      return -1;
+    }
+
+    if (!lcl_word_add_sub(w, sub)) {
+      lcl_program_free(sub);
+      return -1;
+    }
+
+    return 1;
+  }
+
+  /* #{} dict literal - desugars to [dict ...] */
+  if (sc->i < sc->len && sc->s[sc->i] == '#' &&
+      sc->i + 1 < sc->len && sc->s[sc->i + 1] == '{') {
+    long depth = 1;
+    long begin;
+    lcl_program *sub;
+    char *subsrc;
+    size_t content_len;
+
+    sc->i += 2; /* skip #{ */
+    begin = sc->i;
+
+    while (sc->i < sc->len) {
+      char c = sc->s[sc->i++];
+
+      if (c == '{') {
+        depth++;
+      } else if (c == '}') {
+        depth--;
+
+        if (!depth) {
+          break;
+        }
+      } else if (c == '\n') {
+        sc->line++;
+      } else if (c == '"') {
+        /* Skip quoted strings */
+        while (sc->i < sc->len) {
+          char e = sc->s[sc->i++];
+
+          if (e == '"') {
+            break;
+          }
+          if (e == '\\' && sc->i < sc->len) {
+            sc->i++;
+          } else if (e == '\n') {
+            sc->line++;
+          }
+        }
+      } else if (c == '(') {
+        /* Skip balanced parens (nested list literals) */
+        long k = 1;
+
+        while (sc->i < sc->len && k) {
+          char e = sc->s[sc->i++];
+
+          if (e == '(') {
+            k++;
+          } else if (e == ')') {
+            k--;
+          } else if (e == '\n') {
+            sc->line++;
+          }
+        }
+
+        if (k) {
+          return -1;
+        }
+      }
+    }
+
+    if (depth) {
+      return -1;
+    }
+
+    content_len = (size_t)(sc->i - begin - 1);
+    subsrc = (char *)malloc(5 + content_len + 1); /* "dict " + content + NUL */
+
+    if (!subsrc) {
+      return -1;
+    }
+
+    memcpy(subsrc, "dict ", 5);
+    memcpy(subsrc + 5, sc->s + begin, content_len);
+    subsrc[5 + content_len] = '\0';
+
+    /* Replace newlines with spaces to prevent command separation */
+    {
+      size_t j;
+      for (j = 5; j < 5 + content_len; j++) {
+        if (subsrc[j] == '\n') {
+          subsrc[j] = ' ';
+        }
+      }
+    }
+
+    sub = lcl_program_compile(subsrc, NULL);
+    free(subsrc);
+
+    if (!sub) {
+      return -1;
+    }
+
+    if (!lcl_word_add_sub(w, sub)) {
+      lcl_program_free(sub);
+      return -1;
+    }
 
     return 1;
   }

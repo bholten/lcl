@@ -1,12 +1,12 @@
-# LCL Bug: Tail-call breaks lambda closure when called from C callback
-#
-# When a proc uses `return [other_proc]` (tail call position), and
-# `other_proc` contains a lambda that is invoked as a callback from C,
-# the lambda's closure is corrupted.
+;; LCL Bug: Tail-call breaks lambda closure when called from C callback
+;;
+;; When a proc uses `return [other_proc]` (tail call position), and
+;; `other_proc` contains a lambda that is invoked as a callback from C,
+;; the lambda's closure is corrupted.
 
-# ============================================================================
-# FAILING CASE: Direct return (tail call)
-# ============================================================================
+;; ============================================================================
+;; FAILING CASE: Direct return (tail call)
+;; ============================================================================
 
 proc inner_failing {} {
     var body {}
@@ -28,9 +28,9 @@ proc outer_failing {} {
     return [inner_failing]  # Tail call - BREAKS the lambda
 }
 
-# ============================================================================
-# WORKING CASE: Intermediate binding
-# ============================================================================
+;; ============================================================================
+;; WORKING CASE: Intermediate binding
+;; ============================================================================
 
 proc inner_working {} {
     var body {}
@@ -53,9 +53,9 @@ proc outer_working {} {
     return $result
 }
 
-# ============================================================================
-# Test both cases
-# ============================================================================
+;; ============================================================================
+;; Test both cases
+;; ============================================================================
 
 puts "Testing WORKING case (let + return)..."
 let r1 [outer_working]

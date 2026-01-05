@@ -1,5 +1,5 @@
-# Tests for the Test Framework itself
-# This exercises all the framework features
+;; Tests for the Test Framework itself
+;; This exercises all the framework features
 
 load lib/Test.lcl
 
@@ -129,7 +129,7 @@ Test::suite "Collection assertions" {
     }
 }
 
-# Define hook test variable at global scope so hooks can access it
+;; Define hook test variable at global scope so hooks can access it
 var _hook_test_value 0
 
 Test::suite "Before/After hooks" {
@@ -160,5 +160,5 @@ Test::suite "Skip functionality" {
     }
 }
 
-# Run all tests
+;; Run all tests
 Test::run
