@@ -1,0 +1,198 @@
+;; Tests for expect.lcl
+
+load lib/Test.lcl
+load lib/sh.lcl
+load lib/expect.lcl
+
+Test::suite "expect::spawn" {
+    Test::case "spawns process" {
+        let session [expect::spawn (cat) #{}]
+        Test::assert [expect::alive? $session]
+        expect::close $session
+    }
+
+    Test::case "spawn with timeout option" {
+        let session [expect::spawn (cat) #{timeout 5000}]
+        Test::eq [get $session timeout] 5000
+        expect::close $session
+    }
+}
+
+Test::suite "expect::send" {
+    Test::case "sends data to process" {
+        let session [expect::spawn (cat) #{}]
+        expect::send $session "hello"
+        expect::close-stdin $session
+        let w [expect::wait $session #{}]
+        let output [expect::read $session]
+        Test::eq $output "hello"
+        expect::close $session
+    }
+
+    Test::case "send-line adds newline" {
+        let session [expect::spawn (cat) #{}]
+        expect::send-line $session "hello"
+        expect::close-stdin $session
+        expect::wait $session #{}
+        let output [expect::read $session]
+        Test::eq $output "hello\n"
+        expect::close $session
+    }
+}
+
+Test::suite "expect::expect" {
+    Test::case "matches single pattern" {
+        let session [expect::spawn (sh -c {echo "hello world"; sleep 1}) #{}]
+        let r [expect::expect $session "world" #{}]
+        Test::assert [expect::matched? $r]
+        Test::eq [get $r pattern] "world"
+        expect::close $session
+    }
+
+    Test::case "matches first of multiple patterns" {
+        let session [expect::spawn (sh -c {echo "foo bar baz"}) #{}]
+        let r [expect::expect $session [list "bar" "baz"] #{}]
+        Test::assert [expect::matched? $r]
+        Test::eq [get $r pattern] "bar"
+        Test::eq [get $r index] 0
+        expect::close $session
+    }
+
+    Test::case "matches second pattern" {
+        let session [expect::spawn (sh -c {echo "foo qux baz"}) #{}]
+        let r [expect::expect $session [list "bar" "qux"] #{}]
+        Test::assert [expect::matched? $r]
+        Test::eq [get $r pattern] "qux"
+        Test::eq [get $r index] 1
+        expect::close $session
+    }
+
+    Test::case "timeout returns matched=0" {
+        let session [expect::spawn (sleep 10) #{}]
+        let r [expect::expect $session "never" #{timeout 100}]
+        Test::assert [expect::timed-out? $r]
+        Test::eq [get $r matched] 0
+        expect::kill $session #{}
+        expect::close $session
+    }
+
+    Test::case "includes data in result" {
+        let session [expect::spawn (sh -c {echo "prefix:MARKER:suffix"}) #{}]
+        let r [expect::expect $session "MARKER" #{}]
+        Test::assert [expect::matched? $r]
+        Test::assert [!= [String::find [get $r data] "prefix"] -1]
+        expect::close $session
+    }
+}
+
+Test::suite "expect::wait-for" {
+    Test::case "returns data on match" {
+        let session [expect::spawn (sh -c {echo "hello"}) #{}]
+        let data [expect::wait-for $session "hello" #{}]
+        Test::assert [!= [String::find $data "hello"] -1]
+        expect::close $session
+    }
+
+    Test::case "returns empty on timeout" {
+        let session [expect::spawn (sleep 10) #{}]
+        let data [expect::wait-for $session "never" #{timeout 100}]
+        Test::eq $data ""
+        expect::kill $session #{}
+        expect::close $session
+    }
+}
+
+Test::suite "expect::send-expect" {
+    Test::case "sends and waits" {
+        ;; Use a simple echo server simulation
+        let session [expect::spawn (sh -c {read line; echo "got: $line"}) #{}]
+        let r [expect::send-line-expect $session "test" "got:" #{}]
+        Test::assert [expect::matched? $r]
+        expect::close $session
+    }
+}
+
+Test::suite "expect::alive?" {
+    Test::case "true for running process" {
+        let session [expect::spawn (sleep 10) #{}]
+        Test::assert [expect::alive? $session]
+        expect::kill $session #{}
+        expect::close $session
+    }
+
+    Test::case "false after exit" {
+        let session [expect::spawn (true) #{}]
+        expect::wait $session #{}
+        Test::assert [not [expect::alive? $session]]
+        expect::close $session
+    }
+}
+
+Test::suite "expect::wait" {
+    Test::case "returns exit status" {
+        let session [expect::spawn (sh -c "exit 42") #{}]
+        let w [expect::wait $session #{}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 42
+        expect::close $session
+    }
+}
+
+Test::suite "expect::kill" {
+    Test::case "terminates process" {
+        let session [expect::spawn (sleep 100) #{}]
+        Test::assert [expect::alive? $session]
+        expect::kill $session #{}
+        expect::wait $session #{timeout 1000}
+        Test::assert [not [expect::alive? $session]]
+        expect::close $session
+    }
+}
+
+Test::suite "expect::run" {
+    Test::case "runs script actions" {
+        ;; Interactive script: read, echo, read, echo
+        let session [expect::spawn (sh -c {read line1; echo "first: $line1"; read line2; echo "second: $line2"}) #{}]
+
+        ;; Build script as list of actions (must be on one line due to LCL parsing)
+        let a1 [list send-line hello]
+        let a2 [list expect "first:"]
+        let a3 [list send-line world]
+        let a4 [list expect "second:"]
+        let script [list $a1 $a2 $a3 $a4]
+
+        let results [expect::run $session $script]
+
+        Test::eq [len $results] 2
+        Test::assert [expect::matched? [get $results 0]]
+        Test::assert [expect::matched? [get $results 1]]
+        expect::close $session
+    }
+}
+
+Test::suite "expect::script" {
+    Test::case "convenience for spawn-run-close" {
+        ;; Build script as list of actions
+        let a1 [list expect ready]
+        let a2 [list send-line go]
+        let a3 [list expect done]
+        let script [list $a1 $a2 $a3]
+
+        let results [expect::script (sh -c {echo "ready"; read x; echo "done"}) $script]
+
+        Test::eq [len $results] 2
+        Test::assert [expect::matched? [get $results 0]]
+        Test::assert [expect::matched? [get $results 1]]
+    }
+}
+
+Test::suite "expect::timeout" {
+    Test::case "sets default timeout" {
+        expect::timeout 5
+        Test::eq $expect::_default_timeout 5000
+        ;; Reset to default
+        expect::timeout 10
+    }
+}
+
+Test::run
