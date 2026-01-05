@@ -214,8 +214,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   }
 
   /* #{} dict literal - desugars to [dict ...] */
-  if (sc->i < sc->len && sc->s[sc->i] == '#' &&
-      sc->i + 1 < sc->len && sc->s[sc->i + 1] == '{') {
+  if (sc->i < sc->len && sc->s[sc->i] == '#' && sc->i + 1 < sc->len &&
+      sc->s[sc->i + 1] == '{') {
     long depth = 1;
     long begin;
     lcl_program *sub;
@@ -239,7 +239,6 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
       } else if (c == '\n') {
         sc->line++;
       } else if (c == '"') {
-        /* Skip quoted strings */
         while (sc->i < sc->len) {
           char e = sc->s[sc->i++];
 
@@ -253,7 +252,6 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           }
         }
       } else if (c == '(') {
-        /* Skip balanced parens (nested list literals) */
         long k = 1;
 
         while (sc->i < sc->len && k) {
@@ -586,7 +584,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     return -1;
   }
 
-  return (w->np > 0) ? 1 : 0;
+  /* Return 1 if we have content OR if it was a quoted empty string "" */
+  return (w->np > 0 || w->quoted) ? 1 : 0;
 }
 
 int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
@@ -658,7 +657,8 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
       return -1;
     }
 
-    if (w.np == 0) {
+    /* Check for no word - but empty quoted string "" is valid */
+    if (w.np == 0 && !w.quoted) {
       break;
     }
 

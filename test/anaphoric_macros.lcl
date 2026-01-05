@@ -144,20 +144,23 @@ proc select {items predicate} {
 }
 
 ;; ============================================================================
-;; cond - Multi-branch Conditional (like Lisp cond)
+;; acond - Anaphoric Cond (Multi-branch Conditional with $it binding)
 ;; ============================================================================
 ;;
 ;; Takes pairs of {condition body}. Evaluates conditions in order, runs
 ;; the body of the first truthy one. $it is bound to the condition result.
 ;;
+;; Note: This is an anaphoric version that binds $it to the matched condition.
+;; For simple dispatch without $it binding, use the built-in `cond` special form.
+;;
 ;; Usage:
-;;   eval [cond {
-;;       {[< $x 0]}  {puts "negative"}
-;;       {[== $x 0]} {puts "zero"}
-;;       {1}         {puts "positive"}
+;;   eval [acond {
+;;       {[< $x 0]}  {puts "negative: $it"}
+;;       {[== $x 0]} {puts "zero: $it"}
+;;       {1}         {puts "positive: $it"}
 ;;   }]
 
-proc cond {clauses} {
+proc acond {clauses} {
     if [== [len $clauses] 0] {
         return {{}}
     }
@@ -166,7 +169,7 @@ proc cond {clauses} {
     let rest [List::slice $clauses 1 [len $clauses]]
     let condition [get $first 0]
     let body [get $first 1]
-    let rest_code [cond $rest]
+    let rest_code [acond $rest]
 
     quasiquote {
         let it ,$condition
@@ -256,10 +259,10 @@ Test::suite "Anaphoric Macros" {
         Test::eq $sum 15
     }
 
-    Test::case "cond multi-branch" {
+    Test::case "acond multi-branch" {
         var x 5
         var result {}
-        eval [cond (
+        eval [acond (
             ({[< $x 0]}  {set! result "negative"})
             ({[== $x 0]} {set! result "zero"})
             ({1}         {set! result "positive"})
@@ -267,9 +270,9 @@ Test::suite "Anaphoric Macros" {
         Test::eq $result "positive"
     }
 
-    Test::case "cond binds it to matching condition" {
+    Test::case "acond binds it to matching condition" {
         var result 0
-        eval [cond (
+        eval [acond (
             ({0}         {set! result "first"})
             ({[+ 10 20]} {set! result $it})
             ({1}         {set! result "default"})
@@ -329,11 +332,11 @@ Test::suite "Anaphoric Lambda" {
     }
 
     Test::case "fn in higher-order context" {
-        let add10 [eval [fn {[+ $it 10]}]]
+        let incr10 [eval [fn {[+ $it 10]}]]
         let data {1 2 3}
         var results [list]
         foreach x $data {
-            set! results [List::push $results [$add10 $x]]
+            set! results [List::push $results [$incr10 $x]]
         }
         Test::eq $results [list 11 12 13]
     }
@@ -420,6 +423,108 @@ Test::suite "Dotimes" {
         }]
         ;; 0 + 1 + 2 + 3 + 4 = 10
         Test::eq $sum 10
+    }
+}
+
+;; ============================================================================
+;; Macro-Writing-Macros (using ,,)
+;; ============================================================================
+;;
+;; The ,, syntax allows a macro to generate code that itself contains unquotes.
+;; At quasiquote depth 2:
+;;   ,$var   - preserved as literal (becomes ,$var in output)
+;;   ,,$var  - evaluates $var now, produces ,<value> in output
+;;
+;; This is essential for writing macros that generate other macros.
+
+;; make-adder-macro: generates a macro that adds a fixed amount
+;; Usage:
+;;   eval [make-adder-macro add10 10]  ;; defines add10 macro
+;;   eval [add10 5]                     ;; => 15
+;;
+;; The ,, is crucial here: we want to bake the `amount` value into
+;; the generated macro definition, but preserve the ,$x for later evaluation.
+
+proc make-adder-macro {name amount} {
+    quasiquote {
+        proc ,$name {x} {
+            quasiquote {
+                + ,$x ,,$amount
+            }
+        }
+    }
+}
+
+;; make-greeter: generates a greeting macro with a fixed prefix
+;; Usage:
+;;   eval [make-greeter greet "Hello"]
+;;   puts [eval [greet "World"]]  ;; => "Hello, World!"
+
+proc make-greeter {name prefix} {
+    quasiquote {
+        proc ,$name {who} {
+            quasiquote {
+                String::join (,,$prefix ", " ,$who "!") {}
+            }
+        }
+    }
+}
+
+Test::suite "Macro-Writing-Macros" {
+    Test::case "make-adder-macro generates working adder" {
+        ;; Generate an add10 macro
+        eval [make-adder-macro add10 10]
+
+        ;; Use it
+        let result [eval [add10 5]]
+        Test::eq $result 15
+    }
+
+    Test::case "make-adder-macro with different values" {
+        ;; Generate add100
+        eval [make-adder-macro add100 100]
+
+        let result [eval [add100 23]]
+        Test::eq $result 123
+    }
+
+    Test::case "make-greeter generates working greeter" {
+        ;; Generate a hello greeter
+        eval [make-greeter hello "Hello"]
+
+        let result [eval [hello "World"]]
+        Test::eq $result "Hello, World!"
+    }
+
+    Test::case "multiple generated macros are independent" {
+        ;; Generate two different adders
+        eval [make-adder-macro plus5 5]
+        eval [make-adder-macro plus50 50]
+
+        let r1 [eval [plus5 10]]
+        let r2 [eval [plus50 10]]
+
+        Test::eq $r1 15
+        Test::eq $r2 60
+    }
+
+    Test::case "nested quasiquote depth tracking" {
+        ;; Direct test of ,, behavior
+        let outer_val 42
+
+        ;; At depth 2, ,,$outer_val evaluates outer_val now
+        ;; and produces ,42 in the output (bare word, not braced)
+        let template [quasiquote {
+            quasiquote {
+                the answer is ,,$outer_val
+            }
+        }]
+
+        ;; template should be: quasiquote { the answer is ,42 }
+        ;; When we eval that, we get: the answer is 42
+        ;; (with whitespace from template, so we trim)
+        let result [String::trim [eval $template]]
+        Test::eq $result "the answer is 42"
     }
 }
 

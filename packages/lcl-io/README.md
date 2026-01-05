@@ -22,13 +22,14 @@ cmake --build build
 let contents [io::read_file "config.txt"]
 
 # Write file
-io::write_file "output.txt" "Hello, World!"
+io::write_file output.txt "Hello, World!"
 
 # Stream-based I/O
-let f [io::open_file "data.txt" r]
-while {1} {
+let f [io::open_file data.txt r]
+
+while 1 {
     let line [io::fgets $f 1024]
-    if {[String::length $line] == 0} { break }
+    if [== [len $line] 0] { break }
     puts $line
 }
 io::close_file $f

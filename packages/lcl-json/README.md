@@ -19,11 +19,11 @@ cmake --build build
 
 ```tcl
 # Encode LCL values to JSON
-let data [dict]
-dict::put $data name "Alice"
-dict::put $data age 30
-dict::put $data active [json::true]
-
+let data #{
+    name "Alice"
+    age 30
+    active [json::true]
+}
 let json_str [json::encode $data]
 puts $json_str  ;# {"name":"Alice","age":30,"active":true}
 

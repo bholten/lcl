@@ -18,13 +18,16 @@ The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C+
 
 ## Key Differences from Tcl
 
-| Feature  | Tcl                          | Lcl                                                            |
-|----------|------------------------------|----------------------------------------------------------------|
-| Scoping  | Dynamic (`upvar`, `uplevel`) | Lexical (closures)                                             |
-| Bindings | Mutable by default           | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
-| Memory   | Garbage collected            | Reference counted                                              |
-| Closures | Limited                      | First-class (flat closures)                                    |
-
+| Feature    | Tcl                              | Lcl                                                            |
+|------------|----------------------------------|----------------------------------------------------------------|
+| Scoping    | Dynamic (`upvar`, `uplevel`)     | Lexical (closures)                                             |
+| Bindings   | Mutable by default               | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
+| Memory     | Garbage collected                | Reference counted                                              |
+| Closures   | Limited                          | First-class (flat closures)                                    |
+| Comments   | `#` at line start                | `;;` anywhere (Lisp-style)                                     |
+| `if`       | `if {expr} {body} elseif ...`    | `if $cond {then} else {else}` (Scheme-style, value-based)      |
+| Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
+| Quoting    | `expr` command for expressions   | Expressions are just commands                                  |
 
 Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
 
@@ -56,22 +59,22 @@ cmake -B build -DLCL_ENABLE_ASAN=ON && cmake --build build  # with sanitizers
 ## Quick Start
 
 ```tcl
-# Variables and immutable bindings
+;; Variables and immutable bindings
 let x 10
 puts "x = $x"
 
-# Mutable bindings use cells
+;; Mutable bindings use cells
 var counter 0
 set! counter [+ $counter 1]
 puts "counter = $counter"
 
-# Procedures
+;; Procedures
 proc greet {name} {
     return "Hello, $name!"
 }
 puts [greet "World"]
 
-# Closures capture their environment
+;; Closures capture their environment
 proc make_counter {start} {
     var n $start
     return [lambda {} {
@@ -80,8 +83,8 @@ proc make_counter {start} {
     }]
 }
 let c [make_counter 10]
-puts [$c]  ;# 11
-puts [$c]  ;# 12
+puts [$c]  ;; 11
+puts [$c]  ;; 12
 ```
 
 ## Language Features
@@ -89,22 +92,27 @@ puts [$c]  ;# 12
 ### Data Types
 
 ```tcl
-# Strings (the fundamental type)
+;; Strings (the fundamental type)
 let s "hello world"
+let empty ""           ;; empty string (same as {})
 
-# Numbers (integers and floats)
+;; Numbers (integers and floats)
 let n 42
 let f 3.14
 
-# Lists
+;; Lists - constructor or literal syntax
 let lst [list a b c d e]
-puts [len $lst]        ;# 5
-puts [get $lst 2]      ;# c
+let lst2 (a b c d e)   ;; list literal (same as above)
+let empty_list ()      ;; empty list
+puts [len $lst]        ;; 5
+puts [get $lst 2]      ;; c
 
-# Dictionaries
+;; Dictionaries - constructor or literal syntax
 let d [dict name "Alice" age 30]
-puts [get $d name]     ;# Alice
-puts [has? $d age]     ;# 1
+let d2 #{name "Alice" age 30}  ;; dict literal (same as above)
+let empty_dict #{}     ;; empty dict
+puts [get $d name]     ;; Alice
+puts [has? $d age]     ;; 1
 ```
 
 ### Generic Operations
@@ -112,41 +120,41 @@ puts [has? $d age]     ;# 1
 These operations work across multiple types:
 
 ```tcl
-# len - get length/size
-puts [len [list 1 2 3]]        ;# 3
-puts [len [dict a 1 b 2]]      ;# 2
-puts [len "hello"]             ;# 5
+;; len - get length/size
+puts [len (1 2 3)]             ;; 3
+puts [len #{a 1 b 2}]          ;; 2
+puts [len "hello"]             ;; 5
 
-# get - access by index/key
-puts [get $list 0]             ;# first element
-puts [get $dict key]           ;# value for key
-puts [get "hello" 1]           ;# "e"
+;; get - access by index/key
+puts [get $list 0]             ;; first element
+puts [get $dict key]           ;; value for key
+puts [get "hello" 1]           ;; "e"
 
-# put - functional update (returns new value)
+;; put - functional update (returns new value)
 let lst2 [put $lst 0 replaced]
 let d2 [put $d newkey value]
 
-# del - functional delete
+;; del - functional delete
 let d3 [del $d key]
 
-# has? - check existence
-puts [has? $lst value]         ;# 1 if value in list
-puts [has? $d key]             ;# 1 if key exists
+;; has? - check existence
+puts [has? $lst value]         ;; 1 if value in list
+puts [has? $d key]             ;; 1 if key exists
 
-# empty? - check if empty
-puts [empty? [list]]           ;# 1
-puts [empty? $lst]             ;# 0
+;; empty? - check if empty
+puts [empty? ()]               ;; 1
+puts [empty? $lst]             ;; 0
 ```
 
 ### Type Predicates
 
 ```tcl
-puts [list? $lst]      ;# 1
-puts [dict? $d]        ;# 1
-puts [string? "hi"]    ;# 1
-puts [number? 42]      ;# 1
-puts [proc? $greet]    ;# 1
-puts [cell? [ref 0]]   ;# 1
+puts [list? $lst]      ;; 1
+puts [dict? $d]        ;; 1
+puts [string? "hi"]    ;; 1
+puts [number? 42]      ;; 1
+puts [proc? $greet]    ;; 1
+puts [cell? [ref 0]]   ;; 1
 ```
 
 ### Namespaced Functions
@@ -154,58 +162,78 @@ puts [cell? [ref 0]]   ;# 1
 Type-specific operations are organized into namespaces:
 
 ```tcl
-# List operations
-puts [List::push $lst newitem]     ;# append item
-puts [List::pop $lst]              ;# remove last (returns list)
-puts [List::reverse $lst]          ;# reverse
-puts [List::slice $lst 1 3]        ;# slice [1,3)
-puts [List::concat $lst1 $lst2]    ;# concatenate
+;; List operations
+puts [List::push $lst newitem]     ;; append item
+puts [List::pop $lst]              ;; remove last (returns list)
+puts [List::reverse $lst]          ;; reverse
+puts [List::slice $lst 1 3]        ;; slice [1,3)
+puts [List::concat $lst1 $lst2]    ;; concatenate
 
-# Dict operations
-puts [Dict::keys $d]               ;# list of keys
-puts [Dict::values $d]             ;# list of values
-puts [Dict::merge $d1 $d2]         ;# merge dicts
+;; Dict operations
+puts [Dict::keys $d]               ;; list of keys
+puts [Dict::values $d]             ;; list of values
+puts [Dict::merge $d1 $d2]         ;; merge dicts
 
-# String operations
-puts [String::upper "hello"]       ;# HELLO
-puts [String::lower "HELLO"]       ;# hello
-puts [String::find "hello" "ll"]   ;# 2
-puts [String::replace "hello" "l" "L"]  ;# heLLo
-puts [String::split "a,b,c" ","]   ;# list: a b c
-puts [String::join $lst "-"]       ;# a-b-c-d-e
+;; String operations
+puts [String::upper "hello"]       ;; HELLO
+puts [String::lower "HELLO"]       ;; hello
+puts [String::find "hello" "ll"]   ;; 2
+puts [String::replace "hello" "l" "L"]  ;; heLLo
+puts [String::split "a,b,c" ","]   ;; list: a b c
+puts [String::join $lst "-"]       ;; a-b-c-d-e
 ```
 
 ### Control Flow
 
 ```tcl
-# if/elseif/else
+;; if - takes a VALUE (not a block), Scheme-style
+;; Note: Unlike Tcl, there is no elseif/elsif - use nested if instead
 if $condition {
     puts "true"
-} elseif $other {
-    puts "other"
 } else {
     puts "false"
 }
 
-# while
-var i 5
-while $i {
-    puts $i
-    set! i [+ $i -1]
+;; Nested if for multiple branches
+if [< $x 0] {
+    puts "negative"
+} else {
+    if [== $x 0] {
+        puts "zero"
+    } else {
+        puts "positive"
+    }
 }
 
-# for
-for {var j 0} {$j} {set! j [+ $j -1]} {
+;; cond - multi-branch conditional (like Scheme/Lisp)
+;; Evaluates conditions in order, runs first truthy branch
+;; Use 'else' for default case, errors if no match without else
+let result [cond [< $x 0] {negative} [== $x 0] {zero} else {positive}]
+
+;; case - value dispatch (like switch/match)
+;; Compares value against keys, runs matching expression
+;; Keys are evaluated, so $variables work
+let msg [case $op {add} [+ $a $b] {sub} [- $a $b] {mul} [* $a $b] else {unknown op}]
+
+;; while
+var i 5
+while {$i} {
+    puts $i
+    set! i [- $i 1]
+}
+
+;; for
+for {var j 10} {$j} {set! j [- $j 1]} {
     puts $j
 }
 
-# foreach
+;; foreach
 foreach item $lst {
     puts $item
 }
 
-# break and continue work as expected
-foreach x [list 1 2 3 4 5] {
+;; break and continue work as expected
+foreach x (1 2 3 4 5) {
     if [== $x 3] { continue }
     if [== $x 5] { break }
     puts $x
@@ -217,36 +245,36 @@ foreach x [list 1 2 3 4 5] {
 Thread values through a series of operations:
 
 ```tcl
-# -> threads as FIRST argument
+;; -> threads as FIRST argument
 let result [-> $data {get key} {String::upper}]
-# Equivalent to: String::upper [get $data key]
+;; Equivalent to: String::upper [get $data key]
 
-# ->> threads as LAST argument
+;; ->> threads as LAST argument
 let result [->> $value {transform a b}]
-# Equivalent to: transform a b $value
+;; Equivalent to: transform a b $value
 
-# Chain multiple operations
-let d [dict a 1 b 2 c 3]
-let d2 [-> $d {put d 4} {del a}]  ;# add d, remove a
+;; Chain multiple operations
+let d #{a 1 b 2 c 3}
+let d2 [-> $d {put d 4} {del a}]  ;; add d, remove a
 
-# Works with lambdas
+;; Works with lambdas
 let inc [lambda {x} {+ $x 1}]
-puts [-> 10 {$inc} {$inc}]        ;# 12
+puts [-> 10 {$inc} {$inc}]        ;; 12
 
-# Inline lambdas too
-puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;# 110
+;; Inline lambdas too
+puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;; 110
 ```
 
 ### Namespaces
 
 ```tcl
-# Define a namespace
+;; Define a namespace
 namespace eval math {
     let pi 3.14159
     proc double {x} { + $x $x }
 }
 
-# Access namespace members
+;; Access namespace members
 puts $math::pi
 puts [math::double 21]
 ```
@@ -254,35 +282,104 @@ puts [math::double 21]
 ### Eval and Subst
 
 ```tcl
-# eval - execute string as code
+;; eval - execute string as code in current scope
 eval {puts "hello"}
 let code "puts world"
 eval $code
 
-# subst - substitute variables and commands in string
+;; subst - substitute variables and commands in string
 let x 42
 puts [subst {x is $x, sum is [+ 1 2]}]
-# Output: x is 42, sum is 3
+;; Output: x is 42, sum is 3
 ```
 
 ## Operators
 
 ```tcl
-# Arithmetic
-puts [+ 1 2 3]         ;# 6
-puts [- 10 3]          ;# 7
-puts [* 2 3 4]         ;# 24
-puts [/ 10 3]          ;# 3
+;; Arithmetic
+puts [+ 1 2 3]         ;; 6
+puts [- 10 3]          ;; 7
+puts [* 2 3 4]         ;; 24
+puts [/ 10 3]          ;; 3
 
-# Comparison
-puts [== $a $b]        ;# value equality
-puts [!= $a $b]        ;# value inequality
-puts [< $a $b]         ;# less than
-puts [> $a $b]         ;# greater than
+;; Comparison
+puts [== $a $b]        ;; value equality (deep for lists/dicts)
+puts [!= $a $b]        ;; value inequality
+puts [< $a $b]         ;; less than
+puts [> $a $b]         ;; greater than
 
-# Identity
-puts [same? $a $b]     ;# same object?
+;; Identity
+puts [same? $a $b]     ;; same object?
 puts [not-same? $a $b]
+```
+
+## Metaprogramming
+
+### Quasiquote
+
+Quasiquote provides Lisp-style template syntax for code generation:
+
+```tcl
+;; Basic quasiquote with unquote
+let name "Alice"
+let code [quasiquote { puts ,$name }]
+eval $code  ;; prints: Alice
+
+;; Unquote syntax:
+;;   ,$var     - substitute variable value
+;;   ,[cmd]    - evaluate command and insert result
+;;   ,@$list   - splice list elements (space-separated)
+;;   ,{lit}    - insert literal value
+;;   \,        - literal comma (escaped)
+;;
+;; Note: Commas inside "quoted strings" are literal, not unquotes.
+;; Use string concatenation or build strings outside quasiquote.
+
+;; Command substitution in templates
+let x 10
+let y 20
+let expr [quasiquote { + ,$x ,$y }]
+puts [eval $expr]  ;; 30
+
+;; Splice-unquote for lists
+let args (1 2 3)
+let code [quasiquote { + ,@$args }]
+puts [eval $code]  ;; 6
+
+;; Building a macro
+proc defun {name params body} {
+    quasiquote {
+        proc ,$name ,$params ,$body
+    }
+}
+
+eval [defun greet {who} { puts "Hello, $who!" }]
+greet "World"  ;; Hello, World!
+```
+
+### Nested Quasiquote (Macro-Writing-Macros)
+
+For writing macros that generate other macros, use `,,` (double comma):
+
+```tcl
+;; At depth 2, ,,$var evaluates NOW and produces ,<value> in output
+;; Single ,$var is preserved for later evaluation
+
+proc make-adder-macro {name amount} {
+    quasiquote {
+        proc ,$name {x} {
+            quasiquote {
+                + ,$x ,,$amount
+            }
+        }
+    }
+}
+
+;; Generate an add10 macro
+eval [make-adder-macro add10 10]
+
+;; Use it - produces code: + 5 10
+puts [eval [add10 5]]  ;; 15
 ```
 
 ## Syntax Reference
@@ -290,21 +387,27 @@ puts [not-same? $a $b]
 ### Quoting
 
 ```tcl
-# Braces - literal, no substitution
-let x {$a [+ 1 2]}     ;# literally: $a [+ 1 2]
+;; Braces - literal, no substitution
+let x {$a [+ 1 2]}     ;; literally: $a [+ 1 2]
 
-# Quotes - substitution happens
-let y "$a [+ 1 2]"     ;# substitutes $a and evaluates [+ 1 2]
+;; Quotes - substitution happens
+let y "$a [+ 1 2]"     ;; substitutes $a and evaluates [+ 1 2]
 
-# Brackets - command substitution
-let z [+ 1 2]          ;# evaluates to 3
+;; Brackets - command substitution
+let z [+ 1 2]          ;; evaluates to 3
+
+;; Parens - list literal
+let lst (a b c)        ;; same as [list a b c]
+
+;; Hash-braces - dict literal
+let d #{a 1 b 2}       ;; same as [dict a 1 b 2]
 ```
 
 ### Comments
 
 ```tcl
-# This is a comment (must be at start of line or after ;)
-puts "hello"  ;# This is also a comment
+;; This is a comment (Lisp-style, anywhere on line)
+puts "hello"  ;; This is also a comment
 ```
 
 ### Line Continuation
@@ -356,9 +459,9 @@ Lcl uses **reference counting** for memory management (no garbage collector). Th
 However, reference counting cannot handle reference cycles. When two procedures reference each other (mutual recursion), they create a cycle that can never be freed:
 
 ```tcl
-# This is REJECTED at definition time:
-proc even? {n} { if [== $n 0] { 1 } else { [odd? [- $n 1]] } }
-proc odd? {n} { if [== $n 0] { 0 } else { [even? [- $n 1]] } }
+;; This is REJECTED at definition time:
+proc even? {n} { if [== $n 0] {1} else {odd? [- $n 1]} }
+proc odd? {n} { if [== $n 0] {0} else {even? [- $n 1]} }
 ```
 
 Lcl detects this pattern and raises an error rather than silently leaking memory.

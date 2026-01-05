@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -1167,6 +1168,138 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   lcl_program_free(body_p);
 
   return rc;
+}
+
+/* Helper to check if a word is a literal matching a specific string */
+static int word_is_literal(const lcl_word *w, const char *lit) {
+  if (w->np != 1) {
+    return 0;
+  }
+  if (w->wp[0].kind != LCL_WP_LIT) {
+    return 0;
+  }
+  return strcmp(w->wp[0].as.lit.s, lit) == 0;
+}
+
+/* cond test1 expr1 test2 expr2 ... [else exprN]
+ * Multi-branch conditional with short-circuit evaluation.
+ * Evaluates tests left-to-right until one is truthy, then evaluates
+ * and returns that clause's expression. The 'else' keyword marks
+ * the default clause (must be last). Error if no clause matches.
+ */
+static int s_cond(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
+  int saved_tail_position = interp->in_tail_position;
+  int i;
+  lcl_value *test_v = NULL;
+  int is_true;
+  int rc;
+
+  if (argc < 2 || (argc % 2) != 0) {
+    LCL_ERR_MSG(interp, "cond: requires pairs of test/expr arguments");
+    return LCL_RC_ERR;
+  }
+
+  for (i = 0; i < argc - 2; i += 2) {
+    if (word_is_literal(args[i], "else")) {
+      LCL_ERR_MSG(interp, "cond: 'else' must be the last clause");
+      return LCL_RC_ERR;
+    }
+  }
+
+  interp->in_tail_position = 0;
+
+  for (i = 0; i < argc; i += 2) {
+    if (word_is_literal(args[i], "else")) {
+      interp->in_tail_position = saved_tail_position;
+      rc = lcl_eval_word(interp, args[i + 1], out);
+      return rc;
+    }
+
+    if (lcl_eval_word(interp, args[i], &test_v) != LCL_RC_OK) {
+      interp->in_tail_position = saved_tail_position;
+      return LCL_RC_ERR;
+    }
+
+    is_true = lcl_value_is_true(test_v);
+    lcl_ref_dec(test_v);
+
+    if (is_true) {
+      interp->in_tail_position = saved_tail_position;
+      rc = lcl_eval_word(interp, args[i + 1], out);
+      return rc;
+    }
+  }
+
+  interp->in_tail_position = saved_tail_position;
+  LCL_ERR_MSG(interp, "cond: no matching clause");
+  return LCL_RC_ERR;
+}
+
+/* case expr key1 expr1 key2 expr2 ... [else exprN]
+ * Value dispatch with equality comparison.
+ * Evaluates the scrutinee once, then compares keys using == until
+ * a match is found. The 'else' keyword marks the default clause
+ * (must be last). Error if no clause matches.
+ */
+static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
+                  lcl_value **out) {
+  int saved_tail_position = interp->in_tail_position;
+  struct eq_cycle_guard guard = {{0}, {0}, 0};
+  lcl_value *scrutinee = NULL;
+  lcl_value *key_v = NULL;
+  int i;
+  int is_match;
+  int rc;
+
+  if (argc < 3 || (argc % 2) != 1) {
+    LCL_ERR_MSG(interp, "case: requires scrutinee and pairs of key/expr");
+    return LCL_RC_ERR;
+  }
+
+  for (i = 1; i < argc - 2; i += 2) {
+    if (word_is_literal(args[i], "else")) {
+      LCL_ERR_MSG(interp, "case: 'else' must be the last clause");
+      return LCL_RC_ERR;
+    }
+  }
+
+  interp->in_tail_position = 0;
+
+  if (lcl_eval_word(interp, args[0], &scrutinee) != LCL_RC_OK) {
+    interp->in_tail_position = saved_tail_position;
+    return LCL_RC_ERR;
+  }
+
+  for (i = 1; i < argc; i += 2) {
+    if (word_is_literal(args[i], "else")) {
+      lcl_ref_dec(scrutinee);
+      interp->in_tail_position = saved_tail_position;
+      rc = lcl_eval_word(interp, args[i + 1], out);
+      return rc;
+    }
+
+    if (lcl_eval_word(interp, args[i], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(scrutinee);
+      interp->in_tail_position = saved_tail_position;
+      return LCL_RC_ERR;
+    }
+
+    is_match = lcl_value_equal_deep(scrutinee, key_v, &guard);
+    lcl_ref_dec(key_v);
+
+    if (is_match) {
+      lcl_ref_dec(scrutinee);
+      interp->in_tail_position = saved_tail_position;
+      rc = lcl_eval_word(interp, args[i + 1], out);
+      return rc;
+    }
+  }
+
+  lcl_ref_dec(scrutinee);
+  interp->in_tail_position = saved_tail_position;
+  LCL_ERR_MSG(interp, "case: no matching clause");
+  return LCL_RC_ERR;
 }
 
 /* while test body - loop while test is true, re-evaluating test each iteration
@@ -2434,15 +2567,15 @@ err:
 
 /* IR node types for quasiquote */
 typedef enum {
-  QQ_LITERAL,  /* Literal text */
-  QQ_EVAL,     /* ,expr - evaluate and insert */
-  QQ_SPLICE    /* ,@expr - evaluate and splice list elements */
+  QQ_LITERAL, /* Literal text */
+  QQ_EVAL,    /* ,expr - evaluate and insert */
+  QQ_SPLICE   /* ,@expr - evaluate and splice list elements */
 } qq_node_kind;
 
 typedef struct qq_node {
   qq_node_kind kind;
-  char *text;          /* For LITERAL: the text; for EVAL/SPLICE: word source */
-  int prefix_commas;   /* For EVAL: number of commas to prepend to result */
+  char *text;        /* For LITERAL: the text; for EVAL/SPLICE: word source */
+  int prefix_commas; /* For EVAL: number of commas to prepend to result */
   struct qq_node *next;
 } qq_node;
 
@@ -2457,7 +2590,9 @@ static void qq_node_free(qq_node *node) {
 
 static qq_node *qq_node_new(qq_node_kind kind, const char *text, size_t len) {
   qq_node *node = (qq_node *)calloc(1, sizeof(qq_node));
-  if (!node) return NULL;
+  if (!node) {
+    return NULL;
+  }
   node->kind = kind;
   if (text && len > 0) {
     node->text = (char *)malloc(len + 1);
@@ -2476,10 +2611,16 @@ static size_t skip_braces(const char *src, size_t len, size_t start) {
   int depth = 1;
   size_t i = start;
   while (i < len && depth > 0) {
-    if (src[i] == '{') depth++;
-    else if (src[i] == '}') depth--;
-    else if (src[i] == '\\' && i + 1 < len) i++;
-    if (depth > 0) i++;
+    if (src[i] == '{') {
+      depth++;
+    } else if (src[i] == '}') {
+      depth--;
+    } else if (src[i] == '\\' && i + 1 < len) {
+      i++;
+    }
+    if (depth > 0) {
+      i++;
+    }
   }
   return i;
 }
@@ -2489,10 +2630,16 @@ static size_t skip_brackets(const char *src, size_t len, size_t start) {
   int depth = 1;
   size_t i = start;
   while (i < len && depth > 0) {
-    if (src[i] == '[') depth++;
-    else if (src[i] == ']') depth--;
-    else if (src[i] == '\\' && i + 1 < len) i++;
-    if (depth > 0) i++;
+    if (src[i] == '[') {
+      depth++;
+    } else if (src[i] == ']') {
+      depth--;
+    } else if (src[i] == '\\' && i + 1 < len) {
+      i++;
+    }
+    if (depth > 0) {
+      i++;
+    }
   }
   return i;
 }
@@ -2502,10 +2649,16 @@ static size_t skip_parens(const char *src, size_t len, size_t start) {
   int depth = 1;
   size_t i = start;
   while (i < len && depth > 0) {
-    if (src[i] == '(') depth++;
-    else if (src[i] == ')') depth--;
-    else if (src[i] == '\\' && i + 1 < len) i++;
-    if (depth > 0) i++;
+    if (src[i] == '(') {
+      depth++;
+    } else if (src[i] == ')') {
+      depth--;
+    } else if (src[i] == '\\' && i + 1 < len) {
+      i++;
+    }
+    if (depth > 0) {
+      i++;
+    }
   }
   return i;
 }
@@ -2516,8 +2669,12 @@ static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
   size_t kw_len = 10;
   size_t i;
 
-  if (pos + kw_len >= len) return 0;
-  if (memcmp(src + pos, kw, kw_len) != 0) return 0;
+  if (pos + kw_len >= len) {
+    return 0;
+  }
+  if (memcmp(src + pos, kw, kw_len) != 0) {
+    return 0;
+  }
 
   /* Must be followed by whitespace then { */
   i = pos + kw_len;
@@ -2537,66 +2694,86 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
                               size_t *word_start, size_t *word_end) {
   size_t i = pos;
 
-  /* Skip whitespace after comma */
   while (i < len && (src[i] == ' ' || src[i] == '\t')) {
     i++;
   }
 
-  if (i >= len) return 0;
+  if (i >= len) {
+    return 0;
+  }
 
   *word_start = i;
 
-  /* $var or ${var} */
   if (src[i] == '$') {
     i++;
     if (i < len && src[i] == '{') {
       i++;
-      while (i < len && src[i] != '}') i++;
-      if (i < len) i++; /* skip } */
+      while (i < len && src[i] != '}') {
+        i++;
+      }
+      if (i < len) {
+        i++; /* skip } */
+      }
     } else {
-      while (i < len && is_name_char((unsigned char)src[i])) i++;
+      while (i < len && is_name_char((unsigned char)src[i])) {
+        i++;
+      }
     }
     *word_end = i;
     return 1;
   }
 
-  /* [command] */
   if (src[i] == '[') {
     i++;
     i = skip_brackets(src, len, i);
-    if (i <= len) i++; /* include ] */
+    if (i <= len) {
+      i++;
+    }
     *word_end = i;
     return 1;
   }
 
-  /* {literal} */
   if (src[i] == '{') {
     i++;
     i = skip_braces(src, len, i);
-    if (i <= len) i++; /* include } */
+    if (i <= len) {
+      i++;
+    }
     *word_end = i;
     return 1;
   }
 
-  /* (list) */
   if (src[i] == '(') {
     i++;
     i = skip_parens(src, len, i);
-    if (i <= len) i++; /* include ) */
+    if (i <= len) {
+      i++;
+    }
     *word_end = i;
     return 1;
   }
 
-  /* #{dict} */
   if (src[i] == '#' && i + 1 < len && src[i + 1] == '{') {
     i += 2;
     i = skip_braces(src, len, i);
-    if (i <= len) i++; /* include } */
+    if (i <= len) {
+      i++;
+    }
     *word_end = i;
     return 1;
   }
 
-  /* Invalid - unquote must be followed by a valid word */
+  /* Bugfix: bare word (alphanumeric, underscore, hyphen, colon for namespaces)
+   */
+  if (isalnum((unsigned char)src[i]) || src[i] == '_' || src[i] == '-') {
+    while (i < len && (is_name_char((unsigned char)src[i]) || src[i] == ':' ||
+                       src[i] == '-')) {
+      i++;
+    }
+    *word_end = i;
+    return 1;
+  }
+
   return 0;
 }
 
@@ -2611,20 +2788,30 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
   while (i < len) {
     char c = src[i];
 
-    /* Backslash escape */
     if (c == '\\' && i + 1 < len) {
-      /* Flush literal up to backslash */
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       }
-      /* Add escaped character */
+
       {
         qq_node *node = qq_node_new(QQ_LITERAL, src + i + 1, 1);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       }
       i += 2;
@@ -2632,17 +2819,20 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       continue;
     }
 
-    /* Nested quasiquote - increases depth */
     if (is_nested_quasiquote(src, len, i)) {
-      /* Flush literal */
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       }
 
-      /* Find the quasiquote keyword and opening brace */
       {
         size_t kw_start = i;
         size_t brace_pos = i + 10; /* "quasiquote" */
@@ -2650,17 +2840,23 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
         qq_node *inner_nodes;
         qq_node *node;
 
-        while (brace_pos < len && src[brace_pos] != '{') brace_pos++;
+        while (brace_pos < len && src[brace_pos] != '{') {
+          brace_pos++;
+        }
         inner_start = brace_pos + 1;
         inner_end = find_quasiquote_end(src, len, brace_pos) - 1;
-
-        /* Output "quasiquote {" literally */
         node = qq_node_new(QQ_LITERAL, src + kw_start, inner_start - kw_start);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
 
-        /* Recursively parse inner content at depth+1 */
         inner_nodes = qq_parse(src + inner_start, inner_end - inner_start,
                                depth + 1, err_msg);
         if (!inner_nodes && *err_msg) {
@@ -2669,56 +2865,73 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
         }
         if (inner_nodes) {
           tail->next = inner_nodes;
-          while (tail->next) tail = tail->next;
+          while (tail->next) {
+            tail = tail->next;
+          }
         }
 
-        /* Output closing "}" literally */
         node = qq_node_new(QQ_LITERAL, "}", 1);
-        if (!node) goto parse_err;
+        if (!node) {
+          goto parse_err;
+        }
         tail->next = node;
         tail = node;
-
-        i = inner_end + 1; /* after } */
+        i = inner_end + 1;
         lit_start = i;
       }
       continue;
     }
 
-    /* Comma - unquote */
+    if (c == '"') {
+      i++;
+      while (i < len && src[i] != '"') {
+        if (src[i] == '\\' && i + 1 < len) {
+          i++;
+        }
+        i++;
+      }
+      if (i < len) {
+        i++;
+      }
+      continue;
+    }
+
     if (c == ',') {
       int num_commas = 0;
       int splice = 0;
       size_t comma_start = i;
       size_t word_start, word_end;
 
-      /* Flush literal */
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       }
 
-      /* Count consecutive commas */
       while (i < len && src[i] == ',') {
         num_commas++;
         i++;
       }
 
-      /* Check for @ (splice) */
       if (i < len && src[i] == '@') {
         splice = 1;
         i++;
       }
 
-      /* Parse the word after the comma(s) */
       if (!parse_unquote_word(src, len, i, &word_start, &word_end)) {
-        *err_msg = "invalid unquote: expected $var, [cmd], {literal}, (list), or #{dict}";
+        *err_msg =
+            "invalid unquote: expected $var, [cmd], {literal}, (list), or #{dict}";
         qq_node_free(head);
         return NULL;
       }
 
-      /* Apply depth rules */
       if (num_commas > depth) {
         *err_msg = "too many unquotes for current quasiquote depth";
         qq_node_free(head);
@@ -2726,23 +2939,34 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       }
 
       if (num_commas < depth) {
-        /* Output literally: commas + @ + word */
         size_t total_len = (word_end - comma_start);
         qq_node *node = qq_node_new(QQ_LITERAL, src + comma_start, total_len);
-        if (!node) goto parse_err;
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       } else {
-        /* num_commas == depth: evaluate */
         qq_node *node;
         if (splice) {
-          node = qq_node_new(QQ_SPLICE, src + word_start, word_end - word_start);
+          node =
+              qq_node_new(QQ_SPLICE, src + word_start, word_end - word_start);
         } else {
           node = qq_node_new(QQ_EVAL, src + word_start, word_end - word_start);
         }
-        if (!node) goto parse_err;
-        node->prefix_commas = num_commas - 1; /* commas to prepend */
-        if (tail) tail->next = node; else head = node;
+        if (!node) {
+          goto parse_err;
+        }
+        node->prefix_commas = num_commas - 1;
+        if (tail) {
+          tail->next = node;
+        } else {
+          head = node;
+        }
         tail = node;
       }
 
@@ -2754,11 +2978,16 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
     i++;
   }
 
-  /* Flush remaining literal */
   if (i > lit_start) {
     qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
-    if (!node) goto parse_err;
-    if (tail) tail->next = node; else head = node;
+    if (!node) {
+      goto parse_err;
+    }
+    if (tail) {
+      tail->next = node;
+    } else {
+      head = node;
+    }
     tail = node;
   }
 
@@ -2770,119 +2999,151 @@ parse_err:
   return NULL;
 }
 
+/* Check if a string needs braces to be a valid unquote word.
+ * Returns 1 if braces needed, 0 if bare word is fine. */
+static int qq_needs_braces(const char *s) {
+  size_t i;
+  if (!s || !*s) {
+    return 1;
+  }
+
+  if (s[0] == '$' || s[0] == '[' || s[0] == '{' || s[0] == '(' || s[0] == '#') {
+    return 1;
+  }
+
+  for (i = 0; s[i]; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (!isalnum(c) && c != '_' && c != '-' && c != '.' && c != ':') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 /* Build result string from IR, evaluating as needed */
-static int qq_build(lcl_interp *interp, qq_node *nodes,
-                    char **result, size_t *result_len, size_t *result_cap) {
+static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
+                    size_t *result_len, size_t *result_cap) {
   qq_node *node;
 
   for (node = nodes; node; node = node->next) {
     switch (node->kind) {
     case QQ_LITERAL:
       if (node->text) {
-        if (!buf_append(result, result_len, result_cap,
-                        node->text, strlen(node->text))) {
+        if (!buf_append(result, result_len, result_cap, node->text,
+                        strlen(node->text))) {
           return 0;
         }
       }
       break;
 
     case QQ_EVAL:
-    case QQ_SPLICE:
-      {
-        lcl_program *prog;
-        lcl_value *val = NULL;
-        const char *saved_file;
-        int saved_line;
-        int eval_rc;
-        int j;
+    case QQ_SPLICE: {
+      lcl_program *prog;
+      lcl_value *val = NULL;
+      const char *saved_file;
+      int saved_line;
+      int eval_rc;
+      int j;
 
-        /* Add prefix commas */
-        for (j = 0; j < node->prefix_commas; j++) {
-          if (!buf_append_char(result, result_len, result_cap, ',')) {
+      for (j = 0; j < node->prefix_commas; j++) {
+        if (!buf_append_char(result, result_len, result_cap, ',')) {
+          return 0;
+        }
+      }
+
+      prog = lcl_program_compile(node->text, "<quasiquote>");
+      if (!prog) {
+        LCL_ERR_MSG(interp, "failed to compile unquote expression");
+        return 0;
+      }
+
+      saved_file = interp->cur_file;
+      saved_line = interp->cur_line;
+
+      eval_rc = lcl_eval_program(interp, prog, &val);
+
+      interp->cur_file = saved_file;
+      interp->cur_line = saved_line;
+
+      lcl_program_free(prog);
+
+      if (eval_rc != LCL_RC_OK) {
+        return 0;
+      }
+
+      if (node->kind == QQ_SPLICE) {
+        lcl_value *list_val = val;
+
+        if (val->type != LCL_LIST) {
+          list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
+          lcl_ref_dec(val);
+          if (!list_val) {
             return 0;
           }
+          val = list_val;
         }
 
-        /* Compile and evaluate the word */
-        prog = lcl_program_compile(node->text, "<quasiquote>");
-        if (!prog) {
-          LCL_ERR_MSG(interp, "failed to compile unquote expression");
-          return 0;
-        }
+        {
+          size_t len = lcl_list_len(list_val);
+          size_t k;
 
-        saved_file = interp->cur_file;
-        saved_line = interp->cur_line;
+          for (k = 0; k < len; k++) {
+            lcl_value *elem = NULL;
+            const char *elem_str;
 
-        eval_rc = lcl_eval_program(interp, prog, &val);
-
-        interp->cur_file = saved_file;
-        interp->cur_line = saved_line;
-
-        lcl_program_free(prog);
-
-        if (eval_rc != LCL_RC_OK) {
-          return 0;
-        }
-
-        if (node->kind == QQ_SPLICE) {
-          /* Splice: insert list elements separated by spaces */
-          lcl_value *list_val = val;
-
-          if (val->type != LCL_LIST) {
-            list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
-            lcl_ref_dec(val);
-            if (!list_val) {
+            if (lcl_list_get(list_val, k, &elem) != LCL_OK) {
+              lcl_ref_dec(val);
               return 0;
             }
-            val = list_val;
-          }
 
-          {
-            size_t len = lcl_list_len(list_val);
-            size_t k;
+            elem_str = lcl_value_to_string(elem);
 
-            for (k = 0; k < len; k++) {
-              lcl_value *elem = NULL;
-              const char *elem_str;
-
-              if (lcl_list_get(list_val, k, &elem) != LCL_OK) {
-                lcl_ref_dec(val);
-                return 0;
-              }
-
-              elem_str = lcl_value_to_string(elem);
-
-              if (k > 0) {
-                if (!buf_append_char(result, result_len, result_cap, ' ')) {
-                  lcl_ref_dec(elem);
-                  lcl_ref_dec(val);
-                  return 0;
-                }
-              }
-
-              if (!buf_append(result, result_len, result_cap,
-                              elem_str, strlen(elem_str))) {
+            if (k > 0) {
+              if (!buf_append_char(result, result_len, result_cap, ' ')) {
                 lcl_ref_dec(elem);
                 lcl_ref_dec(val);
                 return 0;
               }
-
-              lcl_ref_dec(elem);
             }
+
+            if (!buf_append(result, result_len, result_cap, elem_str,
+                            strlen(elem_str))) {
+              lcl_ref_dec(elem);
+              lcl_ref_dec(val);
+              return 0;
+            }
+
+            lcl_ref_dec(elem);
           }
-        } else {
-          /* Eval: insert stringified value */
-          const char *val_str = lcl_value_to_string(val);
-          if (!buf_append(result, result_len, result_cap,
-                          val_str, strlen(val_str))) {
+        }
+      } else {
+        /* Eval: insert stringified value */
+        const char *val_str = lcl_value_to_string(val);
+        /* When prefix_commas > 0, wrap in braces only if needed.
+         * Simple values like "42" or "hello" can be bare words.
+         * Values with spaces or special chars need braces. */
+        int needs_braces = node->prefix_commas > 0 && qq_needs_braces(val_str);
+        if (needs_braces) {
+          if (!buf_append_char(result, result_len, result_cap, '{')) {
             lcl_ref_dec(val);
             return 0;
           }
         }
-
-        lcl_ref_dec(val);
+        if (!buf_append(result, result_len, result_cap, val_str,
+                        strlen(val_str))) {
+          lcl_ref_dec(val);
+          return 0;
+        }
+        if (needs_braces) {
+          if (!buf_append_char(result, result_len, result_cap, '}')) {
+            lcl_ref_dec(val);
+            return 0;
+          }
+        }
       }
-      break;
+
+      lcl_ref_dec(val);
+    } break;
     }
   }
 
@@ -2911,16 +3172,14 @@ static int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
 
   src = lcl_value_to_string(input_v);
   src_len = strlen(src);
-
-  /* Parse template into IR at depth 1 */
   ir = qq_parse(src, src_len, 1, &err_msg);
+
   if (!ir && err_msg) {
     LCL_ERR_MSG(interp, err_msg);
     lcl_ref_dec(input_v);
     return LCL_RC_ERR;
   }
 
-  /* Build result from IR */
   if (!qq_build(interp, ir, &result, &result_len, &result_cap)) {
     qq_node_free(ir);
     lcl_ref_dec(input_v);
@@ -5893,6 +6152,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "->>", s_thread_last);
 
   lcl_register_spec(interp, "if", s_if);
+  lcl_register_spec(interp, "cond", s_cond);
+  lcl_register_spec(interp, "case", s_case);
   lcl_register_spec(interp, "while", s_while);
   lcl_register_spec(interp, "for", s_for);
   lcl_register_spec(interp, "foreach", s_foreach);
