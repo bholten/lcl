@@ -112,6 +112,42 @@ Test::suite "CURL Request Execution" {
 }
 
 # ============================================================================
+# CURL SSE Callabck
+# ============================================================================
+
+var _sse_event_count 0
+var _sse_headers_count 0
+
+Test::suite "CURL SSE and Header Callbacks" {
+    Test::case "should receive SSE events from stream" {
+        let c [curl::new]
+        curl::set_timeout_ms $c 5000
+        curl::set_verbose $c 1
+        curl::set_verb $c GET
+        curl::set_url $c http://sse.dev/test
+
+        curl::set_sse_callback $c [lambda {response} {
+            set! _sse_event_count [+ $_sse_event_count 1]
+        }]
+
+        curl::set_header_callback $c [lambda {hs} {
+            set! _sse_headers_count [+ $_sse_headers_count 1]
+        }]
+
+        catch {curl::perform $c}
+
+        if [curl::is_timeout $c] {
+            puts "SSE timed out (expected)"
+        } else {
+            error "SSE error [curl::error_string $c]"
+        }
+
+        assert [> $_sse_event_count 0]
+        assert [> $_sse_headers_count 0]
+    }
+}
+
+# ============================================================================
 # CURL Response Info
 # ============================================================================
 
