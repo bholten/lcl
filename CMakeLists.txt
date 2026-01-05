@@ -17,6 +17,7 @@ option(LCL_BUILD_CURL "Build CURL bindings" OFF)
 option(LCL_BUILD_IO "Build Lcl IO extension library" OFF)
 option(LCL_BUILD_JSON "Build Lcl with JSON library" OFF)
 option(LCL_BUILD_CRYPTO "Build Lcl with OpenSSL crypto bindings" OFF)
+option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -185,7 +186,39 @@ if(LCL_BUILD_CRYPTO)
   endif()
 endif()
 
+if(LCL_BUILD_PROCESS)
+  add_subdirectory(packages/lcl-process)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_PROCESS)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_PROCESS)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_PROCESS)
+    target_link_libraries(lcl-cli PRIVATE lcl_process)
+  endif()
+endif()
+
 if(LCL_BUILD_TESTS)
+  # Generate test-framework-data.h from Test.lcl using xxd
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(TEST_FRAMEWORK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/Test.lcl)
+  set(TEST_FRAMEWORK_DATA ${CMAKE_CURRENT_BINARY_DIR}/test-framework-data.h)
+
+  add_custom_command(
+    OUTPUT ${TEST_FRAMEWORK_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/Test.lcl > ${TEST_FRAMEWORK_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${TEST_FRAMEWORK_SRC}
+    COMMENT "Generating test-framework-data.h from Test.lcl"
+  )
+
+  add_custom_target(generate_test_framework_data DEPENDS ${TEST_FRAMEWORK_DATA})
+
   add_executable(lcl-test test/lcl-test.c)
   target_compile_definitions(lcl-test PRIVATE LCL_TEST DEBUG_REFC)
   target_compile_options(lcl-test PRIVATE ${LCL_COMPILE_OPTIONS})
@@ -198,7 +231,9 @@ if(LCL_BUILD_TESTS)
   endif()
 
   if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_test_framework_data)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   endif()
 
   if(LCL_ENABLE_ASAN)

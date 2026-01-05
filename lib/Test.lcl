@@ -7,7 +7,7 @@
 ;;
 ;;   Test::suite "My Feature" {
 ;;       Test::before {
-;;           # Setup code runs before each test
+;;           ;; Setup code runs before each test
 ;;       }
 ;;
 ;;       Test::case "should do something" {
@@ -22,7 +22,7 @@
 ;;       }
 ;;   }
 ;;
-;;   Test::run  ;# Run all suites and print results
+;;   Test::run  ;;; Run all suites and print results
 
 ;; Create namespace with internal state
 namespace eval Test {

@@ -22,6 +22,10 @@ void lcl_register_json(lcl_interp *interp);
 void lcl_register_crypto(lcl_interp *interp);
 #endif
 
+#ifdef LCL_HAVE_PROCESS
+void lcl_register_process(lcl_interp *interp);
+#endif
+
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
@@ -39,6 +43,16 @@ int lcl_register_test_framework(lcl_interp *interp) {
   src[lib_Test_lcl_len] = '\0';
 
   rc = lcl_eval_string(interp, src, &result);
+
+  if (rc != LCL_RC_OK) {
+    fprintf(stderr, "Test framework error at %s:%d",
+            interp->err_file ? interp->err_file : "<unknown>",
+            interp->err_line);
+    if (interp->err_msg) {
+      fprintf(stderr, ": %s", interp->err_msg);
+    }
+    fprintf(stderr, "\n");
+  }
 
   free(src);
 
@@ -89,9 +103,15 @@ int main(int argc, char **argv) {
 #endif
 
 #ifdef LCL_HAVE_TEST
-  lcl_register_test_framework(interp);
+  if (lcl_register_test_framework(interp) != 0) {
+    fprintf(stderr, "Warning: Failed to load test framework\n");
+  }
 #endif
 
+#ifdef LCL_HAVE_PROCESS
+  lcl_register_process(interp);
+#endif
+  
   rc = lcl_eval_file(interp, argv[1], &result);
 
   if (rc != LCL_RC_OK) {

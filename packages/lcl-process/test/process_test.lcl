@@ -1,0 +1,143 @@
+;; Tests for the process:: namespace
+
+Test::suite "process::run" {
+    Test::case "basic echo" {
+        let r [process::run (echo hello)]
+        Test::eq [get $r status] 0
+        Test::eq [get $r stdout] "hello\n"
+    }
+
+    Test::case "exit status non-zero" {
+        let r [process::run (sh -c "exit 42")]
+        Test::eq [get $r status] 42
+    }
+
+    Test::case "stderr capture" {
+        let r [process::run (sh -c "echo err >&2")]
+        Test::eq [get $r status] 0
+        Test::eq [get $r stderr] "err\n"
+    }
+
+    Test::case "stdin input" {
+        let r [process::run (cat) #{stdin "hello world"}]
+        Test::eq [get $r stdout] "hello world"
+    }
+
+    Test::case "merge stderr into stdout" {
+        let r [process::run (sh -c "echo out; echo err >&2") #{merge 1}]
+        Test::eq [get $r status] 0
+        ;; Both should be in stdout (String::find returns -1 if not found)
+        Test::assert [!= [String::find [get $r stdout] "out"] -1]
+        Test::assert [!= [String::find [get $r stdout] "err"] -1]
+    }
+
+    Test::case "shell option" {
+        let r [process::run (echo hello | cat) #{shell 1}]
+        Test::eq [get $r stdout] "hello\n"
+    }
+
+    Test::case "environment variables" {
+        ;; Use braces to prevent LCL from substituting $MY_VAR
+        let r [process::run (sh -c {echo $MY_VAR}) #{env #{MY_VAR testvalue}}]
+        Test::eq [get $r stdout] "testvalue\n"
+    }
+
+    Test::case "working directory" {
+        let r [process::run (pwd) #{cwd /tmp}]
+        Test::eq [get $r stdout] "/tmp\n"
+    }
+}
+
+Test::suite "process::read-until" {
+    Test::case "single pattern match" {
+        let h [process::spawn (sh -c {echo "hello world"; echo "done"})]
+        let r [process::read-until $h "world"]
+        Test::eq [get $r matched] 1
+        Test::eq [get $r pattern] "world"
+        Test::eq [get $r data] "hello world"
+        process::close $h
+    }
+
+    Test::case "multiple patterns - first match" {
+        let h [process::spawn (sh -c {echo "foo bar baz"})]
+        let r [process::read-until $h (bar baz)]
+        Test::eq [get $r matched] 1
+        Test::eq [get $r pattern] "bar"
+        Test::eq [get $r index] 0
+        process::close $h
+    }
+
+    Test::case "multiple patterns - second match" {
+        let h [process::spawn (sh -c {echo "foo qux baz"})]
+        let r [process::read-until $h (bar qux)]
+        Test::eq [get $r matched] 1
+        Test::eq [get $r pattern] "qux"
+        Test::eq [get $r index] 1
+        process::close $h
+    }
+
+    Test::case "timeout with no match" {
+        let h [process::spawn (sleep 10)]
+        let r [process::read-until $h "never" #{timeout 100}]
+        Test::eq [get $r matched] 0
+        process::kill $h
+        process::close $h
+    }
+
+    Test::case "newline in pattern" {
+        let h [process::spawn (sh -c {echo "line1"; echo "line2"})]
+        let r [process::read-until $h "line2"]
+        Test::eq [get $r matched] 1
+        Test::assert [!= [String::find [get $r data] "line1"] -1]
+        process::close $h
+    }
+}
+
+Test::suite "process::spawn" {
+    Test::case "spawn and wait" {
+        let h [process::spawn (echo spawned)]
+        let w [process::wait $h]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 0
+        process::close $h
+    }
+
+    Test::case "spawn and read" {
+        let h [process::spawn (echo "line1")]
+        ;; Give it a moment to produce output
+        let w [process::wait $h]
+        let output [process::read $h]
+        Test::eq $output "line1\n"
+        process::close $h
+    }
+
+    Test::case "spawn, send, read" {
+        let h [process::spawn (cat)]
+        process::send $h "hello from lcl"
+        process::close-stdin $h
+        let w [process::wait $h]
+        let output [process::read $h]
+        Test::eq $output "hello from lcl"
+        process::close $h
+    }
+
+    Test::case "alive? check" {
+        let h [process::spawn (sleep 10)]
+        Test::eq [process::alive? $h] 1
+        process::kill $h
+        ;; Give it a moment to die
+        process::wait $h #{timeout 1000}
+        Test::eq [process::alive? $h] 0
+        process::close $h
+    }
+
+    Test::case "kill with signal" {
+        let h [process::spawn (sleep 10)]
+        process::kill $h #{signal KILL}
+        let w [process::wait $h #{timeout 1000}]
+        Test::eq [get $w exited] 1
+        process::close $h
+    }
+}
+
+Test::run
