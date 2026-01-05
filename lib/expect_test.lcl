@@ -153,13 +153,10 @@ Test::suite "expect::run" {
     Test::case "runs script actions" {
         ;; Interactive script: read, echo, read, echo
         let session [expect::spawn (sh -c {read line1; echo "first: $line1"; read line2; echo "second: $line2"}) #{}]
-
-        ;; Build script as list of actions (must be on one line due to LCL parsing)
-        let a1 [list send-line hello]
-        let a2 [list expect "first:"]
-        let a3 [list send-line world]
-        let a4 [list expect "second:"]
-        let script [list $a1 $a2 $a3 $a4]
+        let script ((send-line hello)
+                    (expect "first:")
+                    (send-line world)
+                    (expect "second:"))
 
         let results [expect::run $session $script]
 
@@ -173,12 +170,13 @@ Test::suite "expect::run" {
 Test::suite "expect::script" {
     Test::case "convenience for spawn-run-close" {
         ;; Build script as list of actions
-        let a1 [list expect ready]
-        let a2 [list send-line go]
-        let a3 [list expect done]
-        let script [list $a1 $a2 $a3]
+        let script ((expect ready)
+                    (send-line go)
+                    (expect done))
 
-        let results [expect::script (sh -c {echo "ready"; read x; echo "done"}) $script]
+        let results [expect::script
+                         (sh -c {echo "ready"; read x; echo "done"})
+                         $script]
 
         Test::eq [len $results] 2
         Test::assert [expect::matched? [get $results 0]]

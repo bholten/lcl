@@ -573,16 +573,19 @@ Test::suite "Cond" {
 
     Test::case "cond with comparisons" {
         let n 5
-        let result [cond \
-                        [== $n 0] {zero} \
-                        [< $n 0] {negative} \
-                        else {positive}]
+        let result [cond
+                    [== $n 0] {zero}
+                    [< $n 0] {negative}
+                    else {positive}]
         Test::eq $result "positive"
     }
 
     Test::case "cond with negative number" {
         let n -3
-        let result [cond [== $n 0] {zero} [< $n 0] {negative} else {positive}]
+        let result [cond
+                    [== $n 0] {zero}
+                    [< $n 0] {negative}
+                    else {positive}]
         Test::eq $result "negative"
     }
 
@@ -1681,6 +1684,120 @@ Test::suite "Quasiquote" {
         let d [quasiquote {data: ,#{name test val 123}}]
         ;; The dict will be stringified - "name" is at position 6
         Test::eq [String::find $d "name"] 6
+    }
+}
+
+;; ============================================================================
+;; Multiline Subcommands
+;; ============================================================================
+
+Test::suite "Multiline Subcommands" {
+    Test::case "multiline list inside brackets" {
+        ;; Inside [...], newlines are whitespace - no backslash needed
+        let result [list
+            a
+            b
+            c
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] a
+        Test::eq [get $result 1] b
+        Test::eq [get $result 2] c
+    }
+
+    Test::case "nested subcommands across lines" {
+        ;; This was the original bug - only the last element was kept
+        let result [list
+            [list x y]
+            [list p q]
+            [list m n]
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] [list x y]
+        Test::eq [get $result 1] [list p q]
+        Test::eq [get $result 2] [list m n]
+    }
+
+    Test::case "multiline case inside brackets" {
+        let op {add}
+        let a 10
+        let b 5
+        let result [case $op
+            {add} [+ $a $b]
+            {sub} [- $a $b]
+            {mul} [* $a $b]
+            else  0]
+        Test::eq $result 15
+    }
+
+    Test::case "multiline cond inside brackets" {
+        let x 5
+        let result [cond
+            [< $x 0]   {negative}
+            [== $x 0]  {zero}
+            else       {positive}]
+        Test::eq $result positive
+    }
+
+    Test::case "semicolons inside braces preserved" {
+        ;; Semicolons inside {...} must NOT be converted to spaces
+        let script {echo hello; echo world}
+        Test::eq $script {echo hello; echo world}
+    }
+
+    Test::case "semicolons inside braces in subcommand" {
+        ;; Even inside [...], braced content keeps its semicolons
+        let result [list {a; b} {c; d}]
+        Test::eq [get $result 0] {a; b}
+        Test::eq [get $result 1] {c; d}
+    }
+
+    Test::case "newlines inside quotes preserved" {
+        let text "line1
+line2"
+        Test::eq [String::find $text "\n"] 5
+    }
+
+    Test::case "bare command needs backslash continuation" {
+        ;; This tests that backslash continuation still works
+        let result [list \
+            item1 \
+            item2 \
+            item3]
+        Test::eq [len $result] 3
+    }
+
+    Test::case "nested brackets with multiline" {
+        ;; Deeply nested multiline expressions
+        let result [list
+            [dict
+                a 1
+                b 2]
+            [dict
+                c 3
+                d 4]]
+        Test::eq [len $result] 2
+        Test::eq [get [get $result 0] a] 1
+        Test::eq [get [get $result 1] d] 4
+    }
+
+    Test::case "multiline with list literals" {
+        let result [list
+            (nested list)
+            (another one)
+        ]
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] (nested list)
+    }
+
+    Test::case "eval with multiline block" {
+        ;; eval {...} with multiple statements still works
+        let result [eval {
+            let a 10
+            let b 20
+            + $a $b
+        }]
+        Test::eq $result 30
     }
 }
 

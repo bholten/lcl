@@ -424,6 +424,54 @@ dict key1 value1 \
      key2 value2
 ```
 
+### Multiline Subcommands
+
+Inside `[...]` brackets, newlines and semicolons are treated as ordinary whitespace. This allows multiline expressions without explicit line continuation:
+
+```tcl
+;; Multiline subcommand - no backslashes needed inside [...]
+let result [list
+    [list a b]
+    [list c d]
+    [list e f]
+]
+
+;; Also works with list literals inside brackets
+let nested [list
+    (item1 item2)
+    (item3 item4)
+]
+```
+
+**Important:** This only applies to code *inside* brackets. Bare commands (not wrapped in `[...]`) still follow normal Tcl-like rules and require backslash continuation for multilines:
+
+```tcl
+;; Bare command - backslashes REQUIRED for line continuation
+case $cmd \
+    {add}  [+ $a $b] \
+    {sub}  [- $a $b] \
+    {mul}  [* $a $b] \
+    else   {unknown}
+
+;; Same command wrapped in brackets - backslashes not needed inside
+let result [case $cmd
+    {add}  [+ $a $b]
+    {sub}  [- $a $b]
+    {mul}  [* $a $b]
+    else   {unknown}]
+```
+
+Semicolons and newlines inside `{...}` braces and `"..."` quotes are always preserved:
+
+```tcl
+;; Shell commands with semicolons work correctly
+let output [sh::run {echo "hello"; echo "world"}]
+
+;; Quoted strings preserve newlines
+let text "line1
+line2"
+```
+
 ### Functional Programming
 
   | Function              | Description                                                           |

@@ -490,7 +490,58 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         }
 
         {
-          char *subsrc = strndup(sc->s + begin, (size_t)(sc->i - begin - 1));
+          size_t content_len = (size_t)(sc->i - begin - 1);
+          char *subsrc = strndup(sc->s + begin, content_len);
+
+          /* Replace newlines and semicolons with spaces to prevent command
+           * separation. Inside [...], there is exactly one command, so \n and ;
+           * are ordinary whitespace at the TOP LEVEL only. We must respect
+           * quoting: don't modify content inside {...} braces or "..." quotes.
+           * Handle backslash-newline continuation by removing both chars. */
+          {
+            size_t j, k;
+            int brace_depth = 0;
+            int in_dquotes = 0;
+            int bracket_depth = 0;
+            for (j = 0, k = 0; j < content_len; j++) {
+              char ch = subsrc[j];
+
+              if (ch == '\\' && j + 1 < content_len) {
+                char next = subsrc[j + 1];
+                if (next == '\n' && brace_depth == 0 && !in_dquotes &&
+                    bracket_depth == 0) {
+                  j++;
+                  continue;
+                }
+                subsrc[k++] = ch;
+                j++;
+                subsrc[k++] = next;
+                continue;
+              }
+
+              if (ch == '{' && !in_dquotes) {
+                brace_depth++;
+              } else if (ch == '}' && !in_dquotes && brace_depth > 0) {
+                brace_depth--;
+              } else if (ch == '"' && brace_depth == 0) {
+                in_dquotes = !in_dquotes;
+              } else if (ch == '[' && brace_depth == 0 && !in_dquotes) {
+                bracket_depth++;
+              } else if (ch == ']' && brace_depth == 0 && !in_dquotes &&
+                         bracket_depth > 0) {
+                bracket_depth--;
+              }
+
+              if ((ch == '\n' || ch == ';') && brace_depth == 0 &&
+                  !in_dquotes && bracket_depth == 0) {
+                subsrc[k++] = ' ';
+              } else {
+                subsrc[k++] = ch;
+              }
+            }
+            subsrc[k] = '\0';
+          }
+
           sub = lcl_program_compile(subsrc, NULL);
           free(subsrc);
         }

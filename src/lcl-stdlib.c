@@ -1276,6 +1276,7 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(scrutinee);
       interp->in_tail_position = saved_tail_position;
       rc = lcl_eval_word(interp, args[i + 1], out);
+
       return rc;
     }
 
@@ -1299,6 +1300,7 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_ref_dec(scrutinee);
   interp->in_tail_position = saved_tail_position;
   LCL_ERR_MSG(interp, "case: no matching clause");
+
   return LCL_RC_ERR;
 }
 

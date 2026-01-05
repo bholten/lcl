@@ -221,28 +221,24 @@ proc expect::close {session} {
 ;;   [sleep seconds]
 ;; Returns list of expect results
 proc expect::run {session script} {
-    var results [list]
+    var results ()
+
     foreach action $script {
-        let cmd [get $action 0]
-        if [== $cmd {send}] {
-            expect::send $session [get $action 1]
-        } else {
-            if [== $cmd {send-line}] {
-                expect::send-line $session [get $action 1]
-            } else {
-                if [== $cmd {expect}] {
-                    let pattern [get $action 1]
-                    let timeout [get $action 2 [get $session timeout]]
-                    let r [expect::expect $session $pattern #{timeout $timeout}]
-                    set! results [List::push $results $r]
-                } else {
-                    if [== $cmd {sleep}] {
-                        sh::sleep [get $action 1]
-                    }
-                }
-            }
-        }
+        let cmd [String::trim [get $action 0]]
+
+        case $cmd \
+            {send}      [expect::send $session [get $action 1]] \
+            {send-line} [expect::send-line $session [get $action 1]] \
+            {expect}    [eval {
+                          let pattern [get $action 1]
+                          let timeout [get $action 2 [get $session timeout]]
+                          let r [expect::expect $session $pattern #{timeout $timeout}]
+                          set! results [List::push $results $r]
+                        }] \
+            {sleep}     [sh::sleep [get $action 1]] \
+            else        {}
     }
+
     $results
 }
 

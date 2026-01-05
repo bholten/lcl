@@ -11,6 +11,7 @@ option(LCL_BUILD_STATIC "Build static library" ON)
 option(LCL_BUILD_CLI "Build command-line interpreter" ON)
 option(LCL_BUILD_TESTS "Build test executable" OFF)
 option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
+option(LCL_DEBUG_REFC "Enable debug reference counting" OFF)
 
 # Optional packages
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
@@ -46,7 +47,6 @@ set(LCL_SOURCES
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-
 set(LCL_COMPILE_OPTIONS -Wall -Wextra)
 
 if(LCL_ENABLE_ASAN)
@@ -295,4 +295,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     ${CMAKE_CURRENT_BINARY_DIR}/lclConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/lcl
   )
+endif()
+
+# Debugging
+if(LCL_DEBUG_REFC)
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC DEBUG_REFC)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC DEBUG_REFC)
+  endif()
 endif()

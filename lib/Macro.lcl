@@ -29,6 +29,7 @@
 
 let gensym [[lambda {} {
     var counter 0
+
     lambda {} {
         set! counter [+ $counter 1]
         "_G$counter"
@@ -48,6 +49,7 @@ let gensym [[lambda {} {
 
 let gensym-prefix [[lambda {} {
     var counter 0
+
     lambda {prefix} {
         set! counter [+ $counter 1]
         "$prefix$counter"
