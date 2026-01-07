@@ -26,234 +26,235 @@
 ;;   ;; Close when done
 ;;   expect::close $session
 
-namespace eval expect {}
+namespace expect {
+    ;; Default timeout in milliseconds (10 seconds)
+    var _default_timeout 10000
 
-;; Default timeout in milliseconds (10 seconds)
-var expect::_default_timeout 10000
-
-;; expect::timeout seconds - set default timeout (in seconds)
-proc expect::timeout {seconds} {
-    set! expect::_default_timeout [* $seconds 1000]
-}
-
-;; expect::spawn cmd ?opts? - spawn an interactive process
-;; Returns a session handle (wraps process handle)
-;; Options:
-;;   timeout - default timeout in ms for this session
-proc expect::spawn {cmd opts} {
-    let h [process::spawn $cmd]
-    let timeout [get $opts timeout $expect::_default_timeout]
-    ;; Return a dict with handle and session-specific settings
-    dict handle $h timeout $timeout buffer ""
-}
-
-;; expect::spawn-shell ?opts? - spawn a shell session
-proc expect::spawn-shell {opts} {
-    expect::spawn (sh) $opts
-}
-
-;; expect::send session str - send string to process
-;; Returns the session (for chaining)
-proc expect::send {session str} {
-    process::send [get $session handle] $str
-    $session
-}
-
-;; expect::send-line session str - send string with newline
-;; Returns the session (for chaining)
-proc expect::send-line {session str} {
-    expect::send $session "$str\n"
-}
-
-;; expect::expect session patterns ?opts? - wait for pattern(s)
-;; patterns can be a single string or a list of strings
-;; Options:
-;;   timeout - timeout in ms (overrides session default)
-;; Returns dict with:
-;;   matched  - 1 if matched, 0 if timeout
-;;   pattern  - the pattern that matched (if matched)
-;;   index    - index of pattern in list (if matched)
-;;   data     - data read up to and including match
-;;   before   - data before the match
-proc expect::expect {session patterns opts} {
-    let h [get $session handle]
-    let timeout [get $opts timeout [get $session timeout]]
-
-    ;; Normalize patterns to a list
-    let pattern_list $patterns
-    if [string? $patterns] {
-        let pattern_list [list $patterns]
+    ;; expect::timeout seconds - set default timeout (in seconds)
+    proc timeout {seconds} {
+        set! expect::_default_timeout [* $seconds 1000]
     }
 
-    ;; Call process::read-until with pattern list
-    let r [process::read-until $h $pattern_list #{timeout $timeout}]
+    ;; expect::spawn cmd ?opts? - spawn an interactive process
+    ;; Returns a session handle (wraps process handle)
+    ;; Options:
+    ;;   timeout - default timeout in ms for this session
+    proc spawn {cmd opts} {
+        let h [process::spawn $cmd]
+        let timeout [get $opts timeout $expect::_default_timeout]
+        ;; Return a dict with handle and session-specific settings
+        dict handle $h timeout $timeout buffer ""
+    }
 
-    ;; Add 'before' field (data without the matched pattern)
-    let data [get $r data ""]
-    let matched_pattern [get $r pattern ""]
-    let before $data
-    if [and [get $r matched 0] [not [empty? $matched_pattern]]] {
+    ;; expect::spawn-shell ?opts? - spawn a shell session
+    proc spawn-shell {opts} {
+        expect::spawn (sh) $opts
+    }
+
+    ;; expect::send session str - send string to process
+    ;; Returns the session (for chaining)
+    proc send {session str} {
+        process::send [get $session handle] $str
+        $session
+    }
+
+    ;; expect::send-line session str - send string with newline
+    ;; Returns the session (for chaining)
+    proc send-line {session str} {
+        expect::send $session "$str\n"
+    }
+
+    ;; expect::expect session patterns ?opts? - wait for pattern(s)
+    ;; patterns can be a single string or a list of strings
+    ;; Options:
+    ;;   timeout - timeout in ms (overrides session default)
+    ;; Returns dict with:
+    ;;   matched  - 1 if matched, 0 if timeout
+    ;;   pattern  - the pattern that matched (if matched)
+    ;;   index    - index of pattern in list (if matched)
+    ;;   data     - data read up to and including match
+    ;;   before   - data before the match
+    proc expect {session patterns opts} {
+        let h [get $session handle]
+        let timeout [get $opts timeout [get $session timeout]]
+
+        ;; Normalize patterns to a list
+        let pattern_list $patterns
+        if [string? $patterns] {
+            let pattern_list [list $patterns]
+        }
+
+        ;; Call process::read-until with pattern list
+        let r [process::read-until $h $pattern_list #{timeout $timeout}]
+
+        ;; Add 'before' field (data without the matched pattern)
+        let data [get $r data ""]
+        let matched_pattern [get $r pattern ""]
+        let before $data
+        if [and [get $r matched 0] [not [empty? $matched_pattern]]] {
         let idx [String::find $data $matched_pattern]
-        if [>= $idx 0] {
-            let before [String::range $data 0 $idx]
+            if [>= $idx 0] {
+                let before [String::range $data 0 $idx]
+            }
+        }
+
+        put $r before $before
+    }
+
+    ;; expect::expect-exact session str ?opts? - wait for exact string
+    ;; Convenience wrapper for single pattern
+    proc expect-exact {session str opts} {
+        expect::expect $session $str $opts
+    }
+
+    ;; expect::expect-re session pattern ?opts? - wait for regex pattern
+    ;; Note: Currently same as expect since process::read-until uses regex
+    proc expect-re {session pattern opts} {
+        expect::expect $session $pattern $opts
+    }
+
+    ;; expect::wait-for session pattern ?opts? - wait and return just the data
+    ;; Returns data read, or empty string on timeout
+    proc wait-for {session pattern opts} {
+        let r [expect::expect $session $pattern $opts]
+        if [get $r matched 0] {
+            get $r data
+        } else {
+            ""
         }
     }
 
-    put $r before $before
-}
-
-;; expect::expect-exact session str ?opts? - wait for exact string
-;; Convenience wrapper for single pattern
-proc expect::expect-exact {session str opts} {
-    expect::expect $session $str $opts
-}
-
-;; expect::expect-re session pattern ?opts? - wait for regex pattern
-;; Note: Currently same as expect since process::read-until uses regex
-proc expect::expect-re {session pattern opts} {
-    expect::expect $session $pattern $opts
-}
-
-;; expect::wait-for session pattern ?opts? - wait and return just the data
-;; Returns data read, or empty string on timeout
-proc expect::wait-for {session pattern opts} {
-    let r [expect::expect $session $pattern $opts]
-    if [get $r matched 0] {
-        get $r data
-    } else {
-        ""
+    ;; expect::matched? result - check if expect result was a match
+    proc matched? {result} {
+        == [get $result matched 0] 1
     }
-}
 
-;; expect::matched? result - check if expect result was a match
-proc expect::matched? {result} {
-    == [get $result matched 0] 1
-}
+    ;; expect::timed-out? result - check if expect result was a timeout
+    proc timed-out? {result} {
+        == [get $result matched 0] 0
+    }
 
-;; expect::timed-out? result - check if expect result was a timeout
-proc expect::timed-out? {result} {
-    == [get $result matched 0] 0
-}
+    ;; expect::interact session pattern callback ?opts? - expect and call handler
+    ;; Calls callback with the match result
+    ;; Returns callback result
+    proc interact {session pattern callback opts} {
+        let r [expect::expect $session $pattern $opts]
+        $callback $r
+    }
 
-;; expect::interact session pattern callback ?opts? - expect and call handler
-;; Calls callback with the match result
-;; Returns callback result
-proc expect::interact {session pattern callback opts} {
-    let r [expect::expect $session $pattern $opts]
-    $callback $r
-}
+    ;; expect::send-expect session str pattern ?opts? - send then expect
+    ;; Convenience for common send-then-wait pattern
+    ;; Returns expect result
+    proc send-expect {session str pattern opts} {
+        expect::send $session $str
+        expect::expect $session $pattern $opts
+    }
 
-;; expect::send-expect session str pattern ?opts? - send then expect
-;; Convenience for common send-then-wait pattern
-;; Returns expect result
-proc expect::send-expect {session str pattern opts} {
-    expect::send $session $str
-    expect::expect $session $pattern $opts
-}
+    ;; expect::send-line-expect session str pattern ?opts? - send line then expect
+    ;; Returns expect result
+    proc send-line-expect {session str pattern opts} {
+        expect::send-line $session $str
+        expect::expect $session $pattern $opts
+    }
 
-;; expect::send-line-expect session str pattern ?opts? - send line then expect
-;; Returns expect result
-proc expect::send-line-expect {session str pattern opts} {
-    expect::send-line $session $str
-    expect::expect $session $pattern $opts
-}
+    ;; expect::read session - read any available output
+    proc read {session} {
+        process::read [get $session handle]
+    }
 
-;; expect::read session - read any available output
-proc expect::read {session} {
-    process::read [get $session handle]
-}
+    ;; expect::read-all session - read all output until EOF
+    proc read-all {session} {
+        var output ""
 
-;; expect::read-all session - read all output until EOF
-proc expect::read-all {session} {
-    var output ""
-    while [expect::alive? $session] {
-        let chunk [expect::read $session]
-        if [not [empty? $chunk]] {
-            set! output "$output$chunk"
+        while [expect::alive? $session] {
+            let chunk [expect::read $session]
+            if [not [empty? $chunk]] {
+                set! output "$output$chunk"
+            }
         }
-    }
-    ;; Read any remaining output
-    let final [expect::read $session]
-    "$output$final"
-}
-
-;; expect::close-stdin session - close stdin to signal EOF
-;; Returns the session
-proc expect::close-stdin {session} {
-    process::close-stdin [get $session handle]
-    $session
-}
-
-;; expect::alive? session - check if process is still running
-proc expect::alive? {session} {
-    process::alive? [get $session handle]
-}
-
-;; expect::wait session ?opts? - wait for process to exit
-;; Options:
-;;   timeout - timeout in ms
-;; Returns dict with:
-;;   exited - 1 if exited, 0 if timeout
-;;   status - exit status (if exited)
-proc expect::wait {session opts} {
-    process::wait [get $session handle] $opts
-}
-
-;; expect::kill session ?opts? - kill the process
-;; Options:
-;;   signal - signal name (default: TERM)
-proc expect::kill {session opts} {
-    process::kill [get $session handle] $opts
-}
-
-;; expect::close session - close the session
-proc expect::close {session} {
-    process::close [get $session handle]
-}
-
-;; expect::run session script - run expect script (list of actions)
-;; Each action is a list: [type args...]
-;; Types:
-;;   [send "text"]
-;;   [send-line "text"]
-;;   [expect "pattern"]
-;;   [expect "pattern" timeout_ms]
-;;   [sleep seconds]
-;; Returns list of expect results
-proc expect::run {session script} {
-    var results ()
-
-    foreach action $script {
-        let cmd [String::trim [get $action 0]]
-
-        case $cmd \
-            {send}      [expect::send $session [get $action 1]] \
-            {send-line} [expect::send-line $session [get $action 1]] \
-            {expect}    [eval {
-                          let pattern [get $action 1]
-                          let timeout [get $action 2 [get $session timeout]]
-                          let r [expect::expect $session $pattern #{timeout $timeout}]
-                          set! results [List::push $results $r]
-                        }] \
-            {sleep}     [sh::sleep [get $action 1]] \
-            else        {}
+        ;; Read any remaining output
+        let final [expect::read $session]
+        "$output$final"
     }
 
-    $results
-}
+    ;; expect::close-stdin session - close stdin to signal EOF
+    ;; Returns the session
+    proc close-stdin {session} {
+        process::close-stdin [get $session handle]
+        $session
+    }
 
-;; expect::log session enabled - enable/disable logging
-;; When enabled, all expect output is printed to stdout
-proc expect::log {session enabled} {
-    put $session logging $enabled
-}
+    ;; expect::alive? session - check if process is still running
+    proc alive? {session} {
+        process::alive? [get $session handle]
+    }
 
-;; Convenience: spawn, run script, close
-;; expect::script cmd actions - run expect script against command
-;; Returns list of expect results
-proc expect::script {cmd actions} {
-    let session [expect::spawn $cmd #{}]
-    let results [expect::run $session $actions]
-    expect::close $session
-    $results
+    ;; expect::wait session ?opts? - wait for process to exit
+    ;; Options:
+    ;;   timeout - timeout in ms
+    ;; Returns dict with:
+    ;;   exited - 1 if exited, 0 if timeout
+    ;;   status - exit status (if exited)
+    proc wait {session opts} {
+        process::wait [get $session handle] $opts
+    }
+
+    ;; expect::kill session ?opts? - kill the process
+    ;; Options:
+    ;;   signal - signal name (default: TERM)
+    proc kill {session opts} {
+        process::kill [get $session handle] $opts
+    }
+
+    ;; expect::close session - close the session
+    proc close {session} {
+        process::close [get $session handle]
+    }
+
+    ;; expect::run session script - run expect script (list of actions)
+    ;; Each action is a list: [type args...]
+    ;; Types:
+    ;;   [send "text"]
+    ;;   [send-line "text"]
+    ;;   [expect "pattern"]
+    ;;   [expect "pattern" timeout_ms]
+    ;;   [sleep seconds]
+    ;; Returns list of expect results
+    proc run {session script} {
+        var results ()
+
+        foreach action $script {
+            let cmd [String::trim [get $action 0]]
+
+            case $cmd \
+                {send}      [expect::send $session [get $action 1]] \
+                {send-line} [expect::send-line $session [get $action 1]] \
+                {expect}    [eval {
+                    let pattern [get $action 1]
+                    let timeout [get $action 2 [get $session timeout]]
+                    let r [expect::expect $session $pattern #{timeout $timeout}]
+                    set! results [List::push $results $r]
+                }] \
+                {sleep}     [sh::sleep [get $action 1]] \
+                else        {}
+        }
+
+        $results
+    }
+
+    ;; expect::log session enabled - enable/disable logging
+    ;; When enabled, all expect output is printed to stdout
+    proc log {session enabled} {
+        put $session logging $enabled
+    }
+
+    ;; Convenience: spawn, run script, close
+    ;; expect::script cmd actions - run expect script against command
+    ;; Returns list of expect results
+    proc script {cmd actions} {
+        let session [expect::spawn $cmd #{}]
+        let results [expect::run $session $actions]
+        expect::close $session
+        $results
+    }
 }

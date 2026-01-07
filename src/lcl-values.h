@@ -97,6 +97,7 @@ lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
 const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
                          const char **rhs);
+lcl_value *lcl_ns_from_dict(lcl_value *dict, const char *qname);
 
 const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);

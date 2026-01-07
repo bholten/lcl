@@ -207,15 +207,15 @@ Test::suite "Named Lambda Self-Recursion" {
 ;; ============================================================================
 
 Test::suite "Namespaces" {
-    Test::case "namespace eval creates binding" {
-        namespace eval math {
+    Test::case "namespace creates binding" {
+        namespace math {
             let ten 10
         }
         Test::eq $math::ten 10
     }
 
     Test::case "braced variable form" {
-        namespace eval math2 {
+        namespace math2 {
             let val 42
         }
         Test::eq ${math2::val} 42
@@ -285,36 +285,69 @@ Test::suite "Subst" {
 }
 
 ;; ============================================================================
-;; Namespace Eval
+;; Namespace
 ;; ============================================================================
 
-Test::suite "Namespace Eval" {
+Test::suite "Namespace" {
     Test::case "define values in namespace" {
-        namespace eval myns {
+        namespace myns {
             let val 100
         }
         Test::eq $myns::val 100
     }
 
     Test::case "define procs in namespace" {
-        namespace eval funcs {
+        namespace funcs {
             proc double {n} { return [+ $n $n] }
         }
         Test::eq [funcs::double 7] 14
     }
 
     Test::case "nested namespace path" {
-        namespace eval outer::inner::leaf {
+        namespace outer::inner::leaf {
             let deep 42
         }
         Test::eq $outer::inner::leaf::deep 42
     }
 
     Test::case "multiple evals on same namespace" {
-        namespace eval ns1 { let x 1 }
-        namespace eval ns1 { let y 2 }
+        namespace ns1 { let x 1 }
+        namespace ns1 { let y 2 }
         Test::eq $ns1::x 1
         Test::eq $ns1::y 2
+    }
+
+    Test::case "namespace changes lookup resolution" {
+        namespace ns3 {
+            let x 1
+
+            proc foo {bar} {
+                $bar
+            }
+
+            namespace ns4 {
+                let y 1
+
+                proc qux {} {
+                    42
+                }
+            }
+        }
+
+        namespace ns3 {
+            Test::eq [foo 123] 123
+            Test::eq $x 1
+
+            namespace ns4 {
+                Test::eq [qux] 42
+            }
+
+            Test::eq [ns4::qux] 42
+        }
+
+        Test::eq [ns3::foo 321] 321
+        Test::eq $ns3::x 1
+        Test::eq [ns3::ns4::qux] 42
     }
 }
 
@@ -330,7 +363,7 @@ Test::suite "Load" {
     }
 
     Test::case "load into namespace" {
-        namespace eval imported {
+        namespace imported {
             load test/conformance_lib.lcl
         }
         Test::eq [imported::lib_add 5 5] 10
@@ -413,6 +446,24 @@ Test::suite "List Operations" {
         Test::eq [get [get $nested 0] 0] x
         Test::eq [get [get $nested 0] 1] y
         Test::eq [get [get $nested 1] 0] z
+    }
+
+    Test::case "merge via splat operator" {
+        let list1 (1 2 3 4)
+        let list2 (5 6 7 8)
+        let list3 (@$list1 @$list2)
+
+        Test::eq $list3 (1 2 3 4 5 6 7 8)
+        Test::eq $list3 [List::concat $list1 $list2]
+        Test::eq [+ [len $list1] [len $list2]] [len $list3]
+    }
+
+    Test::case "nested splat" {
+        let list1 (1 2 3 4)
+        let list2 (4 5 6 7)
+        let list3 (1 2 3 (4 5 6 7 @$list2))
+
+        Test::eq $list3 (1 2 3 (4 5 6 7 4 5 6 7))
     }
 }
 

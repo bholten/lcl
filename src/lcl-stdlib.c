@@ -748,13 +748,28 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
 
 static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
+  const char *name;
+
   if (argc != 2) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_let(&interp->env, lcl_value_to_string(argv[0]), argv[1]) !=
-      LCL_OK) {
+  name = lcl_value_to_string(argv[0]);
+
+  if (strstr(name, "::") && interp->def_depth == 0) {
+    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+                        "define inside 'namespace' or use 'ns::def'");
     return LCL_RC_ERR;
+  }
+
+  if (interp->def_depth > 0) {
+    if (lcl_def_target_bind(interp, name, argv[1]) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+  } else {
+    if (lcl_env_let(&interp->env, name, argv[1]) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
   }
 
   *out = lcl_ref_inc(argv[1]);
@@ -857,6 +872,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
                  lcl_value **out) {
   lcl_value *name_v = NULL;
   lcl_value *init_v = NULL;
+  const char *name_str;
 
   if (argc != 2) {
     return LCL_RC_ERR;
@@ -866,17 +882,32 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
     return LCL_RC_ERR;
   }
 
+  name_str = lcl_value_to_string(name_v);
+
+  if (strstr(name_str, "::") && interp->def_depth == 0) {
+    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+                        "define inside 'namespace' or use 'ns::def'");
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
   if (lcl_eval_word(interp, argv[1], &init_v) != LCL_RC_OK) {
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_var(&interp->env, lcl_value_to_string(name_v), init_v) !=
-      LCL_OK) {
-    lcl_ref_dec(name_v);
-    lcl_ref_dec(init_v);
-
-    return LCL_RC_ERR;
+  if (interp->def_depth > 0) {
+    if (lcl_def_target_var(interp, name_str, init_v) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(init_v);
+      return LCL_RC_ERR;
+    }
+  } else {
+    if (lcl_env_var(&interp->env, name_str, init_v) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(init_v);
+      return LCL_RC_ERR;
+    }
   }
 
   lcl_ref_dec(name_v);
@@ -2118,62 +2149,98 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
   return current;
 }
 
-static int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
-                            lcl_value **out) {
-  lcl_value *path_v = NULL;
+/* Note: `namespace eval` simplified to `namespace`. */
+static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out) {
+  /* namespace { body }      - anonymous, returns ns value
+   * namespace name { body } - named, auto-attaches to registry */
+  int named;
+  const lcl_word *body_word;
+  lcl_value *name_v = NULL;
+  char *ns_name = NULL;
   lcl_value *body_v = NULL;
-  lcl_value *ns = NULL;
   lcl_program *prog = NULL;
-  lcl_frame *ns_frame = NULL;
   lcl_frame *old_frame = NULL;
+  lcl_def_target *target;
   lcl_return_code rc;
   int i;
   lcl_value *last = NULL;
+  lcl_value *exports = NULL;
+  lcl_value *ns = NULL;
 
-  if (argc != 2) {
+  if (argc < 1 || argc > 2) {
+    LCL_ERR_MSG(interp, "namespace: expected 1 or 2 arguments");
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &path_v) != LCL_RC_OK) {
+  named = (argc == 2);
+  body_word = named ? args[1] : args[0];
+
+  if (named) {
+    if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+    ns_name = strdup(lcl_value_to_string(name_v));
+    lcl_ref_dec(name_v);
+    if (!ns_name) {
+      return LCL_RC_ERR;
+    }
+  }
+
+  if (lcl_eval_word_to_str(interp, body_word, &body_v) != LCL_RC_OK) {
+    free(ns_name);
     return LCL_RC_ERR;
   }
 
-  ns = resolve_or_create_ns_path(interp, lcl_value_to_string(path_v));
-  lcl_ref_dec(path_v);
-
-  if (!ns) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_eval_word_to_str(interp, args[1], &body_v) != LCL_RC_OK) {
-    lcl_ref_dec(ns);
-    return LCL_RC_ERR;
-  }
-
-  prog = lcl_program_compile(lcl_value_to_string(body_v), "<namespace eval>");
+  prog = lcl_program_compile(lcl_value_to_string(body_v), "<namespace>");
   lcl_ref_dec(body_v);
 
   if (!prog) {
-    lcl_ref_dec(ns);
+    free(ns_name);
     return LCL_RC_ERR;
   }
 
-  ns_frame = lcl_frame_new_ns(interp->env.frame, ns->as.namespace.namespace);
-
-  if (!ns_frame) {
+  if (lcl_def_target_push(interp, interp->env.frame) != LCL_OK) {
     lcl_program_free(prog);
-    lcl_ref_dec(ns);
+    free(ns_name);
     return LCL_RC_ERR;
   }
 
+  target = &interp->def_stack[interp->def_depth - 1];
   old_frame = interp->env.frame;
-  interp->env.frame = ns_frame;
+
+  /* If re-entering an existing namespace, pre-populate overlay with its
+   * bindings. This handles both top-level re-entry and nested re-entry within a
+   * builder. */
+  if (ns_name && !strchr(ns_name, ':')) {
+    lcl_value *existing_ns = NULL;
+    /* Look up the namespace - either from environment (top-level) or from
+     * parent builder's overlay (nested). lcl_env_get_value will check
+     * the current frame chain which includes the parent overlay. */
+    if (lcl_env_get_value(&interp->env, ns_name, &existing_ns) == LCL_OK) {
+      if (existing_ns->type == LCL_NAMESPACE) {
+        hash_iter it = {0};
+        const char *key;
+        lcl_value *value;
+        while (hash_table_iterate(existing_ns->as.namespace.namespace, &it,
+                                  &key, &value)) {
+          hash_table_put(target->overlay->locals, key, value);
+          lcl_dict_put(&target->exports, key, value);
+          lcl_ref_dec(value); /* Balance iterate */
+        }
+      }
+      lcl_ref_dec(existing_ns);
+    }
+  }
+
+  interp->env.frame = target->overlay;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     interp->env.frame = old_frame;
-    lcl_frame_ref_dec(ns_frame);
+    lcl_def_target_pop(interp);
     lcl_program_free(prog);
-    lcl_ref_dec(ns);
+    free(ns_name);
+    LCL_ERR_MSG(interp, "namespace: max recursion depth exceeded");
     return LCL_RC_ERR;
   }
 
@@ -2199,52 +2266,106 @@ static int s_namespace_eval(lcl_interp *interp, int argc, const lcl_word **args,
         interp->err_file = prog->file ? strdup(prog->file) : NULL;
         interp->err_file_owned = prog->file ? 1 : 0;
       }
-
       break;
     }
   }
 
   interp->depth--;
   interp->env.frame = old_frame;
-  lcl_frame_ref_dec(ns_frame);
+  exports = lcl_def_target_pop(interp);
   lcl_program_free(prog);
-  lcl_ref_dec(ns);
 
-  if (rc == LCL_RC_OK || rc == LCL_RC_RETURN) {
-    *out = last ? last : lcl_string_new("");
-  } else {
-    if (last) {
-      lcl_ref_dec(last);
+  if (last) {
+    lcl_ref_dec(last);
+  }
+
+  if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
+    if (exports) {
+      lcl_ref_dec(exports);
     }
+    free(ns_name);
+    return rc;
   }
 
-  return rc;
-}
+  ns = lcl_ns_from_dict(exports, ns_name);
 
-static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
-                       lcl_value **out) {
-  lcl_value *subcmd_v = NULL;
-  const char *subcmd;
-
-  if (argc < 1) {
+  if (!ns) {
+    free(ns_name);
+    LCL_ERR_MSG(interp, "namespace: failed to create namespace");
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &subcmd_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  if (ns_name) {
+    char first[256];
+    const char *rest = NULL;
+
+    if (lcl_ns_split(ns_name, first, sizeof(first), &rest)) {
+      lcl_value *parent = resolve_or_create_ns_path(interp, first);
+
+      if (!parent) {
+        lcl_ref_dec(ns);
+        free(ns_name);
+        LCL_ERR_MSG(interp, "namespace: failed to resolve parent path");
+        return LCL_RC_ERR;
+      }
+
+      while (rest && *rest) {
+        char part[256];
+        const char *next_rest = NULL;
+        lcl_value *next = NULL;
+
+        if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
+          if (lcl_ns_get(parent, part, &next) != LCL_OK) {
+            next = lcl_ns_new(part);
+            if (!next ||
+                !hash_table_put(parent->as.namespace.namespace, part, next)) {
+              if (next) {
+                lcl_ref_dec(next);
+              }
+              lcl_ref_dec(parent);
+              lcl_ref_dec(ns);
+              free(ns_name);
+              return LCL_RC_ERR;
+            }
+          }
+          lcl_ref_dec(parent);
+          parent = next;
+          rest = next_rest;
+        } else {
+          if (!hash_table_put(parent->as.namespace.namespace, rest, ns)) {
+            lcl_ref_dec(parent);
+            lcl_ref_dec(ns);
+            free(ns_name);
+            LCL_ERR_MSG(interp, "namespace: failed to bind in parent");
+            return LCL_RC_ERR;
+          }
+          lcl_ref_dec(parent);
+          rest = NULL;
+        }
+      }
+    } else {
+      if (interp->def_depth > 0) {
+        if (lcl_def_target_bind(interp, ns_name, ns) != LCL_OK) {
+          lcl_ref_dec(ns);
+          free(ns_name);
+          LCL_ERR_MSG(interp,
+                      "namespace: failed to bind in parent builder");
+          return LCL_RC_ERR;
+        }
+      } else {
+        if (lcl_env_let(&interp->env, ns_name, ns) != LCL_OK) {
+          lcl_ref_dec(ns);
+          free(ns_name);
+          LCL_ERR_MSG(interp, "namespace: failed to attach namespace");
+          return LCL_RC_ERR;
+        }
+      }
+    }
+    free(ns_name);
   }
 
-  subcmd = lcl_value_to_string(subcmd_v);
-
-  if (strcmp(subcmd, "eval") == 0) {
-    lcl_ref_dec(subcmd_v);
-
-    return s_namespace_eval(interp, argc - 1, args + 1, out);
-  }
-
-  lcl_ref_dec(subcmd_v);
-
-  return LCL_RC_ERR;
+  *out = ns;
+  return LCL_RC_OK;
 }
 
 static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
@@ -3730,6 +3851,14 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   name_str = lcl_value_to_string(name_v);
+
+  if (strstr(name_str, "::") && interp->def_depth == 0) {
+    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+                        "define inside 'namespace' or use 'ns::proc'");
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
   rc = make_lambda(interp, name_str, args[1], args[2], &lam);
 
   if (rc != LCL_RC_OK) {
@@ -3737,10 +3866,18 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
     return rc;
   }
 
-  if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
-    lcl_ref_dec(name_v);
-    lcl_ref_dec(lam);
-    return LCL_RC_ERR;
+  if (interp->def_depth > 0) {
+    if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
+  } else {
+    if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
   }
 
   lcl_ref_dec(name_v);

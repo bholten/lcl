@@ -255,3 +255,111 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
   lcl_ref_dec(current);
   return LCL_ERROR;
 }
+
+lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent) {
+  lcl_def_target *target;
+  lcl_value *exports;
+  lcl_frame *overlay;
+
+  if (!interp) {
+    return LCL_ERROR;
+  }
+
+  if (interp->def_depth >= LCL_DEF_STACK_MAX) {
+    return LCL_ERROR;
+  }
+
+  exports = lcl_dict_new();
+
+  if (!exports) {
+    return LCL_ERROR;
+  }
+
+  overlay = lcl_frame_new(parent);
+
+  if (!overlay) {
+    lcl_ref_dec(exports);
+    return LCL_ERROR;
+  }
+
+  target = &interp->def_stack[interp->def_depth];
+  target->exports = exports;
+  target->overlay = overlay;
+  interp->def_depth++;
+
+  return LCL_OK;
+}
+
+lcl_value *lcl_def_target_pop(lcl_interp *interp) {
+  lcl_def_target *target;
+  lcl_value *exports;
+
+  if (!interp || interp->def_depth <= 0) {
+    return NULL;
+  }
+
+  interp->def_depth--;
+  target = &interp->def_stack[interp->def_depth];
+
+  exports = target->exports;
+  target->exports = NULL;
+
+  if (target->overlay) {
+    lcl_frame_ref_dec(target->overlay);
+    target->overlay = NULL;
+  }
+
+  return exports; /* Caller owns the reference */
+}
+
+lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
+                               lcl_value *value) {
+  lcl_def_target *target;
+
+  if (!interp || interp->def_depth <= 0 || !name || !value) {
+    return LCL_ERROR;
+  }
+
+  target = &interp->def_stack[interp->def_depth - 1];
+
+  if (lcl_dict_put(&target->exports, name, value) != LCL_OK) {
+    return LCL_ERROR;
+  }
+
+  if (!hash_table_put(target->overlay->locals, name, value)) {
+    return LCL_ERROR;
+  }
+
+  return LCL_OK;
+}
+
+lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
+                              lcl_value *value) {
+  lcl_def_target *target;
+  lcl_value *cell;
+
+  if (!interp || interp->def_depth <= 0 || !name || !value) {
+    return LCL_ERROR;
+  }
+
+  target = &interp->def_stack[interp->def_depth - 1];
+
+  cell = lcl_cell_new(value);
+
+  if (!cell) {
+    return LCL_ERROR;
+  }
+
+  if (lcl_dict_put(&target->exports, name, cell) != LCL_OK) {
+    lcl_ref_dec(cell);
+    return LCL_ERROR;
+  }
+
+  if (!hash_table_put(target->overlay->locals, name, cell)) {
+    lcl_ref_dec(cell);
+    return LCL_ERROR;
+  }
+
+  lcl_ref_dec(cell); /* Dict and frame now hold references */
+  return LCL_OK;
+}

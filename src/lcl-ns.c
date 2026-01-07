@@ -101,3 +101,38 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
 
   return *rhs;
 }
+
+lcl_value *lcl_ns_from_dict(lcl_value *dict, const char *qname) {
+  lcl_value *ns;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *value;
+
+  if (!dict || dict->type != LCL_DICT) {
+    if (dict) {
+      lcl_ref_dec(dict);
+    }
+    return NULL;
+  }
+
+  ns = lcl_ns_new(qname);
+  if (!ns) {
+    lcl_ref_dec(dict);
+    return NULL;
+  }
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &value)) {
+    if (!hash_table_put(ns->as.namespace.namespace, key, value)) {
+      lcl_ref_dec(value);
+      lcl_ref_dec(ns);
+      lcl_ref_dec(dict);
+      return NULL;
+    }
+
+    /* hash_table_put did its own ref_inc, balance the iterate */
+    lcl_ref_dec(value);
+  }
+
+  lcl_ref_dec(dict);
+  return ns;
+}

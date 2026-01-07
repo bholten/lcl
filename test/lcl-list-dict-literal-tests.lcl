@@ -30,7 +30,7 @@ Test::suite "List nonsense" {
     Test::case "nested list inlined into function call" {
         let nested ((a 1)
                     (b 2)
-                    (c 3))        
+                    (c 3))
         let test [foo ((a 1)
                        (b 2)
                        (c 3))]
@@ -53,7 +53,16 @@ Test::suite "List nonsense" {
         Test::eq 1 [list? $deeply_nested]
         Test::eq 3 [len $deeply_nested]
     }
+
+    Test::case "merge via splat" {
+        let list1 (1 2 3 4)
+        let list2 (5 6 7 8)
+        let list3 (@$list1 @$list2)
+
+        Test::eq $list3 (1 2 3 4 5 6 7 8)
+        Test::eq $list3 [List::concat $list1 $list2]
+        Test::eq [+ [len $list1] [len $list2]] [len $list3]
+    }
 }
 
 Test::run
-

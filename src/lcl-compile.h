@@ -57,11 +57,30 @@ lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out);
 lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 
+/* Definition target stack operations for namespace builder pattern */
+lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent);
+lcl_value *lcl_def_target_pop(lcl_interp *interp);
+lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
+                               lcl_value *value);
+lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
+                              lcl_value *value);
+
 typedef struct {
   lcl_value **argv; /* Arguments for pending tail call (each refcounted) */
   int argc;         /* Number of arguments */
   int valid;        /* 1 if a tail call is pending */
 } lcl_tailcall;
+
+/* Definition target for namespace builder pattern.
+ * When inside a `namespace eval { ... }` block, definitions (let/var/proc)
+ * write to the exports dict rather than the current frame. The overlay frame
+ * provides lexical visibility of prior definitions within the builder. */
+typedef struct {
+  lcl_value *exports;   /* Dict being built (the module's export map) */
+  lcl_frame *overlay;   /* Frame for lexical visibility during build */
+} lcl_def_target;
+
+#define LCL_DEF_STACK_MAX 16
 
 struct lcl_interp {
   lcl_env env;
@@ -80,6 +99,10 @@ struct lcl_interp {
   int in_tail_position;
   lcl_value
       *current_proc; /* Bugfix: currently executing proc, for TCO detection */
+
+  /* Namespace builder stack for definition targeting */
+  lcl_def_target def_stack[LCL_DEF_STACK_MAX];
+  int def_depth; /* 0 = not in builder, >0 = in builder(s) */
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

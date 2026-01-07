@@ -24,6 +24,7 @@ The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C+
 | Bindings   | Mutable by default               | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
 | Memory     | Garbage collected                | Reference counted                                              |
 | Closures   | Limited                          | First-class (flat closures)                                    |
+| Namespaces | `proc ns::foo` anywhere          | Must define inside `namespace` block (see below)               |
 | Comments   | `#` at line start                | `;;` anywhere (Lisp-style)                                     |
 | `if`       | `if {expr} {body} elseif ...`    | `if $cond {then} else {else}` (Scheme-style, value-based)      |
 | Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
@@ -45,13 +46,6 @@ And many others.
 ## Build
 
 ```sh
-# Debug build with sanitizers (recommended for development)
-make debug
-
-# Run tests
-./lcl test/conformance_smoke.lcl
-
-# Or use CMake
 cmake -B build && cmake --build build
 cmake -B build -DLCL_ENABLE_ASAN=ON && cmake --build build  # with sanitizers
 ```
@@ -288,17 +282,90 @@ puts [-> 10 {[lambda {x} {+ $x 100}]}]  ;; 110
 
 ### Namespaces
 
+Lcl namespaces work **very differently from Tcl**. In Lcl, namespaces are **first-class module values** created with a builder pattern. This is closer to ML modules or Scheme libraries than Tcl namespaces.
+
 ```tcl
-;; Define a namespace
-namespace eval math {
+;; Define a namespace - all definitions use UNQUALIFIED names inside the block
+namespace math {
     let pi 3.14159
     proc double {x} { + $x $x }
+
+    ;; Mutable state works too
+    var counter 0
+    proc increment {} {
+        set! counter [+ $counter 1]
+        $counter
+    }
 }
 
-;; Access namespace members
-puts $math::pi
-puts [math::double 21]
+;; Access namespace members with :: syntax
+puts $math::pi              ;; 3.14159
+puts [math::double 21]      ;; 42
+puts [math::increment]      ;; 1
+puts [math::increment]      ;; 2
 ```
+
+**Key differences from Tcl:**
+
+1. **`namespace eval` does not exist** - Namespaces are values and more like modules, not evaluations blocks that change scope.
+
+```tcl
+;; Named namespace
+namespace foo {
+  proc bar {} { ... }
+}
+
+;; This desugars to:
+let foo [namespace {
+  proc bar {} { ... }
+}]
+```
+
+2. **No qualified definitions outside `namespace`** - You cannot write `proc math::double {x} {...}` at the top level. This is a hard error:
+   ```tcl
+   ;; ERROR: qualified name not allowed here
+   proc math::double {x} { + $x $x }
+   ```
+
+Why? Lcl has lexical scoping, and qualified defintions outside of `namespace` bring up all kinds of unsound lexical scope issues.
+
+3. **Re-entering a namespace extends it** - Calling `namespace` on an existing namespace gives access to its bindings and allows adding new ones:
+   ```tcl
+   namespace utils { let x 1 }
+   namespace utils { let y 2 }    ;; Can access $x here
+   puts "$utils::x $utils::y"          ;; 1 2
+   ```
+
+4. **Nested namespaces are compositional** - Nested `namespace` creates bindings in the parent:
+   ```tcl
+   namespace outer {
+       let x 1
+       namespace inner {
+           let y 2
+           proc greet {} { return "hello" }
+       }
+   }
+   puts $outer::inner::y              ;; 2
+   puts [outer::inner::greet]         ;; hello
+   ```
+
+5. **Nested paths as shorthand** - You can create deep namespace hierarchies directly:
+   ```tcl
+   namespace a::b::c { let deep 42 }
+   puts $a::b::c::deep                ;; 42
+   ```
+
+6. **Closures capture namespace variables** - Procs defined in a namespace capture cells for `set!`:
+   ```tcl
+   namespace counter {
+       var n 0
+       proc inc {} { set! n [+ $n 1]; $n }
+       proc dec {} { set! n [- $n 1]; $n }
+   }
+   puts [counter::inc]    ;; 1
+   puts [counter::inc]    ;; 2
+   puts [counter::dec]    ;; 1
+   ```
 
 ### Eval and Subst
 

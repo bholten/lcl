@@ -82,6 +82,28 @@ static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
   }
 }
 
+/* Check if word is a single literal piece equal to the given string */
+static int word_is_literal(const lcl_word *w, const char *s) {
+  if (!w || w->np != 1) {
+    return 0;
+  }
+  if (w->wp[0].kind != LCL_WP_LIT) {
+    return 0;
+  }
+  return strcmp(w->wp[0].as.lit.s, s) == 0;
+}
+
+/* Get literal string from a word, or NULL if not a single literal */
+static const char *word_get_literal(const lcl_word *w) {
+  if (!w || w->np != 1) {
+    return NULL;
+  }
+  if (w->wp[0].kind != LCL_WP_LIT) {
+    return NULL;
+  }
+  return w->wp[0].as.lit.s;
+}
+
 static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
   int i;
   int j;
@@ -91,6 +113,15 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
 
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
+
+    /* Special case: set! command - capture the variable name being set */
+    if (cmd->argc >= 2 && word_is_literal(&cmd->w[0], "set!")) {
+      const char *var_name = word_get_literal(&cmd->w[1]);
+      if (var_name) {
+        name_set_add(vars, var_name);
+      }
+    }
+
     for (j = 0; j < cmd->argc; j++) {
       collect_free_vars_word(&cmd->w[j], vars);
     }

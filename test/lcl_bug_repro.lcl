@@ -49,7 +49,7 @@ proc inner_working {} {
 }
 
 proc outer_working {} {
-    let result [inner_working]  # Intermediate let - WORKS
+    let result [inner_working]  ;; Intermediate let - WORKS
     return $result
 }
 
