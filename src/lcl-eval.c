@@ -334,16 +334,26 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
-    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) !=
-        LCL_OK) {
+    const char *cmd_name = lcl_value_to_string(name);
+
+    if (lcl_env_get_command(&interp->env, cmd_name, &callee) != LCL_OK) {
       /* If lookup fails and this is a single-word command, return the value
        * itself */
       if (cmd->argc == 1) {
         *out = name;
         return LCL_RC_OK;
       }
-      LCL_ERR_MSG(interp, "unknown command");
-      lcl_ref_dec(name);
+
+      {
+        const size_t cmd_name_len = strlen(cmd_name);
+        const size_t err_msg_len = strlen("unknown command: ") + 1;
+        char buf[cmd_name_len + err_msg_len];
+
+        sprintf(buf, "unknown command: %s", cmd_name);
+        LCL_ERR_MSG_DUP(interp, buf);
+        lcl_ref_dec(name);
+      }
+
       return LCL_RC_ERR;
     }
 
@@ -654,7 +664,6 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     lcl_command *cmd = &pr->cmd[i];
     int is_last_cmd = (i == pr->ncmd - 1);
 
-    /* Track current position for error reporting */
     interp->cur_file = pr->file;
     interp->cur_line = cmd->line;
 
@@ -685,7 +694,6 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     }
 
     if (rc != LCL_RC_OK) {
-      /* Set error location if not already set by LCL_ERR/LCL_ERR_MSG */
       if (!interp->err_file) {
         interp->err_file = pr->file ? strdup(pr->file) : NULL;
         interp->err_file_owned = pr->file ? 1 : 0;
