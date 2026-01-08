@@ -122,6 +122,19 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
       }
     }
 
+    /* Bugfix:
+     *
+     * Capture command names (first word) - this allows procs to call
+     * other procs by name within namespaces. If the name isn't in the
+     * environment, the capture will simply be skipped later in
+     * lcl_build_upvalues. */
+    if (cmd->argc >= 1) {
+      const char *cmd_name = word_get_literal(&cmd->w[0]);
+      if (cmd_name) {
+        name_set_add(vars, cmd_name);
+      }
+    }
+
     for (j = 0; j < cmd->argc; j++) {
       collect_free_vars_word(&cmd->w[j], vars);
     }

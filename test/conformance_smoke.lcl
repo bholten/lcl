@@ -348,6 +348,32 @@ Test::suite "Namespace" {
         Test::eq [ns3::foo 321] 321
         Test::eq $ns3::x 1
         Test::eq [ns3::ns4::qux] 42
+
+        namespace ns5 {
+            let v 42
+
+            proc foo {} {
+                puts $v
+                $v
+            }
+
+            proc bar {} {
+                foo
+            }
+        }
+
+        Test::eq [ns5::foo] 42
+        Test::eq [ns5::bar] 42
+
+        ;; Reopening should work
+        namespace ns5 {
+            proc qux {} {
+                puts "v = $v"
+                foo
+            }
+        }
+
+        Test::eq [ns5::qux] 42
     }
 }
 
