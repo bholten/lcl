@@ -518,10 +518,8 @@ let result [list
 ]
 
 ;; Also works with list literals inside brackets
-let nested [list
-    (item1 item2)
-    (item3 item4)
-]
+let nested ((item1 item2)
+            (item3 item4))
 ```
 
 **Important:** This only applies to code *inside* brackets. Bare commands (not wrapped in `[...]`) still follow normal Tcl-like rules and require backslash continuation for multilines:
@@ -529,17 +527,17 @@ let nested [list
 ```tcl
 ;; Bare command - backslashes REQUIRED for line continuation
 case $cmd \
-    {add}  [+ $a $b] \
-    {sub}  [- $a $b] \
-    {mul}  [* $a $b] \
-    else   {unknown}
+  {add}  [+ $a $b] \
+  {sub}  [- $a $b] \
+  {mul}  [* $a $b] \
+  else   {unknown}
 
 ;; Same command wrapped in brackets - backslashes not needed inside
 let result [case $cmd
-    {add}  [+ $a $b]
-    {sub}  [- $a $b]
-    {mul}  [* $a $b]
-    else   {unknown}]
+             {add}  [+ $a $b]
+             {sub}  [- $a $b]
+             {mul}  [* $a $b]
+             else   {unknown}]
 ```
 
 Semicolons and newlines inside `{...}` braces and `"..."` quotes are always preserved:

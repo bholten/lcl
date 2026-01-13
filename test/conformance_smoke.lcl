@@ -353,7 +353,6 @@ Test::suite "Namespace" {
             let v 42
 
             proc foo {} {
-                puts $v
                 $v
             }
 
@@ -368,7 +367,6 @@ Test::suite "Namespace" {
         ;; Reopening should work
         namespace ns5 {
             proc qux {} {
-                puts "v = $v"
                 foo
             }
         }

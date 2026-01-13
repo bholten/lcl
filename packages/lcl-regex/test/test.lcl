@@ -1,0 +1,18 @@
+;; Basic tests for lcl-regexp
+;;
+;; Basically wraps <regex.h>
+;;
+
+load lib/Test.lcl
+
+Test::suite "Regex Test Suite" {
+    Test::case "Test basic regex matching" {
+        let re [regex::regcomp {re*}]
+        let result [regex::regexec $re "regex"]
+        
+        assert [opaque? $re]
+        assert [== $result 1]
+    }
+}
+
+Test::run

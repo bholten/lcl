@@ -2,9 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lcl-compile.h"
-#include "lcl-eval.h"
-#include "lcl-values.h"
+#include <lcl.h>
 
 #ifdef LCL_HAVE_CURL
 #include <lcl-curl.h>
@@ -15,15 +13,23 @@
 #endif
 
 #ifdef LCL_HAVE_JSON
-void lcl_register_json(lcl_interp *interp);
+#include <lcl-json.h>
 #endif
 
 #ifdef LCL_HAVE_CRYPTO
-void lcl_register_crypto(lcl_interp *interp);
+#include <lcl-crypto.h>
 #endif
 
 #ifdef LCL_HAVE_PROCESS
-void lcl_register_process(lcl_interp *interp);
+#include <lcl-process.h>
+#endif
+
+#ifdef LCL_HAVE_REGEX
+#include <lcl-regex.h>
+#endif
+
+#ifdef LCL_HAVE_TIME
+#include <lcl-time.h>
 #endif
 
 #ifdef LCL_HAVE_TEST
@@ -45,11 +51,13 @@ int lcl_register_test_framework(lcl_interp *interp) {
   rc = lcl_eval_string(interp, src, &result);
 
   if (rc != LCL_RC_OK) {
+    const char *err_file = lcl_interp_error_file(interp);
+    const char *err_msg = lcl_interp_error_msg(interp);
     fprintf(stderr, "Test framework error at %s:%d",
-            interp->err_file ? interp->err_file : "<unknown>",
-            interp->err_line);
-    if (interp->err_msg) {
-      fprintf(stderr, ": %s", interp->err_msg);
+            err_file ? err_file : "<unknown>",
+            lcl_interp_error_line(interp));
+    if (err_msg) {
+      fprintf(stderr, ": %s", err_msg);
     }
     fprintf(stderr, "\n");
   }
@@ -63,10 +71,6 @@ int lcl_register_test_framework(lcl_interp *interp) {
   return rc == LCL_RC_OK ? 0 : -1;
 }
 #endif
-
-void lcl_register_core(lcl_interp *interp);
-int lcl_eval_file(lcl_interp *interp, const char *filepath, lcl_value **out);
-int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out);
 
 static char *read_stdin(void) {
   size_t capacity = 4096;
@@ -131,6 +135,14 @@ static lcl_interp *create_interp(void) {
   lcl_register_process(interp);
 #endif
 
+#ifdef LCL_HAVE_REGEX
+  lcl_register_regex(interp);
+#endif
+
+#ifdef LCL_HAVE_TIME
+  lcl_register_time(interp);
+#endif
+
   return interp;
 }
 
@@ -174,11 +186,13 @@ int main(int argc, char **argv) {
   }
 
   if (rc != LCL_RC_OK) {
+    const char *err_file = lcl_interp_error_file(interp);
+    const char *err_msg = lcl_interp_error_msg(interp);
     fprintf(stderr, "Error at %s:%d",
-            interp->err_file ? interp->err_file : "<unknown>",
-            interp->err_line);
-    if (interp->err_msg) {
-      fprintf(stderr, ": %s", interp->err_msg);
+            err_file ? err_file : "<unknown>",
+            lcl_interp_error_line(interp));
+    if (err_msg) {
+      fprintf(stderr, ": %s", err_msg);
     }
     fprintf(stderr, "\n");
   }

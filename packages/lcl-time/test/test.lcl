@@ -1,0 +1,17 @@
+;; Basic tests for lcl-time
+;;
+;; Basically wraps <time.h>
+;;
+
+load lib/Test.lcl
+
+Test::suite "Time Test Suite" {
+    Test::case "Test basic time values" {
+        let now [time::time]
+        let lt [time::localtime]
+
+        assert [!= $now 0]
+    }
+}
+
+Test::run

@@ -19,6 +19,8 @@ option(LCL_BUILD_IO "Build Lcl IO extension library" OFF)
 option(LCL_BUILD_JSON "Build Lcl with JSON library" OFF)
 option(LCL_BUILD_CRYPTO "Build Lcl with OpenSSL crypto bindings" OFF)
 option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
+option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
+option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -199,6 +201,38 @@ if(LCL_BUILD_PROCESS)
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_PROCESS)
     target_link_libraries(lcl-cli PRIVATE lcl_process)
+  endif()
+endif()
+
+if(LCL_BUILD_REGEX)
+  add_subdirectory(packages/lcl-regex)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_REGEX)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_REGEX)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_REGEX)
+    target_link_libraries(lcl-cli PRIVATE lcl_regex)
+  endif()
+endif()
+
+if(LCL_BUILD_TIME)
+  add_subdirectory(packages/lcl-time)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_TIME)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_TIME)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TIME)
+    target_link_libraries(lcl-cli PRIVATE lcl_time)
   endif()
 endif()
 

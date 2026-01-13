@@ -2348,8 +2348,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         if (lcl_def_target_bind(interp, ns_name, ns) != LCL_OK) {
           lcl_ref_dec(ns);
           free(ns_name);
-          LCL_ERR_MSG(interp,
-                      "namespace: failed to bind in parent builder");
+          LCL_ERR_MSG(interp, "namespace: failed to bind in parent builder");
           return LCL_RC_ERR;
         }
       } else {
