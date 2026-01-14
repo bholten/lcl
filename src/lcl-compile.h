@@ -170,29 +170,48 @@ typedef struct {
 } lcl_c_func;
 
 typedef struct {
-  char *name;       /* Variable name (owned, must be freed) */
-  int is_cell;      /* 1 if cell (mutable), 0 if immutable value */
-  lcl_value *value; /* The captured cell or value (refcounted) */
+  char *name;
+  int is_cell;
+  lcl_value *value;
 } lcl_upvalue;
 
 typedef struct {
-  char *self_name;        /* Name for self-reference (NULL if anonymous) */
-  lcl_upvalue *upvals;    /* Array of captured upvalues */
-  int nupvals;            /* Number of upvalues */
-  lcl_value *params;      /* Parameter names (list) */
-  lcl_program *body;      /* Compiled body */
-  int capture_ns;         /* Whether to capture current namespace */
-  lcl_value *captured_ns; /* Captured namespace (if capture_ns) */
+  char *name;
+  lcl_program *def_prog;
+} lcl_param;
+
+/* Full parameter specification for a proc.
+ * Ordering: required params first, then optional params.
+ * params array has (n_required + n_optional) elements.
+ * rest_name is separate and must be last (if present). */
+typedef struct {
+  lcl_param *params;
+  int n_required;
+  int n_optional;
+  char *rest_name;
+} lcl_param_spec;
+
+void lcl_param_spec_free(lcl_param_spec *pspec);
+
+typedef struct {
+  char *self_name;
+  lcl_upvalue *upvals;
+  int nupvals;
+  lcl_param_spec pspec;
+  lcl_program *body;
+  int capture_ns;
+  lcl_value *captured_ns;
 } lcl_proc;
 
 /* Build upvalues by capturing referenced variables from current environment.
- * params_list: list of parameter names (to exclude from capture)
+ * pspec: parameter specification (names to exclude from capture)
  * self_name: name for self-reference (to exclude from capture), or NULL
  * upvals_out: receives the upvalues array (may be NULL if no captures needed)
  * nout: receives the count
+ * Scans both the body and any default programs in pspec for free variables.
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error (undefined variable). */
 int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                       lcl_value *params_list, const char *self_name,
+                       const lcl_param_spec *pspec, const char *self_name,
                        lcl_upvalue **upvals_out, int *nout);
 
 #endif

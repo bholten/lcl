@@ -163,41 +163,86 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       interp->env.current_ns = lcl_ref_inc(p->captured_ns);
     }
 
-    if ((int)lcl_list_len(p->params) != current_argc) {
-      LCL_ERR_MSG(interp, "wrong number of arguments");
-      interp->env = saved;
-      lcl_frame_ref_dec(child);
-      if (owns_argv) {
-        for (i = 0; i < current_argc; i++) {
-          lcl_ref_dec(current_argv[i]);
-        }
-        free(current_argv);
+    {
+      int min_args = p->pspec.n_required;
+      int max_args = p->pspec.n_required + p->pspec.n_optional;
+      int has_rest = (p->pspec.rest_name != NULL);
+
+      if (current_argc < min_args) {
+        LCL_ERR_MSG(interp, "too few arguments");
+        goto arity_error;
       }
-      interp->current_proc = saved_current_proc;
-      return LCL_RC_ERR;
+      if (!has_rest && current_argc > max_args) {
+        LCL_ERR_MSG(interp, "too many arguments");
+        goto arity_error;
+      }
+
+      if (0) {
+      arity_error:
+        interp->env = saved;
+        lcl_frame_ref_dec(child);
+        if (owns_argv) {
+          for (i = 0; i < current_argc; i++) {
+            lcl_ref_dec(current_argv[i]);
+          }
+          free(current_argv);
+        }
+        interp->current_proc = saved_current_proc;
+        return LCL_RC_ERR;
+      }
     }
 
-    /* Bugfix:
-     * Inject upvalues into the child frame as regular bindings.
-     * hash_table_put will handle the refcount increment. */
     for (i = 0; i < p->nupvals; i++) {
       hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
     }
 
-    /* Inject self-reference binding for named lambdas.
-     * This allows self-recursion without capturing via upvalue (no cycles). */
     if (p->self_name != NULL) {
       hash_table_put(child->locals, p->self_name, proc_val);
     }
 
-    for (i = 0; i < current_argc; i++) {
-      lcl_value *nameV = NULL;
-      const char *pname;
+    {
+      int arg_idx = 0;
 
-      lcl_list_get(p->params, i, &nameV);
-      pname = lcl_value_to_string(nameV);
-      lcl_env_let(&interp->env, pname, current_argv[i]);
-      lcl_ref_dec(nameV);
+      for (i = 0; i < p->pspec.n_required; i++) {
+        lcl_env_let(&interp->env, p->pspec.params[i].name,
+                    current_argv[arg_idx++]);
+      }
+
+      for (i = 0; i < p->pspec.n_optional; i++) {
+        int pidx = p->pspec.n_required + i;
+        if (arg_idx < current_argc) {
+          lcl_env_let(&interp->env, p->pspec.params[pidx].name,
+                      current_argv[arg_idx++]);
+        } else {
+          lcl_value *def_val = NULL;
+          int def_rc = lcl_eval_program(interp, p->pspec.params[pidx].def_prog,
+                                        &def_val);
+          if (def_rc != LCL_RC_OK) {
+            interp->env = saved;
+            lcl_frame_ref_dec(child);
+            if (owns_argv) {
+              int j;
+              for (j = 0; j < current_argc; j++) {
+                lcl_ref_dec(current_argv[j]);
+              }
+              free(current_argv);
+            }
+            interp->current_proc = saved_current_proc;
+            return def_rc;
+          }
+          lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val);
+          lcl_ref_dec(def_val);
+        }
+      }
+
+      if (p->pspec.rest_name) {
+        lcl_value *rest_list = lcl_list_new();
+        while (arg_idx < current_argc) {
+          lcl_list_push(&rest_list, current_argv[arg_idx++]);
+        }
+        lcl_env_let(&interp->env, p->pspec.rest_name, rest_list);
+        lcl_ref_dec(rest_list);
+      }
     }
 
     interp->in_tail_position = 1;

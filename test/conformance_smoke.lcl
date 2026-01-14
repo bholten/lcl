@@ -1877,6 +1877,163 @@ line2"
 }
 
 ;; ============================================================================
+;; Optional Parameters
+;; ============================================================================
+
+Test::suite "Optional Parameters" {
+    Test::case "optional with default" {
+        proc greet {name (greeting "Hello")} {
+            "$greeting, $name!"
+        }
+        Test::eq [greet "World"] "Hello, World!"
+        Test::eq [greet "Alice" "Hi"] "Hi, Alice!"
+    }
+
+    Test::case "multiple optionals" {
+        proc range_opts {(start 0) (end 10) (step 1)} {
+            list $start $end $step
+        }
+        Test::eq [range_opts] (0 10 1)
+        Test::eq [range_opts 5] (5 10 1)
+        Test::eq [range_opts 5 20] (5 20 1)
+        Test::eq [range_opts 5 20 2] (5 20 2)
+    }
+
+    Test::case "default references earlier param" {
+        proc range_end {start (end [+ $start 10])} {
+            list $start $end
+        }
+        Test::eq [range_end 5] (5 15)
+        Test::eq [range_end 5 20] (5 20)
+    }
+
+    Test::case "default evaluated per call" {
+        var counter 0
+        proc incr {} { set! counter [+ $counter 1]; $counter }
+        proc next_id {(id [incr])} { $id }
+        Test::eq [next_id] 1
+        Test::eq [next_id] 2
+        Test::eq [next_id 99] 99
+        Test::eq [next_id] 3
+    }
+}
+
+;; ============================================================================
+;; Rest Parameters
+;; ============================================================================
+
+Test::suite "Rest Parameters" {
+    Test::case "basic rest parameter" {
+        proc sum {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }
+        Test::eq [sum 1 2 3 4 5] 15
+        Test::eq [sum] 0
+    }
+
+    Test::case "required and rest" {
+        proc join_with {sep *items} {
+            if [== [len $items] 0] { return "" }
+            var result [get $items 0]
+            foreach item [List::slice $items 1 [len $items]] {
+                set! result "$result$sep$item"
+            }
+            $result
+        }
+        Test::eq [join_with "," "a" "b" "c"] "a,b,c"
+        Test::eq [join_with "-" "foo"] "foo"
+        Test::eq [join_with "|"] ""
+    }
+
+    Test::case "required, optional, and rest" {
+        proc window {n (step 1) *xs} {
+            list $n $step $xs
+        }
+        Test::eq [window 3] (3 1 ())
+        Test::eq [window 3 2] (3 2 ())
+        Test::eq [window 3 2 "a" "b" "c"] (3 2 ("a" "b" "c"))
+    }
+}
+
+;; ============================================================================
+;; Apply and Arity
+;; ============================================================================
+
+Test::suite "Apply and Arity" {
+    Test::case "apply with c proc" {
+        Test::eq [apply ${+} (1 2 3)] 6
+        Test::eq [apply ${*} (2 3 4)] 24
+    }
+
+    Test::case "apply with user proc" {
+        proc sum {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }
+        Test::eq [apply ${sum} (10 20 30)] 60
+        Test::eq [apply ${sum} ()] 0
+    }
+
+    Test::case "apply with spread" {
+        proc window {n (step 1) *xs} { list $n $step $xs }
+        let args (3 2 "a" "b" "c")
+        Test::eq [apply ${window} $args] (3 2 ("a" "b" "c"))
+    }
+
+    Test::case "arity of required-only proc" {
+        proc foo {a b c} { + $a $b $c }
+        Test::eq [arity ${foo}] (3 3)
+    }
+
+    Test::case "arity of optional proc" {
+        proc bar {a (b 10)} { + $a $b }
+        Test::eq [arity ${bar}] (1 2)
+    }
+
+    Test::case "arity of rest proc" {
+        proc baz {*xs} { len $xs }
+        Test::eq [arity ${baz}] (0 -1)
+    }
+
+    Test::case "arity of combined proc" {
+        proc qux {a (b 1) *rest} { list $a $b $rest }
+        Test::eq [arity ${qux}] (1 -1)
+    }
+
+    Test::case "arity of c proc" {
+        ;; C procs report (0 -1) since their arity isn't tracked
+        Test::eq [arity ${+}] (0 -1)
+    }
+}
+
+;; ============================================================================
+;; Parameter Validation Errors
+;; ============================================================================
+
+Test::suite "Parameter Validation Errors" {
+    Test::case "too few arguments" {
+        proc needs_two {a b} { + $a $b }
+        let errored [catch { needs_two 1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "too many arguments (no rest)" {
+        proc takes_two {a (b 10)} { + $a $b }
+        let errored [catch { takes_two 1 2 3 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "rest accepts any extra" {
+        proc takes_rest {a *rest} { list $a $rest }
+        let errored [catch { takes_rest 1 2 3 4 5 }]
+        Test::eq $errored 0
+    }
+}
+
+;; ============================================================================
 ;; Run All Tests
 ;; ============================================================================
 

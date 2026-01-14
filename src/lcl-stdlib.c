@@ -1937,9 +1937,14 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
   lcl_value *params_s = NULL;
   lcl_value *body_s = NULL;
   lcl_program *body_p = NULL;
-  lcl_value *params_list = NULL;
+  lcl_param_spec pspec;
   lcl_upvalue *upvals = NULL;
   int nupvals = 0;
+
+  pspec.params = NULL;
+  pspec.n_required = 0;
+  pspec.n_optional = 0;
+  pspec.rest_name = NULL;
 
   if (lcl_eval_word_to_str(interp, params_word, &params_s) != LCL_RC_OK) {
     return LCL_RC_ERR;
@@ -1950,32 +1955,30 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
     return LCL_RC_ERR;
   }
 
-  /* TODO: proper Tcl list parser; MVP split on spaces */
-  params_list = lcl_list_new_from_cwords(lcl_value_to_string(params_s));
+  if (lcl_parse_params(interp, lcl_value_to_string(params_s), &pspec) !=
+      LCL_RC_OK) {
+    lcl_ref_dec(params_s);
+    lcl_ref_dec(body_s);
+    return LCL_RC_ERR;
+  }
   lcl_ref_dec(params_s);
 
   body_p = lcl_program_compile(lcl_value_to_string(body_s), "<lambda>");
   lcl_ref_dec(body_s);
 
   if (!body_p) {
-    lcl_ref_dec(params_list);
+    lcl_param_spec_free(&pspec);
     return LCL_RC_ERR;
   }
 
-  /* Build upvalues (flat closure) from variables referenced in body.
-   * self_name is excluded from capture - it will be injected at runtime.
-   * This also enforces forward reference check - errors if undefined var. */
-  if (lcl_build_upvalues(interp, body_p, params_list, self_name, &upvals,
+  if (lcl_build_upvalues(interp, body_p, &pspec, self_name, &upvals,
                          &nupvals) != LCL_RC_OK) {
-    lcl_ref_dec(params_list);
+    lcl_param_spec_free(&pspec);
     lcl_program_free(body_p);
     return LCL_RC_ERR;
   }
 
-  /* upvals can be NULL if no captures needed - that's okay */
-  /* lcl_proc_new takes ownership of body_p and upvals */
-  *out = lcl_proc_new(self_name, upvals, nupvals, params_list, body_p);
-  lcl_ref_dec(params_list);
+  *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p);
 
   if (!*out) {
     return LCL_RC_ERR;
@@ -4624,6 +4627,113 @@ static int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* apply fn args-list - call fn with elements of args-list as arguments */
+static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
+  lcl_value *func;
+  lcl_value *args_list;
+  lcl_value **call_argv;
+  size_t call_argc;
+  size_t i;
+  int rc;
+
+  if (argc != 2) {
+    LCL_ERR_MSG(interp, "apply requires exactly 2 arguments: fn args-list");
+    return LCL_RC_ERR;
+  }
+
+  func = argv[0];
+  args_list = argv[1];
+
+  if (!lcl_is_callable(func)) {
+    LCL_ERR_MSG(interp, "apply: first argument must be a procedure");
+    return LCL_RC_ERR;
+  }
+
+  if (args_list->type != LCL_LIST) {
+    LCL_ERR_MSG(interp, "apply: second argument must be a list");
+    return LCL_RC_ERR;
+  }
+
+  call_argc = lcl_list_len(args_list);
+
+  if (call_argc == 0) {
+    return lcl_call_proc(interp, func, 0, NULL, out);
+  }
+
+  call_argv = (lcl_value **)malloc(call_argc * sizeof(lcl_value *));
+  if (!call_argv) {
+    LCL_ERR_MSG(interp, "out of memory");
+    return LCL_RC_ERR;
+  }
+
+  for (i = 0; i < call_argc; i++) {
+    if (lcl_list_get(args_list, i, &call_argv[i]) != LCL_OK) {
+      size_t j;
+      for (j = 0; j < i; j++) {
+        lcl_ref_dec(call_argv[j]);
+      }
+      free(call_argv);
+      LCL_ERR_MSG(interp, "apply: failed to get list element");
+      return LCL_RC_ERR;
+    }
+  }
+
+  rc = lcl_call_proc(interp, func, (int)call_argc, call_argv, out);
+
+  for (i = 0; i < call_argc; i++) {
+    lcl_ref_dec(call_argv[i]);
+  }
+  free(call_argv);
+
+  return rc;
+}
+
+/* arity fn - return (min max) where max is -1 for unbounded */
+static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
+  lcl_value *func;
+  lcl_value *result;
+  lcl_value *min_val;
+  lcl_value *max_val;
+  int min_args;
+  int max_args;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "arity requires exactly 1 argument");
+    return LCL_RC_ERR;
+  }
+
+  func = argv[0];
+
+  if (func->type == LCL_PROC) {
+    lcl_proc *p = func->as.procedure.proc;
+    min_args = p->pspec.n_required;
+    max_args =
+        p->pspec.rest_name ? -1 : (p->pspec.n_required + p->pspec.n_optional);
+  } else if (func->type == LCL_CPROC) {
+    /* C procs don't have structured arity - return (0 -1) for variadic */
+    min_args = 0;
+    max_args = -1;
+  } else {
+    LCL_ERR_MSG(interp, "arity: argument must be a procedure");
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  min_val = lcl_int_new(min_args);
+  max_val = lcl_int_new(max_args);
+
+  lcl_list_push(&result, min_val);
+  lcl_list_push(&result, max_val);
+
+  lcl_ref_dec(min_val);
+  lcl_ref_dec(max_val);
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
 /* int x - convert value to integer */
 static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
@@ -6266,6 +6376,9 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "float?", c_is_float);
   lcl_register_proc(interp, "cell?", c_is_cell);
   lcl_register_proc(interp, "proc?", c_is_proc);
+
+  lcl_register_proc(interp, "apply", c_apply);
+  lcl_register_proc(interp, "arity", c_arity);
 
   lcl_register_proc(interp, "int", c_to_int);
   lcl_register_proc(interp, "float", c_to_float);

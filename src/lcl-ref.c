@@ -56,7 +56,7 @@ void lcl_ref_dec(lcl_value *value) {
 
     free(p->upvals);
     free(p->self_name);
-    lcl_ref_dec(p->params);
+    lcl_param_spec_free(&p->pspec);
     lcl_ref_dec(p->captured_ns);
     lcl_program_free(p->body);
     free(p);

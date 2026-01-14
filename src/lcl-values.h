@@ -103,7 +103,9 @@ const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);
 
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
-                        lcl_value *params, lcl_program *body);
+                        lcl_param_spec *pspec, lcl_program *body);
+int lcl_parse_params(lcl_interp *interp, const char *param_str,
+                     lcl_param_spec *pspec);
 
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);

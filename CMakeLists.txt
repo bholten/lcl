@@ -21,6 +21,7 @@ option(LCL_BUILD_CRYPTO "Build Lcl with OpenSSL crypto bindings" OFF)
 option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
+option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -233,6 +234,22 @@ if(LCL_BUILD_TIME)
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TIME)
     target_link_libraries(lcl-cli PRIVATE lcl_time)
+  endif()
+endif()
+
+if(LCL_BUILD_MATH)
+  add_subdirectory(packages/lcl-math)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_MATH)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_MATH)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_MATH)
+    target_link_libraries(lcl-cli PRIVATE lcl_math)
   endif()
 endif()
 
