@@ -1913,6 +1913,44 @@ Test::suite "Optional Parameters" {
         Test::eq [next_id 99] 99
         Test::eq [next_id] 3
     }
+
+    Test::case "optional with default should work with lambdas" {
+        let greet [lambda {name (greeting "Hello")} {
+            "$greeting, $name!"
+        }]
+
+        Test::eq [greet "world"] "Hello, world!"
+        Test::eq [greet "Alice" "Hi"] "Hi, Alice!"
+    }
+
+    Test::case "multiple optionals with lambdas" {
+        let range_opts [lambda {(start 0) (end 10) (step 1)} {
+            list $start $end $step
+        }]
+
+        Test::eq [range_opts] (0 10 1)
+        Test::eq [range_opts 5] (5 10 1)
+        Test::eq [range_opts 5 20] (5 20 1)
+        Test::eq [range_opts 5 20 2] (5 20 2)
+    }
+
+    Test::case "default references earlier param with lambdas" {
+        let range_end [lambda {start (end [+ $start 10])} {
+            list $start $end
+        }]
+        Test::eq [range_end 5] (5 15)
+        Test::eq [range_end 5 20] (5 20)
+    }
+
+    Test::case "default evaluated per call with lambdas" {
+        var counter 0
+        let incr [lambda {} { set! counter [+ $counter 1]; $counter }]
+        let next_id [lambda {(id [incr])} { $id }]
+        Test::eq [next_id] 1
+        Test::eq [next_id] 2
+        Test::eq [next_id 99] 99
+        Test::eq [next_id] 3
+    }
 }
 
 ;; ============================================================================
@@ -1948,6 +1986,39 @@ Test::suite "Rest Parameters" {
         proc window {n (step 1) *xs} {
             list $n $step $xs
         }
+        Test::eq [window 3] (3 1 ())
+        Test::eq [window 3 2] (3 2 ())
+        Test::eq [window 3 2 "a" "b" "c"] (3 2 ("a" "b" "c"))
+    }
+
+    Test::case "basic rest parameter with lambdas" {
+        let sum [lambda {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }]
+        Test::eq [sum 1 2 3 4 5] 15
+        Test::eq [sum] 0
+    }
+
+    Test::case "required and rest with lambdas" {
+        let join_with [lambda {sep *items} {
+            if [== [len $items] 0] { return "" }
+            var result [get $items 0]
+            foreach item [List::slice $items 1 [len $items]] {
+                set! result "$result$sep$item"
+            }
+            $result
+        }]
+        Test::eq [join_with "," "a" "b" "c"] "a,b,c"
+        Test::eq [join_with "-" "foo"] "foo"
+        Test::eq [join_with "|"] ""
+    }
+
+    Test::case "required, optional, and rest with lambdas" {
+        let window [lambda {n (step 1) *xs} {
+            list $n $step $xs
+        }]
         Test::eq [window 3] (3 1 ())
         Test::eq [window 3 2] (3 2 ())
         Test::eq [window 3 2 "a" "b" "c"] (3 2 ("a" "b" "c"))

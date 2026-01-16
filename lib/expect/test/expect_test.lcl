@@ -1,8 +1,8 @@
 ;; Tests for expect.lcl
 
-load lib/Test.lcl
-load lib/sh.lcl
-load lib/expect.lcl
+;; load lib/Test.lcl
+;; load lib/sh.lcl
+;; load lib/expect.lcl
 
 Test::suite "expect::spawn" {
     Test::case "spawns process" {

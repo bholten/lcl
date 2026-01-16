@@ -40,7 +40,31 @@
 #include "test-framework-data.h"
 
 static const lcl_embedded_lib test_framework_lib = {
-    "lib/test/src/Test.lcl", lib_test_src_Test_lcl, sizeof(lib_test_src_Test_lcl)};
+    "lib/test/src/Test.lcl", lib_test_src_Test_lcl,
+    sizeof(lib_test_src_Test_lcl)};
+#endif
+
+#ifdef LCL_HAVE_EXPECT_LIB
+#include "expect-lib-data.h"
+
+static const lcl_embedded_lib expect_lib = {"lib/expect/src/expect.lcl",
+                                            lib_expect_src_expect_lcl,
+                                            sizeof(lib_expect_src_expect_lcl)};
+#endif
+
+#ifdef LCL_HAVE_SH_LIB
+#include "sh-lib-data.h"
+
+static const lcl_embedded_lib sh_lib = {"lib/sh/src/sh.lcl", lib_sh_src_sh_lcl,
+                                        sizeof(lib_sh_src_sh_lcl)};
+#endif
+
+#ifdef LCL_HAVE_MACRO_LIB
+#include "macro-lib-data.h"
+
+static const lcl_embedded_lib macro_lib = {"lib/macros/src/Macro.lcl",
+                                           lib_macros_src_Macro_lcl,
+                                           sizeof(lib_macros_src_Macro_lcl)};
 #endif
 
 static char *read_stdin(void) {
@@ -116,6 +140,24 @@ static lcl_interp *create_interp(void) {
 
 #ifdef LCL_HAVE_MATH
   lcl_register_math(interp);
+#endif
+
+#ifdef LCL_HAVE_SH_LIB
+  if (lcl_register_embedded_lib(interp, &sh_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load sh library\n");
+  }
+#endif
+
+#ifdef LCL_HAVE_EXPECT_LIB
+  if (lcl_register_embedded_lib(interp, &expect_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load expect library\n");
+  }
+#endif
+
+#ifdef LCL_HAVE_MACRO_LIB
+  if (lcl_register_embedded_lib(interp, &macro_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load macro library\n");
+  }
 #endif
 
   return interp;

@@ -1,0 +1,29 @@
+;; Build examples:
+;; # Release build (dynamically linked, optimized)
+;; cmake -DCMAKE_BUILD_TYPE=Release ..
+;;
+;; # Release + fully static binary
+;; cmake -DCMAKE_BUILD_TYPE=Release -DLCL_BUILD_STATIC=ON -DLCL_STATIC_BINARY=ON ..
+;;
+;; # Debug build with sanitizers (existing behavior)
+;; cmake -DCMAKE_BUILD_TYPE=Debug -DLCL_ENABLE_ASAN=ON ..
+
+project lcl {
+    arg BUILD_TYPE debug
+
+    config {
+        description "The Lcl programming language"
+    }
+
+    task build {
+        run {
+            cmake -B build -DLCL_ENABLE_ASAN=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLCL_BUILD_TESTS=ON -DLCL_BUILD_CURL=ON -DLCL_BUILD_IO=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_CRYPTO=ON -DLCL_BUILD_REGEX=ON -DCMAKE_BUILD_TYPE=Debug -DLCL_BUILD_EXPECT_LIB=ON -DLCL_BUILD_SH_LIB=ON -DLCL_BUILD_PROCESS=ON -DLCL_BUILD_MACRO_LIB=ON && cmake --build build
+        }
+    }
+
+    command clean {
+        run {
+            rm -rf build
+        }
+    }
+}

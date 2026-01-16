@@ -23,7 +23,12 @@ option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
+
+# Lcl libraries
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
+option(LCL_BUILD_EXPECT_LIB "Build Lcl with the Expect library" OFF)
+option(LCL_BUILD_MACRO_LIB "Build Lcl with the Macro library" OFF)
+option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -299,7 +304,76 @@ if(LCL_BUILD_TEST_LIB)
     add_dependencies(lcl-cli generate_test_framework_data)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
     target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-  endif()  
+  endif()
+endif()
+
+if(LCL_BUILD_EXPECT_LIB)
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(EXPECT_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/expect/src/expect.lcl)
+  set(EXPECT_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/expect-lib-data.h)
+
+  add_custom_command(
+    OUTPUT ${EXPECT_LIB_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/expect/src/expect.lcl > ${EXPECT_LIB_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${EXPECT_LIB_SRC}
+    COMMENT "Generating expect-lib-data.h from expect.lcl"
+  )
+
+  add_custom_target(generate_expect_lib_data DEPENDS ${EXPECT_LIB_DATA})
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_expect_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_EXPECT_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
+if(LCL_BUILD_SH_LIB)
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(SH_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/sh/src/sh.lcl)
+  set(SH_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/sh-lib-data.h)
+
+  add_custom_command(
+    OUTPUT ${SH_LIB_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/sh/src/sh.lcl > ${SH_LIB_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${SH_LIB_SRC}
+    COMMENT "Generating sh-lib-data.h from sh.lcl"
+  )
+
+  add_custom_target(generate_sh_lib_data DEPENDS ${SH_LIB_DATA})
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_sh_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_SH_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
+if(LCL_BUILD_MACRO_LIB)
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(MACRO_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/macros/src/Macro.lcl)
+  set(MACRO_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/macro-lib-data.h)
+
+  add_custom_command(
+    OUTPUT ${MACRO_LIB_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/macros/src/Macro.lcl > ${MACRO_LIB_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${MACRO_LIB_SRC}
+    COMMENT "Generating macro-lib-data.h from sh.lcl"
+  )
+
+  add_custom_target(generate_macro_lib_data DEPENDS ${MACRO_LIB_DATA})
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_macro_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_MACRO_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
 endif()
 
 if(LCL_BUILD_TESTS)

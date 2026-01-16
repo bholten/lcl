@@ -1,7 +1,7 @@
 ;; Tests for sh.lcl
 
-load lib/Test.lcl
-load lib/sh.lcl
+;; load lib/Test.lcl
+;; load lib/sh.lcl
 
 Test::suite "sh::run" {
     Test::case "basic command" {
