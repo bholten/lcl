@@ -1,0 +1,23 @@
+;; Build the Lcl test framework
+;; Does not require any dependencies besides Lcl-core
+
+project Test {
+    def SOURCE src/Test.lcl
+    def BUILD  build/test.h
+
+    task pre_reqs {
+        outputs build/
+        run {
+          mkdir -p build/    
+        }
+    }
+
+    task build {
+        inputs  ${Test::SOURCE}
+        outputs ${Test::BUILD}
+        depends_on Test::pre_reqs
+        run {
+            xxd -i ${Test::SOURCE} >> ${Test::BUILD}
+        }
+    }
+}

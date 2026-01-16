@@ -160,7 +160,7 @@ namespace sh {
         }
         ""
     }
-
+ 
     ;; sh::glob pattern - expand glob pattern
     proc glob {pattern} {
         let r [process::run (sh -c "ls -d $pattern 2>/dev/null || true")]

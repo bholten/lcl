@@ -12,6 +12,10 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out);
 int lcl_eval_string_file(lcl_interp *interp, const char *src, const char *file,
                          lcl_value **out);
+int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
+                   lcl_value **out);
+int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
+                        const char *file, lcl_value **out);
 
 int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
                      lcl_value **out);

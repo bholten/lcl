@@ -58,6 +58,45 @@ lcl_program *lcl_program_compile(const char *src, const char *file) {
   }
 }
 
+lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
+                                       const char *file) {
+  lcl_scan sc;
+  lcl_program *p;
+
+  lcl_scan_init_bytes(&sc, src, len);
+  p = (lcl_program *)calloc(1, sizeof(*p));
+
+  if (!p) {
+    return NULL;
+  }
+
+  p->file = file ? strdup(file) : NULL;
+  if (file && !p->file) {
+    free(p);
+    return NULL;
+  }
+
+  for (;;) {
+    lcl_command cmd;
+    memset(&cmd, 0, sizeof(cmd));
+
+    switch (lcl_scan_parse_command(&sc, &cmd)) {
+    case -1:
+      lcl_command_free(&cmd);
+      lcl_program_free(p);
+      return NULL;
+    case 0: return p;
+    case 1:
+      if (!lcl_program_push_command(p, &cmd)) {
+        lcl_program_free(p);
+        return NULL;
+      }
+      break;
+    default: break;
+    }
+  }
+}
+
 int lcl_program_push_command(lcl_program *p, lcl_command *src) {
   int idx;
 

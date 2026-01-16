@@ -6,6 +6,13 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
+/* Embedded library descriptor (matches public lcl.h definition) */
+typedef struct {
+  const char *name;
+  const unsigned char *data;
+  size_t len;
+} lcl_embedded_lib;
+
 static char *api_read_file(const char *path) {
   FILE *f;
   long len;
@@ -214,4 +221,39 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
   }
 
   return rc;
+}
+
+/* ============================================================================
+ * Embedded Libraries
+ * ============================================================================
+ */
+
+int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib) {
+  lcl_value *result = NULL;
+  int rc;
+
+  if (!interp || !lib || !lib->data) {
+    return -1;
+  }
+
+  rc = lcl_eval_bytes_file(interp, (const char *)lib->data, lib->len,
+                           lib->name ? lib->name : "<embedded>", &result);
+
+  if (rc != LCL_RC_OK) {
+    const char *err_file = lcl_interp_error_file(interp);
+    const char *err_msg = lcl_interp_error_msg(interp);
+    fprintf(stderr, "Lcl embedded lib '%s' error at %s:%d",
+            lib->name ? lib->name : "<unknown>",
+            err_file ? err_file : "<unknown>", lcl_interp_error_line(interp));
+    if (err_msg) {
+      fprintf(stderr, ": %s", err_msg);
+    }
+    fprintf(stderr, "\n");
+  }
+
+  if (result) {
+    lcl_ref_dec(result);
+  }
+
+  return rc == LCL_RC_OK ? 0 : -1;
 }

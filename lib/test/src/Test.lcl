@@ -35,13 +35,16 @@ namespace Test {
     ;; Register a test suite
     proc suite {name body} {
         set! _current_name $name
-        set! _current_cases [list]
+        set! _current_cases ()
         set! _current_before {}
         set! _current_after {}
 
         eval $body
 
-        let suite_data [dict name $name cases $_current_cases before $_current_before after $_current_after]
+        let suite_data #{name $name
+                         cases $_current_cases
+                         before $_current_before
+                         after $_current_after}
         set! _suites [List::push $_suites $suite_data]
 
         set! _current_name {}
@@ -49,7 +52,7 @@ namespace Test {
 
     ;; Register a test case within the current suite
     proc case {name body} {
-        let case_data [dict name $name body $body]
+        let case_data #{name $name body $body}
         set! _current_cases [List::push $_current_cases $case_data]
     }
 

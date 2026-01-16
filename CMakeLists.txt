@@ -12,6 +12,7 @@ option(LCL_BUILD_CLI "Build command-line interpreter" ON)
 option(LCL_BUILD_TESTS "Build test executable" OFF)
 option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
 option(LCL_DEBUG_REFC "Enable debug reference counting" OFF)
+option(LCL_STATIC_BINARY "Build fully static CLI binary (requires static libs)" OFF)
 
 # Optional packages
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
@@ -22,6 +23,7 @@ option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
+option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -52,9 +54,23 @@ set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(LCL_COMPILE_OPTIONS -Wall -Wextra)
 
+# Set default build type if not specified
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
 if(LCL_ENABLE_ASAN)
+  # ASan overrides optimization to ensure accurate diagnostics
   list(APPEND LCL_COMPILE_OPTIONS -fsanitize=address,undefined -fno-omit-frame-pointer -g3 -O0)
   set(LCL_LINK_OPTIONS -fsanitize=address,undefined)
+endif()
+
+# Static binary requires static library
+if(LCL_STATIC_BINARY AND NOT LCL_BUILD_STATIC)
+  message(FATAL_ERROR "LCL_STATIC_BINARY requires LCL_BUILD_STATIC=ON")
 endif()
 
 if(LCL_BUILD_SHARED)
@@ -116,6 +132,15 @@ if(LCL_BUILD_CLI)
 
   if(LCL_ENABLE_ASAN)
     target_link_options(lcl-cli PRIVATE ${LCL_LINK_OPTIONS})
+  endif()
+
+  # Build fully static binary (all libraries linked statically)
+  if(LCL_STATIC_BINARY)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+      target_link_options(lcl-cli PRIVATE -static)
+    elseif(MSVC)
+      set_property(TARGET lcl-cli PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
   endif()
 endif()
 
@@ -253,16 +278,16 @@ if(LCL_BUILD_MATH)
   endif()
 endif()
 
-if(LCL_BUILD_TESTS)
+if(LCL_BUILD_TEST_LIB)
   # Generate test-framework-data.h from Test.lcl using xxd
   find_program(XXD_EXECUTABLE xxd REQUIRED)
 
-  set(TEST_FRAMEWORK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/Test.lcl)
+  set(TEST_FRAMEWORK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/test/src/Test.lcl)
   set(TEST_FRAMEWORK_DATA ${CMAKE_CURRENT_BINARY_DIR}/test-framework-data.h)
 
   add_custom_command(
     OUTPUT ${TEST_FRAMEWORK_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/Test.lcl > ${TEST_FRAMEWORK_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/test/src/Test.lcl > ${TEST_FRAMEWORK_DATA}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS ${TEST_FRAMEWORK_SRC}
     COMMENT "Generating test-framework-data.h from Test.lcl"
@@ -270,6 +295,14 @@ if(LCL_BUILD_TESTS)
 
   add_custom_target(generate_test_framework_data DEPENDS ${TEST_FRAMEWORK_DATA})
 
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_test_framework_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()  
+endif()
+
+if(LCL_BUILD_TESTS)
   add_executable(lcl-test test/lcl-test.c)
   target_compile_definitions(lcl-test PRIVATE LCL_TEST DEBUG_REFC)
   target_compile_options(lcl-test PRIVATE ${LCL_COMPILE_OPTIONS})
@@ -279,12 +312,6 @@ if(LCL_BUILD_TESTS)
     target_link_libraries(lcl-test PRIVATE lcl_static)
   else()
     target_link_libraries(lcl-test PRIVATE lcl_shared)
-  endif()
-
-  if(LCL_BUILD_CLI)
-    add_dependencies(lcl-cli generate_test_framework_data)
-    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
-    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   endif()
 
   if(LCL_ENABLE_ASAN)

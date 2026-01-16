@@ -525,6 +525,26 @@ int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out) {
   return lcl_eval_string_file(interp, src, NULL, out);
 }
 
+int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
+                        const char *file, lcl_value **out) {
+  lcl_program *P = lcl_program_compile_bytes(src, len, file ? file : "<bytes>");
+  int rc;
+
+  if (!P) {
+    return LCL_RC_ERR;
+  }
+
+  rc = lcl_eval_program(interp, P, out);
+  lcl_program_free(P);
+
+  return rc;
+}
+
+int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
+                   lcl_value **out) {
+  return lcl_eval_bytes_file(interp, src, len, NULL, out);
+}
+
 int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
                          lcl_value **out) {
   char *buf = NULL;

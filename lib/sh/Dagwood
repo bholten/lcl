@@ -1,0 +1,26 @@
+;; sh library
+;;
+;; Provides convenient shell scripting functions built on process::*
+;;
+;; REQUIRES: lcl-process package (provides process:: namespace)
+
+project Sh {
+    def SOURCE src/sh.lcl
+    def BUILD  build/sh.h
+
+    task pre_reqs {
+        outputs build/
+        run {
+          mkdir -p build/    
+        }
+    }
+
+    task build {
+        inputs  ${Sh::SOURCE}
+        outputs ${Sh::BUILD}
+        depends_on Sh::pre_reqs
+        run {
+            xxd -i ${Sh::SOURCE} >> ${Sh::BUILD}
+        }
+    }
+}

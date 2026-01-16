@@ -39,40 +39,8 @@
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
-int lcl_register_test_framework(lcl_interp *interp) {
-  lcl_value *result = NULL;
-  int rc;
-  char *src;
-
-  src = (char *)malloc(lib_Test_lcl_len + 1);
-  if (!src) {
-    return -1;
-  }
-
-  memcpy(src, lib_Test_lcl, lib_Test_lcl_len);
-  src[lib_Test_lcl_len] = '\0';
-
-  rc = lcl_eval_string(interp, src, &result);
-
-  if (rc != LCL_RC_OK) {
-    const char *err_file = lcl_interp_error_file(interp);
-    const char *err_msg = lcl_interp_error_msg(interp);
-    fprintf(stderr, "Test framework error at %s:%d",
-            err_file ? err_file : "<unknown>", lcl_interp_error_line(interp));
-    if (err_msg) {
-      fprintf(stderr, ": %s", err_msg);
-    }
-    fprintf(stderr, "\n");
-  }
-
-  free(src);
-
-  if (result) {
-    lcl_ref_dec(result);
-  }
-
-  return rc == LCL_RC_OK ? 0 : -1;
-}
+static const lcl_embedded_lib test_framework_lib = {
+    "lib/test/src/Test.lcl", lib_test_src_Test_lcl, sizeof(lib_test_src_Test_lcl)};
 #endif
 
 static char *read_stdin(void) {
@@ -129,7 +97,7 @@ static lcl_interp *create_interp(void) {
 #endif
 
 #ifdef LCL_HAVE_TEST
-  if (lcl_register_test_framework(interp) != 0) {
+  if (lcl_register_embedded_lib(interp, &test_framework_lib) != 0) {
     fprintf(stderr, "Warning: Failed to load test framework\n");
   }
 #endif

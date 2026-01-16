@@ -122,6 +122,53 @@ int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out);
  */
 int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out);
 
+/*
+ * Evaluate LCL code from a byte buffer (not null-terminated).
+ *
+ * This is the preferred API for evaluating embedded code from xxd -i output
+ * as it avoids unnecessary copying and null-termination.
+ *
+ * Parameters:
+ *   interp - the interpreter
+ *   src    - pointer to the source code bytes
+ *   len    - length of the source code in bytes
+ *   out    - receives the result value (caller must lcl_ref_dec it)
+ *
+ * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
+ */
+int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
+                   lcl_value **out);
+
+/* ============================================================================
+ * Embedded Libraries
+ *
+ * For embedding LCL libraries as xxd -i data in C applications.
+ * ============================================================================
+ */
+
+/*
+ * Descriptor for an embedded LCL library (e.g., from xxd -i output).
+ */
+typedef struct {
+  const char *name;              /* Library name for error messages */
+  const unsigned char *data;     /* xxd -i output (library source) */
+  size_t len;                    /* Length of data in bytes */
+} lcl_embedded_lib;
+
+/*
+ * Register an embedded LCL library.
+ *
+ * This evaluates the library source in the interpreter's global scope,
+ * making its definitions available. Zero-copy for xxd -i data.
+ *
+ * Parameters:
+ *   interp - the interpreter
+ *   lib    - embedded library descriptor
+ *
+ * Returns 0 on success, -1 on error (prints error to stderr).
+ */
+int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib);
+
 /* ============================================================================
  * Error Information
  * ============================================================================

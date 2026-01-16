@@ -1,7 +1,5 @@
 ;; Potential memory leaks with ((a 1) (b 2) (c 3)) nested lists
 
-load lib/Test.lcl
-
 proc foo {inline_list} {
     var result 0
 

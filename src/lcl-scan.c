@@ -67,6 +67,14 @@ void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->at_cmd_start = 1;
 }
 
+void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
+  sc->s = src;
+  sc->i = 0;
+  sc->len = (long)len;
+  sc->line = 1;
+  sc->at_cmd_start = 1;
+}
+
 int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
   long start;

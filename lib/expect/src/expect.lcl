@@ -4,6 +4,7 @@
 ;; similar to the classic Expect tool.
 ;;
 ;; REQUIRES: lcl-process package (provides process:: namespace)
+;;           sh package (provides sh:: namespace)
 ;;
 ;; Usage:
 ;;   load lib/expect.lcl
@@ -80,6 +81,7 @@ namespace expect {
 
         ;; Normalize patterns to a list
         let pattern_list $patterns
+
         if [string? $patterns] {
             let pattern_list [list $patterns]
         }

@@ -3,8 +3,6 @@
 ;; Basically wraps <time.h>
 ;;
 
-load lib/Test.lcl
-
 Test::suite "Time Test Suite" {
     Test::case "Test basic time values" {
         let now [time::time]

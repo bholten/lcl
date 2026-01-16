@@ -2,9 +2,6 @@
 ;;
 ;; This demonstrates how to write tests using lib/Test.lcl
 ;; Run with: ./lcl test/example_test.lcl
-
-load lib/Test.lcl
-
 ;; ============================================================================
 ;; Testing List:: functions
 ;; ============================================================================

@@ -24,6 +24,8 @@ typedef struct {
 
 void lcl_program_free(lcl_program *p);
 lcl_program *lcl_program_compile(const char *src, const char *file);
+lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
+                                       const char *file);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
 typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
@@ -69,6 +71,7 @@ typedef struct {
 } lcl_scan;
 
 void lcl_scan_init(lcl_scan *sc, const char *src);
+void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len);
 int lcl_scan_word(lcl_scan *sc, lcl_word *w);
 int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd);
 

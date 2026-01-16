@@ -1,9 +1,6 @@
 ;; Lcl Conformance Smoke Tests
 ;; This test suite covers core LCL functionality using the Test framework.
 ;; Run with: ./lcl test/conformance_smoke.lcl
-
-load lib/Test.lcl
-
 ;; ============================================================================
 ;; Immutability & Substitution
 ;; ============================================================================

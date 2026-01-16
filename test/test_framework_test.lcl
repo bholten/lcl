@@ -1,8 +1,6 @@
 ;; Tests for the Test Framework itself
 ;; This exercises all the framework features
 
-load lib/Test.lcl
-
 Test::suite "Test::eq assertions" {
     Test::case "equal integers" {
         Test::eq 42 42

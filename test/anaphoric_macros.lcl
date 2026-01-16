@@ -26,9 +26,6 @@
 ;;   via variable. E.g.: let rest_code [macro $rest]; quasiquote { ... ,$rest_code }
 ;; - Use () list literals for passing structured data to macros:
 ;;   [macro (({cond1} {body1}) ({cond2} {body2}))]
-
-load lib/Test.lcl
-
 ;; ============================================================================
 ;; aif - Anaphoric If
 ;; ============================================================================

@@ -3,8 +3,6 @@
 ;; Basically wraps <regex.h>
 ;;
 
-load lib/Test.lcl
-
 Test::suite "Regex Test Suite" {
     Test::case "Test basic regex matching" {
         let re [regex::regcomp {re*}]
