@@ -218,14 +218,14 @@ static int test_simple_words(void) {
 }
 
 static int test_comments(void) {
+  /* Lcl uses ;; for comments (Lisp-style), anywhere on a line */
   const char *src =
-    "# leading comment\n"
-    "set a 1  # NOT a comment in middle\n"
-    "  ; # trailing comment\n"
+    ";; leading comment\n"
+    "set a 1  ;; trailing comment on same line\n"
     "puts $a\n";
   const char *exp =
-    "cmd(line=2): [lit:\"set\"] [lit:\"a\"] [lit:\"1\"] [lit:\"#\"] [lit:\"NOT\"] [lit:\"a\"] [lit:\"comment\"] [lit:\"in\"] [lit:\"middle\"] ; "
-    "cmd(line=4): [lit:\"puts\"] [var:\"a\"]";
+    "cmd(line=2): [lit:\"set\"] [lit:\"a\"] [lit:\"1\"] ; "
+    "cmd(line=3): [lit:\"puts\"] [var:\"a\"]";
   return compile_and_dump(src, exp);
 }
 
