@@ -2426,6 +2426,153 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
+/* import <namespace> ?name1 name2 ...?
+ * Imports bindings from a namespace into the current scope.
+ * If no names given, imports all bindings.
+ * Errors if any name already exists in the current frame. */
+static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
+                    lcl_value **out) {
+  lcl_value *ns_name_v = NULL;
+  lcl_value *ns = NULL;
+  const char *ns_name;
+  int i;
+
+  if (argc < 1) {
+    LCL_ERR_MSG(interp, "import: expected namespace argument");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word(interp, argv[0], &ns_name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (ns_name_v->type == LCL_NAMESPACE) {
+    ns = ns_name_v;
+  } else if (ns_name_v->type == LCL_CELL &&
+             ns_name_v->as.cell.inner->type == LCL_NAMESPACE) {
+    ns = lcl_ref_inc(ns_name_v->as.cell.inner);
+    lcl_ref_dec(ns_name_v);
+  } else {
+    ns_name = lcl_value_to_string(ns_name_v);
+
+    if (lcl_env_get_value(&interp->env, ns_name, &ns) != LCL_OK) {
+      LCL_ERR_MSG(interp, "import: namespace not found");
+      lcl_ref_dec(ns_name_v);
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(ns_name_v);
+
+    if (ns->type == LCL_CELL) {
+      lcl_value *inner = lcl_ref_inc(ns->as.cell.inner);
+      lcl_ref_dec(ns);
+      ns = inner;
+    }
+  }
+
+  if (ns->type != LCL_NAMESPACE) {
+    LCL_ERR_MSG(interp, "import: argument must be a namespace");
+    lcl_ref_dec(ns);
+    return LCL_RC_ERR;
+  }
+
+  if (argc == 1) {
+    hash_iter it = {0};
+    const char *key;
+    lcl_value *value;
+
+    while (hash_table_iterate(ns->as.namespace.namespace, &it, &key, &value)) {
+      lcl_value *existing = NULL;
+
+      if (hash_table_get(interp->env.frame->locals, key, &existing)) {
+        char buf[256];
+        sprintf(buf, "import: '%s' already exists in current scope", key);
+        lcl_ref_dec(existing);
+        lcl_ref_dec(value);
+        lcl_ref_dec(ns);
+        LCL_ERR_MSG_DUP(interp, buf);
+        return LCL_RC_ERR;
+      }
+
+      if (interp->def_depth > 0) {
+        if (lcl_def_target_bind(interp, key, value) != LCL_OK) {
+          lcl_ref_dec(value);
+          lcl_ref_dec(ns);
+          LCL_ERR_MSG(interp, "import: failed to bind");
+          return LCL_RC_ERR;
+        }
+      } else {
+        if (lcl_env_let(&interp->env, key, value) != LCL_OK) {
+          lcl_ref_dec(value);
+          lcl_ref_dec(ns);
+          LCL_ERR_MSG(interp, "import: failed to bind");
+          return LCL_RC_ERR;
+        }
+      }
+      lcl_ref_dec(value); /* Balance iterate */
+    }
+  } else {
+    for (i = 1; i < argc; i++) {
+      lcl_value *name_v = NULL;
+      const char *name_str;
+      lcl_value *value = NULL;
+      lcl_value *existing = NULL;
+
+      if (lcl_eval_word_to_str(interp, argv[i], &name_v) != LCL_RC_OK) {
+        lcl_ref_dec(ns);
+        return LCL_RC_ERR;
+      }
+
+      name_str = lcl_value_to_string(name_v);
+
+      if (lcl_ns_get(ns, name_str, &value) != LCL_OK) {
+        char buf[256];
+        sprintf(buf, "import: '%s' not found in namespace", name_str);
+        LCL_ERR_MSG_DUP(interp, buf);
+        lcl_ref_dec(name_v);
+        lcl_ref_dec(ns);
+        return LCL_RC_ERR;
+      }
+
+      if (hash_table_get(interp->env.frame->locals, name_str, &existing)) {
+        char buf[256];
+        sprintf(buf, "import: '%s' already exists in current scope", name_str);
+        lcl_ref_dec(existing);
+        lcl_ref_dec(value);
+        lcl_ref_dec(name_v);
+        lcl_ref_dec(ns);
+        LCL_ERR_MSG_DUP(interp, buf);
+        return LCL_RC_ERR;
+      }
+
+      if (interp->def_depth > 0) {
+        if (lcl_def_target_bind(interp, name_str, value) != LCL_OK) {
+          lcl_ref_dec(value);
+          lcl_ref_dec(name_v);
+          lcl_ref_dec(ns);
+          LCL_ERR_MSG(interp, "import: failed to bind");
+          return LCL_RC_ERR;
+        }
+      } else {
+        if (lcl_env_let(&interp->env, name_str, value) != LCL_OK) {
+          lcl_ref_dec(value);
+          lcl_ref_dec(name_v);
+          lcl_ref_dec(ns);
+          LCL_ERR_MSG(interp, "import: failed to bind");
+          return LCL_RC_ERR;
+        }
+      }
+
+      lcl_ref_dec(value);
+      lcl_ref_dec(name_v);
+    }
+  }
+
+  lcl_ref_dec(ns);
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
                    lcl_value **out) {
   lcl_value *input_v = NULL;
@@ -6457,6 +6604,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "subst", s_subst);
   lcl_register_spec(interp, "quasiquote", s_quasiquote);
   lcl_register_spec(interp, "namespace", s_namespace);
+  lcl_register_spec(interp, "import", s_import);
   lcl_register_spec(interp, "->", s_thread_first);
   lcl_register_spec(interp, "->>", s_thread_last);
 

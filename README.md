@@ -367,6 +367,72 @@ Why? Lcl has lexical scoping, and qualified defintions outside of `namespace` br
    puts [counter::dec]    ;; 1
    ```
 
+### Import
+
+The `import` command copies bindings from a namespace into the current scope, allowing you to use them without qualification:
+
+```tcl
+namespace math {
+    let pi 3.14159
+    proc square {x} { * $x $x }
+}
+
+;; Import all bindings
+import math
+puts $pi              ;; 3.14159
+puts [square 5]       ;; 25
+
+;; Import specific bindings
+namespace utils {
+    let a 1
+    let b 2
+    let c 3
+}
+import utils a c      ;; Only import a and c
+puts $a               ;; 1
+puts $c               ;; 3
+```
+
+**Key behaviors:**
+
+1. **Shared mutation** - Imported cells (mutable bindings) share state with the original:
+   ```tcl
+   namespace counter {
+       var n 0
+       proc incr {} { set! n [+ $n 1] }
+   }
+   import counter n incr
+   incr
+   puts $n             ;; 1
+   puts $counter::n    ;; 1 (same cell)
+   ```
+
+2. **Conflict detection** - Import errors if a name already exists in the current scope:
+   ```tcl
+   let x 1
+   namespace ns { let x 99 }
+   import ns x         ;; ERROR: 'x' already exists in current scope
+   ```
+
+3. **Works with nested namespaces** - Use qualified paths:
+   ```tcl
+   namespace outer {
+       namespace inner { let deep 42 }
+   }
+   import outer::inner deep
+   puts $deep          ;; 42
+   ```
+
+4. **Works inside namespace builders** - Import bindings while defining a namespace:
+   ```tcl
+   namespace helpers { proc helper {} { 42 } }
+   namespace app {
+       import helpers helper
+       proc run {} { helper }
+   }
+   puts [app::run]     ;; 42
+   ```
+
 ### Eval and Subst
 
 ```tcl

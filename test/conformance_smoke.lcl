@@ -373,6 +373,98 @@ Test::suite "Namespace" {
 }
 
 ;; ============================================================================
+;; Import
+;; ============================================================================
+
+Test::suite "Import" {
+    Test::case "import all bindings from namespace" {
+        namespace imp_math_all {
+            let imp_ten 10
+            proc imp_square {x} { * $x $x }
+        }
+        import imp_math_all
+        Test::eq $imp_ten 10
+        Test::eq [imp_square 5] 25
+    }
+
+    Test::case "import specific bindings" {
+        namespace imp_utils_spec {
+            let imp_aa 1
+            let imp_bb 2
+            let imp_cc 3
+        }
+        import imp_utils_spec imp_aa imp_cc
+        Test::eq $imp_aa 1
+        Test::eq $imp_cc 3
+        ;; imp_bb should not be imported - accessing it should error
+        Test::raises { $imp_bb }
+    }
+
+    Test::case "import from nested namespace" {
+        namespace imp_outer_nest {
+            namespace imp_inner_nest {
+                let imp_deep 42
+            }
+        }
+        import imp_outer_nest::imp_inner_nest imp_deep
+        Test::eq $imp_deep 42
+    }
+
+    Test::case "imported cells share mutation" {
+        namespace imp_counter_share {
+            var imp_cnt 0
+            proc imp_incr {} { set! imp_cnt [+ $imp_cnt 1] }
+            proc imp_getval {} { return $imp_cnt }
+        }
+        import imp_counter_share imp_cnt imp_incr imp_getval
+        Test::eq [imp_getval] 0
+        imp_incr
+        Test::eq [imp_getval] 1
+        set! imp_cnt 100
+        Test::eq [imp_getval] 100
+        Test::eq $imp_counter_share::imp_cnt 100
+    }
+
+    Test::case "import inside namespace builder" {
+        namespace imp_helpers_ns {
+            proc imp_helper {} { return 42 }
+        }
+        namespace imp_app_ns {
+            import imp_helpers_ns imp_helper
+            proc imp_run {} { imp_helper }
+        }
+        Test::eq [imp_app_ns::imp_run] 42
+    }
+
+    Test::case "import name conflict errors" {
+        namespace imp_conflict_ns {
+            let imp_myval 99
+        }
+        ;; Import twice - second import should conflict with first
+        ;; Using catch directly since Test::raises creates a new frame
+        import imp_conflict_ns imp_myval
+        let caught [catch { import imp_conflict_ns imp_myval }]
+        Test::eq $caught 1
+    }
+
+    Test::case "import name not found errors" {
+        namespace imp_empty_ns {
+            let imp_exists 1
+        }
+        Test::raises { import imp_empty_ns imp_missing }
+    }
+
+    Test::case "import with variable reference" {
+        namespace imp_ref_ns {
+            let imp_refval 123
+        }
+        let imp_ns $imp_ref_ns
+        import $imp_ns imp_refval
+        Test::eq $imp_refval 123
+    }
+}
+
+;; ============================================================================
 ;; Load
 ;; ============================================================================
 
