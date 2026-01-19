@@ -616,6 +616,62 @@ static int c_ne(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* assert_eq actual expected ?msg?
+ * Asserts that actual == expected (deep equality).
+ */
+static int c_assert_eq(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
+  struct eq_cycle_guard guard = {{0}, {0}, 0};
+  (void)out;
+
+  if (argc < 2) {
+    LCL_ERR_MSG(interp, "assert_eq requires actual and expected values");
+    return LCL_RC_ERR;
+  }
+
+  if (!lcl_value_equal_deep(argv[0], argv[1], &guard)) {
+    if (argc >= 3) {
+      LCL_ERR_MSG_DUP(interp, lcl_value_to_string(argv[2]));
+    } else {
+      char buf[512];
+      snprintf(buf, sizeof(buf), "expected '%s', got '%s'",
+               lcl_value_to_string(argv[1]), lcl_value_to_string(argv[0]));
+      LCL_ERR_MSG_DUP(interp, buf);
+    }
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
+}
+
+/* assert_neq actual unexpected ?msg?
+ * Asserts that actual != unexpected (deep equality).
+ */
+static int c_assert_neq(lcl_interp *interp, int argc, lcl_value **argv,
+                        lcl_value **out) {
+  struct eq_cycle_guard guard = {{0}, {0}, 0};
+  (void)out;
+
+  if (argc < 2) {
+    LCL_ERR_MSG(interp, "assert_neq requires actual and unexpected values");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_equal_deep(argv[0], argv[1], &guard)) {
+    if (argc >= 3) {
+      LCL_ERR_MSG_DUP(interp, lcl_value_to_string(argv[2]));
+    } else {
+      char buf[512];
+      snprintf(buf, sizeof(buf), "expected value to not equal '%s'",
+               lcl_value_to_string(argv[1]));
+      LCL_ERR_MSG_DUP(interp, buf);
+    }
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
+}
+
 /* same? : identity equality (no deref) */
 static int c_same(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
@@ -6339,6 +6395,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_value *string_ns;
 
   lcl_register_proc(interp, "assert", c_assert);
+  lcl_register_proc(interp, "assert_eq", c_assert_eq);
+  lcl_register_proc(interp, "assert_neq", c_assert_neq);
   lcl_register_proc(interp, "puts", c_puts);
 
   lcl_register_proc(interp, "and", c_and);

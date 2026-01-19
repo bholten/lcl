@@ -5,18 +5,18 @@
 
 Test::suite "sh::run" {
     Test::case "basic command" {
-        let result [sh::exec (echo hello)]
+        let result [sh::run (echo hello)]
         Test::eq $result "hello"
     }
 
     Test::case "trims whitespace" {
-        let result [sh::exec (echo "  hello  ")]
+        let result [sh::run (echo "  hello  ")]
         Test::eq $result "hello"
     }
 
     Test::case "throws on error by default" {
         Test::raises {
-            sh::exec (false)
+            sh::run (false)
         }
     }
 
@@ -26,9 +26,9 @@ Test::suite "sh::run" {
     }
 }
 
-Test::suite "sh::result" {
-    Test::case "returns full result" {
-        let r [sh::result (echo hello)]
+Test::suite "sh::run!" {
+    Test::case "returns full result (no opts)" {
+        let r [sh::run! (echo hello)]
         Test::eq [get $r status] 0
         Test::eq [String::trim [get $r stdout]] "hello"
     }
@@ -153,7 +153,7 @@ Test::suite "sh::pwd/hostname/whoami" {
 
 Test::suite "sh::file operations" {
     Test::case "mkdir, file?, dir?, rm" {
-        let ts [sh::exec (date +%s%N)]
+        let ts [sh::run (date +%s%N)]
         let tmpdir "/tmp/lcl-sh-test-$ts"
 
         ;; Create directory
@@ -181,7 +181,7 @@ Test::suite "sh::file operations" {
     }
 
     Test::case "cp and mv" {
-        let ts [sh::exec (date +%s%N)]
+        let ts [sh::run (date +%s%N)]
         let tmpdir "/tmp/lcl-sh-cp-test-$ts"
         sh::mkdir $tmpdir
 
@@ -233,8 +233,8 @@ Test::suite "sh::glob" {
 }
 
 Test::suite "sh::date" {
-    Test::case "default format" {
-        let d [sh::date ""]
+    Test::case "default format (no arg)" {
+        let d [sh::date]
         Test::assert [> [String::length $d] 0]
     }
 

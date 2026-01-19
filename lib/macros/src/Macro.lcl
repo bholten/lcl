@@ -15,7 +15,9 @@
 ;; The counter is encapsulated in a closure, so it's completely private.
 ;;
 ;; Usage:
-;;   [gensym]        ;; => _G1, _G2, _G3, ...
+;;   [gensym]          ;; => _G1, _G2, _G3, ...
+;;   [gensym tmp]      ;; => tmp4, tmp5, ...
+;;   [gensym loop]     ;; => loop6, loop7, ...
 ;;
 ;; Example in a macro:
 ;;   proc my-macro {body} {
@@ -30,27 +32,7 @@
 let gensym [[lambda {} {
     var counter 0
 
-    lambda {} {
-        set! counter [+ $counter 1]
-        "_G$counter"
-    }
-}]]
-
-;; ============================================================================
-;; gensym-with-prefix - Generate Unique Symbols with Custom Prefix
-;; ============================================================================
-;;
-;; Like gensym, but allows a custom prefix for more readable generated code.
-;; Shares the same counter as gensym to ensure uniqueness.
-;;
-;; Usage:
-;;   [gensym-prefix tmp]   ;; => tmp1, tmp2, ...
-;;   [gensym-prefix loop]  ;; => loop3, loop4, ...
-
-let gensym-prefix [[lambda {} {
-    var counter 0
-
-    lambda {prefix} {
+    lambda {(prefix "_G")} {
         set! counter [+ $counter 1]
         "$prefix$counter"
     }

@@ -66,52 +66,58 @@ namespace Test {
         set! _current_after $body
     }
 
-    ;; Assertion: two values are equal
-    proc eq {actual expected} {
+    ;; Assertion: two values are equal (with optional message)
+    proc eq {actual expected (msg {})} {
         if [!= $actual $expected] {
-            error "expected '$expected', got '$actual'"
+            if [empty? $msg] {
+                error "expected '$expected', got '$actual'"
+            } else {
+                error $msg
+            }
         }
     }
 
-    ;; Assertion: two values are equal (with custom message)
-    proc eq_msg {actual expected msg} {
-        if [!= $actual $expected] {
-            error $msg
-        }
-    }
-
-    ;; Assertion: two values are not equal
-    proc neq {actual unexpected} {
+    ;; Assertion: two values are not equal (with optional message)
+    proc neq {actual unexpected (msg {})} {
         if [== $actual $unexpected] {
-            error "expected value to not equal '$unexpected'"
+            if [empty? $msg] {
+                error "expected value to not equal '$unexpected'"
+            } else {
+                error $msg
+            }
         }
     }
 
-    ;; Assertion: condition is true
-    proc assert {cond} {
+    ;; Assertion: condition is true (with optional message)
+    proc assert {cond (msg {})} {
         if [not $cond] {
-            error "assertion failed"
+            if [empty? $msg] {
+                error "assertion failed"
+            } else {
+                error $msg
+            }
         }
     }
 
-    ;; Assertion: condition is true (with custom message)
-    proc assert_msg {cond msg} {
+    ;; Alias for assert
+    proc true {cond (msg {})} {
         if [not $cond] {
-            error $msg
+            if [empty? $msg] {
+                error "expected true, got false"
+            } else {
+                error $msg
+            }
         }
     }
 
-    ;; Assertion: condition is true (alias for assert)
-    proc true {cond} {
-        if [not $cond] {
-            error "expected true, got false"
-        }
-    }
-
-    ;; Assertion: condition is false
-    proc false {cond} {
+    ;; Assertion: condition is false (with optional message)
+    proc false {cond (msg {})} {
         if $cond {
-            error "expected false, got true"
+            if [empty? $msg] {
+                error "expected false, got true"
+            } else {
+                error $msg
+            }
         }
     }
 

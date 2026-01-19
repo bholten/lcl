@@ -31,7 +31,7 @@ namespace sh {
     ;;   stdin - string to send to stdin
     ;;   env   - dict of environment variables
     ;;   cwd   - working directory
-    proc run {cmd opts} {
+    proc run {cmd (opts #{})} {
         let do_throw [get $opts throw 1]
         let r [process::run $cmd $opts]
         let status [get $r status]
@@ -49,20 +49,10 @@ namespace sh {
         String::trim [get $r stdout]
     }
 
-    ;; sh::exec cmd - run command with default options
-    proc exec {cmd} {
-        sh::run $cmd #{}
-    }
-
     ;; sh::run! cmd ?opts? - run command, return full result dict
     ;; Does not throw on error
-    proc run! {cmd opts} {
+    proc run! {cmd (opts #{})} {
         process::run $cmd $opts
-    }
-    
-    ;; sh::result cmd - run command with no options, return full result
-    proc result {cmd} {
-        process::run $cmd
     }
 
     ;; sh::lines cmd - run command and return stdout as list of lines
@@ -173,26 +163,26 @@ namespace sh {
     
     ;; sh::pwd - get current working directory
     proc pwd {} {
-        String::trim [sh::exec (pwd)]
+        String::trim [sh::run (pwd)]
     }
     
     ;; sh::hostname - get hostname
     proc hostname {} {
-        String::trim [sh::exec (hostname)]
+        String::trim [sh::run (hostname)]
     }
 
     ;; sh::whoami - get current user
     proc whoami {} {
-        String::trim [sh::exec (whoami)]
+        String::trim [sh::run (whoami)]
     }
 
-    ;; sh::date fmt - get current date/time
-    ;; If fmt is empty, returns default date format
-    proc date {fmt} {
+    ;; sh::date ?fmt? - get current date/time
+    ;; If fmt is empty or not provided, returns default date format
+    proc date {(fmt {})} {
         if [empty? $fmt] {
-            String::trim [sh::exec (date)]
+            String::trim [sh::run (date)]
         } else {
-            String::trim [sh::exec (date +$fmt)]
+            String::trim [sh::run (date +$fmt)]
         }
     }
     
@@ -258,7 +248,7 @@ namespace sh {
         sh::ok? (test -w $path)
     }
 
-    ;; sh::executable? path - check if path is executable
+    ;; sh::runutable? path - check if path is executable
     proc executable? {path} {
         sh::ok? (test -x $path)
     }

@@ -11,3 +11,10 @@ let baz efgh
 let qux :efgh:
 
 assert [== $qux :$baz:]
+
+
+let str "This is a test string"
+
+puts $str
+puts [len $str]
+puts [get $str 0]]
