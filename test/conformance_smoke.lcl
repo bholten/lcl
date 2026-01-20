@@ -217,6 +217,20 @@ Test::suite "Namespaces" {
         }
         Test::eq ${math2::val} 42
     }
+
+    Test::case "Ns:: functions" {
+        namespace math3 {
+            let val 42
+
+            proc test {a b} {
+                + $val 23
+            }
+        }
+
+        Test::eq [Ns::keys $math3] (val test)
+        Test::eq [Ns::name $math3] math3
+        Test::eq [Ns::has? $math3 test] 1
+    }
 }
 
 ;; ============================================================================

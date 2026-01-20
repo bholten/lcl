@@ -5964,6 +5964,81 @@ static int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* ============================================================================
+ * Namespaced Ns (Namespace introspection) Operations
+ * ============================================================================
+ */
+
+/* Ns::keys ns - return list of binding names in a namespace */
+static int c_ns_keys(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *val;
+  lcl_value *result;
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  while (hash_table_iterate(argv[0]->as.namespace.namespace, &it, &key, &val)) {
+    lcl_value *key_v = lcl_string_new(key);
+    lcl_list_push(&result, key_v);
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+  }
+
+  *out = result;
+  return LCL_RC_OK;
+}
+
+/* Ns::name ns - return the qualified name of a namespace */
+static int c_ns_name(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
+  (void)interp;
+
+  if (argc != 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(argv[0]->as.namespace.qname);
+  return LCL_RC_OK;
+}
+
+/* Ns::has? ns name - check if binding exists in namespace */
+static int c_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
+  lcl_value *found = NULL;
+  (void)interp;
+
+  if (argc != 2) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_ns_get(argv[0], lcl_value_to_string(argv[1]), &found) == LCL_OK) {
+    lcl_ref_dec(found);
+    *out = lcl_int_new(1);
+  } else {
+    *out = lcl_int_new(0);
+  }
+
+  return LCL_RC_OK;
+}
+
 /* dict (constructor) - create dict from key-value pairs */
 static int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
@@ -6540,6 +6615,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_value *list_ns;
   lcl_value *dict_ns;
   lcl_value *string_ns;
+  lcl_value *ns_ns;
 
   lcl_register_proc(interp, "assert", c_assert);
   lcl_register_proc(interp, "assert_eq", c_assert_eq);
@@ -6679,4 +6755,11 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_ns_def(string_ns, "range",
              lcl_c_proc_new("String::range", c_string_range));
   lcl_ns_def(string_ns, "trim", lcl_c_proc_new("String::trim", c_string_trim));
+
+  ns_ns = lcl_ns_new("Ns");
+  lcl_define_take(interp, "Ns", ns_ns);
+
+  lcl_ns_def(ns_ns, "keys", lcl_c_proc_new("Ns::keys", c_ns_keys));
+  lcl_ns_def(ns_ns, "name", lcl_c_proc_new("Ns::name", c_ns_name));
+  lcl_ns_def(ns_ns, "has?", lcl_c_proc_new("Ns::has?", c_ns_has));
 }
