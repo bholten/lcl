@@ -1,0 +1,39 @@
+;; Tests for curl-dsl.lcl
+
+Test::suite "curl dsl" {
+    Test::case "Basic requests to httpbin" {
+        import curl::dsl
+
+        GET https://httpbin.org/get {
+            verbose 1
+
+            headers {
+                User-Agent: flux/1.0
+            }
+
+            on_response {
+                assert [== $status_code 200]
+            }
+        }
+
+        ;; Responses can also be captured directly
+        ;; the DSL functions return a dictionary
+
+        let resp [POST https://httpbin.org/post {
+            verbose 1
+
+            header "User-Agent: flux/1.0"
+            header "Content-Type: application/json"
+
+            body {
+                {
+                    "user": "flux"
+                }
+            }
+        }]
+
+        assert [== [get $resp status_code] 200]
+    }
+}
+
+Test::run

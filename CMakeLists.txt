@@ -29,6 +29,7 @@ option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 option(LCL_BUILD_EXPECT_LIB "Build Lcl with the Expect library" OFF)
 option(LCL_BUILD_MACRO_LIB "Build Lcl with the Macro library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
+option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
 
 set(LCL_SOURCES
   src/hash-table.c
@@ -372,6 +373,29 @@ if(LCL_BUILD_MACRO_LIB)
   if(LCL_BUILD_CLI)
     add_dependencies(lcl-cli generate_macro_lib_data)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_MACRO_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
+if(LCL_BUILD_CURL_DSL_LIB)
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(CURL_DSL_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/curl-dsl/src/curl-dsl.lcl)
+  set(CURL_DSL_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/curl-dsl-lib-data.h)
+
+  add_custom_command(
+    OUTPUT ${CURL_DSL_LIB_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i lib/curl-dsl/src/curl-dsl.lcl > ${CURL_DSL_LIB_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${CURL_DSL_LIB_SRC}
+    COMMENT "Generating curl-dsl-lib-data.h from curl-dsl.lcl"
+  )
+
+  add_custom_target(generate_curl_dsl_lib_data DEPENDS ${CURL_DSL_LIB_DATA})
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_curl_dsl_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_CURL_DSL_LIB)
     target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   endif()
 endif()

@@ -1,0 +1,356 @@
+;; cURL DSL
+;; requires lcl-curl package
+
+namespace curl::dsl {
+    proc _execute_request {verb url request_config on_event_callback} {
+        curl::init
+        let c [curl::new]
+
+        curl::set_url $c $url
+        curl::set_verb $c $verb
+
+        ;; Get body first (needed for signature computation)
+        var body {}
+
+        if [has? $request_config body] {
+            set! body [get $request_config body]
+        }
+
+        ;; Get headers
+        var headers_list ()
+
+        if [has? $request_config headers] {
+            set! headers_list [get $request_config headers]
+        }
+
+        if [has? $request_config http_signature] {
+            set! headers_list [_apply_http_signature $verb $url $headers_list $body [get $request_config http_signature]]
+        }
+
+        foreach h $headers_list {
+            curl::set_header $c $h
+        }
+
+        if [not [empty? $body]] {
+            curl::set_body $c $body
+        }
+
+        if [has? $request_config options] {
+            let opts [get $request_config options]
+
+            if [has? $opts timeout_ms] {
+                curl::set_timeout_ms $c [get $opts timeout_ms]
+            }
+
+            if [has? $opts connection_timeout_ms] {
+                curl::set_connection_timeout_ms $c [get $opts connection_timeout_ms]
+            }
+
+            if [has? $opts accept_timeout_ms] {
+                curl::set_accept_timeout_ms $c [get $opts accept_timeout_ms]
+            }
+
+            if [has? $opts verbose] {
+                curl::set_verbose $c [get $opts verbose]
+            }
+
+            if [has? $opts follow_location] {
+                curl::set_follow_location $c [get $opts follow_location]
+            }
+
+            if [has? $opts ssl_verify_peer] {
+                curl::set_ssl_verify_peer $c [get $opts ssl_verify_peer]
+            }
+
+            if [has? $opts ssl_verify_host] {
+                curl::set_ssl_verify_host $c [get $opts ssl_verify_host]
+            }
+
+            if [has? $opts user_agent] {
+                curl::set_user_agent $c [get $opts user_agent]
+            }
+        }
+
+        var response_body {}
+
+        if [not [empty? $on_event_callback]] {
+            curl::set_sse_callback $c [lambda {event} {
+                var data {}
+                var event_type {}
+                var id {}
+                var retry {}
+
+                if [has? $event data] {
+                    set! data [get $event data]
+                }
+
+                if [has? $event event] {
+                    set! event_type [get $event event]
+                }
+
+                if [has? $event id] {
+                    set! id [get $event id]
+                }
+
+                if [has? $event retry] {
+                    set! retry [get $event retry]
+                }
+
+                eval $on_event_callback
+            }]
+        } else {
+            curl::set_write_callback $c [lambda {chunk} {
+                set! response_body "$response_body$chunk"
+            }]
+        }
+
+        var perform_failed 0
+        if [catch {curl::perform $c} _result _err] {
+            set! perform_failed 1
+        }
+
+        let is_timeout [curl::is_timeout $c]
+        let error_code [curl::get_last_error $c]
+        let error_string [curl::error_string $c]
+
+        if [and $perform_failed [not $is_timeout]] {
+            if [empty? $on_event_callback] {
+                error "curl request failed: $error_string"
+            }
+        }
+
+        let status_code [curl::get_response_code $c]
+        let content_type [curl::get_content_type $c]
+        let effective_url [curl::get_effective_url $c]
+        let total_time [curl::get_total_time $c]
+
+        var headers #{}
+
+        if [not [empty? $content_type]] {
+            set! headers [put $headers "content-type" [list $content_type]]
+        }
+
+        var parsed_json {}
+
+        if [>= [String::find $content_type "application/json"] 0] {
+            if [catch { json::decode $response_body } result _err] {
+                ;; JSON parse failed, leave parsed_json empty
+            } else {
+                set! parsed_json $result
+            }
+        }
+
+        var response #{
+            status_code $status_code
+            body $response_body
+            headers $headers
+            json $parsed_json
+            content_type $content_type
+            effective_url $effective_url
+            total_time $total_time
+            error_code $error_code
+            is_timeout $is_timeout
+        }
+
+        if [!= $error_code 0] {
+            set! response [put $response error $error_string]
+        }
+
+        return $response
+    }
+
+    proc _build_request {syntax_body} {
+        var config #{headers () options #{}}
+        var on_response_callback {}
+        var on_event_callback {}
+
+        proc headers {hds} {
+            let lines [String::split $hds "\n"]
+
+            foreach line $lines {
+                let trimmed [String::trim $line]
+
+                if [not [empty? $trimmed]] {
+                    let current [get $config headers]
+                    set! config [put $config headers [List::push $current $trimmed]]
+                }
+            }
+        }
+
+        proc header {h} {
+            let current [get $config headers]
+            set! config [put $config headers [List::push $current $h]]
+        }
+
+        proc body {b} {
+            set! config [put $config body $b]
+        }
+
+        proc timeout_ms {ms} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts timeout_ms $ms]]
+        }
+
+        proc connection_timeout_ms {ms} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts connection_timeout_ms $ms]]
+        }
+
+        proc accept_timeout_ms {ms} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts accept_timeout_ms $ms]]
+        }
+
+        proc verbose {v} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts verbose $v]]
+        }
+
+        proc follow_redirects {v} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts follow_location $v]]
+        }
+
+        proc ssl_verify {peer host} {
+            let opts [get $config options]
+            set! opts [put $opts ssl_verify_peer $peer]
+            set! opts [put $opts ssl_verify_host $host]
+            set! config [put $config options $opts]
+        }
+
+        proc ssl_verify_peer {peer} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts ssl_verify_peer $peer]]
+        }
+
+        proc user_agent {ua} {
+            let opts [get $config options]
+            set! config [put $config options [put $opts user_agent $ua]]
+        }
+
+        proc on_response {callback_body} {
+            set! on_response_callback $callback_body
+        }
+
+        ;; SSE event callback
+        ;; The callback receives an 'event' variable which is a dict with keys:
+        ;;   data  - the event data (string)
+        ;;   event - the event type (string, defaults to "message")
+        ;;   id    - the event id (string, optional)
+        ;;   retry - the retry timeout in ms (string, optional)
+        proc on_event {callback_body} {
+            set! on_event_callback $callback_body
+        }
+
+        ;; HTTP Signature configuration block
+        ;; Usage: http_signature { key_id "mykey" algorithm "hmac-sha256" ... }
+        proc http_signature {sig_body} {
+            var sig_config [dict name "sig" covered_components [list]]
+
+            proc key_id {id} {
+                set! sig_config [put $sig_config key_id $id]
+            }
+
+            proc key_pem {pem} {
+                set! sig_config [put $sig_config key_pem $pem]
+            }
+
+            proc key_file {path} {
+                let pem [File::read $path]
+                set! sig_config [put $sig_config key_pem $pem]
+            }
+
+            proc algorithm {alg} {
+                set! sig_config [put $sig_config algorithm $alg]
+            }
+
+            proc name {n} {
+                set! sig_config [put $sig_config name $n]
+            }
+
+            proc cover {components} {
+                set! sig_config [put $sig_config covered_components $components]
+            }
+
+            eval $sig_body
+
+            set! config [put $config http_signature $sig_config]
+        }
+
+        ;; Execute the syntax body to collect configuration
+        eval $syntax_body
+
+        return #{
+            config $config
+            on_response $on_response_callback
+            on_event $on_event_callback
+        }
+    }
+
+    proc _make_request {verb url syntax_body} {
+        let built [_build_request $syntax_body]
+        let config [get $built config]
+        let on_response_cb [get $built on_response]
+        let on_event_cb [get $built on_event]
+
+        let response [_execute_request $verb $url $config $on_event_cb]
+
+        if [not [empty? $on_response_cb]] {
+            let status_code [get $response status_code]
+            let body [get $response body]
+            let headers [get $response headers]
+            let json [get $response json]
+            let content_type [get $response content_type]
+            let effective_url [get $response effective_url]
+            let total_time [get $response total_time]
+
+            ;; Error info (useful for SSE streams)
+            let is_timeout [get $response is_timeout]
+            let error_code [get $response error_code]
+            var response_error {}
+
+            if [has? $response error] {
+                set! response_error [get $response error]
+            }
+
+            eval $on_response_cb
+        }
+
+        return $response
+    }
+
+    proc GET {url syntax_body} {
+        let result [_make_request "GET" $url $syntax_body]
+        return $result
+    }
+
+    proc POST {url syntax_body} {
+        let result [_make_request "POST" $url $syntax_body]
+        return $result
+    }
+
+    proc PUT {url syntax_body} {
+        let result [_make_request "PUT" $url $syntax_body]
+        return $result
+    }
+
+    proc DELETE {url syntax_body} {
+        let result [_make_request "DELETE" $url $syntax_body]
+        return $result
+    }
+
+    proc PATCH {url syntax_body} {
+        let result [_make_request "PATCH" $url $syntax_body]
+        return $result
+    }
+
+    proc OPTIONS {url syntax_body} {
+        let result [_make_request "OPTIONS" $url $syntax_body]
+        return $result
+    }
+
+    proc HEAD {url syntax_body} {
+        let result [_make_request "HEAD" $url $syntax_body]
+        return $result
+    }
+}

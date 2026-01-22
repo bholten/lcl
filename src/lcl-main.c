@@ -67,6 +67,14 @@ static const lcl_embedded_lib macro_lib = {"lib/macros/src/Macro.lcl",
                                            sizeof(lib_macros_src_Macro_lcl)};
 #endif
 
+#ifdef LCL_HAVE_CURL_DSL_LIB
+#include "curl-dsl-lib-data.h"
+
+static const lcl_embedded_lib curl_dsl_lib = {"lib/curl-dsl/src/curl-dsl.lcl",
+                                              lib_curl_dsl_src_curl_dsl_lcl,
+                                              sizeof(lib_curl_dsl_src_curl_dsl_lcl)};
+#endif
+
 static char *read_stdin(void) {
   size_t capacity = 4096;
   size_t len = 0;
@@ -157,6 +165,12 @@ static lcl_interp *create_interp(void) {
 #ifdef LCL_HAVE_MACRO_LIB
   if (lcl_register_embedded_lib(interp, &macro_lib) != 0) {
     fprintf(stderr, "Warning: Failed to load macro library\n");
+  }
+#endif
+
+#ifdef LCL_HAVE_CURL_DSL_LIB
+  if (lcl_register_embedded_lib(interp, &curl_dsl_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load curl-dsl library\n");
   }
 #endif
 
