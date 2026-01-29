@@ -319,37 +319,37 @@ namespace curl::dsl {
         return $response
     }
 
-    proc GET {url syntax_body} {
+    proc GET {url (syntax_body {})} {
         let result [_make_request "GET" $url $syntax_body]
         return $result
     }
 
-    proc POST {url syntax_body} {
+    proc POST {url (syntax_body {})} {
         let result [_make_request "POST" $url $syntax_body]
         return $result
     }
 
-    proc PUT {url syntax_body} {
+    proc PUT {url (syntax_body {})} {
         let result [_make_request "PUT" $url $syntax_body]
         return $result
     }
 
-    proc DELETE {url syntax_body} {
+    proc DELETE {url (syntax_body {})} {
         let result [_make_request "DELETE" $url $syntax_body]
         return $result
     }
 
-    proc PATCH {url syntax_body} {
+    proc PATCH {url (syntax_body {})} {
         let result [_make_request "PATCH" $url $syntax_body]
         return $result
     }
 
-    proc OPTIONS {url syntax_body} {
+    proc OPTIONS {url (syntax_body {})} {
         let result [_make_request "OPTIONS" $url $syntax_body]
         return $result
     }
 
-    proc HEAD {url syntax_body} {
+    proc HEAD {url (syntax_body {})} {
         let result [_make_request "HEAD" $url $syntax_body]
         return $result
     }

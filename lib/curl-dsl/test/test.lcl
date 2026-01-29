@@ -1,9 +1,9 @@
 ;; Tests for curl-dsl.lcl
 
+import curl::dsl
+
 Test::suite "curl dsl" {
     Test::case "Basic requests to httpbin" {
-        import curl::dsl
-
         GET https://httpbin.org/get {
             verbose 1
 
@@ -31,6 +31,12 @@ Test::suite "curl dsl" {
                 }
             }
         }]
+
+        assert [== [get $resp status_code] 200]
+    }
+
+    Test::case "Not including a config-body should still work" {
+        let resp [GET https://httpbin.org/get]
 
         assert [== [get $resp status_code] 200]
     }
