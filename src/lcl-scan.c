@@ -190,11 +190,17 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     memcpy(subsrc + 5, sc->s + begin, content_len);
     subsrc[5 + content_len] = '\0';
 
-    /* Replace newlines with spaces to prevent command separation */
+    /* Replace newlines with spaces to prevent command separation,
+     * but only at top level - not inside {} blocks (e.g., lambda bodies) */
     {
       size_t j;
+      int brace_depth = 0;
       for (j = 5; j < 5 + content_len; j++) {
-        if (subsrc[j] == '\n') {
+        if (subsrc[j] == '{') {
+          brace_depth++;
+        } else if (subsrc[j] == '}') {
+          brace_depth--;
+        } else if (subsrc[j] == '\n' && brace_depth == 0) {
           subsrc[j] = ' ';
         }
       }
@@ -289,11 +295,17 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     memcpy(subsrc + 5, sc->s + begin, content_len);
     subsrc[5 + content_len] = '\0';
 
-    /* Replace newlines with spaces to prevent command separation */
+    /* Replace newlines with spaces to prevent command separation,
+     * but only at top level - not inside {} blocks (e.g., lambda bodies) */
     {
       size_t j;
+      int brace_depth = 0;
       for (j = 5; j < 5 + content_len; j++) {
-        if (subsrc[j] == '\n') {
+        if (subsrc[j] == '{') {
+          brace_depth++;
+        } else if (subsrc[j] == '}') {
+          brace_depth--;
+        } else if (subsrc[j] == '\n' && brace_depth == 0) {
           subsrc[j] = ' ';
         }
       }

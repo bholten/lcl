@@ -36,20 +36,21 @@
 #include <lcl-math.h>
 #endif
 
+#ifdef LCL_HAVE_EXPECT
+#include "expect-data.h"
+#include <lcl-expect.h>
+
+static const lcl_embedded_lib expect_convenience_lib = {
+    "packages/lcl-expect/src/expect.lcl", packages_lcl_expect_src_expect_lcl,
+    sizeof(packages_lcl_expect_src_expect_lcl)};
+#endif
+
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
 static const lcl_embedded_lib test_framework_lib = {
     "lib/test/src/Test.lcl", lib_test_src_Test_lcl,
     sizeof(lib_test_src_Test_lcl)};
-#endif
-
-#ifdef LCL_HAVE_EXPECT_LIB
-#include "expect-lib-data.h"
-
-static const lcl_embedded_lib expect_lib = {"lib/expect/src/expect.lcl",
-                                            lib_expect_src_expect_lcl,
-                                            sizeof(lib_expect_src_expect_lcl)};
 #endif
 
 #ifdef LCL_HAVE_SH_LIB
@@ -70,9 +71,9 @@ static const lcl_embedded_lib macro_lib = {"lib/macros/src/Macro.lcl",
 #ifdef LCL_HAVE_CURL_DSL_LIB
 #include "curl-dsl-lib-data.h"
 
-static const lcl_embedded_lib curl_dsl_lib = {"lib/curl-dsl/src/curl-dsl.lcl",
-                                              lib_curl_dsl_src_curl_dsl_lcl,
-                                              sizeof(lib_curl_dsl_src_curl_dsl_lcl)};
+static const lcl_embedded_lib curl_dsl_lib = {
+    "lib/curl-dsl/src/curl-dsl.lcl", lib_curl_dsl_src_curl_dsl_lcl,
+    sizeof(lib_curl_dsl_src_curl_dsl_lcl)};
 #endif
 
 static char *read_stdin(void) {
@@ -150,15 +151,16 @@ static lcl_interp *create_interp(void) {
   lcl_register_math(interp);
 #endif
 
-#ifdef LCL_HAVE_SH_LIB
-  if (lcl_register_embedded_lib(interp, &sh_lib) != 0) {
-    fprintf(stderr, "Warning: Failed to load sh library\n");
+#ifdef LCL_HAVE_EXPECT
+  lcl_register_expect(interp);
+  if (lcl_register_embedded_lib(interp, &expect_convenience_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load expect convenience library\n");
   }
 #endif
 
-#ifdef LCL_HAVE_EXPECT_LIB
-  if (lcl_register_embedded_lib(interp, &expect_lib) != 0) {
-    fprintf(stderr, "Warning: Failed to load expect library\n");
+#ifdef LCL_HAVE_SH_LIB
+  if (lcl_register_embedded_lib(interp, &sh_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load sh library\n");
   }
 #endif
 

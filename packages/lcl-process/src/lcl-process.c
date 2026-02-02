@@ -1,4 +1,7 @@
 
+#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 600
+
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -7,11 +10,18 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 #include <unistd.h>
 
-#include <lcl.h>
+/* PTY support - platform specific headers */
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#include <util.h>
+#elif defined(__linux__)
+#include <pty.h>
+#endif
 
-#define _POSIX_C_SOURCE 200809L
+#include <lcl.h>
 
 #define PROCESS_HANDLE_TYPE_TAG "process_handle"
 #define PROCESS_NS "process"
@@ -27,6 +37,10 @@ typedef struct {
   int exited;
   int status;
   int signal_num;
+
+  /* PTY support */
+  int pty_master; /* PTY master fd (-1 if not PTY) */
+  int is_pty;     /* 1 if using PTY mode */
 
   /* Internal buffers for read-until */
   char *stdout_buf;
@@ -55,6 +69,9 @@ static process_handle *process_handle_new(void) {
   h->status = 0;
   h->signal_num = 0;
 
+  h->pty_master = -1;
+  h->is_pty = 0;
+
   h->stdout_buf = NULL;
   h->stdout_len = 0;
   h->stdout_cap = 0;
@@ -71,14 +88,22 @@ static void process_handle_finalizer(void *ptr) {
     return;
   }
 
-  if (h->stdin_fd >= 0) {
-    close(h->stdin_fd);
-  }
-  if (h->stdout_fd >= 0) {
-    close(h->stdout_fd);
-  }
-  if (h->stderr_fd >= 0) {
-    close(h->stderr_fd);
+  if (h->is_pty) {
+    /* In PTY mode, pty_master is used for both stdin and stdout */
+    if (h->pty_master >= 0) {
+      close(h->pty_master);
+    }
+  } else {
+    /* Pipe mode - separate fds */
+    if (h->stdin_fd >= 0) {
+      close(h->stdin_fd);
+    }
+    if (h->stdout_fd >= 0) {
+      close(h->stdout_fd);
+    }
+    if (h->stderr_fd >= 0) {
+      close(h->stderr_fd);
+    }
   }
 
   free(h->stdout_buf);
@@ -483,6 +508,9 @@ cleanup:
  *   env   - dict of environment vars
  *   cwd   - working directory
  *   merge - bool, merge stderr into stdout
+ *   pty   - bool, use PTY mode for terminal emulation
+ *   rows  - initial PTY rows (default: 24)
+ *   cols  - initial PTY cols (default: 80)
  *
  * Returns: handle (opaque)
  */
@@ -496,11 +524,16 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   int stdin_pipe[2] = {-1, -1};
   int stdout_pipe[2] = {-1, -1};
   int stderr_pipe[2] = {-1, -1};
+  int pty_master = -1;
+  int pty_slave = -1;
   pid_t pid;
   process_handle *h = NULL;
   const char *cwd;
   lcl_value *env_dict;
   int merge;
+  int use_pty;
+  int pty_rows;
+  int pty_cols;
 
   (void)interp;
 
@@ -516,6 +549,9 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   cwd = get_opt_str(opts, "cwd", NULL);
   env_dict = get_opt_val(opts, "env");
   merge = get_opt_int(opts, "merge", 0);
+  use_pty = get_opt_int(opts, "pty", 0);
+  pty_rows = get_opt_int(opts, "rows", 24);
+  pty_cols = get_opt_int(opts, "cols", 80);
   argv_len = lcl_list_len(argv_list);
 
   if (argv_len == 0) {
@@ -535,14 +571,28 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   }
   exec_argv[argv_len] = NULL;
 
-  if (pipe(stdin_pipe) < 0) {
-    goto error;
-  }
-  if (pipe(stdout_pipe) < 0) {
-    goto error;
-  }
-  if (!merge && pipe(stderr_pipe) < 0) {
-    goto error;
+  if (use_pty) {
+    /* PTY mode - use openpty() for terminal emulation */
+    struct winsize ws;
+    ws.ws_row = (unsigned short)pty_rows;
+    ws.ws_col = (unsigned short)pty_cols;
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+
+    if (openpty(&pty_master, &pty_slave, NULL, NULL, &ws) < 0) {
+      goto error;
+    }
+  } else {
+    /* Pipe mode */
+    if (pipe(stdin_pipe) < 0) {
+      goto error;
+    }
+    if (pipe(stdout_pipe) < 0) {
+      goto error;
+    }
+    if (!merge && pipe(stderr_pipe) < 0) {
+      goto error;
+    }
   }
 
   pid = fork();
@@ -551,25 +601,47 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (pid == 0) {
+    /* Child process */
     if (cwd && chdir(cwd) < 0) {
       _exit(127);
     }
 
-    close(stdin_pipe[1]);
-    dup2(stdin_pipe[0], STDIN_FILENO);
-    close(stdin_pipe[0]);
-    close(stdout_pipe[0]);
-    dup2(stdout_pipe[1], STDOUT_FILENO);
+    if (use_pty) {
+      /* PTY child setup */
+      close(pty_master);
 
-    if (merge) {
-      dup2(stdout_pipe[1], STDERR_FILENO);
-    }
-    close(stdout_pipe[1]);
+      /* Create new session and set controlling terminal */
+      setsid();
+#ifdef TIOCSCTTY
+      ioctl(pty_slave, TIOCSCTTY, 0);
+#endif
 
-    if (!merge) {
-      close(stderr_pipe[0]);
-      dup2(stderr_pipe[1], STDERR_FILENO);
-      close(stderr_pipe[1]);
+      /* Redirect all stdio to PTY slave */
+      dup2(pty_slave, STDIN_FILENO);
+      dup2(pty_slave, STDOUT_FILENO);
+      dup2(pty_slave, STDERR_FILENO);
+
+      if (pty_slave > STDERR_FILENO) {
+        close(pty_slave);
+      }
+    } else {
+      /* Pipe child setup */
+      close(stdin_pipe[1]);
+      dup2(stdin_pipe[0], STDIN_FILENO);
+      close(stdin_pipe[0]);
+      close(stdout_pipe[0]);
+      dup2(stdout_pipe[1], STDOUT_FILENO);
+
+      if (merge) {
+        dup2(stdout_pipe[1], STDERR_FILENO);
+      }
+      close(stdout_pipe[1]);
+
+      if (!merge) {
+        close(stderr_pipe[0]);
+        dup2(stderr_pipe[1], STDERR_FILENO);
+        close(stderr_pipe[1]);
+      }
     }
 
     if (env_dict) {
@@ -596,26 +668,40 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     _exit(127);
   }
 
-  close(stdin_pipe[0]);
-  close(stdout_pipe[1]);
-  if (!merge) {
-    close(stderr_pipe[1]);
-  }
-
-  set_nonblocking(stdout_pipe[0]);
-  if (!merge) {
-    set_nonblocking(stderr_pipe[0]);
-  }
-
+  /* Parent process */
   h = process_handle_new();
   if (!h) {
     goto error;
   }
 
-  h->pid = pid;
-  h->stdin_fd = stdin_pipe[1];
-  h->stdout_fd = stdout_pipe[0];
-  h->stderr_fd = merge ? -1 : stderr_pipe[0];
+  if (use_pty) {
+    close(pty_slave);
+    set_nonblocking(pty_master);
+
+    h->pid = pid;
+    h->pty_master = pty_master;
+    h->is_pty = 1;
+    /* In PTY mode, use pty_master for both stdin and stdout */
+    h->stdin_fd = pty_master;
+    h->stdout_fd = pty_master;
+    h->stderr_fd = -1; /* PTY combines stderr into stdout */
+  } else {
+    close(stdin_pipe[0]);
+    close(stdout_pipe[1]);
+    if (!merge) {
+      close(stderr_pipe[1]);
+    }
+
+    set_nonblocking(stdout_pipe[0]);
+    if (!merge) {
+      set_nonblocking(stderr_pipe[0]);
+    }
+
+    h->pid = pid;
+    h->stdin_fd = stdin_pipe[1];
+    h->stdout_fd = stdout_pipe[0];
+    h->stderr_fd = merge ? -1 : stderr_pipe[0];
+  }
 
   for (i = 0; exec_argv[i]; i++) {
     free(exec_argv[i]);
@@ -634,6 +720,12 @@ error:
       free(exec_argv[i]);
     }
     free(exec_argv);
+  }
+  if (pty_master >= 0) {
+    close(pty_master);
+  }
+  if (pty_slave >= 0) {
+    close(pty_slave);
   }
   if (stdin_pipe[0] >= 0) {
     close(stdin_pipe[0]);
@@ -1264,20 +1356,142 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   /* Close file descriptors */
-  if (h->stdin_fd >= 0) {
-    close(h->stdin_fd);
-    h->stdin_fd = -1;
-  }
-  if (h->stdout_fd >= 0) {
-    close(h->stdout_fd);
-    h->stdout_fd = -1;
-  }
-  if (h->stderr_fd >= 0) {
-    close(h->stderr_fd);
-    h->stderr_fd = -1;
+  if (h->is_pty) {
+    if (h->pty_master >= 0) {
+      close(h->pty_master);
+      h->pty_master = -1;
+      h->stdin_fd = -1;
+      h->stdout_fd = -1;
+    }
+  } else {
+    if (h->stdin_fd >= 0) {
+      close(h->stdin_fd);
+      h->stdin_fd = -1;
+    }
+    if (h->stdout_fd >= 0) {
+      close(h->stdout_fd);
+      h->stdout_fd = -1;
+    }
+    if (h->stderr_fd >= 0) {
+      close(h->stderr_fd);
+      h->stderr_fd = -1;
+    }
   }
 
   *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/*
+ * process::pty? handle - check if handle is using PTY mode
+ */
+static int c_process_is_pty(lcl_interp *interp, int argc, lcl_value **argv,
+                            lcl_value **out) {
+  process_handle *h;
+
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  h = get_handle(argv[0]);
+  if (!h) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new(h->is_pty);
+  return LCL_RC_OK;
+}
+
+/*
+ * process::set-winsize handle rows cols
+ *
+ * Set the terminal window size for PTY handles.
+ * Only works on PTY handles; returns error for pipe handles.
+ */
+static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
+  process_handle *h;
+  long rows, cols;
+  struct winsize ws;
+
+  (void)interp;
+
+  if (argc < 3) {
+    return LCL_RC_ERR;
+  }
+
+  h = get_handle(argv[0]);
+  if (!h) {
+    return LCL_RC_ERR;
+  }
+
+  if (!h->is_pty || h->pty_master < 0) {
+    lcl_set_error(interp, "set-winsize only works on PTY handles");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_int(argv[1], &rows) != LCL_OK ||
+      lcl_value_to_int(argv[2], &cols) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  ws.ws_row = (unsigned short)rows;
+  ws.ws_col = (unsigned short)cols;
+  ws.ws_xpixel = 0;
+  ws.ws_ypixel = 0;
+
+  if (ioctl(h->pty_master, TIOCSWINSZ, &ws) < 0) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
+/*
+ * process::get-winsize handle
+ *
+ * Get the terminal window size for PTY handles.
+ * Returns: #{rows N cols M}
+ */
+static int c_process_get_winsize(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
+  process_handle *h;
+  struct winsize ws;
+  lcl_value *result;
+  lcl_value *tmp;
+
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  h = get_handle(argv[0]);
+  if (!h) {
+    return LCL_RC_ERR;
+  }
+
+  if (!h->is_pty || h->pty_master < 0) {
+    lcl_set_error(interp, "get-winsize only works on PTY handles");
+    return LCL_RC_ERR;
+  }
+
+  if (ioctl(h->pty_master, TIOCGWINSZ, &ws) < 0) {
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_dict_new();
+  tmp = lcl_int_new(ws.ws_row);
+  lcl_dict_put(&result, "rows", tmp);
+  lcl_ref_dec(tmp);
+  tmp = lcl_int_new(ws.ws_col);
+  lcl_dict_put(&result, "cols", tmp);
+  lcl_ref_dec(tmp);
+
+  *out = result;
   return LCL_RC_OK;
 }
 
@@ -1286,7 +1500,7 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Provides the process:: namespace with:
  *   process::run        - synchronous execution with capture
- *   process::spawn      - asynchronous execution, returns handle
+ *   process::spawn      - asynchronous execution, returns handle (with PTY support)
  *   process::send       - write to stdin
  *   process::read       - read from stdout/stderr
  *   process::read-until - read until pattern matched (expect-like)
@@ -1294,6 +1508,9 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
  *   process::close      - close handle and cleanup
  *   process::alive?     - check if process is still running
  *   process::kill       - send signal to process
+ *   process::pty?       - check if handle is using PTY mode
+ *   process::set-winsize - set terminal window size (PTY only)
+ *   process::get-winsize - get terminal window size (PTY only)
  */
 void lcl_register_process(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(PROCESS_NS);
@@ -1311,4 +1528,9 @@ void lcl_register_process(lcl_interp *interp) {
   lcl_ns_def(ns, "alive?", lcl_c_proc_new("process::alive?", c_process_alive));
   lcl_ns_def(ns, "kill", lcl_c_proc_new("process::kill", c_process_kill));
   lcl_ns_def(ns, "close", lcl_c_proc_new("process::close", c_process_close));
+  lcl_ns_def(ns, "pty?", lcl_c_proc_new("process::pty?", c_process_is_pty));
+  lcl_ns_def(ns, "set-winsize",
+             lcl_c_proc_new("process::set-winsize", c_process_set_winsize));
+  lcl_ns_def(ns, "get-winsize",
+             lcl_c_proc_new("process::get-winsize", c_process_get_winsize));
 }

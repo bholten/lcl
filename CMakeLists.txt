@@ -23,10 +23,10 @@ option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
+option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
 
 # Lcl libraries
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
-option(LCL_BUILD_EXPECT_LIB "Build Lcl with the Expect library" OFF)
 option(LCL_BUILD_MACRO_LIB "Build Lcl with the Macro library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
@@ -284,6 +284,45 @@ if(LCL_BUILD_MATH)
   endif()
 endif()
 
+if(LCL_BUILD_EXPECT)
+  # lcl-expect requires lcl-process
+  if(NOT LCL_BUILD_PROCESS)
+    message(FATAL_ERROR "LCL_BUILD_EXPECT requires LCL_BUILD_PROCESS=ON")
+  endif()
+
+  add_subdirectory(packages/lcl-expect)
+
+  # Generate expect-data.h from expect.lcl using xxd
+  find_program(XXD_EXECUTABLE xxd REQUIRED)
+
+  set(EXPECT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/packages/lcl-expect/src/expect.lcl)
+  set(EXPECT_DATA ${CMAKE_CURRENT_BINARY_DIR}/expect-data.h)
+
+  add_custom_command(
+    OUTPUT ${EXPECT_DATA}
+    COMMAND ${XXD_EXECUTABLE} -i packages/lcl-expect/src/expect.lcl > ${EXPECT_DATA}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${EXPECT_SRC}
+    COMMENT "Generating expect-data.h from expect.lcl"
+  )
+
+  add_custom_target(generate_expect_data DEPENDS ${EXPECT_DATA})
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_EXPECT)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_EXPECT)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_expect_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_EXPECT)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(lcl-cli PRIVATE lcl_expect)
+  endif()
+endif()
+
 if(LCL_BUILD_TEST_LIB)
   # Generate test-framework-data.h from Test.lcl using xxd
   find_program(XXD_EXECUTABLE xxd REQUIRED)
@@ -304,29 +343,6 @@ if(LCL_BUILD_TEST_LIB)
   if(LCL_BUILD_CLI)
     add_dependencies(lcl-cli generate_test_framework_data)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_TEST)
-    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
-endif()
-
-if(LCL_BUILD_EXPECT_LIB)
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(EXPECT_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/expect/src/expect.lcl)
-  set(EXPECT_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/expect-lib-data.h)
-
-  add_custom_command(
-    OUTPUT ${EXPECT_LIB_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/expect/src/expect.lcl > ${EXPECT_LIB_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${EXPECT_LIB_SRC}
-    COMMENT "Generating expect-lib-data.h from expect.lcl"
-  )
-
-  add_custom_target(generate_expect_lib_data DEPENDS ${EXPECT_LIB_DATA})
-
-  if(LCL_BUILD_CLI)
-    add_dependencies(lcl-cli generate_expect_lib_data)
-    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_EXPECT_LIB)
     target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   endif()
 endif()

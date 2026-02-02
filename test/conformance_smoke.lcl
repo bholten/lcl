@@ -592,6 +592,31 @@ Test::suite "List Operations" {
 
         Test::eq $list3 (1 2 3 (4 5 6 7 4 5 6 7))
     }
+
+    Test::case "multi-line lambda inside list literal" {
+        ;; Regression test: multi-line lambda bodies in () list literals
+        ;; must preserve newlines inside braces for command separation
+        let handlers (
+            ("key1" [lambda {x} {
+                let doubled [* $x 2]
+                let result [+ $doubled 10]
+                $result
+            }])
+            ("key2" [lambda {x} {
+                let tripled [* $x 3]
+                $tripled
+            }])
+        )
+        ;; Verify the list structure
+        Test::eq [len $handlers] 2
+        Test::eq [get [get $handlers 0] 0] "key1"
+        Test::eq [get [get $handlers 1] 0] "key2"
+        ;; Call the lambdas and verify they work
+        let fn1 [get [get $handlers 0] 1]
+        let fn2 [get [get $handlers 1] 1]
+        Test::eq [$fn1 5] 20   ;; (5*2) + 10 = 20
+        Test::eq [$fn2 5] 15   ;; 5*3 = 15
+    }
 }
 
 ;; ============================================================================
@@ -658,6 +683,31 @@ Test::suite "Dict Operations" {
     Test::case "nested dict" {
         let nested [dict outer [dict inner 42]]
         Test::eq [get [get $nested outer] inner] 42
+    }
+
+    Test::case "multi-line lambda inside dict literal" {
+        ;; Regression test: multi-line lambda bodies in #{} dict literals
+        ;; must preserve newlines inside braces for command separation
+        let handlers #{
+            process [lambda {x} {
+                let doubled [* $x 2]
+                let result [+ $doubled 5]
+                $result
+            }]
+            transform [lambda {x} {
+                let squared [* $x $x]
+                $squared
+            }]
+        }
+        ;; Verify the dict structure
+        Test::eq [len $handlers] 2
+        Test::true [has? $handlers process]
+        Test::true [has? $handlers transform]
+        ;; Call the lambdas and verify they work
+        let fn1 [get $handlers process]
+        let fn2 [get $handlers transform]
+        Test::eq [$fn1 10] 25   ;; (10*2) + 5 = 25
+        Test::eq [$fn2 5] 25    ;; 5*5 = 25
     }
 }
 
@@ -2207,8 +2257,5 @@ Test::suite "Parameter Validation Errors" {
     }
 }
 
-;; ============================================================================
-;; Run All Tests
-;; ============================================================================
-
 Test::run
+

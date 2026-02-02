@@ -17,3 +17,13 @@ target_include_directories(lcl_process
 
 target_compile_options(lcl_process PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_process PRIVATE lcl::lcl)
+
+# Link util library for PTY support (openpty)
+# - macOS/BSD: uses util.h, needs -lutil
+# - Linux (glibc): uses pty.h, needs -lutil
+# - Linux (musl): openpty is in libc, no extra lib needed
+include(CheckFunctionExists)
+check_function_exists(openpty HAVE_OPENPTY_IN_LIBC)
+if(NOT HAVE_OPENPTY_IN_LIBC)
+  target_link_libraries(lcl_process PRIVATE util)
+endif()

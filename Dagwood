@@ -9,27 +9,62 @@
 ;; cmake -DCMAKE_BUILD_TYPE=Debug -DLCL_ENABLE_ASAN=ON ..
 
 project lcl {
-    arg BUILD_TYPE debug
-
     config {
         description "The Lcl programming language"
     }
 
+    arg BUILD_TYPE debug
+
+    def ALL_PKGS (-DLCL_BUILD_TESTS=ON
+                  -DLCL_BUILD_CURL=ON
+                  -DLCL_BUILD_IO=ON
+                  -DLCL_BUILD_JSON=ON
+                  -DLCL_BUILD_CRYPTO=ON
+                  -DLCL_BUILD_REGEX=ON
+                  -DLCL_BUILD_PROCESS=ON
+                  -DLCL_BUILD_MATH=ON
+                  -DLCL_BUILD_EXPECT=ON)
+
+    def ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
+                  -DLCL_BUILD_SH_LIB=ON
+                  -DLCL_BUILD_MACRO_LIB=ON
+                  -DLCL_BUILD_CURL_DSL_LIB=ON)
+
+    def DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON
+                    -DLCL_BUILD_TESTS=ON
+                    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+                    -DCMAKE_BUILD_TYPE=Debug)
+
+    def RELEASE_OPTS (-DCMAKE_BUILD_TYPE=Release)
+
+    def STATIC_OPTS (-DLCL_BUILD_SHARED=OFF
+                     -DLCL_BUILD_STATIC=ON
+                     -DCMAKE_BUILD_TYPE=Release)
+
     command build {
-        run {
-            cmake -B build -DLCL_ENABLE_ASAN=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLCL_BUILD_TESTS=ON -DLCL_BUILD_CURL=ON -DLCL_BUILD_IO=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_CRYPTO=ON -DLCL_BUILD_REGEX=ON -DCMAKE_BUILD_TYPE=Debug -DLCL_BUILD_EXPECT_LIB=ON -DLCL_BUILD_SH_LIB=ON -DLCL_BUILD_PROCESS=ON -DLCL_BUILD_MACRO_LIB=ON -DLCL_BUILD_CURL_DSL_LIB=ON && cmake --build build
-        }
+        run [subst {
+            cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::DEBUG_OPTS} && \
+            cmake --build build
+        }]
     }
 
     command release {
-        run {
-            cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCL_BUILD_CURL=ON -DLCL_BUILD_IO=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_CRYPTO=ON -DLCL_BUILD_REGEX=ON -DLCL_BUILD_EXPECT_LIB=ON -DLCL_BUILD_SH_LIB=ON -DLCL_BUILD_PROCESS=ON -DLCL_BUILD_MACRO_LIB=ON -DLCL_BUILD_CURL_DSL_LIB=ON && cmake --build build
-        }
+        run [subst {
+            cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::RELEASE_OPTS} && \
+            cmake --build build
+        }]
     }
 
     command static {
+        run [subst {
+            cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::STATIC_OPTS} && \
+            cmake --build build
+        }]
+    }
+
+    command test {
         run {
-            cmake -B build -DCMAKE_BUILD_TYPE=Release -DLCL_BUILD_STATIC=ON -DLCL_STATIC_BINARY=ON -DLCL_BUILD_CURL=ON -DLCL_BUILD_IO=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_CRYPTO=ON -DLCL_BUILD_REGEX=ON -DLCL_BUILD_EXPECT_LIB=ON -DLCL_BUILD_SH_LIB=ON -DLCL_BUILD_PROCESS=ON -DLCL_BUILD_MACRO_LIB=ON -DLCL_BUILD_CURL_DSL_LIB=ON && cmake --build build
+            lcl test/anaphoric_macros.lcl && lcl test/conformance_smoke.lcl
         }
     }
 

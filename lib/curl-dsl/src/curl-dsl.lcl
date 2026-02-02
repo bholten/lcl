@@ -2,6 +2,8 @@
 ;; requires lcl-curl package
 
 namespace curl::dsl {
+    namespace JSON { import json }
+
     proc _execute_request {verb url request_config on_event_callback} {
         curl::init
         let c [curl::new]
@@ -133,7 +135,7 @@ namespace curl::dsl {
         var parsed_json {}
 
         if [>= [String::find $content_type "application/json"] 0] {
-            if [catch { json::decode $response_body } result _err] {
+            if [catch { JSON::decode $response_body } result _err] {
                 ;; JSON parse failed, leave parsed_json empty
             } else {
                 set! parsed_json $result
