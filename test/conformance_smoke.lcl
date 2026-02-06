@@ -2283,6 +2283,11 @@ Test::suite "Issue #7: Float precision" {
     }
 }
 
+;; Define strings with unbalanced braces at top level (the brace scanner
+;; inside { } doesn't process escapes, so \} would break brace balancing)
+let _i14_rbrace "a\}b"
+let _i14_lbrace "a\{b"
+
 Test::suite "Issue #14: List brace escaping" {
     Test::case "list element with spaces round-trips" {
         ;; Elements with spaces require bracing in stringified lists
@@ -2296,6 +2301,71 @@ Test::suite "Issue #14: List brace escaping" {
         let mylist [list "a" "b\$c"]
         Test::eq [len $mylist] 2
         Test::eq [get $mylist 1] "b\$c"
+    }
+
+    Test::case "element with unbalanced close brace round-trips" {
+        ;; _i14_rbrace contains an unbalanced brace - defined at top level
+        let mylist [list $_i14_rbrace]
+        Test::eq [len $mylist] 1
+        ;; Re-parse stringified list - the element must survive
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $_i14_rbrace
+    }
+
+    Test::case "element with unbalanced open brace round-trips" {
+        let mylist [list $_i14_lbrace]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $_i14_lbrace
+    }
+
+    Test::case "element with bracket round-trips" {
+        let elem "x\[y"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with backslash round-trips" {
+        let elem "a\\b"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with double quote round-trips" {
+        let elem "say \"hi\""
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with semicolon round-trips" {
+        let elem "a;b"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "mixed bare, braced, and quoted elements" {
+        ;; bare: simple, braced: has space, quoted: has unbalanced brace
+        let mylist [list simple "hello world" $_i14_rbrace]
+        Test::eq [len $mylist] 3
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 3
+        Test::eq [get $reparsed 0] simple
+        Test::eq [get $reparsed 1] "hello world"
+        Test::eq [get $reparsed 2] $_i14_rbrace
     }
 }
 

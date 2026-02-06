@@ -59,18 +59,77 @@ static void lcl_reify_str_float(lcl_value *value) {
   memcpy(value->str_repr, buf, (size_t)m + 1);
 }
 
-static int needs_braces(const char *s) {
+enum elem_style { ELEM_BARE, ELEM_BRACED, ELEM_QUOTED };
+
+static enum elem_style choose_element_style(const char *s) {
+  int has_special = 0;
+  int brace_depth = 0;
+  const char *p;
+
   if (!s || !*s) {
-    return 1;
+    return ELEM_BRACED;
   }
-  while (*s) {
-    char c = *s++;
+
+  for (p = s; *p; p++) {
+    char c = *p;
+
     if (c == ' ' || c == '\t' || c == '\n' || c == '{' || c == '}' ||
-        c == '[' || c == ']' || c == '$' || c == '"' || c == '\\') {
-      return 1;
+        c == '[' || c == ']' || c == '$' || c == '"' || c == '\\' ||
+        c == ';') {
+      has_special = 1;
+    }
+
+    if (c == '{') {
+      brace_depth++;
+    } else if (c == '}') {
+      brace_depth--;
+
+      if (brace_depth < 0) {
+        return ELEM_QUOTED;
+      }
     }
   }
-  return 0;
+
+  if (brace_depth != 0) {
+    return ELEM_QUOTED;
+  }
+
+  return has_special ? ELEM_BRACED : ELEM_BARE;
+}
+
+static size_t quoted_len(const char *s) {
+  size_t n = 2;
+  const char *p;
+
+  for (p = s; *p; p++) {
+    char c = *p;
+
+    if (c == '\\' || c == '$' || c == '[' || c == '"') {
+      n += 2;
+    } else {
+      n += 1;
+    }
+  }
+
+  return n;
+}
+
+static char *write_quoted(char *dst, const char *s) {
+  const char *p;
+  *dst++ = '"';
+
+  for (p = s; *p; p++) {
+    char c = *p;
+
+    if (c == '\\' || c == '$' || c == '[' || c == '"') {
+      *dst++ = '\\';
+    }
+
+    *dst++ = c;
+  }
+
+  *dst++ = '"';
+  return dst;
 }
 
 static void lcl_reify_str_list(lcl_value *value) {
@@ -83,16 +142,24 @@ static void lcl_reify_str_list(lcl_value *value) {
   for (i = 0; i < len; i++) {
     lcl_value *elem = NULL;
     const char *s;
+    enum elem_style style;
+
     if (lcl_list_get(value, i, &elem) != LCL_OK) {
       continue;
     }
+
     s = lcl_value_to_string(elem);
-    total += strlen(s);
-    if (needs_braces(s)) {
-      total += 2; /* for {} */
+    style = choose_element_style(s);
+
+    switch (style) {
+    case ELEM_BARE: total += strlen(s); break;
+    case ELEM_BRACED: total += strlen(s) + 2; break;
+    case ELEM_QUOTED: total += quoted_len(s); break;
     }
+
     lcl_ref_dec(elem);
   }
+
   total += len;
 
   buf = (char *)malloc(total + 1);
@@ -102,11 +169,12 @@ static void lcl_reify_str_list(lcl_value *value) {
   }
 
   p = buf;
+
   for (i = 0; i < len; i++) {
     lcl_value *elem = NULL;
     const char *s;
     size_t slen;
-    int braced;
+    enum elem_style style;
 
     if (i > 0) {
       *p++ = ' ';
@@ -118,17 +186,22 @@ static void lcl_reify_str_list(lcl_value *value) {
 
     s = lcl_value_to_string(elem);
     slen = strlen(s);
-    braced = needs_braces(s);
+    style = choose_element_style(s);
 
-    if (braced) {
+    switch (style) {
+    case ELEM_BARE:
+      memcpy(p, s, slen);
+      p += slen;
+      break;
+    case ELEM_BRACED:
       *p++ = '{';
-    }
-
-    memcpy(p, s, slen);
-    p += slen;
-
-    if (braced) {
+      memcpy(p, s, slen);
+      p += slen;
       *p++ = '}';
+      break;
+    case ELEM_QUOTED:
+      p = write_quoted(p, s);
+      break;
     }
 
     lcl_ref_dec(elem);
@@ -151,29 +224,40 @@ static void lcl_reify_str_dict(lcl_value *value) {
   /* First pass: calculate size */
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
-    total += strlen(key) + strlen(vs) + 2; /* key, value, spaces */
-    if (needs_braces(key)) {
-      total += 2;
+    enum elem_style ks = choose_element_style(key);
+    enum elem_style vst = choose_element_style(vs);
+
+    switch (ks) {
+    case ELEM_BARE: total += strlen(key); break;
+    case ELEM_BRACED: total += strlen(key) + 2; break;
+    case ELEM_QUOTED: total += quoted_len(key); break;
     }
-    if (needs_braces(vs)) {
-      total += 2;
+
+    switch (vst) {
+    case ELEM_BARE: total += strlen(vs); break;
+    case ELEM_BRACED: total += strlen(vs) + 2; break;
+    case ELEM_QUOTED: total += quoted_len(vs); break;
     }
+
+    total += 2; /* spaces */
     lcl_ref_dec(val);
   }
 
   buf = (char *)malloc(total + 1);
+
   if (!buf) {
     return;
   }
 
   p = buf;
   it.i = 0;
+
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
     size_t klen = strlen(key);
     size_t vlen = strlen(vs);
-    int kbraced = needs_braces(key);
-    int vbraced = needs_braces(vs);
+    enum elem_style ks = choose_element_style(key);
+    enum elem_style vst = choose_element_style(vs);
 
     if (!first) {
       *p++ = ' ';
@@ -181,32 +265,43 @@ static void lcl_reify_str_dict(lcl_value *value) {
 
     first = 0;
 
-    if (kbraced) {
+    switch (ks) {
+    case ELEM_BARE:
+      memcpy(p, key, klen);
+      p += klen;
+      break;
+    case ELEM_BRACED:
       *p++ = '{';
-    }
-
-    memcpy(p, key, klen);
-    p += klen;
-
-    if (kbraced) {
+      memcpy(p, key, klen);
+      p += klen;
       *p++ = '}';
+      break;
+    case ELEM_QUOTED:
+      p = write_quoted(p, key);
+      break;
     }
 
     *p++ = ' ';
 
-    if (vbraced) {
+    switch (vst) {
+    case ELEM_BARE:
+      memcpy(p, vs, vlen);
+      p += vlen;
+      break;
+    case ELEM_BRACED:
       *p++ = '{';
-    }
-
-    memcpy(p, vs, vlen);
-    p += vlen;
-
-    if (vbraced) {
+      memcpy(p, vs, vlen);
+      p += vlen;
       *p++ = '}';
+      break;
+    case ELEM_QUOTED:
+      p = write_quoted(p, vs);
+      break;
     }
 
     lcl_ref_dec(val);
   }
+
   *p = '\0';
 
   value->str_repr = buf;
