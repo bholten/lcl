@@ -66,9 +66,9 @@ lcl_result lcl_value_to_float(lcl_value *value, double *out) {
 
   case LCL_STRING: {
     const char *str = lcl_value_to_string(value);
-    float val;
+    double val;
 
-    if (sscanf(str, "%f", &val) == 1) {
+    if (sscanf(str, "%lf", &val) == 1) {
       *out = val;
       return LCL_OK;
     }

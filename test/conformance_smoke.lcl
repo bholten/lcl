@@ -2257,5 +2257,69 @@ Test::suite "Parameter Validation Errors" {
     }
 }
 
+;; ============================================================================
+;; Regression Tests (from ISSUES.md audit)
+;; ============================================================================
+
+Test::suite "Issue #6: Modulo by zero" {
+    Test::case "modulo by zero returns error, not crash" {
+        let errored [catch { % 5 0 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "modulo with valid divisor still works" {
+        Test::eq [% 10 3] 1
+    }
+}
+
+Test::suite "Issue #7: Float precision" {
+    Test::case "float conversion preserves double precision" {
+        ;; pi to 15 decimal places -- should not be truncated to 32-bit float
+        let pi_str "3.141592653589793"
+        let pi_val [float $pi_str]
+        ;; With correct double parsing, the first 15 digits should be preserved.
+        ;; With the bug (32-bit float), it becomes 3.1415927410125732
+        Test::assert [!= $pi_val 3.1415927410125732]
+    }
+}
+
+Test::suite "Issue #14: List brace escaping" {
+    Test::case "list element with spaces round-trips" {
+        ;; Elements with spaces require bracing in stringified lists
+        let mylist [list "hello world" "foo bar"]
+        Test::eq [len $mylist] 2
+        Test::eq [get $mylist 0] "hello world"
+        Test::eq [get $mylist 1] "foo bar"
+    }
+
+    Test::case "list element with dollar sign round-trips" {
+        let mylist [list "a" "b\$c"]
+        Test::eq [len $mylist] 2
+        Test::eq [get $mylist 1] "b\$c"
+    }
+}
+
+Test::suite "Issue #16: Arithmetic type preservation" {
+    Test::case "integer addition returns int" {
+        Test::assert [int? [+ 1 2]]
+    }
+
+    Test::case "float addition returns float" {
+        Test::assert [float? [+ 1.5 2.5]]
+    }
+
+    Test::case "mixed addition returns float" {
+        Test::assert [float? [+ 1 2.5]]
+    }
+
+    Test::case "integer subtraction returns int" {
+        Test::assert [int? [- 5 3]]
+    }
+
+    Test::case "integer multiplication returns int" {
+        Test::assert [int? [* 3 4]]
+    }
+}
+
 Test::run
 

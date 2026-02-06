@@ -436,7 +436,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           start = sc->i;
         } else {
           if (!lcl_word_add_lit(w, "$", 1)) {
-            return 1;
+            return -1;
           }
 
           start = sc->i;
@@ -512,6 +512,10 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         {
           size_t content_len = (size_t)(sc->i - begin - 1);
           char *subsrc = strndup(sc->s + begin, content_len);
+
+          if (!subsrc) {
+            return -1;
+          }
 
           /* Replace newlines and semicolons with spaces to prevent command
            * separation. Inside [...], there is exactly one command, so \n and ;

@@ -48,7 +48,11 @@ static lcl_result lcl_list_ensure_cap(lcl_value *list, size_t need) {
   newcap = list->as.list.cap ? list->as.list.cap * 2 : 4;
 
   while (newcap < need) {
-    newcap *= 2;
+    size_t next = newcap * 2;
+    if (next <= newcap) {
+      return LCL_ERROR; /* overflow */
+    }
+    newcap = next;
   }
 
   newitems =

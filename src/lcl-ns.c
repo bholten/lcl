@@ -91,7 +91,7 @@ const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
   n = (size_t)(p - q);
 
   if (n >= nlhs) {
-    n = nlhs - 1;
+    return NULL; /* name too long for buffer */
   }
 
   memcpy(lhs, q, n);

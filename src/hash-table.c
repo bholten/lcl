@@ -25,6 +25,7 @@ static ssize_t hash_find(hash_table *ht, const char *key, unsigned long hk,
                          size_t *first_tomb) {
   size_t m = mask(ht);
   size_t i = hk & m;
+  size_t checked = 0;
   *first_tomb = (size_t)-1;
 
   for (;;) {
@@ -43,6 +44,10 @@ static ssize_t hash_find(hash_table *ht, const char *key, unsigned long hk,
     }
 
     i = (i + 1) & m;
+    if (++checked >= ht->cap) {
+      /* Table is full with no empty slots (should not happen with load factor) */
+      return (*first_tomb != (size_t)-1 ? (ssize_t)(*first_tomb) : -1);
+    }
   }
 }
 
@@ -213,7 +218,12 @@ int hash_table_delete(hash_table *ht, const char *key) {
   e->state = H_TOMB;
 
   ht->len--;
-  /** TODO compact? **/
+
+  /* Compact if tombstones dominate: more tombstones than live entries */
+  if (ht->len > 0 && (ht->used - ht->len) > ht->len) {
+    hash_rehash(ht, ht->cap);
+  }
+
   return 1;
 }
 

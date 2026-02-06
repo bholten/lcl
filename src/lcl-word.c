@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <memory.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lcl-lex.h"
@@ -44,7 +45,17 @@ void lcl_word_piece_free(lcl_word_piece *wp) {
 }
 
 void lcl_word_free(lcl_word *w) {
-  lcl_word_piece_free(w->wp);
+  int i;
+  for (i = 0; i < w->np; i++) {
+    lcl_word_piece *pc = &w->wp[i];
+    switch (pc->kind) {
+    case LCL_WP_LIT: free(pc->as.lit.s); break;
+    case LCL_WP_VAR: free(pc->as.var.name); break;
+    case LCL_WP_SUBCMD: lcl_program_free(pc->as.sub.program); break;
+    default: break;
+    }
+  }
+  free(w->wp);
   free(w);
 }
 
@@ -61,7 +72,10 @@ int lcl_word_add_lit(lcl_word *w, const char *s, size_t n) {
   wp.as.lit.s[n] = '\0';
   wp.as.lit.n = n;
 
-  lcl_word_push_word_piece(w, wp);
+  if (!lcl_word_push_word_piece(w, wp)) {
+    free(wp.as.lit.s);
+    return 0;
+  }
 
   return 1;
 }
@@ -79,7 +93,10 @@ int lcl_word_add_var(lcl_word *w, const char *name) {
 
   memcpy(wp.as.var.name, name, n + 1);
 
-  lcl_word_push_word_piece(w, wp);
+  if (!lcl_word_push_word_piece(w, wp)) {
+    free(wp.as.var.name);
+    return 0;
+  }
 
   return 1;
 }
@@ -89,7 +106,10 @@ int lcl_word_add_sub(lcl_word *w, lcl_program *sub) {
   wp.kind = LCL_WP_SUBCMD;
   wp.as.sub.program = sub;
 
-  lcl_word_push_word_piece(w, wp);
+  if (!lcl_word_push_word_piece(w, wp)) {
+    /* Note: caller retains ownership of sub on failure */
+    return 0;
+  }
 
   return 1;
 }

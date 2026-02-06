@@ -9,14 +9,22 @@
 
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out);
 
-static void setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
+static int setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
   int i;
-  interp->pending_tail.argv = malloc(sizeof(lcl_value *) * (size_t)argc);
+  if (argc > 0) {
+    interp->pending_tail.argv = malloc(sizeof(lcl_value *) * (size_t)argc);
+    if (!interp->pending_tail.argv) {
+      return 0;
+    }
+  } else {
+    interp->pending_tail.argv = NULL;
+  }
   interp->pending_tail.argc = argc;
   for (i = 0; i < argc; i++) {
     interp->pending_tail.argv[i] = lcl_ref_inc(argv[i]);
   }
   interp->pending_tail.valid = 1;
+  return 1;
 }
 
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
@@ -349,7 +357,11 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       /* Bugfix TCO: Check if this is a self-recursive tail call by comparing
        * against the currently executing proc, not just name lookup. */
       if (saved_tail_position && result == interp->current_proc) {
-        setup_tail_call(interp, 0, NULL);
+        if (!setup_tail_call(interp, 0, NULL)) {
+          lcl_ref_dec(result);
+          LCL_ERR_MSG(interp, "out of memory in tail call");
+          return LCL_RC_ERR;
+        }
         lcl_ref_dec(result);
         *out = NULL;
         return LCL_RC_TAILCALL;
@@ -391,11 +403,16 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
       {
         const size_t cmd_name_len = strlen(cmd_name);
-        const size_t err_msg_len = strlen("unknown command: ") + 1;
-        char buf[cmd_name_len + err_msg_len];
-
-        sprintf(buf, "unknown command: %s", cmd_name);
-        LCL_ERR_MSG_DUP(interp, buf);
+        const size_t prefix_len = 17; /* strlen("unknown command: ") */
+        char *buf = (char *)malloc(cmd_name_len + prefix_len + 1);
+        if (buf) {
+          memcpy(buf, "unknown command: ", prefix_len);
+          memcpy(buf + prefix_len, cmd_name, cmd_name_len + 1);
+          LCL_ERR_MSG_DUP(interp, buf);
+          free(buf);
+        } else {
+          LCL_ERR_MSG(interp, "unknown command");
+        }
         lcl_ref_dec(name);
       }
 
@@ -481,7 +498,15 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       /* TCO: Check if this is a self-recursive tail call by comparing
        * against the currently executing proc, not just name lookup. */
       if (saved_tail_position && callee == interp->current_proc) {
-        setup_tail_call(interp, argc, argv);
+        if (!setup_tail_call(interp, argc, argv)) {
+          for (i = 0; i < argc; i++) {
+            lcl_ref_dec(argv[i]);
+          }
+          free(argv);
+          lcl_ref_dec(callee);
+          LCL_ERR_MSG(interp, "out of memory in tail call");
+          return LCL_RC_ERR;
+        }
         for (i = 0; i < argc; i++) {
           lcl_ref_dec(argv[i]);
         }

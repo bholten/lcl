@@ -83,9 +83,9 @@ static int c_and(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int b;
   int i;
-  (void)interp;
 
   if (argc < 2) {
+    LCL_ERR_MSG(interp, "and requires at least 2 arguments");
     return LCL_RC_ERR;
   }
 
@@ -106,9 +106,9 @@ static int c_or(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   int b;
   int i;
-  (void)interp;
 
   if (argc < 2) {
+    LCL_ERR_MSG(interp, "or requires at least 2 arguments");
     return LCL_RC_ERR;
   }
 
@@ -125,9 +125,9 @@ static int c_or(lcl_interp *interp, int argc, lcl_value **argv,
 static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int b;
-  (void)interp;
 
   if (argc != 1) {
+    LCL_ERR_MSG(interp, "not requires exactly 1 argument");
     return LCL_RC_ERR;
   }
 
@@ -137,82 +137,132 @@ static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+static int all_args_integral(int argc, lcl_value **argv) {
+  int i;
+  for (i = 0; i < argc; i++) {
+    long dummy;
+    if (argv[i]->type == LCL_FLOAT) {
+      return 0;
+    }
+    if (argv[i]->type == LCL_INT) {
+      continue;
+    }
+    /* For strings, check if it parses as an integer */
+    if (lcl_value_to_int(argv[i], &dummy) != LCL_OK) {
+      return 0;
+    }
+    /* Also reject strings containing '.' or 'e'/'E' (float-like) */
+    {
+      const char *s = lcl_value_to_string(argv[i]);
+      while (*s) {
+        if (*s == '.' || *s == 'e' || *s == 'E') return 0;
+        s++;
+      }
+    }
+  }
+  return 1;
+}
+
 static int c_add(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  double sum = 0.0f;
   int i;
-  double v;
   (void)interp;
 
-  for (i = 0; i < argc; i++) {
-    if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
-      return LCL_RC_ERR;
+  if (all_args_integral(argc, argv)) {
+    long sum = 0;
+    for (i = 0; i < argc; i++) {
+      long v;
+      lcl_value_to_int(argv[i], &v);
+      sum += v;
     }
-
-    sum += v;
+    *out = lcl_int_new(sum);
+  } else {
+    double sum = 0.0;
+    for (i = 0; i < argc; i++) {
+      double v;
+      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      sum += v;
+    }
+    *out = lcl_float_new(sum);
   }
-
-  *out = lcl_float_new(sum);
 
   return LCL_RC_OK;
 }
 
 static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  double result;
   int i;
-  double v;
-  (void)interp;
 
   if (argc < 2) {
+    LCL_ERR_MSG(interp, "- requires at least 2 arguments");
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  for (i = 1; i < argc; i++) {
-    if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+  if (all_args_integral(argc, argv)) {
+    long result;
+    lcl_value_to_int(argv[0], &result);
+    for (i = 1; i < argc; i++) {
+      long v;
+      lcl_value_to_int(argv[i], &v);
+      result -= v;
+    }
+    *out = lcl_int_new(result);
+  } else {
+    double result;
+    if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
       return LCL_RC_ERR;
     }
-
-    result -= v;
+    for (i = 1; i < argc; i++) {
+      double v;
+      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      result -= v;
+    }
+    *out = lcl_float_new(result);
   }
-
-  *out = lcl_float_new(result);
 
   return LCL_RC_OK;
 }
 
 static int c_mult(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  double product = 1.0f;
   int i;
-  double v;
   (void)interp;
 
-  for (i = 0; i < argc; i++) {
-    if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
-      return LCL_RC_ERR;
+  if (all_args_integral(argc, argv)) {
+    long product = 1;
+    for (i = 0; i < argc; i++) {
+      long v;
+      lcl_value_to_int(argv[i], &v);
+      product *= v;
     }
-
-    product *= v;
+    *out = lcl_int_new(product);
+  } else {
+    double product = 1.0;
+    for (i = 0; i < argc; i++) {
+      double v;
+      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+        return LCL_RC_ERR;
+      }
+      product *= v;
+    }
+    *out = lcl_float_new(product);
   }
-
-  *out = lcl_float_new(product);
 
   return LCL_RC_OK;
 }
 
 static int c_div(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  (void)interp;
   double result;
   double numerator;
   double divisor;
 
   if (argc != 2) {
+    LCL_ERR_MSG(interp, "/ requires exactly 2 arguments");
     return LCL_RC_ERR;
   }
 
@@ -224,7 +274,8 @@ static int c_div(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (divisor == 0.0f) {
+  if (divisor == 0.0) {
+    LCL_ERR_MSG(interp, "division by zero");
     return LCL_RC_ERR;
   }
 
@@ -240,7 +291,6 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
   long result;
   long dividend;
   long divisor;
-  (void)interp;
 
   if (argc != 2) {
     return LCL_RC_ERR;
@@ -251,6 +301,11 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_value_to_int(argv[1], &divisor) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (divisor == 0) {
+    LCL_ERR_MSG(interp, "division by zero");
     return LCL_RC_ERR;
   }
 
