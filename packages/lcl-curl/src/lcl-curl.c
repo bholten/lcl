@@ -443,8 +443,7 @@ static int c_curl_new(lcl_interp *interp, int argc, lcl_value **argv,
   c = lcl_opaque_new(ctx, CURL_CONTEXT_TYPE, (lcl_finalizer)curl_context_free);
 
   if (!c) {
-    lcl_ref_dec(c);
-
+    curl_context_free(ctx);
     return LCL_RC_ERR;
   }
 
@@ -482,6 +481,23 @@ static int c_curl_reset(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   curl_easy_reset(ctx->curl);
+
+  if (ctx->write_callback) {
+    lcl_ref_dec(ctx->write_callback);
+    ctx->write_callback = NULL;
+  }
+
+  if (ctx->header_callback) {
+    lcl_ref_dec(ctx->header_callback);
+    ctx->header_callback = NULL;
+  }
+
+  if (ctx->sse_callback) {
+    lcl_ref_dec(ctx->sse_callback);
+    ctx->sse_callback = NULL;
+  }
+
+  ctx->sse_buffer_len = 0;
 
   return LCL_RC_OK;
 }
@@ -800,6 +816,9 @@ static int c_curl_set_write_callback(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
+  if (ctx->write_callback) {
+    lcl_ref_dec(ctx->write_callback);
+  }
   ctx->write_callback = lcl_ref_inc(callback_proc);
 
   curl_easy_setopt(ctx->curl, CURLOPT_WRITEFUNCTION, curl_write_wrapper);
@@ -897,6 +916,9 @@ static int c_curl_set_header_callback(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
+  if (ctx->header_callback) {
+    lcl_ref_dec(ctx->header_callback);
+  }
   ctx->header_callback = lcl_ref_inc(callback_proc);
 
   curl_easy_setopt(ctx->curl, CURLOPT_HEADERFUNCTION, curl_header_wrapper);
@@ -926,6 +948,9 @@ static int c_curl_set_sse_callback(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
+  if (ctx->sse_callback) {
+    lcl_ref_dec(ctx->sse_callback);
+  }
   ctx->sse_callback = lcl_ref_inc(callback_proc);
 
   curl_easy_setopt(ctx->curl, CURLOPT_WRITEFUNCTION, curl_sse_write_wrapper);

@@ -3046,7 +3046,6 @@ static size_t skip_parens(const char *src, size_t len, size_t start) {
   return i;
 }
 
-/* Check if string starts with "quasiquote" followed by whitespace and { */
 static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
   const char *kw = "quasiquote";
   size_t kw_len = 10;
@@ -3059,20 +3058,19 @@ static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
     return 0;
   }
 
-  /* Must be followed by whitespace then { */
   i = pos + kw_len;
+
   while (i < len && (src[i] == ' ' || src[i] == '\t' || src[i] == '\n')) {
     i++;
   }
+
   return (i < len && src[i] == '{');
 }
 
-/* Find matching } for quasiquote block starting at { */
 static size_t find_quasiquote_end(const char *src, size_t len, size_t start) {
   return skip_braces(src, len, start + 1) + 1;
 }
 
-/* Parse a word after comma - returns end position, sets word_start/word_end */
 static int parse_unquote_word(const char *src, size_t len, size_t pos,
                               size_t *word_start, size_t *word_end) {
   size_t i = pos;

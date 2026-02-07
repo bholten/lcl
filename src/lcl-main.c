@@ -190,6 +190,7 @@ int main(int argc, char **argv) {
   }
 
   interp = create_interp();
+
   if (!interp) {
     fprintf(stderr, "Failed to create interpreter\n");
     return 1;
@@ -202,16 +203,19 @@ int main(int argc, char **argv) {
       lcl_interp_free(interp);
       return 1;
     }
+
     rc = lcl_eval_string(interp, argv[2], &result);
   }
 
   else if (strcmp(argv[1], "-") == 0) {
     char *src = read_stdin();
+
     if (!src) {
       fprintf(stderr, "Error: Failed to read stdin\n");
       lcl_interp_free(interp);
       return 1;
     }
+
     rc = lcl_eval_string(interp, src, &result);
     free(src);
   } else {
@@ -223,9 +227,11 @@ int main(int argc, char **argv) {
     const char *err_msg = lcl_interp_error_msg(interp);
     fprintf(stderr, "Error at %s:%d", err_file ? err_file : "<unknown>",
             lcl_interp_error_line(interp));
+
     if (err_msg) {
       fprintf(stderr, ": %s", err_msg);
     }
+
     fprintf(stderr, "\n");
   }
 
