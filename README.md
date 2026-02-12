@@ -652,24 +652,39 @@ Link with `-llcl` or include the source files directly.
 
 ## Known Limitations
 
-### No Mutual Recursion
+### Mutual Recursion
 
 Lcl uses **reference counting** for memory management (no garbage collector). This is a deliberate design choice for embeddability—GC adds complexity, unpredictable pauses, and makes integration with host applications harder.
 
-However, reference counting cannot handle reference cycles. When two procedures reference each other (mutual recursion), they create a cycle that can never be freed:
+Sequential `proc` definitions support mutual recursion without issues:
 
 ```tcl
-;; This is REJECTED at definition time:
+;; This works — no reference cycle:
 proc even? {n} { if [== $n 0] {1} else {odd? [- $n 1]} }
 proc odd? {n} { if [== $n 0] {0} else {even? [- $n 1]} }
+puts [odd? 13]   ;; 1
 ```
 
-Lcl detects this pattern and raises an error rather than silently leaking memory.
+This is safe because when `even?` is defined, `odd?` doesn't exist yet, so it isn't captured as an upvalue. At runtime, `even?` finds `odd?` through the caller's frame. The reference graph is one-way (a DAG), not a cycle.
 
-**Workarounds:**
-- Pass procedures as arguments instead of capturing them
-- Use a dispatch table or trampolining pattern
-- Restructure to use a single recursive procedure
+However, **mutual recursion is not tail-call optimized**. Lcl's TCO only applies to self-recursive calls (where the callee is the same proc as the caller). Mutually recursive procs consume a stack frame per call and will hit the maximum recursion depth (1024) for large inputs:
+
+```tcl
+puts [odd? 13]     ;; works fine
+puts [odd? 2000]   ;; ERROR: maximum recursion depth exceeded
+```
+
+Additionally, reference counting cannot handle reference cycles. When two **mutable cells** each hold a procedure that captures the other cell, they form a cycle that can never be freed:
+
+```tcl
+;; This is REJECTED — would create a reference cycle:
+var is_even_fn {}
+var is_odd_fn {}
+set! is_even_fn [lambda {n} { [$is_odd_fn [- $n 1]] }]
+set! is_odd_fn [lambda {n} { [$is_even_fn [- $n 1]] }]  ;; ERROR
+```
+
+Lcl detects this at `set!` time and raises an error rather than silently leaking memory.
 
 Self-recursion works fine (a proc calling itself), and Lcl includes tail call optimization for self-recursive procedures.
 

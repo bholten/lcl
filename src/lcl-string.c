@@ -218,7 +218,6 @@ static void lcl_reify_str_dict(lcl_value *value) {
   char *p;
   int first = 1;
 
-  /* First pass: calculate size */
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
     enum elem_style ks = choose_element_style(key);
@@ -316,7 +315,6 @@ const char *lcl_value_to_string(lcl_value *value) {
       const char *tag = value->as.opaque.type_tag;
 
       if (tag) {
-        /* "<opaque:>" + tag + null */
         size_t len = strlen(tag) + 10;
         value->str_repr = (char *)malloc(len);
 

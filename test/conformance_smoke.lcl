@@ -1390,8 +1390,11 @@ Test::suite "Lexical Scoping" {
     }
 
     Test::case "mutual recursion is rejected" {
-        ;; Mutual recursion creates reference cycles that cannot be freed
-        ;; with reference counting (no GC). LCL detects and rejects this.
+        ;; Mutual recursion via cells creates reference cycles that cannot
+        ;; be freed with reference counting (no GC). Both cells exist before
+        ;; either lambda is created, so both lambdas capture both cells:
+        ;;   cell_A -> lambda_A -> cell_B -> lambda_B -> cell_A  (cycle!)
+        ;; LCL detects and rejects this at set! time.
         var is_even_fn {}
         var is_odd_fn {}
         set! is_even_fn [lambda {n} {
@@ -1404,6 +1407,47 @@ Test::suite "Lexical Scoping" {
                 if [== $n 0] { return 0 }
                 [$is_even_fn [+ $n -1]]
             }]
+        }
+    }
+
+    Test::case "proc mutual recursion works (no cycle)" {
+        ;; Unlike var/set!, sequential proc definitions do NOT create
+        ;; reference cycles. When even? is defined, odd? doesn't exist
+        ;; yet, so it's skipped during upvalue capture (forward reference).
+        ;; odd? captures even? as an upvalue. The reference graph is a DAG:
+        ;;   odd? -> even?  (one-way, no cycle)
+        ;; At runtime, even? finds odd? through the caller's frame chain.
+        proc mr_even? {n} {
+            if [== $n 0] { return 1 }
+            mr_odd? [- $n 1]
+        }
+        proc mr_odd? {n} {
+            if [== $n 0] { return 0 }
+            mr_even? [- $n 1]
+        }
+        Test::eq [mr_even? 0] 1
+        Test::eq [mr_even? 1] 0
+        Test::eq [mr_even? 4] 1
+        Test::eq [mr_odd? 0] 0
+        Test::eq [mr_odd? 1] 1
+        Test::eq [mr_odd? 5] 1
+        Test::eq [mr_odd? 13] 1
+    }
+
+    Test::case "proc mutual recursion hits depth limit" {
+        ;; Mutual recursion is NOT tail-call optimized (TCO only applies
+        ;; to self-recursive calls). Each mutual call consumes a stack
+        ;; frame, so deep mutual recursion hits the max depth (1024).
+        proc deep_even? {n} {
+            if [== $n 0] { return 1 }
+            deep_odd? [- $n 1]
+        }
+        proc deep_odd? {n} {
+            if [== $n 0] { return 0 }
+            deep_even? [- $n 1]
+        }
+        Test::raises {
+            deep_even? 2000
         }
     }
 }
