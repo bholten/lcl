@@ -1,4 +1,3 @@
-
 #define _POSIX_C_SOURCE 200809L
 #define _XOPEN_SOURCE 600
 
@@ -27,22 +26,20 @@
 #define PROCESS_NS "process"
 
 #define INITIAL_BUF_SIZE 4096
-#define MAX_BUF_SIZE (4 * 1024 * 1024) /* 4MB default limit */
+#define MAX_BUF_SIZE (4 * 1024 * 1024)
 
 typedef struct {
   pid_t pid;
-  int stdin_fd;  /* write end */
-  int stdout_fd; /* read end */
-  int stderr_fd; /* read end */
+  int stdin_fd;
+  int stdout_fd;
+  int stderr_fd;
   int exited;
   int status;
   int signal_num;
 
-  /* PTY support */
-  int pty_master; /* PTY master fd (-1 if not PTY) */
-  int is_pty;     /* 1 if using PTY mode */
+  int pty_master;
+  int is_pty;
 
-  /* Internal buffers for read-until */
   char *stdout_buf;
   size_t stdout_len;
   size_t stdout_cap;
@@ -57,6 +54,7 @@ static int set_nonblocking(int fd);
 
 static process_handle *process_handle_new(void) {
   process_handle *h = (process_handle *)calloc(1, sizeof(process_handle));
+
   if (!h) {
     return NULL;
   }
@@ -89,18 +87,18 @@ static void process_handle_finalizer(void *ptr) {
   }
 
   if (h->is_pty) {
-    /* In PTY mode, pty_master is used for both stdin and stdout */
     if (h->pty_master >= 0) {
       close(h->pty_master);
     }
   } else {
-    /* Pipe mode - separate fds */
     if (h->stdin_fd >= 0) {
       close(h->stdin_fd);
     }
+
     if (h->stdout_fd >= 0) {
       close(h->stdout_fd);
     }
+
     if (h->stderr_fd >= 0) {
       close(h->stderr_fd);
     }
@@ -113,17 +111,21 @@ static void process_handle_finalizer(void *ptr) {
 
 static process_handle *get_handle(lcl_value *v) {
   void *ptr = NULL;
+
   if (lcl_opaque_get(v, PROCESS_HANDLE_TYPE_TAG, &ptr) != LCL_OK) {
     return NULL;
   }
+
   return (process_handle *)ptr;
 }
 
 static int set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
+
   if (flags < 0) {
     return -1;
   }
+
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
@@ -137,6 +139,7 @@ static char *read_all(int fd, size_t *out_len, size_t limit) {
   while ((n = read(fd, tmp, sizeof(tmp))) > 0) {
     if (len + (size_t)n > limit) {
       n = (ssize_t)(limit - len);
+
       if (n <= 0) {
         break;
       }
@@ -145,17 +148,22 @@ static char *read_all(int fd, size_t *out_len, size_t limit) {
     if (len + (size_t)n >= cap) {
       size_t newcap = cap ? cap * 2 : INITIAL_BUF_SIZE;
       char *newbuf;
+
       while (newcap < len + (size_t)n + 1) {
         newcap *= 2;
       }
+
       if (newcap > limit) {
         newcap = limit + 1;
       }
+
       newbuf = (char *)realloc(buf, newcap);
+
       if (!newbuf) {
         free(buf);
         return NULL;
       }
+
       buf = newbuf;
       cap = newcap;
     }
@@ -168,6 +176,7 @@ static char *read_all(int fd, size_t *out_len, size_t limit) {
     buf[len] = '\0';
   } else {
     buf = (char *)malloc(1);
+
     if (buf) {
       buf[0] = '\0';
     }
@@ -182,18 +191,23 @@ static int get_opt_int(lcl_value *opts, const char *key, int def) {
   lcl_value *v = NULL;
   long n;
   int result;
+
   if (!opts) {
     return def;
   }
+
   if (lcl_dict_get(opts, key, &v) != LCL_OK) {
     return def;
   }
+
   if (lcl_value_to_int(v, &n) != LCL_OK) {
     lcl_ref_dec(v);
     return def;
   }
+
   result = (int)n;
   lcl_ref_dec(v);
+
   return result;
 }
 
@@ -201,25 +215,32 @@ static const char *get_opt_str(lcl_value *opts, const char *key,
                                const char *def) {
   lcl_value *v = NULL;
   const char *result;
+
   if (!opts) {
     return def;
   }
+
   if (lcl_dict_get(opts, key, &v) != LCL_OK) {
     return def;
   }
+
   result = lcl_value_to_string(v);
   lcl_ref_dec(v);
+
   return result;
 }
 
 static lcl_value *get_opt_val(lcl_value *opts, const char *key) {
   lcl_value *v = NULL;
+
   if (!opts) {
     return NULL;
   }
+
   if (lcl_dict_get(opts, key, &v) != LCL_OK) {
     return NULL;
   }
+
   return v;
 }
 
@@ -272,6 +293,7 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   argv_list = argv[0];
+
   if (argc >= 2) {
     opts = argv[1];
   }
@@ -304,6 +326,7 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
       slen = strlen(s);
 
       cmd = (char *)realloc(cmd, cmd_len + slen + 2);
+
       if (!cmd) {
         lcl_ref_dec(arg);
         return LCL_RC_ERR;
@@ -316,19 +339,23 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
       cmd_len += slen;
       lcl_ref_dec(arg);
     }
+
     cmd[cmd_len] = '\0';
 
     exec_argv = (char **)malloc(4 * sizeof(char *));
+
     if (!exec_argv) {
       free(cmd);
       return LCL_RC_ERR;
     }
+
     exec_argv[0] = strdup("/bin/sh");
     exec_argv[1] = strdup("-c");
     exec_argv[2] = cmd;
     exec_argv[3] = NULL;
   } else {
     exec_argv = (char **)malloc((argv_len + 1) * sizeof(char *));
+
     if (!exec_argv) {
       return LCL_RC_ERR;
     }
@@ -345,14 +372,17 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
   if (pipe(stdout_pipe) < 0) {
     goto cleanup;
   }
+
   if (!merge && pipe(stderr_pipe) < 0) {
     goto cleanup;
   }
+
   if (stdin_str && pipe(stdin_pipe) < 0) {
     goto cleanup;
   }
 
   pid = fork();
+
   if (pid < 0) {
     goto cleanup;
   }
@@ -386,20 +416,26 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (env_dict) {
       lcl_value *keys = NULL;
+
       if (lcl_dict_keys(env_dict, &keys) == LCL_OK && keys) {
         size_t ki, klen = lcl_list_len(keys);
+
         for (ki = 0; ki < klen; ki++) {
           lcl_value *key_val = NULL;
           lcl_value *val = NULL;
+
           if (lcl_list_get(keys, ki, &key_val) == LCL_OK) {
             const char *key = lcl_value_to_string(key_val);
+
             if (lcl_dict_get(env_dict, key, &val) == LCL_OK) {
               setenv(key, lcl_value_to_string(val), 1);
               lcl_ref_dec(val);
             }
+
             lcl_ref_dec(key_val);
           }
         }
+
         lcl_ref_dec(keys);
       }
     }
@@ -415,6 +451,7 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
     close(stderr_pipe[1]);
     stderr_pipe[1] = -1;
   }
+
   if (stdin_str) {
     close(stdin_pipe[0]);
     stdin_pipe[0] = -1;
@@ -476,24 +513,30 @@ cleanup:
   if (stdin_pipe[0] >= 0) {
     close(stdin_pipe[0]);
   }
+
   if (stdin_pipe[1] >= 0) {
     close(stdin_pipe[1]);
   }
+
   if (stdout_pipe[0] >= 0) {
     close(stdout_pipe[0]);
   }
+
   if (stdout_pipe[1] >= 0) {
     close(stdout_pipe[1]);
   }
+
   if (stderr_pipe[0] >= 0) {
     close(stderr_pipe[0]);
   }
+
   if (stderr_pipe[1] >= 0) {
     close(stderr_pipe[1]);
   }
 
   free(stdout_data);
   free(stderr_data);
+
   if (env_dict) {
     lcl_ref_dec(env_dict);
   }
@@ -542,6 +585,7 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   argv_list = argv[0];
+
   if (argc >= 2) {
     opts = argv[1];
   }
@@ -559,6 +603,7 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   exec_argv = (char **)malloc((argv_len + 1) * sizeof(char *));
+
   if (!exec_argv) {
     return LCL_RC_ERR;
   }
@@ -569,10 +614,10 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     exec_argv[i] = strdup(lcl_value_to_string(arg));
     lcl_ref_dec(arg);
   }
+
   exec_argv[argv_len] = NULL;
 
   if (use_pty) {
-    /* PTY mode - use openpty() for terminal emulation */
     struct winsize ws;
     ws.ws_row = (unsigned short)pty_rows;
     ws.ws_col = (unsigned short)pty_cols;
@@ -583,40 +628,36 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
       goto error;
     }
   } else {
-    /* Pipe mode */
     if (pipe(stdin_pipe) < 0) {
       goto error;
     }
+
     if (pipe(stdout_pipe) < 0) {
       goto error;
     }
+
     if (!merge && pipe(stderr_pipe) < 0) {
       goto error;
     }
   }
 
   pid = fork();
+
   if (pid < 0) {
     goto error;
   }
 
   if (pid == 0) {
-    /* Child process */
     if (cwd && chdir(cwd) < 0) {
       _exit(127);
     }
 
     if (use_pty) {
-      /* PTY child setup */
       close(pty_master);
-
-      /* Create new session and set controlling terminal */
       setsid();
 #ifdef TIOCSCTTY
       ioctl(pty_slave, TIOCSCTTY, 0);
 #endif
-
-      /* Redirect all stdio to PTY slave */
       dup2(pty_slave, STDIN_FILENO);
       dup2(pty_slave, STDOUT_FILENO);
       dup2(pty_slave, STDERR_FILENO);
@@ -625,7 +666,6 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
         close(pty_slave);
       }
     } else {
-      /* Pipe child setup */
       close(stdin_pipe[1]);
       dup2(stdin_pipe[0], STDIN_FILENO);
       close(stdin_pipe[0]);
@@ -646,20 +686,26 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (env_dict) {
       lcl_value *keys = NULL;
+
       if (lcl_dict_keys(env_dict, &keys) == LCL_OK && keys) {
         size_t ki, klen = lcl_list_len(keys);
+
         for (ki = 0; ki < klen; ki++) {
           lcl_value *key_val = NULL;
           lcl_value *val = NULL;
+
           if (lcl_list_get(keys, ki, &key_val) == LCL_OK) {
             const char *key = lcl_value_to_string(key_val);
+
             if (lcl_dict_get(env_dict, key, &val) == LCL_OK) {
               setenv(key, lcl_value_to_string(val), 1);
               lcl_ref_dec(val);
             }
+
             lcl_ref_dec(key_val);
           }
         }
+
         lcl_ref_dec(keys);
       }
     }
@@ -668,8 +714,8 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     _exit(127);
   }
 
-  /* Parent process */
   h = process_handle_new();
+
   if (!h) {
     goto error;
   }
@@ -681,18 +727,19 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     h->pid = pid;
     h->pty_master = pty_master;
     h->is_pty = 1;
-    /* In PTY mode, use pty_master for both stdin and stdout */
     h->stdin_fd = pty_master;
     h->stdout_fd = pty_master;
-    h->stderr_fd = -1; /* PTY combines stderr into stdout */
+    h->stderr_fd = -1;
   } else {
     close(stdin_pipe[0]);
     close(stdout_pipe[1]);
+
     if (!merge) {
       close(stderr_pipe[1]);
     }
 
     set_nonblocking(stdout_pipe[0]);
+
     if (!merge) {
       set_nonblocking(stderr_pipe[0]);
     }
@@ -706,12 +753,15 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   for (i = 0; exec_argv[i]; i++) {
     free(exec_argv[i]);
   }
+
   free(exec_argv);
+
   if (env_dict) {
     lcl_ref_dec(env_dict);
   }
 
   *out = lcl_opaque_new(h, PROCESS_HANDLE_TYPE_TAG, process_handle_finalizer);
+
   return LCL_RC_OK;
 
 error:
@@ -721,31 +771,41 @@ error:
     }
     free(exec_argv);
   }
+
   if (pty_master >= 0) {
     close(pty_master);
   }
+
   if (pty_slave >= 0) {
     close(pty_slave);
   }
+
   if (stdin_pipe[0] >= 0) {
     close(stdin_pipe[0]);
   }
+
   if (stdin_pipe[1] >= 0) {
     close(stdin_pipe[1]);
   }
+
   if (stdout_pipe[0] >= 0) {
     close(stdout_pipe[0]);
   }
+
   if (stdout_pipe[1] >= 0) {
     close(stdout_pipe[1]);
   }
+
   if (stderr_pipe[0] >= 0) {
     close(stderr_pipe[0]);
   }
+
   if (stderr_pipe[1] >= 0) {
     close(stderr_pipe[1]);
   }
+
   free(h);
+
   if (env_dict) {
     lcl_ref_dec(env_dict);
   }
@@ -759,7 +819,6 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
   const char *data;
   size_t len;
   ssize_t written;
-
   (void)interp;
 
   if (argc < 2) {
@@ -767,6 +826,7 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -779,18 +839,19 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
   len = strlen(data);
 
   written = write(h->stdin_fd, data, len);
+
   if (written < 0) {
     return LCL_RC_ERR;
   }
 
   *out = lcl_int_new((long)written);
+
   return LCL_RC_OK;
 }
 
 static int c_process_close_stdin(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
   process_handle *h;
-
   (void)interp;
 
   if (argc < 1) {
@@ -798,6 +859,7 @@ static int c_process_close_stdin(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -840,6 +902,7 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -853,6 +916,7 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
   max_bytes = get_opt_int(opts, "n", 4096);
 
   fd = use_stderr ? h->stderr_fd : h->stdout_fd;
+
   if (fd < 0) {
     *out = lcl_string_new("");
     return LCL_RC_OK;
@@ -865,6 +929,7 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
     tv.tv_usec = (timeout_ms % 1000) * 1000;
 
     ret = select(fd + 1, &rfds, NULL, NULL, &tv);
+
     if (ret <= 0) {
       *out = lcl_string_new("");
       return LCL_RC_OK;
@@ -872,11 +937,13 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   buf = (char *)malloc((size_t)max_bytes + 1);
+
   if (!buf) {
     return LCL_RC_ERR;
   }
 
   n = read(fd, buf, (size_t)max_bytes);
+
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       n = 0;
@@ -931,7 +998,6 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   lcl_value *tmp;
   size_t i;
-
   (void)interp;
 
   if (argc < 2) {
@@ -939,11 +1005,13 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
 
   patterns = argv[1];
+
   if (argc >= 3) {
     opts = argv[2];
   }
@@ -952,6 +1020,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
   timeout_ms = get_opt_int(opts, "timeout", 0);
 
   fd = use_stderr ? h->stderr_fd : h->stdout_fd;
+
   if (fd < 0) {
     result = lcl_dict_new();
     tmp = lcl_string_new("");
@@ -982,6 +1051,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
 
   pattern_strs = (const char **)malloc(num_patterns * sizeof(char *));
   pattern_lens = (size_t *)malloc(num_patterns * sizeof(size_t));
+
   if (!pattern_strs || !pattern_lens) {
     free(pattern_strs);
     free(pattern_lens);
@@ -991,6 +1061,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
   if (lcl_value_type_of(patterns) == LCL_LIST) {
     for (i = 0; i < num_patterns; i++) {
       lcl_value *p = NULL;
+
       if (lcl_list_get(patterns, i, &p) == LCL_OK) {
         pattern_strs[i] = lcl_value_to_string(p);
         pattern_lens[i] = strlen(pattern_strs[i]);
@@ -1028,9 +1099,11 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (timeout_ms > 0) {
       wait_ms = timeout_ms - elapsed_ms;
+
       if (wait_ms <= 0) {
         break;
       }
+
       if (wait_ms > 100) {
         wait_ms = 100;
       }
@@ -1061,6 +1134,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
     if (buf_len + 1024 >= buf_size) {
       size_t new_size = buf_size * 2;
       char *new_buf = (char *)realloc(buf, new_size);
+
       if (!new_buf) {
         break;
       }
@@ -1069,6 +1143,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     n = read(fd, buf + buf_len, 1024);
+
     if (n <= 0) {
       if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         continue;
@@ -1082,6 +1157,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < num_patterns; i++) {
       if (pattern_lens[i] > 0 && pattern_lens[i] <= buf_len) {
         char *found = strstr(buf, pattern_strs[i]);
+
         if (found) {
           matched = 1;
           matched_idx = i;
@@ -1138,7 +1214,6 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
   pid_t ret;
   lcl_value *result;
   lcl_value *tmp;
-
   (void)interp;
 
   if (argc < 1) {
@@ -1146,6 +1221,7 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -1164,11 +1240,13 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
     tmp = lcl_int_new(h->status);
     lcl_dict_put(&result, "status", tmp);
     lcl_ref_dec(tmp);
+
     if (h->signal_num) {
       tmp = lcl_int_new(h->signal_num);
       lcl_dict_put(&result, "signal", tmp);
       lcl_ref_dec(tmp);
     }
+
     *out = result;
     return LCL_RC_OK;
   }
@@ -1179,9 +1257,11 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
 
     while (elapsed < timeout_ms) {
       ret = waitpid(h->pid, &status, WNOHANG);
+
       if (ret > 0) {
         break;
       }
+
       if (ret < 0) {
         return LCL_RC_ERR;
       }
@@ -1192,6 +1272,7 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
         tv.tv_usec = interval * 1000;
         select(0, NULL, NULL, NULL, &tv);
       }
+
       elapsed += interval;
     }
 
@@ -1205,12 +1286,14 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
     }
   } else {
     ret = waitpid(h->pid, &status, 0);
+
     if (ret < 0) {
       return LCL_RC_ERR;
     }
   }
 
   h->exited = 1;
+
   if (WIFEXITED(status)) {
     h->status = WEXITSTATUS(status);
   } else if (WIFSIGNALED(status)) {
@@ -1225,6 +1308,7 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
   tmp = lcl_int_new(h->status);
   lcl_dict_put(&result, "status", tmp);
   lcl_ref_dec(tmp);
+
   if (h->signal_num) {
     tmp = lcl_int_new(h->signal_num);
     lcl_dict_put(&result, "signal", tmp);
@@ -1232,6 +1316,7 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -1240,7 +1325,6 @@ static int c_process_alive(lcl_interp *interp, int argc, lcl_value **argv,
   process_handle *h;
   int status;
   pid_t ret;
-
   (void)interp;
 
   if (argc < 1) {
@@ -1248,6 +1332,7 @@ static int c_process_alive(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -1258,10 +1343,12 @@ static int c_process_alive(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   ret = waitpid(h->pid, &status, WNOHANG);
+
   if (ret == 0) {
     *out = lcl_int_new(1);
   } else if (ret > 0) {
     h->exited = 1;
+
     if (WIFEXITED(status)) {
       h->status = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
@@ -1288,7 +1375,6 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *opts = NULL;
   const char *sig_str;
   int sig = SIGTERM;
-
   (void)interp;
 
   if (argc < 1) {
@@ -1296,6 +1382,7 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -1305,6 +1392,7 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   sig_str = get_opt_str(opts, "signal", NULL);
+
   if (sig_str) {
     if (strcmp(sig_str, "TERM") == 0 || strcmp(sig_str, "SIGTERM") == 0) {
       sig = SIGTERM;
@@ -1318,9 +1406,11 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
     } else {
       long n;
       lcl_value *v = get_opt_val(opts, "signal");
+
       if (v && lcl_value_to_int(v, &n) == LCL_OK) {
         sig = (int)n;
       }
+
       if (v) {
         lcl_ref_dec(v);
       }
@@ -1337,6 +1427,7 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = lcl_int_new(1);
+
   return LCL_RC_OK;
 }
 
@@ -1351,11 +1442,11 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
 
-  /* Close file descriptors */
   if (h->is_pty) {
     if (h->pty_master >= 0) {
       close(h->pty_master);
@@ -1368,10 +1459,12 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
       close(h->stdin_fd);
       h->stdin_fd = -1;
     }
+
     if (h->stdout_fd >= 0) {
       close(h->stdout_fd);
       h->stdout_fd = -1;
     }
+
     if (h->stderr_fd >= 0) {
       close(h->stderr_fd);
       h->stderr_fd = -1;
@@ -1388,7 +1481,6 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
 static int c_process_is_pty(lcl_interp *interp, int argc, lcl_value **argv,
                             lcl_value **out) {
   process_handle *h;
-
   (void)interp;
 
   if (argc < 1) {
@@ -1415,7 +1507,6 @@ static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
   process_handle *h;
   long rows, cols;
   struct winsize ws;
-
   (void)interp;
 
   if (argc < 3) {
@@ -1423,6 +1514,7 @@ static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }
@@ -1462,7 +1554,6 @@ static int c_process_get_winsize(lcl_interp *interp, int argc, lcl_value **argv,
   struct winsize ws;
   lcl_value *result;
   lcl_value *tmp;
-
   (void)interp;
 
   if (argc < 1) {
@@ -1470,6 +1561,7 @@ static int c_process_get_winsize(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
     return LCL_RC_ERR;
   }

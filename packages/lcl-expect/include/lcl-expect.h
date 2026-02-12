@@ -3,6 +3,10 @@
 
 #include <lcl.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Register the expect:: namespace with the interpreter.
  *
@@ -28,4 +32,8 @@
  */
 void lcl_register_expect(lcl_interp *interp);
 
+#ifdef __cplusplus
+}
+#endif
+  
 #endif

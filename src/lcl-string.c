@@ -74,8 +74,7 @@ static enum elem_style choose_element_style(const char *s) {
     char c = *p;
 
     if (c == ' ' || c == '\t' || c == '\n' || c == '{' || c == '}' ||
-        c == '[' || c == ']' || c == '$' || c == '"' || c == '\\' ||
-        c == ';') {
+        c == '[' || c == ']' || c == '$' || c == '"' || c == '\\' || c == ';') {
       has_special = 1;
     }
 
@@ -199,9 +198,7 @@ static void lcl_reify_str_list(lcl_value *value) {
       p += slen;
       *p++ = '}';
       break;
-    case ELEM_QUOTED:
-      p = write_quoted(p, s);
-      break;
+    case ELEM_QUOTED: p = write_quoted(p, s); break;
     }
 
     lcl_ref_dec(elem);
@@ -239,7 +236,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
     case ELEM_QUOTED: total += quoted_len(vs); break;
     }
 
-    total += 2; /* spaces */
+    total += 2;
     lcl_ref_dec(val);
   }
 
@@ -276,9 +273,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
       p += klen;
       *p++ = '}';
       break;
-    case ELEM_QUOTED:
-      p = write_quoted(p, key);
-      break;
+    case ELEM_QUOTED: p = write_quoted(p, key); break;
     }
 
     *p++ = ' ';
@@ -294,9 +289,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
       p += vlen;
       *p++ = '}';
       break;
-    case ELEM_QUOTED:
-      p = write_quoted(p, vs);
-      break;
+    case ELEM_QUOTED: p = write_quoted(p, vs); break;
     }
 
     lcl_ref_dec(val);
@@ -311,6 +304,7 @@ const char *lcl_value_to_string(lcl_value *value) {
   if (!value) {
     return "";
   }
+
   if (!value->str_repr) {
     switch (value->type) {
     case LCL_INT: lcl_reify_str_int(value); break;
@@ -322,7 +316,8 @@ const char *lcl_value_to_string(lcl_value *value) {
       const char *tag = value->as.opaque.type_tag;
 
       if (tag) {
-        size_t len = strlen(tag) + 10; /* "<opaque:>" + tag + null */
+        /* "<opaque:>" + tag + null */
+        size_t len = strlen(tag) + 10;
         value->str_repr = (char *)malloc(len);
 
         if (value->str_repr) {
@@ -339,9 +334,11 @@ const char *lcl_value_to_string(lcl_value *value) {
 
     default:
       value->str_repr = (char *)malloc(4);
+
       if (!value->str_repr) {
         return "";
       }
+
       memcpy(value->str_repr, "<?>", 4);
       break;
     }

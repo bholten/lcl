@@ -10,16 +10,22 @@
 
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
                              lcl_c_proc_fn fn);
+
 lcl_result lcl_register_spec(lcl_interp *interp, const char *name,
                              lcl_c_spec_fn fn);
+
 lcl_result lcl_define(lcl_interp *interp, const char *name, lcl_value *value);
+
 lcl_result lcl_define_take(lcl_interp *interp, const char *name,
                            lcl_value *value);
+
 int lcl_is_callable(lcl_value *value);
+
 lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
                               lcl_value **argv, lcl_value **out);
 
 lcl_value *lcl_list_new_from_cwords(const char *words);
+
 static int lcl_value_is_true(lcl_value *v);
 
 static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
@@ -44,11 +50,13 @@ static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (!lcl_value_is_true(result)) {
     lcl_ref_dec(result);
+
     if (argc >= 2) {
       LCL_ERR_MSG_DUP(interp, lcl_value_to_string(argv[1]));
     } else {
       LCL_ERR_MSG(interp, "assertion failed");
     }
+
     return LCL_RC_ERR;
   }
 
@@ -141,25 +149,31 @@ static int all_args_integral(int argc, lcl_value **argv) {
   int i;
   for (i = 0; i < argc; i++) {
     long dummy;
+
     if (argv[i]->type == LCL_FLOAT) {
       return 0;
     }
+
     if (argv[i]->type == LCL_INT) {
       continue;
     }
-    /* For strings, check if it parses as an integer */
+
     if (lcl_value_to_int(argv[i], &dummy) != LCL_OK) {
       return 0;
     }
-    /* Also reject strings containing '.' or 'e'/'E' (float-like) */
+
     {
       const char *s = lcl_value_to_string(argv[i]);
       while (*s) {
-        if (*s == '.' || *s == 'e' || *s == 'E') return 0;
+        if (*s == '.' || *s == 'e' || *s == 'E') {
+          return 0;
+        }
+
         s++;
       }
     }
   }
+
   return 1;
 }
 
@@ -170,21 +184,27 @@ static int c_add(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (all_args_integral(argc, argv)) {
     long sum = 0;
+
     for (i = 0; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
       sum += v;
     }
+
     *out = lcl_int_new(sum);
   } else {
     double sum = 0.0;
+
     for (i = 0; i < argc; i++) {
       double v;
+
       if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       sum += v;
     }
+
     *out = lcl_float_new(sum);
   }
 
@@ -203,24 +223,31 @@ static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
   if (all_args_integral(argc, argv)) {
     long result;
     lcl_value_to_int(argv[0], &result);
+
     for (i = 1; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
       result -= v;
     }
+
     *out = lcl_int_new(result);
   } else {
     double result;
+
     if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
       return LCL_RC_ERR;
     }
+
     for (i = 1; i < argc; i++) {
       double v;
+
       if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       result -= v;
     }
+
     *out = lcl_float_new(result);
   }
 
@@ -234,21 +261,27 @@ static int c_mult(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (all_args_integral(argc, argv)) {
     long product = 1;
+
     for (i = 0; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
       product *= v;
     }
+
     *out = lcl_int_new(product);
   } else {
     double product = 1.0;
+
     for (i = 0; i < argc; i++) {
       double v;
+
       if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       product *= v;
     }
+
     *out = lcl_float_new(product);
   }
 
@@ -436,6 +469,7 @@ static int eq_cycle_guard_check(struct eq_cycle_guard *g, lcl_value *a,
     if (g->a[i] == a && g->b[i] == b) {
       return 1;
     }
+
     if (g->a[i] == b && g->b[i] == a) {
       return 1;
     }
@@ -470,6 +504,7 @@ static lcl_value *deref_once(lcl_value *v) {
   if (v && v->type == LCL_CELL) {
     return v->as.cell.inner;
   }
+
   return v;
 }
 
@@ -817,6 +852,7 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   if (lcl_eval_word(interp, args[0], &name1_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
+
   if (lcl_eval_word(interp, args[1], &name2_v) != LCL_RC_OK) {
     lcl_ref_dec(name1_v);
     return LCL_RC_ERR;
@@ -950,9 +986,9 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
 
   name_str = lcl_value_to_string(name_v);
 
-  /* Look up the cell to check for cycles before mutating.
-   * If the value is a proc that captures this cell, assigning it
-   * would create a reference cycle that can never be freed. */
+  /* Look up the cell to check for cycles before mutating. If the
+   * value is a proc that captures this cell, assigning it would
+   * create a reference cycle that can never be freed. */
   if (lcl_env_get_value(&interp->env, name_str, &cell) == LCL_OK) {
     if (cell->type == LCL_CELL && lcl_cell_would_cycle(cell, val_v)) {
       LCL_ERR_MSG(interp, "assignment would create reference cycle "
@@ -962,6 +998,7 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(val_v);
       return LCL_RC_ERR;
     }
+
     lcl_ref_dec(cell);
   }
 
@@ -1116,6 +1153,7 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (argc >= 2) {
     lcl_value *rv = NULL;
+
     if (lcl_eval_word_to_str(interp, args[1], &rv) != LCL_RC_OK) {
       return LCL_RC_ERR;
     }
@@ -1125,10 +1163,12 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (argc >= 3) {
     lcl_value *ev = NULL;
+
     if (lcl_eval_word_to_str(interp, args[2], &ev) != LCL_RC_OK) {
       free(result_var);
       return LCL_RC_ERR;
     }
+
     error_var = strdup(lcl_value_to_string(ev));
     lcl_ref_dec(ev);
   }
@@ -1312,14 +1352,15 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   return rc;
 }
 
-/* Helper to check if a word is a literal matching a specific string */
 static int word_is_literal(const lcl_word *w, const char *lit) {
   if (w->np != 1) {
     return 0;
   }
+
   if (w->wp[0].kind != LCL_WP_LIT) {
     return 0;
   }
+
   return strcmp(w->wp[0].as.lit.s, lit) == 0;
 }
 
@@ -2323,26 +2364,29 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   target = &interp->def_stack[interp->def_depth - 1];
   old_frame = interp->env.frame;
 
-  /* If re-entering an existing namespace, pre-populate overlay with its
-   * bindings. This handles both top-level re-entry and nested re-entry within a
-   * builder. */
+  /* If re-entering an existing namespace, pre-populate overlay with
+   * its bindings. This handles both top-level re-entry and nested
+   * re-entry within a builder. */
   if (ns_name && !strchr(ns_name, ':')) {
     lcl_value *existing_ns = NULL;
-    /* Look up the namespace - either from environment (top-level) or from
-     * parent builder's overlay (nested). lcl_env_get_value will check
-     * the current frame chain which includes the parent overlay. */
+    /* Look up the namespace - either from environment (top-level) or
+     * from parent builder's overlay (nested). lcl_env_get_value will
+     * check the current frame chain which includes the parent
+     * overlay. */
     if (lcl_env_get_value(&interp->env, ns_name, &existing_ns) == LCL_OK) {
       if (existing_ns->type == LCL_NAMESPACE) {
         hash_iter it = {0};
         const char *key;
         lcl_value *value;
+
         while (hash_table_iterate(existing_ns->as.namespace.namespace, &it,
                                   &key, &value)) {
           hash_table_put(target->overlay->locals, key, value);
           lcl_dict_put(&target->exports, key, value);
-          lcl_ref_dec(value); /* Balance iterate */
+          lcl_ref_dec(value);
         }
       }
+
       lcl_ref_dec(existing_ns);
     }
   }
@@ -2431,6 +2475,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
           if (lcl_ns_get(parent, part, &next) != LCL_OK) {
             next = lcl_ns_new(part);
+
             if (!next ||
                 !hash_table_put(parent->as.namespace.namespace, part, next)) {
               if (next) {
@@ -2439,6 +2484,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
               lcl_ref_dec(parent);
               lcl_ref_dec(ns);
               free(ns_name);
+
               return LCL_RC_ERR;
             }
           }
@@ -2453,6 +2499,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
             LCL_ERR_MSG(interp, "namespace: failed to bind in parent");
             return LCL_RC_ERR;
           }
+
           lcl_ref_dec(parent);
           rest = NULL;
         }
@@ -2948,17 +2995,12 @@ err:
  * - ,$var, ,${name}, ,[cmd], ,(list), ,#{dict}
  */
 
-/* IR node types for quasiquote */
-typedef enum {
-  QQ_LITERAL, /* Literal text */
-  QQ_EVAL,    /* ,expr - evaluate and insert */
-  QQ_SPLICE   /* ,@expr - evaluate and splice list elements */
-} qq_node_kind;
+typedef enum { QQ_LITERAL, QQ_EVAL, QQ_SPLICE } qq_node_kind;
 
 typedef struct qq_node {
   qq_node_kind kind;
-  char *text;        /* For LITERAL: the text; for EVAL/SPLICE: word source */
-  int prefix_commas; /* For EVAL: number of commas to prepend to result */
+  char *text;
+  int prefix_commas;
   struct qq_node *next;
 } qq_node;
 
@@ -2976,16 +3018,20 @@ static qq_node *qq_node_new(qq_node_kind kind, const char *text, size_t len) {
   if (!node) {
     return NULL;
   }
+
   node->kind = kind;
+
   if (text && len > 0) {
     node->text = (char *)malloc(len + 1);
     if (!node->text) {
       free(node);
       return NULL;
     }
+
     memcpy(node->text, text, len);
     node->text[len] = '\0';
   }
+
   return node;
 }
 
@@ -3001,10 +3047,12 @@ static size_t skip_braces(const char *src, size_t len, size_t start) {
     } else if (src[i] == '\\' && i + 1 < len) {
       i++;
     }
+
     if (depth > 0) {
       i++;
     }
   }
+
   return i;
 }
 
@@ -3012,6 +3060,7 @@ static size_t skip_braces(const char *src, size_t len, size_t start) {
 static size_t skip_brackets(const char *src, size_t len, size_t start) {
   int depth = 1;
   size_t i = start;
+
   while (i < len && depth > 0) {
     if (src[i] == '[') {
       depth++;
@@ -3020,10 +3069,12 @@ static size_t skip_brackets(const char *src, size_t len, size_t start) {
     } else if (src[i] == '\\' && i + 1 < len) {
       i++;
     }
+
     if (depth > 0) {
       i++;
     }
   }
+
   return i;
 }
 
@@ -3039,10 +3090,12 @@ static size_t skip_parens(const char *src, size_t len, size_t start) {
     } else if (src[i] == '\\' && i + 1 < len) {
       i++;
     }
+
     if (depth > 0) {
       i++;
     }
   }
+
   return i;
 }
 
@@ -3054,6 +3107,7 @@ static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
   if (pos + kw_len >= len) {
     return 0;
   }
+
   if (memcmp(src + pos, kw, kw_len) != 0) {
     return 0;
   }
@@ -3100,6 +3154,7 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
         i++;
       }
     }
+
     *word_end = i;
     return 1;
   }
@@ -3107,29 +3162,37 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
   if (src[i] == '[') {
     i++;
     i = skip_brackets(src, len, i);
+
     if (i <= len) {
       i++;
     }
+
     *word_end = i;
+
     return 1;
   }
 
   if (src[i] == '{') {
     i++;
     i = skip_braces(src, len, i);
+
     if (i <= len) {
       i++;
     }
+
     *word_end = i;
+
     return 1;
   }
 
   if (src[i] == '(') {
     i++;
     i = skip_parens(src, len, i);
+
     if (i <= len) {
       i++;
     }
+
     *word_end = i;
     return 1;
   }
@@ -3137,20 +3200,24 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
   if (src[i] == '#' && i + 1 < len && src[i + 1] == '{') {
     i += 2;
     i = skip_braces(src, len, i);
+
     if (i <= len) {
       i++;
     }
+
     *word_end = i;
     return 1;
   }
 
-  /* Bugfix: bare word (alphanumeric, underscore, hyphen, colon for namespaces)
+  /* Bugfix: bare word (alphanumeric, underscore, hyphen, colon for
+     namespaces)
    */
   if (isalnum((unsigned char)src[i]) || src[i] == '_' || src[i] == '-') {
     while (i < len && (is_name_char((unsigned char)src[i]) || src[i] == ':' ||
                        src[i] == '-')) {
       i++;
     }
+
     *word_end = i;
     return 1;
   }
@@ -3172,29 +3239,36 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
     if (c == '\\' && i + 1 < len) {
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       }
 
       {
         qq_node *node = qq_node_new(QQ_LITERAL, src + i + 1, 1);
+
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       }
+
       i += 2;
       lit_start = i;
       continue;
@@ -3203,14 +3277,17 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
     if (is_nested_quasiquote(src, len, i)) {
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       }
 
@@ -3231,11 +3308,13 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
 
         inner_nodes = qq_parse(src + inner_start, inner_end - inner_start,
@@ -3244,6 +3323,7 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
           qq_node_free(head);
           return NULL;
         }
+
         if (inner_nodes) {
           tail->next = inner_nodes;
           while (tail->next) {
@@ -3252,28 +3332,34 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
         }
 
         node = qq_node_new(QQ_LITERAL, "}", 1);
+
         if (!node) {
           goto parse_err;
         }
+
         tail->next = node;
         tail = node;
         i = inner_end + 1;
         lit_start = i;
       }
+
       continue;
     }
 
     if (c == '"') {
       i++;
+
       while (i < len && src[i] != '"') {
         if (src[i] == '\\' && i + 1 < len) {
           i++;
         }
         i++;
       }
+
       if (i < len) {
         i++;
       }
+
       continue;
     }
 
@@ -3285,14 +3371,17 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
 
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       }
 
@@ -3322,32 +3411,40 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       if (num_commas < depth) {
         size_t total_len = (word_end - comma_start);
         qq_node *node = qq_node_new(QQ_LITERAL, src + comma_start, total_len);
+
         if (!node) {
           goto parse_err;
         }
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       } else {
         qq_node *node;
+
         if (splice) {
           node =
               qq_node_new(QQ_SPLICE, src + word_start, word_end - word_start);
         } else {
           node = qq_node_new(QQ_EVAL, src + word_start, word_end - word_start);
         }
+
         if (!node) {
           goto parse_err;
         }
+
         node->prefix_commas = num_commas - 1;
+
         if (tail) {
           tail->next = node;
         } else {
           head = node;
         }
+
         tail = node;
       }
 
@@ -3361,14 +3458,17 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
 
   if (i > lit_start) {
     qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
+
     if (!node) {
       goto parse_err;
     }
+
     if (tail) {
       tail->next = node;
     } else {
       head = node;
     }
+
     tail = node;
   }
 
@@ -3380,8 +3480,8 @@ parse_err:
   return NULL;
 }
 
-/* Check if a string needs braces to be a valid unquote word.
- * Returns 1 if braces needed, 0 if bare word is fine. */
+/* Check if a string needs braces to be a valid unquote word. Returns
+ * 1 if braces needed, 0 if bare word is fine. */
 static int qq_needs_braces(const char *s) {
   size_t i;
   if (!s || !*s) {
@@ -3394,10 +3494,12 @@ static int qq_needs_braces(const char *s) {
 
   for (i = 0; s[i]; i++) {
     unsigned char c = (unsigned char)s[i];
+
     if (!isalnum(c) && c != '_' && c != '-' && c != '.' && c != ':') {
       return 1;
     }
   }
+
   return 0;
 }
 
@@ -3433,6 +3535,7 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
       }
 
       prog = lcl_program_compile(node->text, "<quasiquote>");
+
       if (!prog) {
         LCL_ERR_MSG(interp, "failed to compile unquote expression");
         return 0;
@@ -3458,9 +3561,11 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
         if (val->type != LCL_LIST) {
           list_val = lcl_list_new_from_cwords(lcl_value_to_string(val));
           lcl_ref_dec(val);
+
           if (!list_val) {
             return 0;
           }
+
           val = list_val;
         }
 
@@ -3498,7 +3603,6 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
           }
         }
       } else {
-        /* Eval: insert stringified value */
         const char *val_str = lcl_value_to_string(val);
         /* When prefix_commas > 0, wrap in braces only if needed.
          * Simple values like "42" or "hello" can be bare words.
@@ -3510,11 +3614,13 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
             return 0;
           }
         }
+
         if (!buf_append(result, result_len, result_cap, val_str,
                         strlen(val_str))) {
           lcl_ref_dec(val);
           return 0;
         }
+
         if (needs_braces) {
           if (!buf_append_char(result, result_len, result_cap, '}')) {
             lcl_ref_dec(val);
@@ -3612,9 +3718,11 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     for (i = 0; i < argc; i++) {
       if (lcl_eval_word_to_str(interp, args[i], &parts[i]) != LCL_RC_OK) {
         int j;
+
         for (j = 0; j < i; j++) {
           lcl_ref_dec(parts[j]);
         }
+
         free(parts);
         return LCL_RC_ERR;
       }
@@ -3628,6 +3736,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
       for (i = 0; i < argc; i++) {
         lcl_ref_dec(parts[i]);
       }
+
       free(parts);
       return LCL_RC_ERR;
     }
@@ -3638,15 +3747,18 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
       size_t l = strlen(s);
       memcpy(p, s, l);
       p += l;
+
       if (i + 1 < argc) {
         *p++ = ' ';
       }
     }
+
     *p = '\0';
 
     for (i = 0; i < argc; i++) {
       lcl_ref_dec(parts[i]);
     }
+
     free(parts);
 
     prog = lcl_program_compile(script_str, "<eval>");
@@ -3677,12 +3789,14 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
         interp->err_line = cmd->line;
+
         if (interp->err_file_owned && interp->err_file) {
           free((void *)interp->err_file);
         }
         interp->err_file = prog->file ? strdup(prog->file) : NULL;
         interp->err_file_owned = prog->file ? 1 : 0;
       }
+
       break;
     }
   }
@@ -3708,6 +3822,7 @@ static char *read_file(const char *path, size_t *out_len) {
   size_t nread;
 
   f = fopen(path, "rb");
+
   if (!f) {
     return NULL;
   }
@@ -3785,7 +3900,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  lcl_ref_dec(path_v); /* prog->file now owns a copy of the path string */
+  lcl_ref_dec(path_v);
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     lcl_program_free(prog);
@@ -3807,9 +3922,11 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
         interp->err_line = cmd->line;
+
         if (interp->err_file_owned && interp->err_file) {
           free((void *)interp->err_file);
         }
+
         interp->err_file = prog->file ? strdup(prog->file) : NULL;
         interp->err_file_owned = prog->file ? 1 : 0;
       }
@@ -4003,13 +4120,11 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
-/* ============================================================================
- * Thread-last operator: ->> initial {form1} {form2} ...
+/* Thread-last operator: ->> initial {form1} {form2} ...
  * Threads the value through each form as the last argument.
  * Example: ->> $d {cmd a b} becomes: cmd a b $d
  *          ->> 10 {$f a} becomes: [$f a 10]
  *          ->> 10 {[lambda {x} ...]} becomes: [[lambda {x} ...] 10]
- * ============================================================================
  */
 static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
                          lcl_value **out) {
@@ -4058,7 +4173,7 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
       }
       sprintf(threaded, "[%s $_thread_]", form);
     } else {
-      total = strlen(form) + 11 + 1; /* 11 = " $_thread_" */
+      total = strlen(form) + 11 + 1;
       threaded = (char *)malloc(total);
 
       if (!threaded) {
@@ -4067,6 +4182,7 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
 
         return LCL_RC_ERR;
       }
+
       sprintf(threaded, "%s $_thread_", form);
     }
 
@@ -4144,9 +4260,8 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
-/* ============================================================================
+/*
  * List Commands
- * ============================================================================
  */
 
 /* list ?value ...? - construct a list from arguments */
@@ -4157,6 +4272,7 @@ static int c_list(lcl_interp *interp, int argc, lcl_value **argv,
   (void)interp;
 
   list = lcl_list_new();
+
   if (!list) {
     return LCL_RC_ERR;
   }
@@ -4196,6 +4312,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
       if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
         return LCL_RC_ERR;
       }
+
       if (idx == 0) {
         *out = lcl_ref_inc(list);
 
@@ -4284,9 +4401,11 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
   if (argc < 2 || argc > 3) {
     return LCL_RC_ERR;
   }
+
   if (lcl_value_to_int(argv[0], &start) != LCL_OK) {
     return LCL_RC_ERR;
   }
+
   if (lcl_value_to_int(argv[1], &end) != LCL_OK) {
     return LCL_RC_ERR;
   }
@@ -4297,6 +4416,7 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
     if (lcl_value_to_int(argv[2], &step) != LCL_OK) {
       return LCL_RC_ERR;
     }
+
     if (step == 0) {
       return LCL_RC_ERR;
     }
@@ -4316,7 +4436,9 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
         if (num) {
           lcl_ref_dec(num);
         }
+
         lcl_ref_dec(result);
+
         return LCL_RC_ERR;
       }
 
@@ -4325,10 +4447,12 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
   } else {
     for (i = start; i > end; i += step) {
       num = lcl_int_new(i);
+
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
         if (num) {
           lcl_ref_dec(num);
         }
+
         lcl_ref_dec(result);
         return LCL_RC_ERR;
       }
@@ -4360,6 +4484,7 @@ static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   list = argv[0];
+
   if (argc == 2) {
     sep = lcl_value_to_string(argv[1]);
   }
@@ -4447,6 +4572,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
         if (elem) {
           lcl_ref_dec(elem);
         }
+
         lcl_ref_dec(result);
 
         return LCL_RC_ERR;
@@ -4483,6 +4609,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
 
           return LCL_RC_ERR;
         }
+
         lcl_ref_dec(elem);
         start = p + 1;
       }
@@ -4509,9 +4636,8 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* ============================================================================
+/*
  * Generic Type-Directed Operations
- * ============================================================================
  */
 
 /* len x - returns length of list, dict, or string */
@@ -4580,6 +4706,7 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
   switch (argv[0]->type) {
   case LCL_LIST: {
     long idx;
+
     if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
       return LCL_RC_ERR;
     }
@@ -4599,6 +4726,7 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
 
   case LCL_DICT: {
     const char *key = lcl_value_to_string(argv[1]);
+
     if (lcl_dict_get(argv[0], key, out) != LCL_OK) {
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
@@ -4616,6 +4744,7 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     long idx;
     const char *str;
     char buf[2];
+
     if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
       return LCL_RC_ERR;
     }
@@ -4918,6 +5047,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   call_argv = (lcl_value **)malloc(call_argc * sizeof(lcl_value *));
+
   if (!call_argv) {
     LCL_ERR_MSG(interp, "out of memory");
     return LCL_RC_ERR;
@@ -4926,11 +5056,14 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
   for (i = 0; i < call_argc; i++) {
     if (lcl_list_get(args_list, i, &call_argv[i]) != LCL_OK) {
       size_t j;
+
       for (j = 0; j < i; j++) {
         lcl_ref_dec(call_argv[j]);
       }
+
       free(call_argv);
       LCL_ERR_MSG(interp, "apply: failed to get list element");
+
       return LCL_RC_ERR;
     }
   }
@@ -4940,6 +5073,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
   for (i = 0; i < call_argc; i++) {
     lcl_ref_dec(call_argv[i]);
   }
+
   free(call_argv);
 
   return rc;
@@ -5308,6 +5442,7 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -5367,6 +5502,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -5432,6 +5568,7 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -5483,11 +5620,13 @@ static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   list = argv[0];
+
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
 
   len = lcl_list_len(list);
+
   if (len == 0) {
     *out = lcl_list_new();
     return LCL_RC_OK;
@@ -5559,11 +5698,13 @@ static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
 
   len = lcl_list_len(list);
+
   if (len == 0) {
     *out = lcl_list_new();
     return LCL_RC_OK;
@@ -5580,6 +5721,7 @@ static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
       while (i > 0) {
         lcl_ref_dec(items[--i]);
       }
+
       free(items);
       return LCL_RC_ERR;
     }
@@ -5588,6 +5730,7 @@ static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
   for (i = 1; i < len; i++) {
     lcl_value *key = items[i];
     j = i;
+
     while (j > 0) {
       lcl_value *cmp_args[2];
       lcl_value *cmp_result = NULL;
@@ -5601,16 +5744,21 @@ static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
         for (k = 0; k < len; k++) {
           lcl_ref_dec(items[k]);
         }
+
         free(items);
+
         return rc;
       }
 
       if (lcl_value_to_int(cmp_result, &cmp_val) != LCL_OK) {
         lcl_ref_dec(cmp_result);
+
         for (k = 0; k < len; k++) {
           lcl_ref_dec(items[k]);
         }
+
         free(items);
+
         return LCL_RC_ERR;
       }
 
@@ -5657,6 +5805,7 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -5713,6 +5862,7 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -5768,6 +5918,7 @@ static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
   if (list->type != LCL_LIST) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -6173,6 +6324,7 @@ static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
   if (dict->type != LCL_DICT) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -6224,6 +6376,7 @@ static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
   if (dict->type != LCL_DICT) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }
@@ -6282,6 +6435,7 @@ static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   if (dict->type != LCL_DICT) {
     return LCL_RC_ERR;
   }
+
   if (!lcl_is_callable(func)) {
     return LCL_RC_ERR;
   }

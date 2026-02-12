@@ -3,6 +3,10 @@
 
 #include <lcl.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Register the process:: namespace with the interpreter.
  *
@@ -31,4 +35,8 @@
  */
 void lcl_register_process(lcl_interp *interp);
 
+#ifdef __cplusplus
+}
+#endif
+  
 #endif

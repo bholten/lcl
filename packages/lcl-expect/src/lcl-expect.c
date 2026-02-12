@@ -42,6 +42,7 @@ static expect_pattern *get_pattern(lcl_value *v);
 
 static void expect_pattern_finalizer(void *ptr) {
   expect_pattern *p = (expect_pattern *)ptr;
+
   if (!p) {
     return;
   }
@@ -51,15 +52,18 @@ static void expect_pattern_finalizer(void *ptr) {
   } else if (p->kind == EXPECT_PAT_REGEX && p->regex_compiled) {
     regfree(&p->data.regex);
   }
+
   free(p->original);
   free(p);
 }
 
 static expect_pattern *get_pattern(lcl_value *v) {
   void *ptr = NULL;
+
   if (lcl_opaque_get(v, EXPECT_PATTERN_TYPE_TAG, &ptr) != LCL_OK) {
     return NULL;
   }
+
   return (expect_pattern *)ptr;
 }
 
@@ -75,7 +79,6 @@ static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
   expect_pattern *p;
   const char *str;
   int nocase = 0;
-
   (void)interp;
 
   if (argc < 1) {
@@ -87,11 +90,14 @@ static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc >= 2) {
     lcl_value *v = NULL;
+
     if (lcl_dict_get(argv[1], "nocase", &v) == LCL_OK) {
       long n;
+
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         nocase = (int)n;
       }
+
       lcl_ref_dec(v);
     }
   }
@@ -114,6 +120,7 @@ static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = lcl_opaque_new(p, EXPECT_PATTERN_TYPE_TAG, expect_pattern_finalizer);
+
   return LCL_RC_OK;
 }
 
@@ -187,6 +194,7 @@ static int c_expect_regex(lcl_interp *interp, int argc, lcl_value **argv,
   p->regex_compiled = 1;
 
   *out = lcl_opaque_new(p, EXPECT_PATTERN_TYPE_TAG, expect_pattern_finalizer);
+
   return LCL_RC_OK;
 }
 
@@ -213,6 +221,7 @@ static int c_expect_timeout(lcl_interp *interp, int argc, lcl_value **argv,
   p->original = strdup("timeout");
 
   *out = lcl_opaque_new(p, EXPECT_PATTERN_TYPE_TAG, expect_pattern_finalizer);
+
   return LCL_RC_OK;
 }
 
@@ -239,6 +248,7 @@ static int c_expect_eof(lcl_interp *interp, int argc, lcl_value **argv,
   p->original = strdup("eof");
 
   *out = lcl_opaque_new(p, EXPECT_PATTERN_TYPE_TAG, expect_pattern_finalizer);
+
   return LCL_RC_OK;
 }
 
@@ -359,8 +369,10 @@ static int match_pattern(const expect_pattern *p, const char *buf,
     return -1;
   } else if (p->kind == EXPECT_PAT_REGEX) {
     regmatch_t match;
+
     if (regexec(&p->data.regex, buf, 1, &match, 0) == 0) {
       *match_end = (size_t)match.rm_eo;
+
       return (int)match.rm_so;
     }
 
@@ -432,12 +444,11 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
           best_end = end;
         }
       }
-      
+
       lcl_ref_dec(pat_val);
       continue;
     }
 
-    /* Skip timeout/eof patterns - they're sentinels */
     if (p->kind == EXPECT_PAT_TIMEOUT || p->kind == EXPECT_PAT_EOF) {
       lcl_ref_dec(pat_val);
       continue;
@@ -511,6 +522,7 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = result;
+
   return LCL_RC_OK;
 }
 
@@ -624,12 +636,14 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
 
       if (!p) {
         const char *lit = lcl_value_to_string(pat_val);
+
         if (strstr(buf, lit)) {
           matched = 1;
           matched_idx = i;
           lcl_ref_dec(pat_val);
           break;
         }
+
         lcl_ref_dec(pat_val);
         continue;
       }
@@ -659,10 +673,12 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (wait_ms <= 0) {
       timed_out = 1;
+
       if (timeout_pattern_idx >= 0) {
         matched = 1;
         matched_idx = (size_t)timeout_pattern_idx;
       }
+
       break;
     }
 
@@ -914,6 +930,7 @@ static int c_expect_match(lcl_interp *interp, int argc, lcl_value **argv,
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         timeout_ms = (int)n;
       }
+
       lcl_ref_dec(v);
     }
   }

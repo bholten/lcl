@@ -37,16 +37,17 @@ lcl_frame *lcl_frame_new_ns(lcl_frame *parent, hash_table *ns_locals) {
   }
 
   f->refc = 1;
-  f->locals = ns_locals; /* Borrowed from namespace */
+  f->locals = ns_locals;
   f->parent = lcl_frame_ref_inc(parent);
   f->owns_locals = 0;
 
   return f;
 }
 
-/* Check if a lambda has any upvalue that references a cell in this frame.
- * This detects both direct cycles (cell -> lambda -> cell) and indirect
- * cycles (cell A -> lambda -> cell B -> lambda -> cell A). */
+/* Check if a lambda has any upvalue that references a cell in this
+ * frame.  This detects both direct cycles (cell -> lambda -> cell)
+ * and indirect cycles (cell A -> lambda -> cell B -> lambda -> cell
+ * A). */
 static int lambda_captures_frame_cell(lcl_value *lambda, hash_table *locals) {
   int i;
   lcl_proc *p;
@@ -56,15 +57,19 @@ static int lambda_captures_frame_cell(lcl_value *lambda, hash_table *locals) {
   }
 
   p = lambda->as.procedure.proc;
+
   for (i = 0; i < p->nupvals; i++) {
     lcl_value *upval = p->upvals[i].value;
+
     if (upval && upval->type == LCL_CELL) {
       lcl_value *found = NULL;
+
       if (hash_table_get(locals, p->upvals[i].name, &found)) {
         if (found == upval) {
           lcl_ref_dec(found);
-          return 1; /* This lambda captures a cell from our frame */
+          return 1;
         }
+
         lcl_ref_dec(found);
       }
     }
@@ -84,9 +89,10 @@ void lcl_frame_free(lcl_frame *f) {
   /* Dragons bere here */
   if (f->locals && f->owns_locals) {
     /* Break cell->lambda cycles before freeing.
-     * Clear any cell that contains a lambda capturing cells in this frame.
-     * This handles both direct (cell->lambda->cell) and indirect cycles
-     * (cell A->lambda->cell B->lambda->cell A). */
+     *
+     * Clear any cell that contains a lambda capturing cells in this
+     * frame.  This handles both direct (cell->lambda->cell) and
+     * indirect cycles (cell A->lambda->cell B->lambda->cell A). */
     hash_iter it = {0};
     const char *key;
     lcl_value *val;
@@ -100,7 +106,8 @@ void lcl_frame_free(lcl_frame *f) {
         }
       }
 
-      lcl_ref_dec(val); /* Balance the incref from hash_table_iterate */
+      /* Balance the incref from hash_table_iterate */
+      lcl_ref_dec(val);
     }
 
     hash_table_free(f->locals);
@@ -142,16 +149,19 @@ void lcl_frame_clear(lcl_frame *f) {
   }
 
   /* Break reference cycles through cells before freeing.
-   * This handles mutual recursion cases where:
-   * cell A -> lambda A -> upvalues -> cell B -> lambda B -> upvalues -> cell A
-   * By clearing cell contents first, we break the cycle.
+   *
+   * This handles mutual recursion cases where: cell A -> lambda A ->
+   * upvalues -> cell B -> lambda B -> upvalues -> cell A By clearing
+   * cell contents first, we break the cycle.
    */
   while (hash_table_iterate(f->locals, &it, &key, &val)) {
     if (val->type == LCL_CELL && val->as.cell.inner) {
       lcl_ref_dec(val->as.cell.inner);
       val->as.cell.inner = NULL;
     }
-    lcl_ref_dec(val); /* Balance the incref from hash_table_iterate */
+
+    /* Balance the incref from hash_table_iterate */
+    lcl_ref_dec(val);
   }
 
   hash_table_free(f->locals);

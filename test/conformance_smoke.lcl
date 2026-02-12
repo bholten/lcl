@@ -2391,5 +2391,98 @@ Test::suite "Issue #16: Arithmetic type preservation" {
     }
 }
 
+;; ============================================================================
+;; Scanner: escape sequences
+;; ============================================================================
+
+Test::suite "Scanner: escape sequences" {
+    Test::case "hex escape \\x41 produces A" {
+        Test::eq "\x41" A
+    }
+
+    Test::case "hex escape requires 2 digits" {
+        Test::eq [len "\x4z"] 4
+        Test::eq "\x4z" "\\x4z"
+    }
+
+    Test::case "unknown escape preserves backslash" {
+        Test::eq [len "\q"] 2
+        Test::eq "\q" "\\q"
+    }
+
+    Test::case "octal escape \\101 produces A" {
+        Test::eq "\101" A
+    }
+
+    Test::case "brace backslash balance" {
+        let val {foo \} bar}
+        Test::eq [String::find $val "foo"] 0
+        Test::eq [String::find $val "bar"] 7
+    }
+}
+
+let _test_vbrace_d #{key "v}al"}
+let _test_vbrace_expect "v}al"
+
+;; ============================================================================
+;; Scanner: balanced delimiters with quotes
+;; ============================================================================
+
+Test::suite "Scanner: balanced delimiters" {
+    Test::case "quoted close-paren inside list literal" {
+        let result (foo ")" bar)
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] foo
+        Test::eq [get $result 1] ")"
+        Test::eq [get $result 2] bar
+    }
+
+    Test::case "quoted close-bracket inside subcommand" {
+        let result [list "a]b" c]
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] "a]b"
+    }
+
+    Test::case "quoted close-brace inside dict literal" {
+        Test::eq [get $_test_vbrace_d key] $_test_vbrace_expect
+    }
+}
+
+;; ============================================================================
+;; Scanner: comments in literals
+;; ============================================================================
+
+Test::suite "Scanner: comments in literals" {
+    Test::case ";; comment stripped in list literal" {
+        let result (foo ;; this is a comment
+bar)
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] foo
+        Test::eq [get $result 1] bar
+    }
+
+    Test::case ";; comment stripped in dict literal" {
+        let d #{
+            key1 val1 ;; comment
+            key2 val2
+        }
+        Test::eq [len $d] 2
+        Test::eq [get $d key1] val1
+        Test::eq [get $d key2] val2
+    }
+
+    Test::case ";; comment stripped in subcommand" {
+        let result [list
+            a ;; comment
+            b
+            c
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] a
+        Test::eq [get $result 1] b
+        Test::eq [get $result 2] c
+    }
+}
+
 Test::run
 

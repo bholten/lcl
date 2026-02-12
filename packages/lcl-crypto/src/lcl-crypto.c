@@ -20,6 +20,7 @@ static char *bytes_to_hex(const unsigned char *data, size_t len) {
   size_t i;
 
   hex = (char *)malloc(len * 2 + 1);
+
   if (!hex) {
     return NULL;
   }
@@ -28,6 +29,7 @@ static char *bytes_to_hex(const unsigned char *data, size_t len) {
     hex[i * 2] = HEX_CHARS[(data[i] >> 4) & 0x0F];
     hex[i * 2 + 1] = HEX_CHARS[data[i] & 0x0F];
   }
+
   hex[len * 2] = '\0';
 
   return hex;
@@ -41,6 +43,7 @@ static const EVP_MD *get_md_by_name(const char *name) {
   } else if (strcmp(name, "sha384") == 0) {
     return EVP_sha384();
   }
+
   return NULL;
 }
 
@@ -61,6 +64,7 @@ static int c_crypto_sha256(lcl_interp *interp, int argc, lcl_value **argv,
   data = lcl_value_to_string(argv[0]);
 
   ctx = EVP_MD_CTX_new();
+
   if (!ctx) {
     return LCL_RC_ERR;
   }
@@ -69,12 +73,14 @@ static int c_crypto_sha256(lcl_interp *interp, int argc, lcl_value **argv,
       EVP_DigestUpdate(ctx, data, strlen(data)) != 1 ||
       EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
     EVP_MD_CTX_free(ctx);
+
     return LCL_RC_ERR;
   }
 
   EVP_MD_CTX_free(ctx);
 
   hex = bytes_to_hex(hash, hash_len);
+
   if (!hex) {
     return LCL_RC_ERR;
   }
@@ -92,7 +98,6 @@ static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
   unsigned int hash_len = 0;
   EVP_MD_CTX *ctx;
   char *hex;
-
   (void)interp;
 
   if (argc != 1) {
@@ -102,6 +107,7 @@ static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
   data = lcl_value_to_string(argv[0]);
 
   ctx = EVP_MD_CTX_new();
+
   if (!ctx) {
     return LCL_RC_ERR;
   }
@@ -110,12 +116,14 @@ static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
       EVP_DigestUpdate(ctx, data, strlen(data)) != 1 ||
       EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
     EVP_MD_CTX_free(ctx);
+
     return LCL_RC_ERR;
   }
 
   EVP_MD_CTX_free(ctx);
 
   hex = bytes_to_hex(hash, hash_len);
+
   if (!hex) {
     return LCL_RC_ERR;
   }
@@ -145,8 +153,8 @@ static int c_crypto_hmac(lcl_interp *interp, int argc, lcl_value **argv,
   key = lcl_value_to_string(argv[0]);
   data = lcl_value_to_string(argv[1]);
   algo = lcl_value_to_string(argv[2]);
-
   md = get_md_by_name(algo);
+
   if (!md) {
     return LCL_RC_ERR;
   }
@@ -157,6 +165,7 @@ static int c_crypto_hmac(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   hex = bytes_to_hex(hmac_result, hmac_len);
+
   if (!hex) {
     return LCL_RC_ERR;
   }
@@ -181,7 +190,6 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   size_t sig_len = 0;
   char *hex = NULL;
   int result = LCL_RC_ERR;
-
   (void)interp;
 
   if (argc != 3) {
@@ -193,6 +201,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   algo = lcl_value_to_string(argv[2]);
 
   md = get_md_by_name(algo);
+
   if (!md) {
     goto cleanup;
   }
@@ -203,6 +212,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+
   if (!pkey) {
     goto cleanup;
   }
@@ -212,6 +222,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   md_ctx = EVP_MD_CTX_new();
+
   if (!md_ctx) {
     goto cleanup;
   }
@@ -237,6 +248,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   sig = (unsigned char *)malloc(sig_len);
+
   if (!sig) {
     goto cleanup;
   }
@@ -251,6 +263,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = lcl_string_new(hex);
+
   if (*out) {
     result = LCL_RC_OK;
   }
@@ -278,7 +291,6 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   size_t sig_len = 0;
   char *hex = NULL;
   int result = LCL_RC_ERR;
-
   (void)interp;
 
   if (argc != 3) {
@@ -300,11 +312,13 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   bio = BIO_new_mem_buf(key_pem, -1);
+
   if (!bio) {
     goto cleanup;
   }
 
   pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
+
   if (!pkey) {
     goto cleanup;
   }
@@ -314,6 +328,7 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   md_ctx = EVP_MD_CTX_new();
+
   if (!md_ctx) {
     goto cleanup;
   }
@@ -331,6 +346,7 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   sig = (unsigned char *)malloc(sig_len);
+
   if (!sig) {
     goto cleanup;
   }
@@ -340,6 +356,7 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   hex = bytes_to_hex(sig, sig_len);
+
   if (!hex) {
     goto cleanup;
   }
@@ -368,7 +385,6 @@ static int c_crypto_base64_encode(lcl_interp *interp, int argc,
   BUF_MEM *buf = NULL;
   char *result_str = NULL;
   int rc = LCL_RC_ERR;
-
   (void)interp;
 
   if (argc != 1) {
@@ -379,11 +395,13 @@ static int c_crypto_base64_encode(lcl_interp *interp, int argc,
   data_len = strlen(data);
 
   b64 = BIO_new(BIO_f_base64());
+
   if (!b64) {
     goto cleanup;
   }
 
   bio = BIO_new(BIO_s_mem());
+
   if (!bio) {
     goto cleanup;
   }
@@ -402,6 +420,7 @@ static int c_crypto_base64_encode(lcl_interp *interp, int argc,
   BIO_get_mem_ptr(bio, &buf);
 
   result_str = (char *)malloc(buf->length + 1);
+
   if (!result_str) {
     goto cleanup;
   }
@@ -410,6 +429,7 @@ static int c_crypto_base64_encode(lcl_interp *interp, int argc,
   result_str[buf->length] = '\0';
 
   *out = lcl_string_new(result_str);
+
   if (*out) {
     rc = LCL_RC_OK;
   }
@@ -430,7 +450,6 @@ static int c_crypto_base64_decode(lcl_interp *interp, int argc,
   char *decoded = NULL;
   int decoded_len;
   int rc = LCL_RC_ERR;
-
   (void)interp;
 
   if (argc != 1) {
@@ -439,18 +458,20 @@ static int c_crypto_base64_decode(lcl_interp *interp, int argc,
 
   data = lcl_value_to_string(argv[0]);
   data_len = strlen(data);
-
   decoded = (char *)malloc(data_len + 1);
+
   if (!decoded) {
     return LCL_RC_ERR;
   }
 
   b64 = BIO_new(BIO_f_base64());
+
   if (!b64) {
     goto cleanup;
   }
 
   bio = BIO_new_mem_buf(data, (int)data_len);
+
   if (!bio) {
     goto cleanup;
   }
@@ -459,6 +480,7 @@ static int c_crypto_base64_decode(lcl_interp *interp, int argc,
   BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
 
   decoded_len = BIO_read(bio, decoded, (int)data_len);
+
   if (decoded_len < 0) {
     goto cleanup;
   }
@@ -466,6 +488,7 @@ static int c_crypto_base64_decode(lcl_interp *interp, int argc,
   decoded[decoded_len] = '\0';
 
   *out = lcl_string_new(decoded);
+
   if (*out) {
     rc = LCL_RC_OK;
   }

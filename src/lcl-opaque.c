@@ -25,6 +25,7 @@ lcl_value *lcl_opaque_new(void *ptr, const char *type_tag,
   if (type_tag) {
     size_t len = strlen(type_tag);
     tag_copy = (char *)malloc(len + 1);
+
     if (!tag_copy) {
       free(v);
       return NULL;
@@ -62,6 +63,7 @@ lcl_result lcl_opaque_get(lcl_value *v, const char *expected_type, void **out) {
 
   if (expected_type) {
     const char *actual = v->as.opaque.type_tag;
+
     if (!actual || strcmp(actual, expected_type) != 0) {
       return LCL_ERROR;
     }

@@ -108,7 +108,6 @@ static lcl_result env_get_simple(lcl_env *env, const char *key,
   return LCL_ERROR;
 }
 
-/* Lookup for command names - supports qualified names */
 lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out) {
   if (!env || !out) {
     return LCL_ERROR;
@@ -152,6 +151,7 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
         lcl_ref_dec(current);
         return LCL_ERROR;
       }
+
       lcl_ref_dec(current);
       current = next;
       rest = next_rest;
@@ -160,6 +160,7 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
         lcl_ref_dec(current);
         return LCL_ERROR;
       }
+
       lcl_ref_dec(current);
       *out = next;
       return LCL_OK;
@@ -230,15 +231,18 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
         lcl_ref_dec(current);
         return LCL_ERROR;
       }
+
       lcl_ref_dec(current);
       current = next;
       rest = next_rest;
     } else {
-      /* rest is the final part - look it up and set! if it's a cell */
+      /* rest is the final part - look it up and set! if it's a
+         cell */
       if (lcl_ns_get(current, rest, &next) != LCL_OK) {
         lcl_ref_dec(current);
         return LCL_ERROR;
       }
+
       lcl_ref_dec(current);
 
       if (next->type == LCL_CELL) {
@@ -309,7 +313,7 @@ lcl_value *lcl_def_target_pop(lcl_interp *interp) {
     target->overlay = NULL;
   }
 
-  return exports; /* Caller owns the reference */
+  return exports;
 }
 
 lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
@@ -360,6 +364,7 @@ lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
     return LCL_ERROR;
   }
 
-  lcl_ref_dec(cell); /* Dict and frame now hold references */
+  lcl_ref_dec(cell);
+
   return LCL_OK;
 }

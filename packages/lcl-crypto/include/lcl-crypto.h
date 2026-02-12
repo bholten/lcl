@@ -3,6 +3,10 @@
 
 #include <lcl.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Register crypto commands with the interpreter.
  * Creates a "crypto" namespace with:
@@ -15,5 +19,9 @@
  *   crypto::base64_decode data    - Base64 decode data
  */
 void lcl_register_crypto(lcl_interp *interp);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

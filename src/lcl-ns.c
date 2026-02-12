@@ -129,7 +129,8 @@ lcl_value *lcl_ns_from_dict(lcl_value *dict, const char *qname) {
       return NULL;
     }
 
-    /* hash_table_put did its own ref_inc, balance the iterate */
+    /* bugfix: hash_table_put did its own ref_inc, balance the
+       iterate */
     lcl_ref_dec(value);
   }
 

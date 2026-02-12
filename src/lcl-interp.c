@@ -22,7 +22,7 @@ lcl_interp *lcl_interp_new(void) {
   }
 
   interp->env = *env;
-  free(env); /* free the struct, contents now owned by interp->env */
+  free(env);
   interp->last = NULL;
   interp->cur_file = NULL;
   interp->cur_line = 0;
@@ -64,7 +64,7 @@ void lcl_interp_free(lcl_interp *interp) {
   LCL_ERR_CLEAR(interp);
   clear_pending_tail(interp);
 
-  /* Clear frame contents first to break circular references
+  /* Bugfix: Clear frame contents first to break circular references
    * (procs in frame have closures that reference the frame) */
   lcl_frame_clear(interp->env.frame);
   lcl_frame_ref_dec(interp->env.frame);

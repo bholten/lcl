@@ -77,6 +77,7 @@ static lcl_value *lcl_list_clone_shallow(lcl_value *src) {
   }
 
   dest = lcl_list_new();
+
   if (!dest) {
     return NULL;
   }
@@ -133,11 +134,11 @@ lcl_result lcl_list_set(lcl_value **list_io, size_t i, lcl_value *value) {
   if (!list || list->type != LCL_LIST) {
     return LCL_ERROR;
   }
+
   if (i >= (size_t)list->as.list.len) {
     return LCL_ERROR;
   }
 
-  /* Copy-on-write */
   if (list->refc > 1) {
     lcl_value *dup = lcl_list_clone_shallow(list);
     lcl_ref_dec(list);

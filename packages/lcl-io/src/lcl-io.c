@@ -106,7 +106,6 @@ int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  /* Don't close standard streams */
   if (handle == stdin || handle == stdout || handle == stderr) {
     *out = lcl_string_new("");
     return LCL_RC_OK;
@@ -233,6 +232,7 @@ int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   len = strlen(contents);
 
   f = fopen(path, "wb");
+
   if (!f) {
     return LCL_RC_ERR;
   }
@@ -561,10 +561,10 @@ int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv,
   result = lcl_list_new();
 
   while ((entry = readdir(dir)) != NULL) {
-    /* Skip . and .. */
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
     }
+
     item = lcl_string_new(entry->d_name);
     lcl_list_push(&result, item);
     lcl_ref_dec(item);
@@ -658,6 +658,7 @@ int c_io_copy(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   }
 
   dst = fopen(dst_path, "wb");
+
   if (!dst) {
     fclose(src);
     return LCL_RC_ERR;

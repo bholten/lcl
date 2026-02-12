@@ -44,8 +44,8 @@ static ssize_t hash_find(hash_table *ht, const char *key, unsigned long hk,
     }
 
     i = (i + 1) & m;
+
     if (++checked >= ht->cap) {
-      /* Table is full with no empty slots (should not happen with load factor) */
       return (*first_tomb != (size_t)-1 ? (ssize_t)(*first_tomb) : -1);
     }
   }

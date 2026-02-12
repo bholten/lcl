@@ -3,6 +3,10 @@
 
 #include <lcl.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Register JSON commands with the interpreter.
  * Creates a "json" namespace with:
@@ -11,4 +15,8 @@
  */
 void lcl_register_json(lcl_interp *interp);
 
+#ifdef __cplusplus
+}
+#endif
+  
 #endif

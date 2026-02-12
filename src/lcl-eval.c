@@ -13,16 +13,20 @@ static int setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
   int i;
   if (argc > 0) {
     interp->pending_tail.argv = malloc(sizeof(lcl_value *) * (size_t)argc);
+
     if (!interp->pending_tail.argv) {
       return 0;
     }
   } else {
     interp->pending_tail.argv = NULL;
   }
+
   interp->pending_tail.argc = argc;
+
   for (i = 0; i < argc; i++) {
     interp->pending_tail.argv[i] = lcl_ref_inc(argv[i]);
   }
+
   interp->pending_tail.valid = 1;
   return 1;
 }
@@ -55,6 +59,7 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
     lcl_value *val = NULL;
 
     rc = lcl_eval_word(interp, w, &val);
+
     if (rc != LCL_RC_OK) {
       goto cleanup;
     }
@@ -68,39 +73,46 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
           int new_cap = argc + (int)len + 8;
           lcl_value **new_argv =
               (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+
           if (!new_argv) {
             lcl_ref_dec(val);
             rc = LCL_RC_ERR;
             goto cleanup;
           }
+
           argv = new_argv;
           cap = new_cap;
         }
 
         for (k = 0; k < len; k++) {
           lcl_value *elem = NULL;
+
           if (lcl_list_get(val, k, &elem) != LCL_OK) {
             lcl_ref_dec(val);
             rc = LCL_RC_ERR;
             goto cleanup;
           }
+
           argv[argc++] = elem;
         }
+
         lcl_ref_dec(val);
       } else {
-        /* Not a list - just add as single argument */
         if (argc >= cap) {
           int new_cap = cap * 2 + 1;
           lcl_value **new_argv =
               (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+
           if (!new_argv) {
             lcl_ref_dec(val);
             rc = LCL_RC_ERR;
             goto cleanup;
           }
+
           argv = new_argv;
           cap = new_cap;
         }
+
         argv[argc++] = val;
       }
     } else {
@@ -108,20 +120,24 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
         int new_cap = cap * 2 + 1;
         lcl_value **new_argv =
             (lcl_value **)realloc(argv, (size_t)new_cap * sizeof(*argv));
+
         if (!new_argv) {
           lcl_ref_dec(val);
           rc = LCL_RC_ERR;
           goto cleanup;
         }
+
         argv = new_argv;
         cap = new_cap;
       }
+
       argv[argc++] = val;
     }
   }
 
   *argc_out = argc;
   *argv_out = argv;
+
   return LCL_RC_OK;
 
 cleanup:
@@ -142,14 +158,16 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
 
   lcl_value **current_argv = argv;
   int current_argc = argc;
-  int owns_argv = 0; /* We don't own the initial argv, caller does */
+  int owns_argv = 0;
 
   interp->current_proc = proc_val;
 
   for (;;) {
     /* Bugfix:
-     * Use caller's frame as parent for command lookup - no cycle because proc
-     * doesn't store a reference to this frame (uses upvalues instead) */
+     *
+     * Use caller's frame as parent for command lookup - no cycle
+     * because proc doesn't store a reference to this frame (uses
+     * upvalues instead) */
     lcl_frame *child = lcl_frame_new(saved.frame);
 
     if (!child) {
@@ -157,8 +175,10 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         for (i = 0; i < current_argc; i++) {
           lcl_ref_dec(current_argv[i]);
         }
+
         free(current_argv);
       }
+
       interp->current_proc = saved_current_proc;
       return LCL_RC_ERR;
     }
@@ -168,6 +188,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       if (interp->env.current_ns) {
         lcl_ref_dec(interp->env.current_ns);
       }
+
       interp->env.current_ns = lcl_ref_inc(p->captured_ns);
     }
 
@@ -180,6 +201,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         LCL_ERR_MSG(interp, "too few arguments");
         goto arity_error;
       }
+
       if (!has_rest && current_argc > max_args) {
         LCL_ERR_MSG(interp, "too many arguments");
         goto arity_error;
@@ -193,8 +215,10 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
           for (i = 0; i < current_argc; i++) {
             lcl_ref_dec(current_argv[i]);
           }
+
           free(current_argv);
         }
+
         interp->current_proc = saved_current_proc;
         return LCL_RC_ERR;
       }
@@ -218,6 +242,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
 
       for (i = 0; i < p->pspec.n_optional; i++) {
         int pidx = p->pspec.n_required + i;
+
         if (arg_idx < current_argc) {
           lcl_env_let(&interp->env, p->pspec.params[pidx].name,
                       current_argv[arg_idx++]);
@@ -225,19 +250,25 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
           lcl_value *def_val = NULL;
           int def_rc = lcl_eval_program(interp, p->pspec.params[pidx].def_prog,
                                         &def_val);
+
           if (def_rc != LCL_RC_OK) {
             interp->env = saved;
             lcl_frame_ref_dec(child);
+
             if (owns_argv) {
               int j;
+
               for (j = 0; j < current_argc; j++) {
                 lcl_ref_dec(current_argv[j]);
               }
+
               free(current_argv);
             }
+
             interp->current_proc = saved_current_proc;
             return def_rc;
           }
+
           lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val);
           lcl_ref_dec(def_val);
         }
@@ -245,9 +276,11 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
 
       if (p->pspec.rest_name) {
         lcl_value *rest_list = lcl_list_new();
+
         while (arg_idx < current_argc) {
           lcl_list_push(&rest_list, current_argv[arg_idx++]);
         }
+
         lcl_env_let(&interp->env, p->pspec.rest_name, rest_list);
         lcl_ref_dec(rest_list);
       }
@@ -263,6 +296,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       for (i = 0; i < current_argc; i++) {
         lcl_ref_dec(current_argv[i]);
       }
+
       free(current_argv);
       owns_argv = 0;
     }
@@ -296,6 +330,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
     switch (wp->kind) {
     case LCL_WP_VAR: {
       lcl_value *val = NULL;
+
       if (lcl_env_get_value(&interp->env, wp->as.var.name, &val) != LCL_OK) {
         LCL_ERR_MSG(interp, "undefined variable");
         return LCL_RC_ERR;
@@ -307,9 +342,11 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
           lcl_ref_dec(val);
           return LCL_RC_ERR;
         }
+
         lcl_ref_dec(val);
         val = inner;
       }
+
       *out = val;
       return LCL_RC_OK;
     }
@@ -341,12 +378,14 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
    * The subcommand's result IS this command's result, so it IS in tail
    * position. We evaluate it directly without clearing tail position.
    *
-   * However, if the result is callable (PROC/CPROC), we need to call it
-   * to support [[...]] syntax (call the result of inner subcommand). */
+   * However, if the result is callable (PROC/CPROC), we need to call
+   * it to support [[...]] syntax (call the result of inner
+   * subcommand). */
   if (cmd->argc == 1 && cmd->w[0].np == 1 &&
       cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
     lcl_value *result = NULL;
     rc = lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, &result);
+
     if (rc != LCL_RC_OK) {
       return rc;
     }
@@ -354,14 +393,16 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     if (result->type == LCL_PROC) {
       lcl_proc *p = (lcl_proc *)result->as.procedure.proc;
 
-      /* Bugfix TCO: Check if this is a self-recursive tail call by comparing
-       * against the currently executing proc, not just name lookup. */
+      /* Bugfix TCO: Check if this is a self-recursive tail call by
+       * comparing against the currently executing proc, not just name
+       * lookup. */
       if (saved_tail_position && result == interp->current_proc) {
         if (!setup_tail_call(interp, 0, NULL)) {
           lcl_ref_dec(result);
           LCL_ERR_MSG(interp, "out of memory in tail call");
           return LCL_RC_ERR;
         }
+
         lcl_ref_dec(result);
         *out = NULL;
         return LCL_RC_TAILCALL;
@@ -383,6 +424,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   interp->in_tail_position = 0;
 
   rc = lcl_eval_word(interp, &cmd->w[0], &callee);
+
   if (rc != LCL_RC_OK) {
     interp->in_tail_position = saved_tail_position;
     return rc;
@@ -394,8 +436,6 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     const char *cmd_name = lcl_value_to_string(name);
 
     if (lcl_env_get_command(&interp->env, cmd_name, &callee) != LCL_OK) {
-      /* If lookup fails and this is a single-word command, return the value
-       * itself */
       if (cmd->argc == 1) {
         *out = name;
         return LCL_RC_OK;
@@ -403,8 +443,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
       {
         const size_t cmd_name_len = strlen(cmd_name);
-        const size_t prefix_len = 17; /* strlen("unknown command: ") */
+        const size_t prefix_len = 17;
         char *buf = (char *)malloc(cmd_name_len + prefix_len + 1);
+
         if (buf) {
           memcpy(buf, "unknown command: ", prefix_len);
           memcpy(buf + prefix_len, cmd_name, cmd_name_len + 1);
@@ -413,6 +454,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         } else {
           LCL_ERR_MSG(interp, "unknown command");
         }
+
         lcl_ref_dec(name);
       }
 
@@ -429,6 +471,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
       LCL_ERR_MSG(interp, "value is not callable");
       lcl_ref_dec(callee);
+
       return LCL_RC_ERR;
     }
   } else if (callee->type != LCL_PROC && callee->type != LCL_CPROC) {
@@ -440,11 +483,13 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     {
       lcl_value *name = callee;
       callee = NULL;
+
       if (lcl_env_get_command(&interp->env, lcl_value_to_string(name),
                               &callee) != LCL_OK) {
         lcl_ref_dec(name);
         return LCL_RC_ERR;
       }
+
       lcl_ref_dec(name);
     }
   }
@@ -457,11 +502,13 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     if (spec_argc > 0) {
       raw = (const lcl_word **)malloc((size_t)spec_argc * sizeof(*raw));
+
       if (!raw) {
         interp->in_tail_position = saved_tail_position;
         lcl_ref_dec(callee);
         return LCL_RC_ERR;
       }
+
       for (i = 0; i < spec_argc; i++) {
         raw[i] = &cmd->w[i + 1];
       }
@@ -496,20 +543,24 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       lcl_proc *p = (lcl_proc *)callee->as.procedure.proc;
 
       /* TCO: Check if this is a self-recursive tail call by comparing
-       * against the currently executing proc, not just name lookup. */
+       * against the currently executing proc, not just name
+       * lookup. */
       if (saved_tail_position && callee == interp->current_proc) {
         if (!setup_tail_call(interp, argc, argv)) {
           for (i = 0; i < argc; i++) {
             lcl_ref_dec(argv[i]);
           }
+
           free(argv);
           lcl_ref_dec(callee);
           LCL_ERR_MSG(interp, "out of memory in tail call");
           return LCL_RC_ERR;
         }
+
         for (i = 0; i < argc; i++) {
           lcl_ref_dec(argv[i]);
         }
+
         free(argv);
         lcl_ref_dec(callee);
         *out = NULL;
@@ -524,6 +575,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     for (i = 0; i < argc; i++) {
       lcl_ref_dec(argv[i]);
     }
+
     free(argv);
     lcl_ref_dec(callee);
 
@@ -584,9 +636,11 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
 
   if (w->np == 1 && w->wp[0].kind == LCL_WP_LIT) {
     char *s = (char *)malloc(w->wp[0].as.lit.n + 1);
+
     if (!s) {
       return LCL_RC_ERR;
     }
+
     memcpy(s, w->wp[0].as.lit.s, w->wp[0].as.lit.n);
     s[w->wp[0].as.lit.n] = '\0';
     *out = lcl_value_new_string(s);
@@ -600,20 +654,26 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
     switch (wp->kind) {
     case LCL_WP_LIT: {
       size_t need = len + wp->as.lit.n + 1;
+
       if (need > cap) {
         size_t newcap = cap ? cap * 2 : 64;
         char *newbuf;
+
         while (newcap < need) {
           newcap *= 2;
         }
+
         newbuf = (char *)realloc(buf, newcap);
+
         if (!newbuf) {
           free(buf);
           return LCL_RC_ERR;
         }
+
         buf = newbuf;
         cap = newcap;
       }
+
       memcpy(buf + len, wp->as.lit.s, wp->as.lit.n);
       len += wp->as.lit.n;
       break;
@@ -631,11 +691,13 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
+
         if (lcl_cell_get(val, &inner) != LCL_OK) {
           lcl_ref_dec(val);
           free(buf);
           return LCL_RC_ERR;
         }
+
         lcl_ref_dec(val);
         val = inner;
       }
@@ -762,23 +824,20 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
       last = NULL;
     }
 
-    /* Only the last command in the program is in tail position
-     * (and only if we were already in tail position context) */
     interp->in_tail_position = saved_tail_position && is_last_cmd;
-
     rc = lcl_call_from_words(interp, cmd, &last);
 
-    /* Propagate TAILCALL up to the trampoline in lcl_call_user_proc */
     if (rc == LCL_RC_TAILCALL) {
       interp->in_tail_position = saved_tail_position;
       interp->depth--;
+
       if (out) {
         *out = NULL;
       }
+
       return rc;
     }
 
-    /* Propagate RETURN - let caller (e.g., lcl_call_user_proc) handle it */
     if (rc == LCL_RC_RETURN) {
       break;
     }

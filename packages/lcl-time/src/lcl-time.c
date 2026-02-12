@@ -328,6 +328,7 @@ static int c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   str = ctime(&t);
+
   if (!str) {
     lcl_set_error(interp, "time::ctime: failed to convert timestamp");
     return LCL_RC_ERR;

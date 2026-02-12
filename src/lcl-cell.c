@@ -1,18 +1,6 @@
 #include "lcl-compile.h"
 #include "lcl-values.h"
 
-/* ============================================================================
- * Cell Cycle Detection
- *
- * When assigning a proc to a cell, we need to check that the proc's upvalues
- * don't create a reference cycle back to the cell. This would prevent the
- * cell from ever being freed (since we use reference counting, not GC).
- *
- * Algorithm: DFS from the value being assigned, following cell upvalues,
- * to see if we can reach the target cell.
- * ============================================================================
- */
-
 typedef struct {
   lcl_value **cells;
   int count;
@@ -41,16 +29,18 @@ static int cell_set_contains(cell_set *s, lcl_value *cell) {
 
 static int cell_set_add(cell_set *s, lcl_value *cell) {
   if (cell_set_contains(s, cell)) {
-    return 1; /* Already present */
+    return 1;
   }
 
   if (s->count >= s->cap) {
     int newcap = s->cap ? s->cap * 2 : 8;
     lcl_value **newcells =
         realloc(s->cells, (size_t)newcap * sizeof(lcl_value *));
+
     if (!newcells) {
       return 0;
     }
+
     s->cells = newcells;
     s->cap = newcap;
   }
@@ -83,6 +73,7 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
       if (cell_set_contains(visited, cell)) {
         continue;
       }
+
       if (!cell_set_add(visited, cell)) {
         continue;
       }
@@ -111,8 +102,6 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
   return 0;
 }
 
-/* Public API: Check if assigning 'value' to 'cell' would create a cycle.
- * Returns 1 if cycle detected (assignment should be rejected), 0 otherwise. */
 int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
   cell_set visited;
   int result;

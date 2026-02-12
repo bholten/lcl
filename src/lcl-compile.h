@@ -6,7 +6,6 @@
 #include "str-compat.h"
 #include <stdlib.h>
 
-/* Forward declarations */
 typedef struct lcl_interp lcl_interp;
 typedef struct lcl_frame lcl_frame;
 
@@ -30,7 +29,7 @@ struct lcl_frame {
   struct lcl_frame *parent;
   hash_table *locals;
   int refc;
-  int owns_locals; /* 0 if locals is borrowed (e.g., from a namespace) */
+  int owns_locals;
 };
 
 lcl_frame *lcl_frame_new(lcl_frame *parent);
@@ -57,7 +56,6 @@ lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out);
 lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 
-/* Definition target stack operations for namespace builder pattern */
 lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent);
 lcl_value *lcl_def_target_pop(lcl_interp *interp);
 lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
@@ -66,18 +64,14 @@ lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
                               lcl_value *value);
 
 typedef struct {
-  lcl_value **argv; /* Arguments for pending tail call (each refcounted) */
-  int argc;         /* Number of arguments */
-  int valid;        /* 1 if a tail call is pending */
+  lcl_value **argv;
+  int argc;
+  int valid;
 } lcl_tailcall;
 
-/* Definition target for namespace builder pattern.
- * When inside a `namespace eval { ... }` block, definitions (let/var/proc)
- * write to the exports dict rather than the current frame. The overlay frame
- * provides lexical visibility of prior definitions within the builder. */
 typedef struct {
-  lcl_value *exports;   /* Dict being built (the module's export map) */
-  lcl_frame *overlay;   /* Frame for lexical visibility during build */
+  lcl_value *exports;
+  lcl_frame *overlay;
 } lcl_def_target;
 
 #define LCL_DEF_STACK_MAX 16
@@ -97,12 +91,9 @@ struct lcl_interp {
   void *user_data;
   lcl_tailcall pending_tail;
   int in_tail_position;
-  lcl_value
-      *current_proc; /* Bugfix: currently executing proc, for TCO detection */
-
-  /* Namespace builder stack for definition targeting */
+  lcl_value *current_proc; 
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
-  int def_depth; /* 0 = not in builder, >0 = in builder(s) */
+  int def_depth;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \
@@ -180,10 +171,6 @@ typedef struct {
   lcl_program *def_prog;
 } lcl_param;
 
-/* Full parameter specification for a proc.
- * Ordering: required params first, then optional params.
- * params array has (n_required + n_optional) elements.
- * rest_name is separate and must be last (if present). */
 typedef struct {
   lcl_param *params;
   int n_required;
@@ -203,13 +190,6 @@ typedef struct {
   lcl_value *captured_ns;
 } lcl_proc;
 
-/* Build upvalues by capturing referenced variables from current environment.
- * pspec: parameter specification (names to exclude from capture)
- * self_name: name for self-reference (to exclude from capture), or NULL
- * upvals_out: receives the upvalues array (may be NULL if no captures needed)
- * nout: receives the count
- * Scans both the body and any default programs in pspec for free variables.
- * Returns LCL_RC_OK on success, LCL_RC_ERR on error (undefined variable). */
 int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
                        const lcl_param_spec *pspec, const char *self_name,
                        lcl_upvalue **upvals_out, int *nout);

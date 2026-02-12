@@ -215,10 +215,12 @@ static lcl_value *cjson_to_lcl(cJSON *json) {
 
   if (cJSON_IsNumber(json)) {
     double val = cJSON_GetNumberValue(json);
+
     if (val == (double)(long)val && val >= (double)LONG_MIN &&
         val <= (double)LONG_MAX) {
       return lcl_int_new((long)val);
     }
+
     return lcl_float_new(val);
   }
 
@@ -289,7 +291,6 @@ static int c_json_encode(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   cJSON *json;
   char *str;
-
   (void)interp;
 
   if (argc != 1) {
@@ -319,7 +320,6 @@ static int c_json_decode(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   const char *json_str;
   cJSON *json;
-
   (void)interp;
 
   if (argc != 1) {

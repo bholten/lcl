@@ -258,6 +258,57 @@ static int test_unmatched_brace_error(void) {
   return compile_and_dump(src, NULL);
 }
 
+static int test_brace_backslash_balance(void) {
+  /* {foo \} bar} should compile: backslash escapes the } for balancing */
+  const char *src = "puts {foo \\} bar}\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [lit:\"foo \\\\} bar\"]";
+  return compile_and_dump(src, exp);
+}
+
+static int test_hex_escape_2digits(void) {
+  /* \x41 -> 'A' (2 hex digits); \x4 -> literal \x4 (not enough digits) */
+  const char *src = "puts \"\\x41\\x4\"\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [lit:\"A\"] [lit:\"\\\\x\"] [lit:\"4\"]";
+  return compile_and_dump(src, exp);
+}
+
+static int test_unknown_escape_literal(void) {
+  /* \q -> literal \q (unknown escape preserves backslash) */
+  const char *src = "puts \"\\q\"\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [lit:\"\\\\q\"]";
+  return compile_and_dump(src, exp);
+}
+
+static int test_octal_escape(void) {
+  /* \101 -> 'A' (octal 101 = 65 = 0x41) */
+  const char *src = "puts \"\\101\"\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [lit:\"A\"]";
+  return compile_and_dump(src, exp);
+}
+
+static int test_quoted_close_paren_in_list(void) {
+  /* Quoted ")" inside () inside [] must not misbalance the parens.
+   * (bar ")" baz) desugars to [list bar ")" baz] */
+  const char *src = "puts [concat (bar \")\" baz)]\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"concat\"] "
+    "[sub:{cmd(line=1): [lit:\"list\"] [lit:\"bar\"] [lit:\")\"] [lit:\"baz\"]}]}]";
+  return compile_and_dump(src, exp);
+}
+
+static int test_comment_in_list_literal(void) {
+  /* ;; comment inside () should be stripped — "comment" must not appear */
+  const char *src = "puts (foo ;; comment\nbar)\n";
+  const char *exp =
+    "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"list\"] "
+    "[lit:\"foo\"] [lit:\"bar\"]}]";
+  return compile_and_dump(src, exp);
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -276,6 +327,12 @@ int run_test(void) {
   RUN(test_quotes_and_subst);
   RUN(test_nested_subcmd);
   RUN(test_unmatched_brace_error);
+  RUN(test_brace_backslash_balance);
+  RUN(test_hex_escape_2digits);
+  RUN(test_unknown_escape_literal);
+  RUN(test_octal_escape);
+  RUN(test_quoted_close_paren_in_list);
+  RUN(test_comment_in_list_literal);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;  

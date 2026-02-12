@@ -6,7 +6,6 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
-/* Embedded library descriptor (matches public lcl.h definition) */
 typedef struct {
   const char *name;
   const unsigned char *data;
@@ -71,6 +70,7 @@ int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
   }
 
   src = api_read_file(path);
+
   if (!src) {
     return LCL_RC_ERR;
   }
@@ -106,6 +106,7 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
   if (!interp) {
     return;
   }
+
   LCL_ERR_CLEAR(interp);
   interp->err_file = interp->cur_file ? strdup(interp->cur_file) : NULL;
   interp->err_file_owned = interp->cur_file ? 1 : 0;
@@ -117,6 +118,7 @@ void lcl_clear_error(lcl_interp *interp) {
   if (!interp) {
     return;
   }
+
   LCL_ERR_CLEAR(interp);
   interp->err_file = NULL;
   interp->err_line = 0;
@@ -126,6 +128,7 @@ lcl_result lcl_define(lcl_interp *interp, const char *name, lcl_value *value) {
   if (!interp || !name || !value) {
     return LCL_ERROR;
   }
+
   return lcl_env_let(&interp->env, name, value);
 }
 
@@ -134,6 +137,7 @@ lcl_result lcl_define_take(lcl_interp *interp, const char *name,
   if (!interp || !name || !value) {
     return LCL_ERROR;
   }
+
   return lcl_env_let_take(&interp->env, name, value);
 }
 
@@ -141,13 +145,9 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out) {
   if (!interp || !name || !out) {
     return LCL_ERROR;
   }
+
   return lcl_env_get_value(&interp->env, name, out);
 }
-
-/* ============================================================================
- * Extending LCL with C Functions
- * ============================================================================
- */
 
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
                              lcl_c_proc_fn fn) {
@@ -158,6 +158,7 @@ lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
   }
 
   proc = lcl_c_proc_new(name, fn);
+
   if (!proc) {
     return LCL_ERROR;
   }
@@ -174,6 +175,7 @@ lcl_result lcl_register_spec(lcl_interp *interp, const char *name,
   }
 
   spec = lcl_c_spec_new(name, fn);
+
   if (!spec) {
     return LCL_ERROR;
   }
@@ -185,6 +187,7 @@ int lcl_is_callable(lcl_value *value) {
   if (!value) {
     return 0;
   }
+
   return value->type == LCL_PROC || value->type == LCL_CPROC;
 }
 
@@ -223,11 +226,6 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
   return rc;
 }
 
-/* ============================================================================
- * Embedded Libraries
- * ============================================================================
- */
-
 int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib) {
   lcl_value *result = NULL;
   int rc;
@@ -245,9 +243,11 @@ int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib) {
     fprintf(stderr, "Lcl embedded lib '%s' error at %s:%d",
             lib->name ? lib->name : "<unknown>",
             err_file ? err_file : "<unknown>", lcl_interp_error_line(interp));
+
     if (err_msg) {
       fprintf(stderr, ": %s", err_msg);
     }
+
     fprintf(stderr, "\n");
   }
 

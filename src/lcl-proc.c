@@ -57,6 +57,7 @@ static char *extract_param_token(const char **p) {
   char *result;
 
   skip_ws(p);
+
   if (!**p) {
     return NULL;
   }
@@ -93,9 +94,11 @@ static char *extract_param_token(const char **p) {
           }
           (*p)++;
         }
+
         if (**p == '"') {
           (*p)++;
         }
+
         continue;
       }
       (*p)++;
@@ -114,9 +117,11 @@ static char *extract_param_token(const char **p) {
   }
 
   result = (char *)malloc(len + 1);
+
   if (!result) {
     return NULL;
   }
+
   memcpy(result, start, len);
   result[len] = '\0';
   return result;
@@ -172,6 +177,7 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
         }
       } else if (*p == '"') {
         p++;
+
         while (*p && *p != '"') {
           if (*p == '\\' && *(p + 1)) {
             p++;
@@ -182,6 +188,7 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
       p++;
     }
   }
+
   default_end = p;
 
   while (default_end > default_start &&
@@ -190,6 +197,7 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
   }
 
   *name_out = (char *)malloc((size_t)(name_end - name_start) + 1);
+
   if (!*name_out) {
     return LCL_ERROR;
   }
@@ -197,11 +205,13 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
   (*name_out)[name_end - name_start] = '\0';
 
   *default_out = (char *)malloc((size_t)(default_end - default_start) + 1);
+
   if (!*default_out) {
     free(*name_out);
     *name_out = NULL;
     return LCL_ERROR;
   }
+
   memcpy(*default_out, default_start, (size_t)(default_end - default_start));
   (*default_out)[default_end - default_start] = '\0';
 
@@ -246,13 +256,15 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
         goto error;
       }
 
-      rest = strdup(token + 1); /* Skip the * */
+      /* Skip the * */
+      rest = strdup(token + 1);
       free(token);
 
       if (!rest) {
         LCL_ERR_MSG(interp, "out of memory");
         goto error;
       }
+
       saw_rest = 1;
     } else if (token[0] == '(') {
       char *opt_name = NULL;
@@ -276,6 +288,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
         char **new_names = realloc(opt_names, (size_t)newcap * sizeof(char *));
         char **new_defs =
             realloc(opt_defaults, (size_t)newcap * sizeof(char *));
+
         if (!new_names || !new_defs) {
           free(opt_name);
           free(opt_default);
@@ -284,10 +297,12 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
           LCL_ERR_MSG(interp, "out of memory");
           goto error;
         }
+
         opt_names = new_names;
         opt_defaults = new_defs;
         opt_cap = newcap;
       }
+
       opt_names[n_opt] = opt_name;
       opt_defaults[n_opt] = opt_default;
       n_opt++;
@@ -298,6 +313,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
         free(token);
         goto error;
       }
+
       if (saw_rest) {
         LCL_ERR_MSG(interp, "required parameter after rest parameter");
         free(token);
@@ -312,9 +328,11 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
           LCL_ERR_MSG(interp, "out of memory");
           goto error;
         }
+
         req_names = new_names;
         req_cap = newcap;
       }
+
       req_names[n_req++] = token;
     }
   }
@@ -331,6 +349,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
       }
       name_set_add(&seen, req_names[i]);
     }
+
     for (i = 0; i < n_opt; i++) {
       if (name_set_contains(&seen, opt_names[i])) {
         LCL_ERR_MSG(interp, "duplicate parameter name");
@@ -339,6 +358,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
       }
       name_set_add(&seen, opt_names[i]);
     }
+
     if (rest && name_set_contains(&seen, rest)) {
       LCL_ERR_MSG(interp, "duplicate parameter name");
       name_set_free(&seen);
@@ -355,6 +375,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
   if (n_req + n_opt > 0) {
     pspec->params =
         (lcl_param *)calloc((size_t)(n_req + n_opt), sizeof(lcl_param));
+
     if (!pspec->params) {
       LCL_ERR_MSG(interp, "out of memory");
       goto error;
@@ -396,12 +417,14 @@ error:
   for (i = 0; i < n_req; i++) {
     free(req_names[i]);
   }
+
   free(req_names);
 
   for (i = 0; i < n_opt; i++) {
     free(opt_names[i]);
     free(opt_defaults[i]);
   }
+
   free(opt_names);
   free(opt_defaults);
   free(rest);
@@ -414,7 +437,6 @@ error:
   return LCL_RC_ERR;
 }
 
-/* name_set implementation (typedef is forward-declared above) */
 static void name_set_init(name_set *s) {
   s->names = NULL;
   s->count = 0;
@@ -423,39 +445,47 @@ static void name_set_init(name_set *s) {
 
 static void name_set_free(name_set *s) {
   int i;
+
   for (i = 0; i < s->count; i++) {
     free(s->names[i]);
   }
+
   free(s->names);
 }
 
 static int name_set_contains(name_set *s, const char *name) {
   int i;
+
   for (i = 0; i < s->count; i++) {
     if (strcmp(s->names[i], name) == 0) {
       return 1;
     }
   }
+
   return 0;
 }
 
 static int name_set_add(name_set *s, const char *name) {
   char *copy;
+
   if (name_set_contains(s, name)) {
-    return 1; /* Already present */
+    return 1;
   }
 
   if (s->count >= s->cap) {
     int newcap = s->cap ? s->cap * 2 : 8;
     char **newnames = realloc(s->names, (size_t)newcap * sizeof(char *));
+
     if (!newnames) {
       return 0;
     }
+
     s->names = newnames;
     s->cap = newcap;
   }
 
   copy = strdup(name);
+
   if (!copy) {
     return 0;
   }
@@ -468,6 +498,7 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars);
 
 static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
   int i;
+
   if (!w) {
     return;
   }
@@ -484,31 +515,34 @@ static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
   }
 }
 
-/* Check if word is a single literal piece equal to the given string */
 static int word_is_literal(const lcl_word *w, const char *s) {
   if (!w || w->np != 1) {
     return 0;
   }
+
   if (w->wp[0].kind != LCL_WP_LIT) {
     return 0;
   }
+
   return strcmp(w->wp[0].as.lit.s, s) == 0;
 }
 
-/* Get literal string from a word, or NULL if not a single literal */
 static const char *word_get_literal(const lcl_word *w) {
   if (!w || w->np != 1) {
     return NULL;
   }
+
   if (w->wp[0].kind != LCL_WP_LIT) {
     return NULL;
   }
+
   return w->wp[0].as.lit.s;
 }
 
 static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
   int i;
   int j;
+
   if (!prog) {
     return;
   }
@@ -516,7 +550,8 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
 
-    /* Special case: set! command - capture the variable name being set */
+    /* Bugfix: Special case: set! command - capture the variable name
+       being set */
     if (cmd->argc >= 2 && word_is_literal(&cmd->w[0], "set!")) {
       const char *var_name = word_get_literal(&cmd->w[1]);
       if (var_name) {
@@ -532,6 +567,7 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
      * lcl_build_upvalues. */
     if (cmd->argc >= 1) {
       const char *cmd_name = word_get_literal(&cmd->w[0]);
+
       if (cmd_name) {
         name_set_add(vars, cmd_name);
       }
@@ -589,6 +625,7 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
   if (pspec) {
     for (i = 0; i < pspec->n_optional; i++) {
       int pidx = pspec->n_required + i;
+
       if (pspec->params[pidx].def_prog) {
         collect_free_vars_program(pspec->params[pidx].def_prog, &vars);
       }
@@ -597,7 +634,7 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
 
   if (vars.count == 0) {
     name_set_free(&vars);
-    return LCL_RC_OK; /* No upvalues needed */
+    return LCL_RC_OK;
   }
 
   upvals = calloc((size_t)vars.count, sizeof(lcl_upvalue));
@@ -605,6 +642,7 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
   if (!upvals) {
     name_set_free(&vars);
     LCL_ERR_MSG(interp, "out of memory");
+
     return LCL_RC_ERR;
   }
 
@@ -622,6 +660,7 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
 
     if (lcl_env_get_value(&interp->env, name, &val) == LCL_OK) {
       upvals[nupvals].name = strdup(name);
+
       if (!upvals[nupvals].name) {
         lcl_ref_dec(val);
         LCL_ERR_MSG(interp, "out of memory");
@@ -630,19 +669,23 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
 
       if (val->type == LCL_CELL) {
         upvals[nupvals].is_cell = 1;
-        upvals[nupvals].value = val; /* Already incref'd by get_value */
+        upvals[nupvals].value = val;
       } else {
         upvals[nupvals].is_cell = 0;
-        upvals[nupvals].value = val; /* Already incref'd by get_value */
+        upvals[nupvals].value = val;
       }
       nupvals++;
     } else {
       /* Variable not found in current environment.
        * This could be either:
-       * 1. A forward reference (variable will be defined later in outer scope)
-       * 2. A local variable that will be defined within this proc's body
-       * We can't distinguish these at parse time, so we skip and let runtime
-       * handle it. If it's a true forward reference, runtime will error. */
+       *
+       * 1. A forward reference (variable will be defined later in
+       * outer scope)
+       *
+       * 2. A local variable that will be defined within this proc's
+       * body We can't distinguish these at parse time, so we skip and
+       * let runtime handle it. If it's a true forward reference,
+       * runtime will error. */
     }
   }
 
@@ -669,10 +712,6 @@ error:
   return LCL_RC_ERR;
 }
 
-/* Create a new user proc value.
- * Takes ownership of upvals array, pspec contents, and body.
- * Caller should NOT free these after calling this function (even on error,
- * they are freed internally). */
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
                         lcl_param_spec *pspec, lcl_program *body) {
   lcl_proc *p = (lcl_proc *)calloc(1, sizeof(*p));
@@ -684,6 +723,7 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
 
   if (self_name) {
     p->self_name = strdup(self_name);
+
     if (!p->self_name) {
       free(p);
       goto error_early;
@@ -705,12 +745,15 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
   p->captured_ns = NULL;
 
   v = (lcl_value *)calloc(1, sizeof(*v));
+
   if (!v) {
     int i;
+
     for (i = 0; i < nupvals; i++) {
       free(upvals[i].name);
       lcl_ref_dec(upvals[i].value);
     }
+
     free(upvals);
     free(p->self_name);
     lcl_param_spec_free(&p->pspec);
@@ -748,12 +791,14 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn) {
   }
 
   func = (lcl_c_func *)calloc(1, sizeof(*func));
+
   if (!func) {
     free(proc);
     return NULL;
   }
 
   name_copy = strndup(name, strlen(name));
+
   if (!name_copy) {
     free(func);
     free(proc);
@@ -782,12 +827,14 @@ lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn) {
   }
 
   func = (lcl_c_func *)calloc(1, sizeof(*func));
+
   if (!func) {
     free(proc);
     return NULL;
   }
 
   name_copy = strndup(name, strlen(name));
+
   if (!name_copy) {
     free(func);
     free(proc);
