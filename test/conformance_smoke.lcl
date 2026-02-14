@@ -2535,10 +2535,11 @@ bar)
 Test::suite "Macros" {
 
     Test::case "basic macro definition and expansion" {
-        macro double {x} {
-            quasiquote { + ,$x ,$x }
+        macro bind-double {x} {
+            quasiquote { let _r [+ ,$x ,$x] }
         }
-        Test::eq [double 5] 10
+        bind-double 5
+        Test::eq $_r 10
     }
 
     Test::case "macro expansion creates bindings in caller frame" {
@@ -2550,34 +2551,44 @@ Test::suite "Macros" {
     }
 
     Test::case "macro with quasiquote generates code" {
-        macro make-sum {a b} {
-            quasiquote { + ,$a ,$b }
+        macro bind-sum {a b} {
+            quasiquote { let _s [+ ,$a ,$b] }
         }
-        Test::eq [make-sum 3 7] 10
+
+        bind-sum 3 7
+        Test::eq $_s 10
     }
 
-    Test::case "macro works in value position" {
+    Test::case "macro in value position errors" {
         macro add-ten {x} {
             quasiquote { + ,$x 10 }
         }
-        let x [add-ten 5]
-        Test::eq $x 15
+
+        if [catch { eval {let x [add-ten 5]} } _res msg] {
+            Test::eq $msg "macro cannot be used in value position"
+        } else {
+            error "expected macro value-position error"
+        }
     }
 
     Test::case "macro calling macro (nesting)" {
-        macro add-one {x} {
-            quasiquote { + ,$x 1 }
+        macro bind-add-one {x} {
+            quasiquote { let _r [+ ,$x 1] }
         }
-        macro add-two {x} {
-            quasiquote { add-one [+ ,$x 1] }
+        macro bind-add-two {x} {
+            quasiquote {
+                bind-add-one [+ ,$x 1]
+            }
         }
-        Test::eq [add-two 5] 7
+        bind-add-two 5
+        Test::eq $_r 7
     }
 
     Test::case "macro inside if body (command position)" {
         macro set-val {name val} {
             quasiquote { let ,$name ,$val }
         }
+
         if 1 {
             set-val myvar 99
         }
@@ -2587,9 +2598,11 @@ Test::suite "Macros" {
     Test::case "macro inside while body" {
         var total 0
         var i 0
+
         macro add-i-to-total {} {
             quasiquote { set! total [+ $total $i] }
         }
+
         while [< $i 3] {
             add-i-to-total
             set! i [+ $i 1]
@@ -2600,11 +2613,12 @@ Test::suite "Macros" {
 
     Test::case "macro in namespace" {
         namespace macro_ns {
-            macro greet {name} {
-                quasiquote { String::join (Hello " " ,$name) {} }
+            macro bind-greet {name} {
+                quasiquote { let _g [String::join (Hello " " ,$name) {}] }
             }
         }
-        Test::eq [macro_ns::greet World] "Hello World"
+        macro_ns::bind-greet World
+        Test::eq $_g "Hello World"
     }
 }
 

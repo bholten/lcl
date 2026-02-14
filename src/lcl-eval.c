@@ -352,9 +352,10 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
     }
     case LCL_WP_SUBCMD: {
       int sub_rc;
-      interp->subcmd_depth++;
+      int saved_in_subcmd = interp->in_subcmd;
+      interp->in_subcmd = 1;
       sub_rc = lcl_eval_program(interp, wp->as.sub.program, out);
-      interp->subcmd_depth--;
+      interp->in_subcmd = saved_in_subcmd;
       return sub_rc;
     }
     case LCL_WP_LIT: break;
@@ -369,6 +370,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   lcl_value *callee = NULL;
   int rc;
   int saved_tail_position = interp->in_tail_position;
+  int was_in_subcmd = interp->in_subcmd;
+  interp->in_subcmd = 0;
 
   if (cmd->argc == 0) {
     *out = lcl_value_new_string("");
@@ -415,18 +418,27 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       rc = lcl_call_user_proc(interp, result, p, 0, NULL, out);
 
       if (rc == LCL_RC_OK && p->is_macro) {
-        lcl_value *macro_result = *out;
-        lcl_program *macro_prog;
-        *out = NULL;
-        macro_prog = lcl_program_compile(
-            lcl_value_to_string(macro_result), "<macro>");
-        lcl_ref_dec(macro_result);
-
-        if (!macro_prog) {
+        if (was_in_subcmd) {
+          LCL_ERR_MSG(interp, "macro cannot be used in value position");
+          if (*out) {
+            lcl_ref_dec(*out);
+            *out = NULL;
+          }
           rc = LCL_RC_ERR;
         } else {
-          rc = lcl_eval_program(interp, macro_prog, out);
-          lcl_program_free(macro_prog);
+          lcl_value *macro_result = *out;
+          lcl_program *macro_prog;
+          *out = NULL;
+          macro_prog =
+              lcl_program_compile(lcl_value_to_string(macro_result), "<macro>");
+          lcl_ref_dec(macro_result);
+
+          if (!macro_prog) {
+            rc = LCL_RC_ERR;
+          } else {
+            rc = lcl_eval_program(interp, macro_prog, out);
+            lcl_program_free(macro_prog);
+          }
         }
       }
 
@@ -590,18 +602,29 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
       rc = lcl_call_user_proc(interp, callee, p, argc, argv, out);
       if (rc == LCL_RC_OK && p->is_macro) {
-        lcl_value *macro_result = *out;
-        lcl_program *macro_prog;
-        *out = NULL;
-        macro_prog = lcl_program_compile(
-            lcl_value_to_string(macro_result), "<macro>");
-        lcl_ref_dec(macro_result);
+        if (was_in_subcmd) {
+          LCL_ERR_MSG(interp, "macro cannot be used in value position");
 
-        if (!macro_prog) {
+          if (*out) {
+            lcl_ref_dec(*out);
+            *out = NULL;
+          }
+
           rc = LCL_RC_ERR;
         } else {
-          rc = lcl_eval_program(interp, macro_prog, out);
-          lcl_program_free(macro_prog);
+          lcl_value *macro_result = *out;
+          lcl_program *macro_prog;
+          *out = NULL;
+          macro_prog =
+              lcl_program_compile(lcl_value_to_string(macro_result), "<macro>");
+          lcl_ref_dec(macro_result);
+
+          if (!macro_prog) {
+            rc = LCL_RC_ERR;
+          } else {
+            rc = lcl_eval_program(interp, macro_prog, out);
+            lcl_program_free(macro_prog);
+          }
         }
       }
     } else {
@@ -773,9 +796,10 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       size_t slen;
       size_t need;
       int rc;
-      interp->subcmd_depth++;
+      int saved_in_subcmd = interp->in_subcmd;
+      interp->in_subcmd = 1;
       rc = lcl_eval_program(interp, wp->as.sub.program, &result);
-      interp->subcmd_depth--;
+      interp->in_subcmd = saved_in_subcmd;
 
       if (rc != LCL_RC_OK) {
         free(buf);

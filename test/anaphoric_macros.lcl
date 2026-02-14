@@ -6,7 +6,9 @@
 ;;
 ;; In LCL, the `macro` keyword creates a proc whose return value is
 ;; automatically compiled and evaluated in the caller's frame — no `eval`
-;; wrapper needed.
+;; wrapper needed. Macros are command-position only: [my_macro ...] in
+;; value position is an error. For template-building procs that need
+;; value position (or recursive template building), use `proc` + `eval`.
 ;;
 ;; Quasiquote syntax:
 ;;   quasiquote { ... }  - template with unquoting
@@ -90,7 +92,7 @@ macro awhile {condition body} {
 ;;       set! it [put $it age 30]
 ;;   }]
 
-macro with-it {initial body} {
+proc with-it {initial body} {
     quasiquote {
         var it ,$initial
         ,$body
@@ -108,7 +110,7 @@ macro with-it {initial body} {
 ;;   let squares [collect {1 2 3 4 5} {[* $it $it]}]
 ;;   # => {1 4 9 16 25}
 
-macro collect {items transform} {
+proc  collect {items transform} {
     quasiquote {
         var _result [list]
         foreach it {,$items} {
@@ -128,7 +130,7 @@ macro collect {items transform} {
 ;;   let big [select {1 2 3 4 5 6} {[> $it 3]}]
 ;;   # => {4 5 6}
 
-macro select {items predicate} {
+proc select {items predicate} {
     quasiquote {
         var _result [list]
         foreach it {,$items} {
@@ -157,7 +159,7 @@ macro select {items predicate} {
 ;;       {1}         {puts "positive: $it"}
 ;;   }
 
-macro acond {clauses} {
+proc acond {clauses} {
     if [== [len $clauses] 0] {
         return {{}}
     }
@@ -217,30 +219,30 @@ Test::suite "Anaphoric Macros" {
     }
 
     Test::case "with-it builder pattern for dict" {
-        let person [with-it {[dict]} {
+        let person [eval [with-it {[dict]} {
             set! it [put $it name "Bob"]
             set! it [put $it age 25]
-        }]
+        }]]
         Test::eq [get $person name] "Bob"
         Test::eq [get $person age] 25
     }
 
     Test::case "with-it for list building" {
-        let nums [with-it {[list]} {
+        let nums [eval [with-it {[list]} {
             set! it [List::push $it 1]
             set! it [List::push $it 2]
             set! it [List::push $it 3]
-        }]
+        }]]
         Test::eq $nums [list 1 2 3]
     }
 
     Test::case "collect transforms list" {
-        let squares [collect {1 2 3 4} {[* $it $it]}]
+        let squares [eval [collect {1 2 3 4} {[* $it $it]}]]
         Test::eq $squares [list 1 4 9 16]
     }
 
     Test::case "select filters list" {
-        let big [select {1 2 3 4 5 6} {[> $it 3]}]
+        let big [eval [select {1 2 3 4 5 6} {[> $it 3]}]]
         Test::eq $big [list 4 5 6]
     }
 
@@ -260,22 +262,22 @@ Test::suite "Anaphoric Macros" {
     Test::case "acond multi-branch" {
         var x 5
         var result {}
-        acond (
+        eval [acond (
             ({[< $x 0]}  {set! result "negative"})
             ({[== $x 0]} {set! result "zero"})
             ({1}         {set! result "positive"})
-        )
+        )]
 
         Test::eq $result "positive"
     }
 
     Test::case "acond binds it to matching condition" {
         var result 0
-        acond (
+        eval [acond (
             ({0}         {set! result "first"})
             ({[+ 10 20]} {set! result $it})
             ({1}         {set! result "default"})
-        )
+        )]
         Test::eq $result 30
     }
 }
@@ -318,7 +320,7 @@ Test::suite "Pipeline" {
 ;;
 ;; Create a lambda where $it refers to the single argument
 
-macro fn {body} {
+proc fn {body} {
     quasiquote {
         lambda {it} {,$body}
     }
@@ -326,12 +328,12 @@ macro fn {body} {
 
 Test::suite "Anaphoric Lambda" {
     Test::case "fn creates lambda with it binding" {
-        let double [fn {[* $it 2]}]
+        let double [eval [fn {[* $it 2]}]]
         Test::eq [$double 21] 42
     }
 
     Test::case "fn in higher-order context" {
-        let incr10 [fn {[+ $it 10]}]
+        let incr10 [eval [fn {[+ $it 10]}]]
         let data {1 2 3}
         var results [list]
         foreach x $data {
@@ -391,62 +393,55 @@ Test::suite "Dotimes" {
 }
 
 ;; ============================================================================
-;; Macro-Writing-Macros (using ,,)
+;; Macro-Writing-Macros
 ;; ============================================================================
 ;;
-;; The ,, syntax allows a macro to generate code that itself contains unquotes.
-;; At quasiquote depth 2:
-;;   ,$var   - preserved as literal (becomes ,$var in output)
-;;   ,,$var  - evaluates $var now, produces ,<value> in output
-;;
-;; This is essential for writing macros that generate other macros.
+;; Macros that generate procs or other definitions.
+;; The ,, syntax (demonstrated in the depth tracking test below) allows
+;; nested quasiquotes; at depth 2, ,,$var evaluates now and produces
+;; ,<value> in the output.
 
-;; make-adder-macro: generates a macro that adds a fixed amount
+;; make-adder: generates a proc that adds a fixed amount
 ;; Usage:
-;;   make-adder-macro add10 10    ;; defines add10 macro
-;;   add10 5                      ;; => 15
+;;   make-adder add10 10    ;; defines add10 proc
+;;   [add10 5]              ;; => 15
 ;;
-;; The ,, is crucial here: we want to bake the `amount` value into
-;; the generated macro definition, but preserve the ,$x for later evaluation.
+;; Uses ,$amount to bake the amount into the generated proc body.
 
-macro make-adder-macro {name amount} {
+macro make-adder {name amount} {
     quasiquote {
-        macro ,$name {x} {
-            quasiquote {
-                + ,$x ,,$amount
-            }
+        proc ,$name {x} {
+            + $x ,$amount
         }
     }
 }
 
-;; make-greeter: generates a greeting macro with a fixed prefix
+;; make-greeter: generates a greeting proc with a fixed prefix
 ;; Usage:
 ;;   make-greeter greet "Hello"
 ;;   puts [greet "World"]  ;; => "Hello, World!"
 
 macro make-greeter {name prefix} {
     quasiquote {
-        macro ,$name {who} {
-            quasiquote {
-                String::join (,,$prefix ", " ,$who "!") {}
-            }
+        proc ,$name {who} {
+            String::join (,$prefix ", " $who "!") {}
         }
     }
 }
 
 Test::suite "Macro-Writing-Macros" {
-    Test::case "make-adder-macro generates working adder" {
-        ;; Generate an add10 macro
-        make-adder-macro add10 10
+    Test::case "make-adder generates working adder" {
+        ;; Generate an add10 proc
+        make-adder add10 10
 
         ;; Use it
         let result [add10 5]
         Test::eq $result 15
     }
 
-    Test::case "make-adder-macro with different values" {
+    Test::case "make-adder with different values" {
         ;; Generate add100
-        make-adder-macro add100 100
+        make-adder add100 100
 
         let result [add100 23]
         Test::eq $result 123
@@ -460,10 +455,10 @@ Test::suite "Macro-Writing-Macros" {
         Test::eq $result "Hello, World!"
     }
 
-    Test::case "multiple generated macros are independent" {
+    Test::case "multiple generated procs are independent" {
         ;; Generate two different adders
-        make-adder-macro plus5 5
-        make-adder-macro plus50 50
+        make-adder plus5 5
+        make-adder plus50 50
 
         let r1 [plus5 10]
         let r2 [plus50 10]

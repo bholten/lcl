@@ -94,7 +94,7 @@ struct lcl_interp {
   lcl_value *current_proc; 
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
-  int subcmd_depth;
+  int in_subcmd;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \
