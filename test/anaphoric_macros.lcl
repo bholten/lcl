@@ -4,9 +4,9 @@
 ;; called "it") and make it available in the macro body. This is a powerful
 ;; metaprogramming technique from Common Lisp.
 ;;
-;; In LCL, macros return code that the caller evaluates with `eval`. Since
-;; eval runs in the current frame (no new scope), bindings from the generated
-;; code are visible to subsequent code.
+;; In LCL, the `macro` keyword creates a proc whose return value is
+;; automatically compiled and evaluated in the caller's frame — no `eval`
+;; wrapper needed.
 ;;
 ;; Quasiquote syntax:
 ;;   quasiquote { ... }  - template with unquoting
@@ -34,13 +34,13 @@
 ;; then $it is available in both branches.
 ;;
 ;; Usage:
-;;   eval [aif {[get $cache $key]} {
+;;   aif {[get $cache $key]} {
 ;;       puts "Cache hit: $it"
 ;;   } {
 ;;       puts "Cache miss"
-;;   }]
+;;   }
 
-proc aif {condition then_body else_body} {
+macro aif {condition then_body else_body} {
     quasiquote {
         let it ,$condition
         if [$it] {,$then_body} else {,$else_body}
@@ -54,7 +54,7 @@ proc aif {condition then_body else_body} {
 ;; Simpler version: only executes body when condition is truthy.
 ;; $it is bound to the condition result.
 
-proc awhen {condition body} {
+macro awhen {condition body} {
     quasiquote {
         let it ,$condition
         if [$it] {,$body}
@@ -68,7 +68,7 @@ proc awhen {condition body} {
 ;; Loop while condition is truthy, with $it bound to condition result each
 ;; iteration. Note: uses var/set! since it changes each iteration.
 
-proc awhile {condition body} {
+macro awhile {condition body} {
     quasiquote {
         while {1} {
             var it ,$condition
@@ -84,13 +84,13 @@ proc awhile {condition body} {
 ;; Creates a context where $it refers to a mutable value, allowing fluent
 ;; operations. Returns the final value of $it.
 ;;
-;; Usage (note: initializer must be quoted so it becomes code):
-;;   let person [eval [with-it {[dict]} {
+;; Usage:
+;;   let person [with-it {[dict]} {
 ;;       set! it [put $it name "Alice"]
 ;;       set! it [put $it age 30]
-;;   }]]
+;;   }]
 
-proc with-it {initial body} {
+macro with-it {initial body} {
     quasiquote {
         var it ,$initial
         ,$body
@@ -105,10 +105,10 @@ proc with-it {initial body} {
 ;; Transform each element of a list, with $it bound to current element.
 ;;
 ;; Usage:
-;;   let squares [eval [collect {1 2 3 4 5} {[* $it $it]}]]
+;;   let squares [collect {1 2 3 4 5} {[* $it $it]}]
 ;;   # => {1 4 9 16 25}
 
-proc collect {items transform} {
+macro collect {items transform} {
     quasiquote {
         var _result [list]
         foreach it {,$items} {
@@ -125,10 +125,10 @@ proc collect {items transform} {
 ;; Filter elements where predicate is truthy, with $it bound to current element.
 ;;
 ;; Usage:
-;;   let big [eval [select {1 2 3 4 5 6} {[> $it 3]}]]
+;;   let big [select {1 2 3 4 5 6} {[> $it 3]}]
 ;;   # => {4 5 6}
 
-proc select {items predicate} {
+macro select {items predicate} {
     quasiquote {
         var _result [list]
         foreach it {,$items} {
@@ -151,13 +151,13 @@ proc select {items predicate} {
 ;; For simple dispatch without $it binding, use the built-in `cond` special form.
 ;;
 ;; Usage:
-;;   eval [acond {
+;;   acond {
 ;;       {[< $x 0]}  {puts "negative: $it"}
 ;;       {[== $x 0]} {puts "zero: $it"}
 ;;       {1}         {puts "positive: $it"}
-;;   }]
+;;   }
 
-proc acond {clauses} {
+macro acond {clauses} {
     if [== [len $clauses] 0] {
         return {{}}
     }
@@ -182,76 +182,77 @@ Test::suite "Anaphoric Macros" {
 
     Test::case "aif binds condition to it in then-branch" {
         var result 0
-        eval [aif {[+ 10 20]} {
+        aif {[+ 10 20]} {
             set! result $it
         } {
             set! result -1
-        }]
+        }
         Test::eq $result 30
     }
 
     Test::case "aif else branch when falsy" {
         var result {}
-        eval [aif {0} {
+        aif {0} {
             set! result "truthy"
         } {
             set! result "falsy"
-        }]
+        }
         Test::eq $result "falsy"
     }
 
     Test::case "awhen executes when truthy" {
         var result 0
-        eval [awhen {[+ 5 5]} {
+        awhen {[+ 5 5]} {
             set! result $it
-        }]
+        }
         Test::eq $result 10
     }
 
     Test::case "awhen does nothing when falsy" {
         var result "unchanged"
-        eval [awhen {0} {
+        awhen {0} {
             set! result "changed"
-        }]
+        }
         Test::eq $result "unchanged"
     }
 
     Test::case "with-it builder pattern for dict" {
-        ;; Note: initializer must be quoted so it becomes code, not evaluated
-        let person [eval [with-it {[dict]} {
+        let person [with-it {[dict]} {
             set! it [put $it name "Bob"]
             set! it [put $it age 25]
-        }]]
+        }]
         Test::eq [get $person name] "Bob"
         Test::eq [get $person age] 25
     }
 
     Test::case "with-it for list building" {
-        let nums [eval [with-it {[list]} {
+        let nums [with-it {[list]} {
             set! it [List::push $it 1]
             set! it [List::push $it 2]
             set! it [List::push $it 3]
-        }]]
+        }]
         Test::eq $nums [list 1 2 3]
     }
 
     Test::case "collect transforms list" {
-        let squares [eval [collect {1 2 3 4} {[* $it $it]}]]
+        let squares [collect {1 2 3 4} {[* $it $it]}]
         Test::eq $squares [list 1 4 9 16]
     }
 
     Test::case "select filters list" {
-        let big [eval [select {1 2 3 4 5 6} {[> $it 3]}]]
+        let big [select {1 2 3 4 5 6} {[> $it 3]}]
         Test::eq $big [list 4 5 6]
     }
 
     Test::case "awhile loops with it" {
         var count 5
         var sum 0
-        eval [awhile {$count} {
+
+        awhile {$count} {
             set! sum [+ $sum $it]
             set! count [- $count 1]
-        }]
+        }
+
         ;; 5 + 4 + 3 + 2 + 1 = 15
         Test::eq $sum 15
     }
@@ -259,21 +260,22 @@ Test::suite "Anaphoric Macros" {
     Test::case "acond multi-branch" {
         var x 5
         var result {}
-        eval [acond (
+        acond (
             ({[< $x 0]}  {set! result "negative"})
             ({[== $x 0]} {set! result "zero"})
             ({1}         {set! result "positive"})
-        )]
+        )
+
         Test::eq $result "positive"
     }
 
     Test::case "acond binds it to matching condition" {
         var result 0
-        eval [acond (
+        acond (
             ({0}         {set! result "first"})
             ({[+ 10 20]} {set! result $it})
             ({1}         {set! result "default"})
-        )]
+        )
         Test::eq $result 30
     }
 }
@@ -316,7 +318,7 @@ Test::suite "Pipeline" {
 ;;
 ;; Create a lambda where $it refers to the single argument
 
-proc fn {body} {
+macro fn {body} {
     quasiquote {
         lambda {it} {,$body}
     }
@@ -324,12 +326,12 @@ proc fn {body} {
 
 Test::suite "Anaphoric Lambda" {
     Test::case "fn creates lambda with it binding" {
-        let double [eval [fn {[* $it 2]}]]
+        let double [fn {[* $it 2]}]
         Test::eq [$double 21] 42
     }
 
     Test::case "fn in higher-order context" {
-        let incr10 [eval [fn {[+ $it 10]}]]
+        let incr10 [fn {[+ $it 10]}]
         let data {1 2 3}
         var results [list]
         foreach x $data {
@@ -340,45 +342,10 @@ Test::suite "Anaphoric Lambda" {
 }
 
 ;; ============================================================================
-;; Example: Let-style Binding Chains
-;; ============================================================================
-;;
-;; Bind multiple values in sequence, each can use previous bindings
-
-proc let* {bindings body} {
-    if [== [len $bindings] 0] {
-        return $body
-    }
-
-    let first [get $bindings 0]
-    let rest [List::slice $bindings 1 [len $bindings]]
-    let name [get $first 0]
-    let value [get $first 1]
-    let rest_code [let* $rest $body]
-
-    quasiquote {
-        let ,$name ,$value
-        ,$rest_code
-    }
-}
-
-Test::suite "Let Star" {
-    Test::case "let* chains bindings" {
-        let result [eval [let* (
-            (a 10)
-            (b {[+ $a 5]})
-            (c {[* $b 2]})
-        ) {$c}]]
-        ;; a=10, b=15, c=30
-        Test::eq $result 30
-    }
-}
-
-;; ============================================================================
 ;; Example: unless (negated if)
 ;; ============================================================================
 
-proc unless {condition body} {
+macro unless {condition body} {
     quasiquote {
         if [not ,$condition] {,$body}
     }
@@ -387,13 +354,13 @@ proc unless {condition body} {
 Test::suite "Unless" {
     Test::case "unless runs when false" {
         var ran 0
-        eval [unless {0} {set! ran 1}]
+        unless {0} {set! ran 1}
         Test::eq $ran 1
     }
 
     Test::case "unless skips when true" {
         var ran 0
-        eval [unless {1} {set! ran 1}]
+        unless {1} {set! ran 1}
         Test::eq $ran 0
     }
 }
@@ -402,10 +369,10 @@ Test::suite "Unless" {
 ;; Example: dotimes (repeat n times)
 ;; ============================================================================
 
-proc dotimes {n body} {
+macro dotimes {n body} {
     quasiquote {
         var it 0
-        while {[< $it ,$n]} {
+        while [< $it ,$n] {
             ,$body
             set! it [+ $it 1]
         }
@@ -415,9 +382,9 @@ proc dotimes {n body} {
 Test::suite "Dotimes" {
     Test::case "dotimes repeats n times with it as counter" {
         var sum 0
-        eval [dotimes 5 {
+        dotimes 5 {
             set! sum [+ $sum $it]
-        }]
+        }
         ;; 0 + 1 + 2 + 3 + 4 = 10
         Test::eq $sum 10
     }
@@ -436,15 +403,15 @@ Test::suite "Dotimes" {
 
 ;; make-adder-macro: generates a macro that adds a fixed amount
 ;; Usage:
-;;   eval [make-adder-macro add10 10]  ;; defines add10 macro
-;;   eval [add10 5]                     ;; => 15
+;;   make-adder-macro add10 10    ;; defines add10 macro
+;;   add10 5                      ;; => 15
 ;;
 ;; The ,, is crucial here: we want to bake the `amount` value into
 ;; the generated macro definition, but preserve the ,$x for later evaluation.
 
-proc make-adder-macro {name amount} {
+macro make-adder-macro {name amount} {
     quasiquote {
-        proc ,$name {x} {
+        macro ,$name {x} {
             quasiquote {
                 + ,$x ,,$amount
             }
@@ -454,12 +421,12 @@ proc make-adder-macro {name amount} {
 
 ;; make-greeter: generates a greeting macro with a fixed prefix
 ;; Usage:
-;;   eval [make-greeter greet "Hello"]
-;;   puts [eval [greet "World"]]  ;; => "Hello, World!"
+;;   make-greeter greet "Hello"
+;;   puts [greet "World"]  ;; => "Hello, World!"
 
-proc make-greeter {name prefix} {
+macro make-greeter {name prefix} {
     quasiquote {
-        proc ,$name {who} {
+        macro ,$name {who} {
             quasiquote {
                 String::join (,,$prefix ", " ,$who "!") {}
             }
@@ -470,36 +437,36 @@ proc make-greeter {name prefix} {
 Test::suite "Macro-Writing-Macros" {
     Test::case "make-adder-macro generates working adder" {
         ;; Generate an add10 macro
-        eval [make-adder-macro add10 10]
+        make-adder-macro add10 10
 
         ;; Use it
-        let result [eval [add10 5]]
+        let result [add10 5]
         Test::eq $result 15
     }
 
     Test::case "make-adder-macro with different values" {
         ;; Generate add100
-        eval [make-adder-macro add100 100]
+        make-adder-macro add100 100
 
-        let result [eval [add100 23]]
+        let result [add100 23]
         Test::eq $result 123
     }
 
     Test::case "make-greeter generates working greeter" {
         ;; Generate a hello greeter
-        eval [make-greeter hello "Hello"]
+        make-greeter hello "Hello"
 
-        let result [eval [hello "World"]]
+        let result [hello "World"]
         Test::eq $result "Hello, World!"
     }
 
     Test::case "multiple generated macros are independent" {
         ;; Generate two different adders
-        eval [make-adder-macro plus5 5]
-        eval [make-adder-macro plus50 50]
+        make-adder-macro plus5 5
+        make-adder-macro plus50 50
 
-        let r1 [eval [plus5 10]]
-        let r2 [eval [plus50 10]]
+        let r1 [plus5 10]
+        let r2 [plus50 10]
 
         Test::eq $r1 15
         Test::eq $r2 60

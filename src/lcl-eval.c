@@ -351,7 +351,11 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
       return LCL_RC_OK;
     }
     case LCL_WP_SUBCMD: {
-      return lcl_eval_program(interp, wp->as.sub.program, out);
+      int sub_rc;
+      interp->subcmd_depth++;
+      sub_rc = lcl_eval_program(interp, wp->as.sub.program, out);
+      interp->subcmd_depth--;
+      return sub_rc;
     }
     case LCL_WP_LIT: break;
     }
@@ -409,6 +413,23 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       }
 
       rc = lcl_call_user_proc(interp, result, p, 0, NULL, out);
+
+      if (rc == LCL_RC_OK && p->is_macro) {
+        lcl_value *macro_result = *out;
+        lcl_program *macro_prog;
+        *out = NULL;
+        macro_prog = lcl_program_compile(
+            lcl_value_to_string(macro_result), "<macro>");
+        lcl_ref_dec(macro_result);
+
+        if (!macro_prog) {
+          rc = LCL_RC_ERR;
+        } else {
+          rc = lcl_eval_program(interp, macro_prog, out);
+          lcl_program_free(macro_prog);
+        }
+      }
+
       lcl_ref_dec(result);
       return rc;
     } else if (result->type == LCL_CPROC) {
@@ -568,6 +589,21 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       }
 
       rc = lcl_call_user_proc(interp, callee, p, argc, argv, out);
+      if (rc == LCL_RC_OK && p->is_macro) {
+        lcl_value *macro_result = *out;
+        lcl_program *macro_prog;
+        *out = NULL;
+        macro_prog = lcl_program_compile(
+            lcl_value_to_string(macro_result), "<macro>");
+        lcl_ref_dec(macro_result);
+
+        if (!macro_prog) {
+          rc = LCL_RC_ERR;
+        } else {
+          rc = lcl_eval_program(interp, macro_prog, out);
+          lcl_program_free(macro_prog);
+        }
+      }
     } else {
       rc = LCL_RC_ERR;
     }
@@ -736,7 +772,10 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       const char *s;
       size_t slen;
       size_t need;
-      int rc = lcl_eval_program(interp, wp->as.sub.program, &result);
+      int rc;
+      interp->subcmd_depth++;
+      rc = lcl_eval_program(interp, wp->as.sub.program, &result);
+      interp->subcmd_depth--;
 
       if (rc != LCL_RC_OK) {
         free(buf);

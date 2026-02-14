@@ -2528,5 +2528,85 @@ bar)
     }
 }
 
+;; ============================================================================
+;; Macros
+;; ============================================================================
+
+Test::suite "Macros" {
+
+    Test::case "basic macro definition and expansion" {
+        macro double {x} {
+            quasiquote { + ,$x ,$x }
+        }
+        Test::eq [double 5] 10
+    }
+
+    Test::case "macro expansion creates bindings in caller frame" {
+        macro bind-it {val} {
+            quasiquote { let it ,$val }
+        }
+        bind-it 42
+        Test::eq $it 42
+    }
+
+    Test::case "macro with quasiquote generates code" {
+        macro make-sum {a b} {
+            quasiquote { + ,$a ,$b }
+        }
+        Test::eq [make-sum 3 7] 10
+    }
+
+    Test::case "macro works in value position" {
+        macro add-ten {x} {
+            quasiquote { + ,$x 10 }
+        }
+        let x [add-ten 5]
+        Test::eq $x 15
+    }
+
+    Test::case "macro calling macro (nesting)" {
+        macro add-one {x} {
+            quasiquote { + ,$x 1 }
+        }
+        macro add-two {x} {
+            quasiquote { add-one [+ ,$x 1] }
+        }
+        Test::eq [add-two 5] 7
+    }
+
+    Test::case "macro inside if body (command position)" {
+        macro set-val {name val} {
+            quasiquote { let ,$name ,$val }
+        }
+        if 1 {
+            set-val myvar 99
+        }
+        Test::eq $myvar 99
+    }
+
+    Test::case "macro inside while body" {
+        var total 0
+        var i 0
+        macro add-i-to-total {} {
+            quasiquote { set! total [+ $total $i] }
+        }
+        while [< $i 3] {
+            add-i-to-total
+            set! i [+ $i 1]
+        }
+        ;; 0 + 1 + 2 = 3
+        Test::eq $total 3
+    }
+
+    Test::case "macro in namespace" {
+        namespace macro_ns {
+            macro greet {name} {
+                quasiquote { String::join (Hello " " ,$name) {} }
+            }
+        }
+        Test::eq [macro_ns::greet World] "Hello World"
+    }
+}
+
 Test::run
 

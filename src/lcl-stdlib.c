@@ -4260,6 +4260,63 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
+static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
+                   lcl_value **out) {
+  /* macro name {params} {body}
+   * Like proc, but the return value is compiled and evaluated
+   * in the caller's frame at dispatch time. */
+  lcl_value *name_v = NULL;
+  lcl_value *lam = NULL;
+  const char *name_str;
+  int rc;
+
+  if (argc != 3) {
+    LCL_ERR_MSG(interp, "macro: expected 3 arguments");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  name_str = lcl_value_to_string(name_v);
+
+  if (strstr(name_str, "::") && interp->def_depth == 0) {
+    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+                        "define inside 'namespace' or use 'ns::proc'");
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  rc = make_lambda(interp, name_str, args[1], args[2], &lam);
+
+  if (rc != LCL_RC_OK) {
+    lcl_ref_dec(name_v);
+    return rc;
+  }
+
+  ((lcl_proc *)lam->as.procedure.proc)->is_macro = 1;
+
+  if (interp->def_depth > 0) {
+    if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
+  } else {
+    if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
+  }
+
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(lam);
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 /*
  * List Commands
  */
@@ -6882,6 +6939,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "return", s_return);
   lcl_register_spec(interp, "lambda", s_lambda);
   lcl_register_spec(interp, "proc", s_proc);
+  lcl_register_spec(interp, "macro", s_macro);
   lcl_register_spec(interp, "eval", s_eval);
   lcl_register_spec(interp, "load", s_load);
   lcl_register_spec(interp, "subst", s_subst);
