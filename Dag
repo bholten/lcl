@@ -27,7 +27,6 @@ project lcl {
 
     def ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
                   -DLCL_BUILD_SH_LIB=ON
-                  -DLCL_BUILD_MACRO_LIB=ON
                   -DLCL_BUILD_CURL_DSL_LIB=ON)
 
     def DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON

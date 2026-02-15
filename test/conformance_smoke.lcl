@@ -2620,6 +2620,96 @@ Test::suite "Macros" {
         macro_ns::bind-greet World
         Test::eq $_g "Hello World"
     }
+
+    Test::case "macroexpand returns template without evaluating" {
+        macro add-ten {x} {
+            quasiquote { + ,$x 10 }
+        }
+        let tmpl [macroexpand add-ten 5]
+        ;; tmpl is a string containing the unexpanded template
+        Test::eq [String::trim $tmpl] "+ 5 10"
+    }
+
+    Test::case "eval macroexpand for value position" {
+        macro double {x} {
+            quasiquote { + ,$x ,$x }
+        }
+        let result [eval [macroexpand double 7]]
+        Test::eq $result 14
+    }
+
+    Test::case "macroexpand on non-macro errors" {
+        proc not-a-macro {x} { + $x 1 }
+        if [catch { macroexpand not-a-macro 5 } _res msg] {
+            Test::eq $msg "macroexpand: not a macro"
+        } else {
+            error "expected macroexpand error on non-macro"
+        }
+    }
+
+    Test::case "nested macros expand in command position" {
+        macro inner-add {x} {
+            quasiquote { + ,$x 1 }
+        }
+        macro outer-double-add {x} {
+            quasiquote { inner-add [+ ,$x ,$x] }
+        }
+        ;; outer-double-add 3 → inner-add [+ 3 3] → inner-add 6 → + 6 1 → 7
+        outer-double-add 3
+        ;; Last value is 7; bind it to check
+        let _r [eval [macroexpand outer-double-add 3]]
+        Test::eq $_r 7
+    }
+
+    Test::case "macroexpand returns one level only" {
+        macro step1 {x} {
+            quasiquote { step2 ,$x }
+        }
+        macro step2 {x} {
+            quasiquote { + ,$x 100 }
+        }
+        ;; macroexpand only expands step1, not step2 inside the template
+        let tmpl [macroexpand step1 5]
+        Test::eq [String::trim $tmpl] "step2 5"
+        ;; But eval expands step2 since it's a command head
+        let result [eval $tmpl]
+        Test::eq $result 105
+    }
+
+    Test::case "three levels of macro nesting" {
+        macro wrap3 {x} {
+            quasiquote { wrap2 ,$x }
+        }
+        macro wrap2 {x} {
+            quasiquote { wrap1 ,$x }
+        }
+        macro wrap1 {x} {
+            quasiquote { + ,$x 1000 }
+        }
+        ;; All three levels expand through evaluation
+        wrap3 42
+        let _r [eval [macroexpand wrap3 42]]
+        Test::eq $_r 1042
+    }
+
+    Test::case "nested macros with side effects at each level" {
+        var trace [list]
+        macro level-a {x} {
+            quasiquote {
+                set! trace [List::push $trace "a"]
+                level-b ,$x
+            }
+        }
+        macro level-b {x} {
+            quasiquote {
+                set! trace [List::push $trace "b"]
+                + ,$x 1
+            }
+        }
+        level-a 10
+        ;; Both macros expanded and ran: trace has a then b
+        Test::eq $trace [list a b]
+    }
 }
 
 Test::run

@@ -27,7 +27,6 @@ option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
 
 # Lcl libraries
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
-option(LCL_BUILD_MACRO_LIB "Build Lcl with the Macro library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
 
@@ -370,28 +369,6 @@ if(LCL_BUILD_SH_LIB)
   endif()
 endif()
 
-if(LCL_BUILD_MACRO_LIB)
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(MACRO_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/macros/src/Macro.lcl)
-  set(MACRO_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/macro-lib-data.h)
-
-  add_custom_command(
-    OUTPUT ${MACRO_LIB_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/macros/src/Macro.lcl > ${MACRO_LIB_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${MACRO_LIB_SRC}
-    COMMENT "Generating macro-lib-data.h from sh.lcl"
-  )
-
-  add_custom_target(generate_macro_lib_data DEPENDS ${MACRO_LIB_DATA})
-
-  if(LCL_BUILD_CLI)
-    add_dependencies(lcl-cli generate_macro_lib_data)
-    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_MACRO_LIB)
-    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
-endif()
 
 if(LCL_BUILD_CURL_DSL_LIB)
   find_program(XXD_EXECUTABLE xxd REQUIRED)

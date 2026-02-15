@@ -60,14 +60,6 @@ static const lcl_embedded_lib sh_lib = {"lib/sh/src/sh.lcl", lib_sh_src_sh_lcl,
                                         sizeof(lib_sh_src_sh_lcl)};
 #endif
 
-#ifdef LCL_HAVE_MACRO_LIB
-#include "macro-lib-data.h"
-
-static const lcl_embedded_lib macro_lib = {"lib/macros/src/Macro.lcl",
-                                           lib_macros_src_Macro_lcl,
-                                           sizeof(lib_macros_src_Macro_lcl)};
-#endif
-
 #ifdef LCL_HAVE_CURL_DSL_LIB
 #include "curl-dsl-lib-data.h"
 
@@ -161,12 +153,6 @@ static lcl_interp *create_interp(void) {
 #ifdef LCL_HAVE_SH_LIB
   if (lcl_register_embedded_lib(interp, &sh_lib) != 0) {
     fprintf(stderr, "Warning: Failed to load sh library\n");
-  }
-#endif
-
-#ifdef LCL_HAVE_MACRO_LIB
-  if (lcl_register_embedded_lib(interp, &macro_lib) != 0) {
-    fprintf(stderr, "Warning: Failed to load macro library\n");
   }
 #endif
 

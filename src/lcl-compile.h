@@ -95,6 +95,7 @@ struct lcl_interp {
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
   int in_subcmd;
+  int gensym_counter;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

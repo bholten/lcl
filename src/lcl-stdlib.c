@@ -924,6 +924,28 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* gensym ?prefix? - generate a unique symbol name */
+static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
+  const char *prefix = "_G";
+  char buf[128];
+
+  if (argc > 1) {
+    LCL_ERR_MSG(interp, "gensym: expected 0 or 1 arguments");
+    return LCL_RC_ERR;
+  }
+
+  if (argc == 1) {
+    prefix = lcl_value_to_string(argv[0]);
+  }
+
+  interp->gensym_counter++;
+  snprintf(buf, sizeof(buf), "%s%d", prefix, interp->gensym_counter);
+  *out = lcl_string_new(buf);
+
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
 static int c_ref(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   (void)interp;
@@ -4317,6 +4339,91 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
   return LCL_RC_OK;
 }
 
+/* macroexpand name arg1 arg2 ...
+ * Calls the macro's proc body and returns the template string
+ * WITHOUT compiling/evaluating it. This is the explicit mechanism
+ * for using macro expansions as values:
+ *   eval [macroexpand my_macro args]
+ */
+static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
+                         lcl_value **out) {
+  lcl_value *callee = NULL;
+  lcl_value **argv = NULL;
+  lcl_proc *p;
+  int nargs, i, rc;
+
+  if (argc < 1) {
+    LCL_ERR_MSG(interp, "macroexpand: expected at least a macro name");
+    return LCL_RC_ERR;
+  }
+
+  /* Evaluate first word to resolve the macro name */
+  rc = lcl_eval_word(interp, args[0], &callee);
+  if (rc != LCL_RC_OK) {
+    return rc;
+  }
+
+  /* If it evaluated to a string, look up as a command name */
+  if (callee->type == LCL_STRING) {
+    lcl_value *name = callee;
+    callee = NULL;
+    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name),
+                            &callee) != LCL_OK) {
+      LCL_ERR_MSG(interp, "macroexpand: unknown command");
+      lcl_ref_dec(name);
+      return LCL_RC_ERR;
+    }
+    lcl_ref_dec(name);
+  }
+
+  if (callee->type != LCL_PROC) {
+    lcl_ref_dec(callee);
+    LCL_ERR_MSG(interp, "macroexpand: not a procedure");
+    return LCL_RC_ERR;
+  }
+
+  p = (lcl_proc *)callee->as.procedure.proc;
+  if (!p->is_macro) {
+    lcl_ref_dec(callee);
+    LCL_ERR_MSG(interp, "macroexpand: not a macro");
+    return LCL_RC_ERR;
+  }
+
+  /* Evaluate remaining words as arguments */
+  nargs = argc - 1;
+  if (nargs > 0) {
+    argv = malloc(sizeof(lcl_value *) * (size_t)nargs);
+    if (!argv) {
+      lcl_ref_dec(callee);
+      return LCL_RC_ERR;
+    }
+
+    for (i = 0; i < nargs; i++) {
+      rc = lcl_eval_word(interp, args[i + 1], &argv[i]);
+      if (rc != LCL_RC_OK) {
+        while (--i >= 0) {
+          lcl_ref_dec(argv[i]);
+        }
+
+        free(argv);
+        lcl_ref_dec(callee);
+        return rc;
+      }
+    }
+  }
+
+  /* Call the macro's proc body — no expansion */
+  rc = lcl_call_user_proc(interp, callee, p, nargs, argv, out);
+
+  for (i = 0; i < nargs; i++) {
+    lcl_ref_dec(argv[i]);
+  }
+
+  free(argv);
+  lcl_ref_dec(callee);
+  return rc;
+}
+
 /*
  * List Commands
  */
@@ -6930,6 +7037,7 @@ void lcl_register_core(lcl_interp *interp) {
 
   lcl_register_proc(interp, "let", c_let);
   lcl_register_proc(interp, "ref", c_ref);
+  lcl_register_proc(interp, "gensym", c_gensym);
   lcl_register_proc(interp, "getvar", c_get);
   lcl_register_spec(interp, "var", s_var);
   lcl_register_spec(interp, "set!", s_set_bang);
@@ -6940,6 +7048,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "lambda", s_lambda);
   lcl_register_spec(interp, "proc", s_proc);
   lcl_register_spec(interp, "macro", s_macro);
+  lcl_register_spec(interp, "macroexpand", s_macroexpand);
   lcl_register_spec(interp, "eval", s_eval);
   lcl_register_spec(interp, "load", s_load);
   lcl_register_spec(interp, "subst", s_subst);

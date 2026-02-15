@@ -2,7 +2,7 @@
 
 > **Pre-alpha software**: This project is in early development. APIs, syntax, and semantics may change substantially.
 
-Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides the simplicity and extensibility of Tcl's "everything is a string" philosophy while adding modern features like closures, immutable bindings, and namespaces.
+Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides the simplicity and extensibility of Tcl while adding modern features like closures, immutable bindings, and namespaces.
 
 Lcl is implemented in **C89** with no dependencies except for a hosted C standard library.
 
@@ -29,6 +29,7 @@ The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C+
 | `if`       | `if {expr} {body} elseif ...`    | `if $cond {then} else {else}` (Scheme-style, value-based)      |
 | Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
 | Quoting    | `expr` command for expressions   | Expressions are just commands                                  |
+| Philosophy | "Everything is a string"         | "Everything is a string... inside a closure"                   |
 
 Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
 
