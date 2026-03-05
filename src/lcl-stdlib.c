@@ -1155,14 +1155,51 @@ int c_error(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   return LCL_RC_ERR;
 }
 
+/* Get a compiled program from a word. Uses the pre-compiled version if
+ * available, otherwise compiles at runtime. Sets *owned=1 if the caller
+ * must free the program, *owned=0 if the word owns it. */
+static int get_body_program(lcl_interp *interp, const lcl_word *w,
+                            const char *tag, lcl_program **prog_out,
+                            int *owned) {
+  if (w->compiled) {
+    *prog_out = w->compiled;
+    *owned = 0;
+    return LCL_RC_OK;
+  }
+
+  {
+    lcl_value *body_v = NULL;
+
+    if (lcl_eval_word_to_str(interp, w, &body_v) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+
+    *prog_out = lcl_program_compile(lcl_value_to_string(body_v), tag);
+    lcl_ref_dec(body_v);
+
+    if (!*prog_out) {
+      return LCL_RC_ERR;
+    }
+
+    *owned = 1;
+    return LCL_RC_OK;
+  }
+}
+
+static void free_if_owned(lcl_program *p, int owned) {
+  if (owned) {
+    lcl_program_free(p);
+  }
+}
+
 /* catch - execute script and catch errors
  * Usage: catch script ?resultVar? ?errorVar?
  * Returns: 0 if script succeeded, 1 if error occurred
  */
 static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
                    lcl_value **out) {
-  lcl_value *script_v = NULL;
   lcl_program *prog = NULL;
+  int prog_owned = 0;
   lcl_value *result = NULL;
   char *result_var = NULL;
   char *error_var = NULL;
@@ -1195,24 +1232,15 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(ev);
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &script_v) != LCL_RC_OK) {
+  if (get_body_program(interp, args[0], "<catch>", &prog, &prog_owned) !=
+      LCL_RC_OK) {
     free(result_var);
     free(error_var);
-    return LCL_RC_ERR;
-  }
-
-  prog = lcl_program_compile(lcl_value_to_string(script_v), "<catch>");
-  lcl_ref_dec(script_v);
-
-  if (!prog) {
-    free(result_var);
-    free(error_var);
-    LCL_ERR_MSG(interp, "catch: failed to compile script");
     return LCL_RC_ERR;
   }
 
   rc = lcl_eval_program(interp, prog, &result);
-  lcl_program_free(prog);
+  free_if_owned(prog, prog_owned);
 
   if (rc == LCL_RC_ERR) {
     if (error_var) {
@@ -1352,6 +1380,11 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
     interp->in_tail_position = saved_tail_position;
     *out = lcl_string_new("");
     return LCL_RC_OK;
+  }
+
+  if (args[body_idx]->compiled) {
+    interp->in_tail_position = saved_tail_position;
+    return lcl_eval_program(interp, args[body_idx]->compiled, out);
   }
 
   if (lcl_eval_word_to_str(interp, args[body_idx], &body_v) != LCL_RC_OK) {
@@ -1513,9 +1546,9 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
  */
 static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
                    lcl_value **out) {
-  lcl_value *body_v = NULL;
   lcl_program *test_p = NULL;
   lcl_program *body_p = NULL;
+  int test_owned = 0, body_owned = 0;
   lcl_value *last = NULL;
   int test_is_braced;
   int rc;
@@ -1527,36 +1560,15 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
   test_is_braced = args[0]->braced;
 
   if (test_is_braced) {
-    lcl_value *test_v = NULL;
-
-    if (lcl_eval_word_to_str(interp, args[0], &test_v) != LCL_RC_OK) {
-      return LCL_RC_ERR;
-    }
-
-    test_p = lcl_program_compile(lcl_value_to_string(test_v), "<while-test>");
-    lcl_ref_dec(test_v);
-
-    if (!test_p) {
+    if (get_body_program(interp, args[0], "<while-test>", &test_p,
+                         &test_owned) != LCL_RC_OK) {
       return LCL_RC_ERR;
     }
   }
 
-  if (lcl_eval_word_to_str(interp, args[1], &body_v) != LCL_RC_OK) {
-    if (test_p) {
-      lcl_program_free(test_p);
-    }
-
-    return LCL_RC_ERR;
-  }
-
-  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<while-body>");
-  lcl_ref_dec(body_v);
-
-  if (!body_p) {
-    if (test_p) {
-      lcl_program_free(test_p);
-    }
-
+  if (get_body_program(interp, args[1], "<while-body>", &body_p, &body_owned) !=
+      LCL_RC_OK) {
+    free_if_owned(test_p, test_owned);
     return LCL_RC_ERR;
   }
 
@@ -1568,23 +1580,19 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
       rc = lcl_eval_program(interp, test_p, &cond_v);
 
       if (rc != LCL_RC_OK) {
-        lcl_program_free(test_p);
-        lcl_program_free(body_p);
-
+        free_if_owned(test_p, test_owned);
+        free_if_owned(body_p, body_owned);
         if (last) {
           lcl_ref_dec(last);
         }
-
         return rc;
       }
     } else {
       if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
-        lcl_program_free(body_p);
-
+        free_if_owned(body_p, body_owned);
         if (last) {
           lcl_ref_dec(last);
         }
-
         return LCL_RC_ERR;
       }
     }
@@ -1612,52 +1620,39 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
-      if (test_p) {
-        lcl_program_free(test_p);
-      }
-
-      lcl_program_free(body_p);
-
+      free_if_owned(test_p, test_owned);
+      free_if_owned(body_p, body_owned);
       if (last) {
         lcl_ref_dec(last);
       }
-
       return rc;
     }
 
     if (rc == LCL_RC_RETURN) {
-      if (test_p) {
-        lcl_program_free(test_p);
-      }
-
-      lcl_program_free(body_p);
+      free_if_owned(test_p, test_owned);
+      free_if_owned(body_p, body_owned);
       *out = last;
-
       return LCL_RC_RETURN;
     }
   }
 
-  if (test_p) {
-    lcl_program_free(test_p);
-  }
-
-  lcl_program_free(body_p);
-
+  free_if_owned(test_p, test_owned);
+  free_if_owned(body_p, body_owned);
   *out = last ? last : lcl_string_new("");
-
   return LCL_RC_OK;
 }
 
 /* for start test next body - Tcl-style for loop */
 static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
                  lcl_value **out) {
-  lcl_value *start_v = NULL;
-  lcl_value *body_v = NULL;
-  lcl_value *next_v = NULL;
   lcl_program *start_p = NULL;
   lcl_program *test_p = NULL;
   lcl_program *body_p = NULL;
   lcl_program *next_p = NULL;
+  int start_owned = 0;
+  int test_owned = 0;
+  int body_owned = 0;
+  int next_owned = 0;
   lcl_value *last = NULL;
   lcl_value *tmp = NULL;
   int test_is_braced;
@@ -1669,86 +1664,45 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
   test_is_braced = args[1]->braced;
 
-  if (lcl_eval_word_to_str(interp, args[0], &start_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
-  }
-
-  start_p = lcl_program_compile(lcl_value_to_string(start_v), "<for-start>");
-  lcl_ref_dec(start_v);
-
-  if (!start_p) {
+  if (get_body_program(interp, args[0], "<for-start>", &start_p,
+                       &start_owned) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
   if (test_is_braced) {
-    lcl_value *test_v = NULL;
-
-    if (lcl_eval_word_to_str(interp, args[1], &test_v) != LCL_RC_OK) {
-      lcl_program_free(start_p);
-      return LCL_RC_ERR;
-    }
-
-    test_p = lcl_program_compile(lcl_value_to_string(test_v), "<for-test>");
-    lcl_ref_dec(test_v);
-
-    if (!test_p) {
-      lcl_program_free(start_p);
+    if (get_body_program(interp, args[1], "<for-test>", &test_p, &test_owned) !=
+        LCL_RC_OK) {
+      free_if_owned(start_p, start_owned);
       return LCL_RC_ERR;
     }
   }
 
-  if (lcl_eval_word_to_str(interp, args[2], &next_v) != LCL_RC_OK) {
-    lcl_program_free(start_p);
+  if (get_body_program(interp, args[2], "<for-next>", &next_p, &next_owned) !=
+      LCL_RC_OK) {
+    free_if_owned(start_p, start_owned);
 
     if (test_p) {
-      lcl_program_free(test_p);
+      free_if_owned(test_p, test_owned);
     }
 
     return LCL_RC_ERR;
   }
 
-  next_p = lcl_program_compile(lcl_value_to_string(next_v), "<for-next>");
-  lcl_ref_dec(next_v);
-
-  if (!next_p) {
-    lcl_program_free(start_p);
+  if (get_body_program(interp, args[3], "<for-body>", &body_p, &body_owned) !=
+      LCL_RC_OK) {
+    free_if_owned(start_p, start_owned);
 
     if (test_p) {
-      lcl_program_free(test_p);
+      free_if_owned(test_p, test_owned);
     }
 
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_eval_word_to_str(interp, args[3], &body_v) != LCL_RC_OK) {
-    lcl_program_free(start_p);
-
-    if (test_p) {
-      lcl_program_free(test_p);
-    }
-
-    lcl_program_free(next_p);
-
-    return LCL_RC_ERR;
-  }
-
-  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<for-body>");
-  lcl_ref_dec(body_v);
-
-  if (!body_p) {
-    lcl_program_free(start_p);
-
-    if (test_p) {
-      lcl_program_free(test_p);
-    }
-
-    lcl_program_free(next_p);
+    free_if_owned(next_p, next_owned);
 
     return LCL_RC_ERR;
   }
 
   rc = lcl_eval_program(interp, start_p, &tmp);
-  lcl_program_free(start_p);
+  free_if_owned(start_p, start_owned);
 
   if (tmp) {
     lcl_ref_dec(tmp);
@@ -1756,11 +1710,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (rc != LCL_RC_OK) {
     if (test_p) {
-      lcl_program_free(test_p);
+      free_if_owned(test_p, test_owned);
     }
 
-    lcl_program_free(body_p);
-    lcl_program_free(next_p);
+    free_if_owned(body_p, body_owned);
+    free_if_owned(next_p, next_owned);
 
     return rc;
   }
@@ -1773,9 +1727,9 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
       rc = lcl_eval_program(interp, test_p, &cond_v);
 
       if (rc != LCL_RC_OK) {
-        lcl_program_free(test_p);
-        lcl_program_free(body_p);
-        lcl_program_free(next_p);
+        free_if_owned(test_p, test_owned);
+        free_if_owned(body_p, body_owned);
+        free_if_owned(next_p, next_owned);
 
         if (last) {
           lcl_ref_dec(last);
@@ -1785,8 +1739,8 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
       }
     } else {
       if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
-        lcl_program_free(body_p);
-        lcl_program_free(next_p);
+        free_if_owned(body_p, body_owned);
+        free_if_owned(next_p, next_owned);
 
         if (last) {
           lcl_ref_dec(last);
@@ -1824,11 +1778,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
       if (rc != LCL_RC_OK && rc != LCL_RC_CONTINUE) {
         if (test_p) {
-          lcl_program_free(test_p);
+          free_if_owned(test_p, test_owned);
         }
 
-        lcl_program_free(body_p);
-        lcl_program_free(next_p);
+        free_if_owned(body_p, body_owned);
+        free_if_owned(next_p, next_owned);
 
         if (last) {
           lcl_ref_dec(last);
@@ -1842,11 +1796,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
       if (test_p) {
-        lcl_program_free(test_p);
+        free_if_owned(test_p, test_owned);
       }
 
-      lcl_program_free(body_p);
-      lcl_program_free(next_p);
+      free_if_owned(body_p, body_owned);
+      free_if_owned(next_p, next_owned);
 
       if (last) {
         lcl_ref_dec(last);
@@ -1858,11 +1812,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc == LCL_RC_RETURN) {
 
       if (test_p) {
-        lcl_program_free(test_p);
+        free_if_owned(test_p, test_owned);
       }
 
-      lcl_program_free(body_p);
-      lcl_program_free(next_p);
+      free_if_owned(body_p, body_owned);
+      free_if_owned(next_p, next_owned);
 
       *out = last;
 
@@ -1878,11 +1832,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (rc != LCL_RC_OK) {
       if (test_p) {
-        lcl_program_free(test_p);
+        free_if_owned(test_p, test_owned);
       }
 
-      lcl_program_free(body_p);
-      lcl_program_free(next_p);
+      free_if_owned(body_p, body_owned);
+      free_if_owned(next_p, next_owned);
 
       if (last) {
         lcl_ref_dec(last);
@@ -1893,11 +1847,11 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (test_p) {
-    lcl_program_free(test_p);
+    free_if_owned(test_p, test_owned);
   }
 
-  lcl_program_free(body_p);
-  lcl_program_free(next_p);
+  free_if_owned(body_p, body_owned);
+  free_if_owned(next_p, next_owned);
 
   *out = last ? last : lcl_string_new("");
 
@@ -1909,8 +1863,8 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
                      lcl_value **out) {
   lcl_value *varname_v = NULL;
   lcl_value *list_v = NULL;
-  lcl_value *body_v = NULL;
   lcl_program *body_p = NULL;
+  int body_owned = 0;
   lcl_value *last = NULL;
   const char *varname;
   int i;
@@ -1946,17 +1900,8 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     list_v = parsed;
   }
 
-  if (lcl_eval_word_to_str(interp, args[2], &body_v) != LCL_RC_OK) {
-    lcl_ref_dec(varname_v);
-    lcl_ref_dec(list_v);
-
-    return LCL_RC_ERR;
-  }
-
-  body_p = lcl_program_compile(lcl_value_to_string(body_v), "<foreach>");
-  lcl_ref_dec(body_v);
-
-  if (!body_p) {
+  if (get_body_program(interp, args[2], "<foreach>", &body_p, &body_owned) !=
+      LCL_RC_OK) {
     lcl_ref_dec(varname_v);
     lcl_ref_dec(list_v);
 
@@ -1971,7 +1916,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     if (lcl_list_get(list_v, (size_t)i, &elem) != LCL_OK) {
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
-      lcl_program_free(body_p);
+      free_if_owned(body_p, body_owned);
 
       if (last) {
         lcl_ref_dec(last);
@@ -1984,7 +1929,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(elem);
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
-      lcl_program_free(body_p);
+      free_if_owned(body_p, body_owned);
 
       if (last) {
         lcl_ref_dec(last);
@@ -2013,7 +1958,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
-      lcl_program_free(body_p);
+      free_if_owned(body_p, body_owned);
 
       if (last) {
         lcl_ref_dec(last);
@@ -2025,7 +1970,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     if (rc == LCL_RC_RETURN) {
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
-      lcl_program_free(body_p);
+      free_if_owned(body_p, body_owned);
 
       *out = last;
 
@@ -2035,7 +1980,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
 
   lcl_ref_dec(varname_v);
   lcl_ref_dec(list_v);
-  lcl_program_free(body_p);
+  free_if_owned(body_p, body_owned);
 
   *out = last ? last : lcl_string_new("");
 
@@ -2335,8 +2280,8 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   const lcl_word *body_word;
   lcl_value *name_v = NULL;
   char *ns_name = NULL;
-  lcl_value *body_v = NULL;
   lcl_program *prog = NULL;
+  int prog_owned = 0;
   lcl_frame *old_frame = NULL;
   lcl_def_target *target;
   lcl_return_code rc;
@@ -2364,21 +2309,18 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  if (lcl_eval_word_to_str(interp, body_word, &body_v) != LCL_RC_OK) {
-    free(ns_name);
-    return LCL_RC_ERR;
-  }
-
-  prog = lcl_program_compile(lcl_value_to_string(body_v), "<namespace>");
-  lcl_ref_dec(body_v);
-
-  if (!prog) {
-    free(ns_name);
-    return LCL_RC_ERR;
+  {
+    int prog_owned_flag = 0;
+    if (get_body_program(interp, body_word, "<namespace>", &prog,
+                         &prog_owned_flag) != LCL_RC_OK) {
+      free(ns_name);
+      return LCL_RC_ERR;
+    }
+    prog_owned = prog_owned_flag;
   }
 
   if (lcl_def_target_push(interp, interp->env.frame) != LCL_OK) {
-    lcl_program_free(prog);
+    free_if_owned(prog, prog_owned);
     free(ns_name);
     return LCL_RC_ERR;
   }
@@ -2418,7 +2360,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     interp->env.frame = old_frame;
     lcl_def_target_pop(interp);
-    lcl_program_free(prog);
+    free_if_owned(prog, prog_owned);
     free(ns_name);
     LCL_ERR_MSG(interp, "namespace: max recursion depth exceeded");
     return LCL_RC_ERR;
@@ -2453,7 +2395,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   interp->depth--;
   interp->env.frame = old_frame;
   exports = lcl_def_target_pop(interp);
-  lcl_program_free(prog);
+  free_if_owned(prog, prog_owned);
 
   if (last) {
     lcl_ref_dec(last);
@@ -4367,8 +4309,8 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
-    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name),
-                            &callee) != LCL_OK) {
+    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) !=
+        LCL_OK) {
       LCL_ERR_MSG(interp, "macroexpand: unknown command");
       lcl_ref_dec(name);
       return LCL_RC_ERR;

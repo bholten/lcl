@@ -290,6 +290,12 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
     w->braced = 1;
 
+    /* Pre-compile braced content as a program so the upvalue scanner
+     * can see variables inside code bodies (eval, foreach, while, etc.)
+     * and special forms can skip runtime compilation. If the content
+     * isn't valid code, compiled stays NULL and that's fine. */
+    w->compiled = lcl_program_compile(w->wp[0].as.lit.s, "<braced>");
+
     return 1;
   }
 
@@ -766,6 +772,7 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
     }
 
     if (lcl_scan_word(sc, &w) < 0) {
+      lcl_word_free_contents(&w);
       return -1;
     }
 
@@ -774,6 +781,7 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
     }
 
     if (!lcl_command_push_word(cmd, &w)) {
+      lcl_word_free_contents(&w);
       return -1;
     }
 

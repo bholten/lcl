@@ -574,7 +574,15 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
     }
 
     for (j = 0; j < cmd->argc; j++) {
-      collect_free_vars_word(&cmd->w[j], vars);
+      lcl_word *w = &cmd->w[j];
+      collect_free_vars_word(w, vars);
+
+      /* Scan pre-compiled braced bodies for variables. Braced words
+       * are pre-compiled at parse time so the upvalue scanner can see
+       * variables inside code bodies (eval, foreach, while, etc.). */
+      if (w->compiled) {
+        collect_free_vars_program(w->compiled, vars);
+      }
     }
   }
 }
