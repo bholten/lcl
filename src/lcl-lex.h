@@ -55,8 +55,10 @@ struct lcl_word {
   unsigned quoted : 1;
   unsigned braced : 1;
   unsigned expand : 1;
+  lcl_program *compiled;
 };
 
+void lcl_word_free_contents(lcl_word *w);
 void lcl_word_free(lcl_word *w);
 int lcl_word_add_lit(lcl_word *w, const char *s, size_t n);
 int lcl_word_add_var(lcl_word *w, const char *name);

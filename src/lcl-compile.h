@@ -91,7 +91,7 @@ struct lcl_interp {
   void *user_data;
   lcl_tailcall pending_tail;
   int in_tail_position;
-  lcl_value *current_proc; 
+  lcl_value *current_proc;
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
   int in_subcmd;

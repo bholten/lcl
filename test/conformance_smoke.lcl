@@ -2529,6 +2529,92 @@ bar)
 }
 
 ;; ============================================================================
+;; Upvalue Capture Through Braced Literals
+;; ============================================================================
+
+Test::suite "Upvalue Capture Through Braced Literals" {
+
+    Test::case "eval sees namespace let-binding" {
+        namespace _uv1 {
+            let val hello
+            proc test {} { eval {$val} }
+        }
+        Test::eq [_uv1::test] hello
+    }
+
+    Test::case "eval sees multiple namespace let-bindings" {
+        namespace _uv2 {
+            let a hello
+            let b world
+            proc test {} { eval {"$a $b"} }
+        }
+        Test::eq [_uv2::test] {hello world}
+    }
+
+    Test::case "foreach body sees namespace let-binding" {
+        namespace _uv3 {
+            let tag X
+            proc test {} {
+                var out ""
+                foreach k {a b} {
+                    set! out "$out$k:$tag "
+                }
+                $out
+            }
+        }
+        Test::eq [_uv3::test] {a:X b:X }
+    }
+
+    Test::case "while body sees namespace let-binding" {
+        namespace _uv4 {
+            let msg hi
+            proc test {} {
+                var i 0
+                var out ""
+                while {[< $i 2]} {
+                    set! out "$out$msg"
+                    set! i [+ $i 1]
+                }
+                $out
+            }
+        }
+        Test::eq [_uv4::test] hihi
+    }
+
+    Test::case "var-bound upvalues work in foreach (no regression)" {
+        namespace _uv5 {
+            var counter 0
+            proc test {} {
+                foreach k {a b c} {
+                    set! counter [+ $counter 1]
+                }
+                $counter
+            }
+        }
+        Test::eq [_uv5::test] 3
+    }
+
+    Test::case "imported proc sees namespace let-binding in eval" {
+        namespace _uv6 {
+            let secret 42
+            proc reveal {} { eval {$secret} }
+        }
+        import _uv6 reveal
+        Test::eq [reveal] 42
+    }
+
+    Test::case "nested braced literals capture upvalues" {
+        namespace _uv7 {
+            let x 10
+            proc test {} {
+                eval {eval {$x}}
+            }
+        }
+        Test::eq [_uv7::test] 10
+    }
+}
+
+;; ============================================================================
 ;; Macros
 ;; ============================================================================
 

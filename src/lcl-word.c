@@ -44,7 +44,7 @@ void lcl_word_piece_free(lcl_word_piece *wp) {
   free(wp);
 }
 
-void lcl_word_free(lcl_word *w) {
+void lcl_word_free_contents(lcl_word *w) {
   int i;
   for (i = 0; i < w->np; i++) {
     lcl_word_piece *pc = &w->wp[i];
@@ -55,7 +55,12 @@ void lcl_word_free(lcl_word *w) {
     default: break;
     }
   }
+  lcl_program_free(w->compiled);
   free(w->wp);
+}
+
+void lcl_word_free(lcl_word *w) {
+  lcl_word_free_contents(w);
   free(w);
 }
 

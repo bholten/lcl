@@ -19,6 +19,7 @@ void lcl_command_free(lcl_command *cmd) {
       }
     }
 
+    lcl_program_free(w->compiled);
     free(w->wp);
   }
 
