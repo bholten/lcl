@@ -65,6 +65,7 @@ static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/** DEPRECATED - use + alias io::puts **/
 static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
   int i;
@@ -4299,22 +4300,23 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Evaluate first word to resolve the macro name */
   rc = lcl_eval_word(interp, args[0], &callee);
+
   if (rc != LCL_RC_OK) {
     return rc;
   }
 
-  /* If it evaluated to a string, look up as a command name */
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     callee = NULL;
+
     if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) !=
         LCL_OK) {
       LCL_ERR_MSG(interp, "macroexpand: unknown command");
       lcl_ref_dec(name);
       return LCL_RC_ERR;
     }
+
     lcl_ref_dec(name);
   }
 
@@ -4325,16 +4327,18 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   p = (lcl_proc *)callee->as.procedure.proc;
+
   if (!p->is_macro) {
     lcl_ref_dec(callee);
     LCL_ERR_MSG(interp, "macroexpand: not a macro");
     return LCL_RC_ERR;
   }
 
-  /* Evaluate remaining words as arguments */
   nargs = argc - 1;
+
   if (nargs > 0) {
     argv = malloc(sizeof(lcl_value *) * (size_t)nargs);
+
     if (!argv) {
       lcl_ref_dec(callee);
       return LCL_RC_ERR;
@@ -4342,6 +4346,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
 
     for (i = 0; i < nargs; i++) {
       rc = lcl_eval_word(interp, args[i + 1], &argv[i]);
+
       if (rc != LCL_RC_OK) {
         while (--i >= 0) {
           lcl_ref_dec(argv[i]);
@@ -4354,7 +4359,6 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  /* Call the macro's proc body — no expansion */
   rc = lcl_call_user_proc(interp, callee, p, nargs, argv, out);
 
   for (i = 0; i < nargs; i++) {

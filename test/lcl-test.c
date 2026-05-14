@@ -10,7 +10,6 @@
    Testing
 **/
 
-/* tiny string buffer */
 typedef struct {
   char  *s;
   size_t len, cap;
@@ -101,7 +100,7 @@ static int dump_word(const lcl_word *w, SB *b, int depth) {
   int i;
   for (i = 0; i < w->np; i++) {
     const lcl_word_piece *pc = &w->wp[i];
-    /* space between pieces (but not before the first) is handled by caller */
+
     if (!sb_puts(b, "[")) return 0;
 
     if (pc->kind == LCL_WP_LIT) {
@@ -154,7 +153,6 @@ static int dump_program_rec(const lcl_program *P, SB *b, int depth) {
   return 1;
 }
 
-/* public helper used by tests */
 static int lcl_program_dump(const lcl_program *P, char **out_str) {
   SB b;
   sb_init(&b);
@@ -165,7 +163,7 @@ static int lcl_program_dump(const lcl_program *P, char **out_str) {
     return 0;
   }
 
-  *out_str = b.s; /* caller free()s */
+  *out_str = b.s;
 
   return 1;
 }
@@ -175,7 +173,6 @@ int  lcl_program_dump(const lcl_program *P, char **out_str);
 lcl_program *lcl_compile(const char *src, const char *file);
 void lcl_program_free(lcl_program *P);
 
-/* ---- dumb assert macros (C89-friendly) ---- */
 #define ASSERT_TRUE(cond) do { if (!(cond)) { \
   printf("    assert failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
   return 0; } } while(0)
@@ -184,7 +181,6 @@ void lcl_program_free(lcl_program *P);
   printf("    assert failed: strings not equal\n    A: %s\n    B: %s\n", (a)?(a):"(null)", (b)?(b):"(null)"); \
   return 0; } } while(0)
 
-/* ---- helperscm ---- */
 static int compile_and_dump(const char *src, const char *expect) {
   lcl_program *P = lcl_program_compile(src, "test.lcl");
   char *got = NULL;
@@ -207,7 +203,6 @@ static int compile_and_dump(const char *src, const char *expect) {
   return ok;
 }
 
-/* ---- test cases ---- */
 static int test_simple_words(void) {
   const char *src =
     "set x 10 ; puts $x\n";
@@ -218,7 +213,6 @@ static int test_simple_words(void) {
 }
 
 static int test_comments(void) {
-  /* Lcl uses ;; for comments (Lisp-style), anywhere on a line */
   const char *src =
     ";; leading comment\n"
     "set a 1  ;; trailing comment on same line\n"

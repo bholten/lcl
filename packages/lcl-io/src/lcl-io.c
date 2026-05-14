@@ -188,6 +188,28 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+static int c_io_puts(lcl_interp *interp, int argc, lcl_value **argv,
+                     lcl_value **out) {
+  int i;
+  (void)interp;
+
+  for (i = 0; i < argc; i++) {
+    const char *str = lcl_value_to_string(argv[i]);
+    fputs(str, stdout);
+
+    if (i + 1 < argc) {
+      fputc(' ', stdout);
+    }
+  }
+
+  fputc('\n', stdout);
+  fflush(stdout);
+
+  *out = lcl_string_new("");
+
+  return LCL_RC_OK;
+}
+
 int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
                    lcl_value **out) {
   char *contents = NULL;
@@ -688,6 +710,7 @@ void lcl_register_io(lcl_interp *interp) {
              lcl_c_proc_new("io::close_file", c_io_close_file));
   lcl_ns_def(io_ns, "fgets", lcl_c_proc_new("io::fgets", c_io_fgets));
   lcl_ns_def(io_ns, "fputs", lcl_c_proc_new("io::fputs", c_io_fputs));
+  lcl_ns_def(io_ns, "puts", lcl_c_proc_new("io::puts", c_io_puts));
   lcl_ns_def(io_ns, "read_file",
              lcl_c_proc_new("io::read_file", c_io_read_file));
   lcl_ns_def(io_ns, "write_file",
