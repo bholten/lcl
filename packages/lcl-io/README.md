@@ -30,14 +30,14 @@ let f [io::open_file data.txt r]
 while 1 {
     let line [io::fgets $f 1024]
     if [== [len $line] 0] { break }
-    puts $line
+    io::puts $line
 }
 io::close_file $f
 
 # Directory listing
 let files [io::readdir "."]
 foreach f $files {
-    puts $f
+    io::puts $f
 }
 ```
 
@@ -59,6 +59,7 @@ foreach f $files {
 | `io::close_file $handle` | Close file handle |
 | `io::fgets $handle $size` | Read line (up to size bytes) |
 | `io::fputs $handle $data` | Write string to file |
+| `io::puts $data` | Write string to stdout |
 | `io::flush $handle` | Flush file buffer |
 
 ### Standard Streams
