@@ -445,8 +445,18 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       lcl_ref_dec(result);
       return rc;
     } else if (result->type == LCL_CPROC) {
-      rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
+      /* Bugfix: Route SPECIAL forms through their raw-words
+       * signature; calling them through `fn.proc` is a
+       * type-mismatched function-pointer call. Normal CPROCs go
+       * through `fn.proc` as before. */
+      if (result->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+        rc = result->as.c_proc.fn->fn.spec(interp, 0, NULL, out);
+      } else {
+        rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
+      }
+
       lcl_ref_dec(result);
+
       return rc;
     }
 

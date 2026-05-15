@@ -71,6 +71,7 @@ lcl_value *lcl_int_new(const long n);
 lcl_value *lcl_float_new(const double f);
 lcl_result lcl_value_to_int(lcl_value *value, long *out);
 lcl_result lcl_value_to_float(lcl_value *value, double *out);
+lcl_result lcl_double_to_long(double f, long *out);
 
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);

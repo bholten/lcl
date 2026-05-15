@@ -113,6 +113,11 @@ lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value) {
 
   if (list->refc > 1) {
     lcl_value *dup = lcl_list_clone_shallow(list);
+
+    if (!dup) {
+      return LCL_ERROR;
+    }
+
     lcl_ref_dec(list);
     *list_io = list = dup;
   }
@@ -141,6 +146,11 @@ lcl_result lcl_list_set(lcl_value **list_io, size_t i, lcl_value *value) {
 
   if (list->refc > 1) {
     lcl_value *dup = lcl_list_clone_shallow(list);
+
+    if (!dup) {
+      return LCL_ERROR;
+    }
+
     lcl_ref_dec(list);
     *list_io = list = dup;
   }

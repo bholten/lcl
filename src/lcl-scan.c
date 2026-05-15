@@ -484,6 +484,11 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           }
 
           varname = strndup(sc->s + sc->i, (size_t)(j - sc->i));
+
+          if (!varname) {
+            return -1;
+          }
+
           ok = lcl_word_add_var(w, varname);
           free(varname);
 
@@ -777,6 +782,16 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
     }
 
     if (w.np == 0 && !w.quoted) {
+      /* Bugfix: `lcl_scan_word` returns an empty word for EOF,
+       * command separators, or an unmatched `]` (it stops without
+       * consuming the bracket. EOF/separators are handled by the
+       * checks above, so a leftover `]` here is a top-level unmatched
+       * bracket — a parse error rather than a silent truncation of
+       * the program. */
+      if (sc->i < sc->len && sc->s[sc->i] == ']') {
+        return -1;
+      }
+
       break;
     }
 

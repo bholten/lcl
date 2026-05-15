@@ -408,6 +408,13 @@ if(LCL_BUILD_TESTS)
   if(LCL_ENABLE_ASAN)
     target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
   endif()
+
+  # Allows lcl-test to intercept calloc/strndup/strdup and return NULL on
+  # demand without modifying the core sources.
+  target_link_options(lcl-test PRIVATE
+    -Wl,--wrap=calloc
+    -Wl,--wrap=strndup
+    -Wl,--wrap=strdup)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

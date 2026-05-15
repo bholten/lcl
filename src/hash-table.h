@@ -1,6 +1,7 @@
 #ifndef HASH_TABLE_H
 #define HASH_TABLE_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
 typedef struct lcl_value lcl_value;
@@ -14,7 +15,7 @@ typedef struct {
 typedef struct {
   char *key;
   lcl_value *value;
-  unsigned long hash;
+  uint64_t hash;
   unsigned char state;
 } hash_entry;
 
@@ -32,4 +33,7 @@ int hash_table_get(hash_table *ht, const char *key, lcl_value **out);
 int hash_table_delete(hash_table *ht, const char *key);
 int hash_table_iterate(hash_table *ht, hash_iter *it, const char **key,
                        lcl_value **value);
+
+/* Exposed for regression testing. The canonical 64-bit FNV-1a hash. */
+uint64_t lcl_hash_fnv1a(const char *s);
 #endif

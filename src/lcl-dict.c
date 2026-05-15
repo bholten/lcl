@@ -20,7 +20,7 @@ lcl_value *lcl_dict_new(void) {
 }
 
 size_t lcl_dict_len(const lcl_value *dict) {
-  if (dict->type != LCL_DICT) {
+  if (!dict || dict->type != LCL_DICT) {
     return 0;
   }
 
@@ -29,7 +29,7 @@ size_t lcl_dict_len(const lcl_value *dict) {
 
 lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
                         lcl_value **out) {
-  if (dict->type != LCL_DICT) {
+  if (!dict || dict->type != LCL_DICT || !key || !out) {
     return LCL_ERROR;
   }
 
@@ -63,7 +63,13 @@ static lcl_value *lcl_dict_clone_shallow(lcl_value *dict) {
 
 lcl_result lcl_dict_put(lcl_value **dict_io, const char *key,
                         lcl_value *value) {
-  lcl_value *dict = *dict_io;
+  lcl_value *dict;
+
+  if (!dict_io || !*dict_io || !key) {
+    return LCL_ERROR;
+  }
+
+  dict = *dict_io;
 
   if (dict->type != LCL_DICT) {
     return LCL_ERROR;
@@ -71,6 +77,11 @@ lcl_result lcl_dict_put(lcl_value **dict_io, const char *key,
 
   if (dict->refc > 1) {
     lcl_value *new_dict = lcl_dict_clone_shallow(dict);
+
+    if (!new_dict) {
+      return LCL_ERROR;
+    }
+
     lcl_ref_dec(dict);
     *dict_io = dict = new_dict;
   }
@@ -86,7 +97,13 @@ lcl_result lcl_dict_put(lcl_value **dict_io, const char *key,
 }
 
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key) {
-  lcl_value *dict = *dict_io;
+  lcl_value *dict;
+
+  if (!dict_io || !*dict_io || !key) {
+    return LCL_ERROR;
+  }
+
+  dict = *dict_io;
 
   if (dict->type != LCL_DICT) {
     return LCL_ERROR;
@@ -94,6 +111,11 @@ lcl_result lcl_dict_del(lcl_value **dict_io, const char *key) {
 
   if (dict->refc > 1) {
     lcl_value *new_dict = lcl_dict_clone_shallow(dict);
+
+    if (!new_dict) {
+      return LCL_ERROR;
+    }
+
     lcl_ref_dec(dict);
     *dict_io = dict = new_dict;
   }
@@ -110,9 +132,15 @@ lcl_result lcl_dict_del(lcl_value **dict_io, const char *key) {
 
 lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
                          const char **key, lcl_value **value) {
-  const lcl_value *dict = *dict_io;
+  const lcl_value *dict;
   hash_iter hit;
   int found;
+
+  if (!dict_io || !*dict_io || !it || !key || !value) {
+    return LCL_ERROR;
+  }
+
+  dict = *dict_io;
 
   if (dict->type != LCL_DICT) {
     return LCL_ERROR;
@@ -132,7 +160,7 @@ lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out) {
   const char *key;
   lcl_value *value;
 
-  if (dict->type != LCL_DICT) {
+  if (!dict || dict->type != LCL_DICT || !out) {
     return LCL_ERROR;
   }
 

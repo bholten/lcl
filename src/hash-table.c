@@ -1,27 +1,35 @@
 #include <assert.h>
 #include <ctype.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 
 #include "hash-table.h"
 #include "lcl-values.h"
 
-static unsigned long fnv1a(const char *s) {
-  unsigned long h = 1469598103934665603UL;
+/* Bugfix: Canonical 64-bit FNV-1a parameters (RFC draft
+ * Eastlake/Hansen).  The previous offset basis was missing a digit
+ * (19 digits vs.  the canonical 20), and the type was `unsigned long`
+ * which C89 only guarantees at ≥32 bits. Both are now fixed. */
+#define LCL_FNV64_OFFSET_BASIS 14695981039346656037ULL
+#define LCL_FNV64_PRIME        1099511628211ULL
+
+uint64_t lcl_hash_fnv1a(const char *s) {
+  uint64_t h = LCL_FNV64_OFFSET_BASIS;
 
   while (*s) {
     h ^= (unsigned char)*s++;
-    h *= 1099511628211UL;
+    h *= LCL_FNV64_PRIME;
   }
 
-  return h ? h : 1UL;
+  return h ? h : 1ULL;
 }
 
 static size_t mask(const hash_table *ht) {
   return ht->cap - 1;
 }
 
-static ssize_t hash_find(hash_table *ht, const char *key, unsigned long hk,
+static ssize_t hash_find(hash_table *ht, const char *key, uint64_t hk,
                          size_t *first_tomb) {
   size_t m = mask(ht);
   size_t i = hk & m;
@@ -132,7 +140,7 @@ void hash_table_free(hash_table *ht) {
 }
 
 int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
-  unsigned long hk;
+  uint64_t hk;
   size_t first_tomb;
   ssize_t idx;
   hash_entry *e;
@@ -144,7 +152,7 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
     }
   }
 
-  hk = fnv1a(key);
+  hk = lcl_hash_fnv1a(key);
   idx = hash_find(ht, key, hk, &first_tomb);
   assert(idx >= 0 && (size_t)idx < ht->cap);
   e = &ht->slots[(size_t)idx];
@@ -162,20 +170,28 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
     return 0;
   }
 
-  strcpy(k, key);
-  e->state = H_FULL;
-  e->hash = hk;
-  e->key = k;
-  e->value = lcl_ref_inc(value);
+  /* Bugfix: A tombstone already counts toward `used`; reusing it must
+   * not double-count. Only `H_EMPTY` slots contribute a new `used`
+   * slot. */
+  {
+    int was_empty = (e->state == H_EMPTY);
+    strcpy(k, key);
+    e->state = H_FULL;
+    e->hash = hk;
+    e->key = k;
+    e->value = lcl_ref_inc(value);
 
-  ht->len++;
-  ht->used++;
+    ht->len++;
+    if (was_empty) {
+      ht->used++;
+    }
+  }
 
   return 1;
 }
 
 int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
-  unsigned long hk = fnv1a(key);
+  uint64_t hk = lcl_hash_fnv1a(key);
   size_t first_tomb;
   ssize_t idx = hash_find(ht, key, hk, &first_tomb);
   hash_entry *e = NULL;
@@ -196,7 +212,7 @@ int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
 }
 
 int hash_table_delete(hash_table *ht, const char *key) {
-  unsigned long hk = fnv1a(key);
+  uint64_t hk = lcl_hash_fnv1a(key);
   size_t first_tomb;
   ssize_t idx = hash_find(ht, key, hk, &first_tomb);
   hash_entry *e = NULL;
