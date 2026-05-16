@@ -95,7 +95,7 @@ struct lcl_interp {
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
   int in_subcmd;
-  int gensym_counter;
+  unsigned long gensym_counter;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \
@@ -129,6 +129,7 @@ struct lcl_interp {
     (interp)->err_file_owned = (interp)->cur_file ? 1 : 0;                     \
     (interp)->err_line = (interp)->cur_line;                                   \
     (interp)->err_msg = (msg);                                                 \
+    (interp)->err_msg_owned = 0;                                               \
   } while (0)
 
 #define LCL_ERR_MSG_DUP(interp, msg)                                           \
@@ -188,8 +189,6 @@ typedef struct {
   int nupvals;
   lcl_param_spec pspec;
   lcl_program *body;
-  int capture_ns;
-  lcl_value *captured_ns;
   int is_macro;
 } lcl_proc;
 

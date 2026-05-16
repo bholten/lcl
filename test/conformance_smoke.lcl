@@ -3132,5 +3132,78 @@ Test::suite "Issue #38: if validates the else keyword" {
     }
 }
 
+Test::suite "Issue #50: gensym prefix length and counter" {
+    Test::case "default gensym produces _GN names" {
+        let a [gensym]
+        let b [gensym]
+        ;; Names must differ; both must start with `_G`.
+        Test::assert [!= $a $b]
+        Test::assert [== [String::find $a "_G"] 0]
+        Test::assert [== [String::find $b "_G"] 0]
+    }
+
+    Test::case "custom prefix is honored" {
+        let s [gensym myprefix]
+        Test::assert [== [String::find $s "myprefix"] 0]
+    }
+
+    Test::case "overlong prefix is rejected" {
+        ;; Build a 97-byte prefix (> 96-byte cap).
+        var p ""
+        var i 0
+        while {[< $i 97]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 1
+    }
+
+    Test::case "96-byte prefix is accepted" {
+        var p ""
+        var i 0
+        while {[< $i 96]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 0
+    }
+}
+
+Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
+    Test::case "trailing :: is a parse error" {
+        ;; Pre-fix: scanner accepted "$foo::", env_get_value split
+        ;; "foo::" into segment "foo" + empty rest, and silently
+        ;; returned $foo's value.
+        let foo 5
+        let r [catch { eval "puts \$foo::" }]
+        Test::eq $r 1
+    }
+
+    Test::case "::digit (non-identifier-start) is a parse error" {
+        ;; Pre-fix: scanner happily consumed "::1bad" as part of the
+        ;; varname, deferring to a runtime "undefined variable".
+        let foo 5
+        let r [catch { eval "puts \$foo::1bad" }]
+        Test::eq $r 1
+    }
+
+    Test::case "valid single :: still parses" {
+        namespace ns48a { let x 7 }
+        Test::eq $ns48a::x 7
+    }
+
+    Test::case "valid nested :: still parses" {
+        namespace ns48b { namespace inner { let y 11 } }
+        Test::eq $ns48b::inner::y 11
+    }
+
+    Test::case "underscore-led segment after :: still parses" {
+        namespace ns48c { let _x 13 }
+        Test::eq $ns48c::_x 13
+    }
+}
+
 Test::run
 

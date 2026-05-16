@@ -44,11 +44,17 @@ static lcl_value *lcl_dict_clone_shallow(lcl_value *dict) {
   hash_iter it = {0};
   const char *k;
   lcl_value *value;
-  lcl_value *new_dict = lcl_dict_new();
+  lcl_value *new_dict;
 
+  /* Bugfix #49: type-check before allocating, so a mismatched dict
+   * doesn't leak a freshly-built `new_dict`. Currently unreachable
+   * (all callers gate on type), but the previous ordering was latent
+   * and easy to break under refactor. */
   if (dict->type != LCL_DICT) {
     return NULL;
   }
+
+  new_dict = lcl_dict_new();
   if (!new_dict) {
     return NULL;
   }

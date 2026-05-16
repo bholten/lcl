@@ -153,29 +153,6 @@ static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/** DEPRECATED - use + alias io::puts **/
-static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
-  int i;
-  (void)interp;
-
-  for (i = 0; i < argc; i++) {
-    const char *str = lcl_value_to_string(argv[i]);
-    fputs(str, stdout);
-
-    if (i + 1 < argc) {
-      fputc(' ', stdout);
-    }
-  }
-
-  fputc('\n', stdout);
-  fflush(stdout);
-
-  *out = lcl_string_new("");
-
-  return LCL_RC_OK;
-}
-
 static int c_and(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int b;
@@ -1010,6 +987,7 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   const char *prefix = "_G";
   char buf[128];
+  int n;
 
   if (argc > 1) {
     LCL_ERR_MSG(interp, "gensym: expected 0 or 1 arguments");
@@ -1018,10 +996,26 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc == 1) {
     prefix = lcl_value_to_string(argv[0]);
+    /* Bugfix #50: reject overlong prefixes before they silently
+     * truncate. Truncation would produce non-unique names (e.g. two
+     * different long prefixes that share their first ~100 chars would
+     * collide), defeating gensym's contract. Cap conservatively at
+     * 96 bytes — leaves room for a 20-digit `unsigned long` plus the
+     * NUL. */
+    if (strlen(prefix) > 96) {
+      LCL_ERR_MSG(interp, "gensym: prefix too long (max 96 bytes)");
+      return LCL_RC_ERR;
+    }
   }
 
+  /* Bugfix #50: counter is `unsigned long` to avoid signed-overflow
+   * UB on extremely long-running interpreters. Format with `%lu`. */
   interp->gensym_counter++;
-  snprintf(buf, sizeof(buf), "%s%d", prefix, interp->gensym_counter);
+  n = snprintf(buf, sizeof(buf), "%s%lu", prefix, interp->gensym_counter);
+  if (n < 0 || (size_t)n >= sizeof(buf)) {
+    LCL_ERR_MSG(interp, "gensym: name too long");
+    return LCL_RC_ERR;
+  }
   *out = lcl_string_new(buf);
 
   return *out ? LCL_RC_OK : LCL_RC_ERR;
@@ -7228,7 +7222,6 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "assert", c_assert);
   lcl_register_proc(interp, "assert_eq", c_assert_eq);
   lcl_register_proc(interp, "assert_neq", c_assert_neq);
-  lcl_register_proc(interp, "puts", c_puts);
 
   lcl_register_proc(interp, "and", c_and);
   lcl_register_proc(interp, "or", c_or);

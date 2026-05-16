@@ -1,60 +1,74 @@
 #include <assert.h>
 #include <ctype.h>
-#include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
 
 #include "hash-table.h"
 #include "lcl-values.h"
 
+/* Bugfix #53: `hash_find` uses `(size_t)-1` as the not-found sentinel
+ * (matching the `first_tomb` convention already in this file) instead
+ * of returning `ssize_t`. `ssize_t` is POSIX, not C89 — it broke
+ * Windows-MSVC C89 builds via `<sys/types.h>`. `HASH_NPOS` names the
+ * sentinel so the intent is obvious at every callsite. */
+#define HASH_NPOS ((size_t)-1)
+
+/* Bugfix #57: Compile-time check that `lcl_u64` is exactly 64 bits.
+ * FNV-1a's hash output depends on modular truncation at 64 bits — a
+ * wider type would produce different (still-valid but
+ * non-interoperable) hashes. A zero/negative-sized array typedef
+ * fails to compile if the condition is false. */
+typedef char lcl_u64_size_check[sizeof(lcl_u64) == 8 ? 1 : -1];
+
 /* Bugfix: Canonical 64-bit FNV-1a parameters (RFC draft
  * Eastlake/Hansen).  The previous offset basis was missing a digit
  * (19 digits vs.  the canonical 20), and the type was `unsigned long`
- * which C89 only guarantees at ≥32 bits. Both are now fixed. */
-#define LCL_FNV64_OFFSET_BASIS 14695981039346656037ULL
-#define LCL_FNV64_PRIME 1099511628211ULL
+ * which C89 only guarantees at ≥32 bits. Both are now fixed.
+ * `LCL_U64_C` applies the right integer suffix for the active
+ * `lcl_u64` definition (UL on LP64, ULL on LLP64). */
+#define LCL_FNV64_OFFSET_BASIS LCL_U64_C(14695981039346656037)
+#define LCL_FNV64_PRIME LCL_U64_C(1099511628211)
 
-uint64_t lcl_hash_fnv1a(const char *s) {
-  uint64_t h = LCL_FNV64_OFFSET_BASIS;
+lcl_u64 lcl_hash_fnv1a(const char *s) {
+  lcl_u64 h = LCL_FNV64_OFFSET_BASIS;
 
   while (*s) {
     h ^= (unsigned char)*s++;
     h *= LCL_FNV64_PRIME;
   }
 
-  return h ? h : 1ULL;
+  return h ? h : LCL_U64_C(1);
 }
 
 static size_t mask(const hash_table *ht) {
   return ht->cap - 1;
 }
 
-static ssize_t hash_find(hash_table *ht, const char *key, uint64_t hk,
-                         size_t *first_tomb) {
+static size_t hash_find(hash_table *ht, const char *key, lcl_u64 hk,
+                        size_t *first_tomb) {
   size_t m = mask(ht);
   size_t i = hk & m;
   size_t checked = 0;
-  *first_tomb = (size_t)-1;
+  *first_tomb = HASH_NPOS;
 
   for (;;) {
     hash_entry *e = &ht->slots[i];
 
     if (e->state == H_EMPTY) {
-      return (*first_tomb != (size_t)-1 ? (ssize_t)(*first_tomb) : (ssize_t)i);
+      return (*first_tomb != HASH_NPOS ? *first_tomb : i);
     }
 
     if (e->state == H_TOMB) {
-      if (*first_tomb == (size_t)-1) {
+      if (*first_tomb == HASH_NPOS) {
         *first_tomb = i;
       }
     } else if (e->hash == hk && strcmp(e->key, key) == 0) {
-      return (ssize_t)i;
+      return i;
     }
 
     i = (i + 1) & m;
 
     if (++checked >= ht->cap) {
-      return (*first_tomb != (size_t)-1 ? (ssize_t)(*first_tomb) : -1);
+      return (*first_tomb != HASH_NPOS ? *first_tomb : HASH_NPOS);
     }
   }
 }
@@ -78,8 +92,8 @@ static int hash_rehash(hash_table *ht, size_t newcap) {
   for (i = 0; i < oldcap; i++) {
     if (old[i].state == H_FULL) {
       size_t dummy;
-      size_t pos = (size_t)hash_find(ht, old[i].key, old[i].hash, &dummy);
-      hash_entry *e = &ht->slots[(size_t)pos];
+      size_t pos = hash_find(ht, old[i].key, old[i].hash, &dummy);
+      hash_entry *e = &ht->slots[pos];
 
       e->state = H_FULL;
       e->hash = old[i].hash;
@@ -140,9 +154,9 @@ void hash_table_free(hash_table *ht) {
 }
 
 int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
-  uint64_t hk;
+  lcl_u64 hk;
   size_t first_tomb;
-  ssize_t idx;
+  size_t idx;
   hash_entry *e;
   char *k;
 
@@ -154,8 +168,11 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
 
   hk = lcl_hash_fnv1a(key);
   idx = hash_find(ht, key, hk, &first_tomb);
-  assert(idx >= 0 && (size_t)idx < ht->cap);
-  e = &ht->slots[(size_t)idx];
+  /* After rehash, the load factor is <0.7, so `hash_find` must locate
+   * either an empty slot or a tombstone (never the cap-exhausted
+   * sentinel). */
+  assert(idx != HASH_NPOS && idx < ht->cap);
+  e = &ht->slots[idx];
 
   if (e->state == H_FULL) {
     lcl_ref_inc(value);
@@ -191,16 +208,16 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
 }
 
 int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
-  uint64_t hk = lcl_hash_fnv1a(key);
+  lcl_u64 hk = lcl_hash_fnv1a(key);
   size_t first_tomb;
-  ssize_t idx = hash_find(ht, key, hk, &first_tomb);
+  size_t idx = hash_find(ht, key, hk, &first_tomb);
   hash_entry *e = NULL;
 
-  if (idx < 0) {
+  if (idx == HASH_NPOS) {
     return 0;
   }
 
-  e = &ht->slots[(size_t)idx];
+  e = &ht->slots[idx];
 
   if (e->state != H_FULL) {
     return 0;
@@ -212,16 +229,16 @@ int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
 }
 
 int hash_table_delete(hash_table *ht, const char *key) {
-  uint64_t hk = lcl_hash_fnv1a(key);
+  lcl_u64 hk = lcl_hash_fnv1a(key);
   size_t first_tomb;
-  ssize_t idx = hash_find(ht, key, hk, &first_tomb);
+  size_t idx = hash_find(ht, key, hk, &first_tomb);
   hash_entry *e = NULL;
 
-  if (idx < 0) {
+  if (idx == HASH_NPOS) {
     return 0;
   }
 
-  e = &ht->slots[(size_t)idx];
+  e = &ht->slots[idx];
 
   if (e->state != H_FULL) {
     return 0;

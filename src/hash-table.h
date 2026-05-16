@@ -1,10 +1,28 @@
 #ifndef HASH_TABLE_H
 #define HASH_TABLE_H
 
-#include <stdint.h>
+#include <limits.h>
 #include <stdlib.h>
 
 typedef struct lcl_value lcl_value;
+
+/* Bugfix #57: 64-bit unsigned type for FNV-1a hashing without
+ * `<stdint.h>` (C99). C89 doesn't guarantee any 64-bit integer:
+ * `unsigned long` is only required to be ≥32 bits. On LP64 (Linux,
+ * macOS) it's 64 bits — strict C89 works. On LLP64 (Windows MSVC x64)
+ * it's 32, so we fall back to `unsigned long long` (C99, but a
+ * near-universal compiler extension on every C89-mode compiler we
+ * target: GCC, clang, MSVC ≥ VS2010). The compile-time size check in
+ * hash-table.c enforces "exactly 64 bits" so a hypothetical wider
+ * `unsigned long long` doesn't silently change FNV-1a's modular
+ * truncation. */
+#if ULONG_MAX > 0xFFFFFFFFUL
+typedef unsigned long lcl_u64;
+#define LCL_U64_C(x) x##UL
+#else
+typedef unsigned long long lcl_u64;
+#define LCL_U64_C(x) x##ULL
+#endif
 
 enum { H_EMPTY = 0, H_FULL = 1, H_TOMB = 2 };
 
@@ -15,7 +33,7 @@ typedef struct {
 typedef struct {
   char *key;
   lcl_value *value;
-  uint64_t hash;
+  lcl_u64 hash;
   unsigned char state;
 } hash_entry;
 
@@ -35,5 +53,5 @@ int hash_table_iterate(hash_table *ht, hash_iter *it, const char **key,
                        lcl_value **value);
 
 /* Exposed for regression testing. The canonical 64-bit FNV-1a hash. */
-uint64_t lcl_hash_fnv1a(const char *s);
+lcl_u64 lcl_hash_fnv1a(const char *s);
 #endif

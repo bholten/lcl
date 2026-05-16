@@ -870,6 +870,59 @@ static int test_issue39_import_cleared_cell(void) {
   return 1;
 }
 
+/* ISSUE #58 — `lcl_eval_word` returned LCL_RC_OK with `*out == NULL` when
+ * `$name` resolved to a cell whose `inner` was NULLed by the cycle-breaker.
+ * That violated the "OK ⇒ non-NULL out" contract every caller relied on, and
+ * silently propagated NULL through `$cleared` references. The fix is
+ * defense-in-depth: `lcl_cell_get` rejects NULL inner, and `lcl_eval_word`
+ * sets a "use of cleared cell" error message before propagating. */
+static int test_issue58_cleared_cell_returns_error(void) {
+  extern lcl_interp *lcl_test_interp;
+  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  lcl_value *cell;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  const char *err;
+  int rc;
+
+  cell = lcl_cell_new(NULL);
+  ASSERT_TRUE(cell != NULL);
+  ASSERT_TRUE(cell->as.cell.inner == NULL);
+
+  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i58_broken", cell)
+              == LCL_OK);
+  lcl_ref_dec(cell);
+
+  /* Single-piece var ref — exercises lcl_eval_word's WP_VAR case. */
+  prog = lcl_program_compile("$__i58_broken", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  /* Pre-fix: rc == LCL_RC_OK, result == NULL.
+   * Post-fix: rc == LCL_RC_ERR, message set. */
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(result == NULL);
+  err = lcl_interp_error_msg(lcl_test_interp);
+  ASSERT_TRUE(err != NULL && strstr(err, "cleared cell") != NULL);
+
+  lcl_program_free(prog);
+
+  /* Multi-piece concatenation — exercises lcl_eval_word_to_str. */
+  lcl_clear_error(lcl_test_interp);
+  prog = lcl_program_compile("let x \"prefix=$__i58_broken\"", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+  result = NULL;
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  err = lcl_interp_error_msg(lcl_test_interp);
+  ASSERT_TRUE(err != NULL && strstr(err, "cleared cell") != NULL);
+
+  if (result) lcl_ref_dec(result);
+  lcl_program_free(prog);
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
 /* ISSUE #37 — lcl_program_push_command failure leaks the local `cmd`'s
  * words and pieces. We inject a forced failure on the 2nd push so the 1st
  * command lands in `p->cmd` (freed by lcl_program_free) and the 2nd is
@@ -974,6 +1027,9 @@ int run_test(void) {
 
   /* Regression test for ISSUE #47 (param bind ignores OOM) */
   RUN(test_issue47_param_bind_oom);
+
+  /* Regression test for ISSUE #58 (cleared-cell deref via $name) */
+  RUN(test_issue58_cleared_cell_returns_error);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

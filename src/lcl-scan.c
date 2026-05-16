@@ -486,9 +486,24 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
              */
             if (ch == ':') {
               if (j + 1 < sc->len && sc->s[j + 1] == ':') {
+                /* Bugfix #48: require an identifier char (alpha or `_`)
+                 * to start the segment after `::`. Without this,
+                 * `$foo::` silently resolves to `foo` (env_get_value
+                 * splits on `::`, then the trailing empty segment is
+                 * skipped), and `$foo::1bad` is accepted by the scanner
+                 * only to fail with a generic "undefined variable" at
+                 * runtime. Reject both at parse time. */
+                if (j + 2 >= sc->len ||
+                    (!isalpha((unsigned char)sc->s[j + 2]) &&
+                     sc->s[j + 2] != '_')) {
+                  return -1;
+                }
+
                 j += 2;
+
                 continue;
               }
+
               break;
             }
 

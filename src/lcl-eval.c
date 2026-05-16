@@ -184,13 +184,6 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
     }
 
     interp->env.frame = child;
-    if (p->capture_ns && p->captured_ns) {
-      if (interp->env.current_ns) {
-        lcl_ref_dec(interp->env.current_ns);
-      }
-
-      interp->env.current_ns = lcl_ref_inc(p->captured_ns);
-    }
 
     {
       int min_args = p->pspec.n_required;
@@ -389,6 +382,15 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
+        /* Bugfix #58: distinguish cleared-cell from other cell_get
+         * failures so the user sees a useful error instead of a
+         * generic propagation. */
+        if (!val->as.cell.inner) {
+          LCL_ERR_MSG(interp, "use of cleared cell");
+          lcl_ref_dec(val);
+          return LCL_RC_ERR;
+        }
+
         if (lcl_cell_get(val, &inner) != LCL_OK) {
           lcl_ref_dec(val);
           return LCL_RC_ERR;
@@ -526,8 +528,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
+    const char *cmd_name;
     callee = NULL;
-    const char *cmd_name = lcl_value_to_string(name);
+    cmd_name = lcl_value_to_string(name);
 
     if (lcl_env_get_command(&interp->env, cmd_name, &callee) != LCL_OK) {
       if (cmd->argc == 1) {
@@ -811,6 +814,15 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
+
+        /* Bugfix #58: see lcl_eval_word above; same cleared-cell
+         * guard applies for the multi-piece concatenation path. */
+        if (!val->as.cell.inner) {
+          LCL_ERR_MSG(interp, "use of cleared cell");
+          lcl_ref_dec(val);
+          free(buf);
+          return LCL_RC_ERR;
+        }
 
         if (lcl_cell_get(val, &inner) != LCL_OK) {
           lcl_ref_dec(val);

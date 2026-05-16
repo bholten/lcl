@@ -50,7 +50,6 @@ set(LCL_SOURCES
   src/lcl-ref.c
   src/lcl-scan.c
   src/lcl-stdlib.c
-  src/lcl-str.c
   src/lcl-string.c
   src/lcl-word.c
   src/str-compat.c
@@ -58,7 +57,7 @@ set(LCL_SOURCES
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(LCL_COMPILE_OPTIONS -Wall -Wextra)
+set(LCL_COMPILE_OPTIONS -Wall -Wextra -Wdeclaration-after-statement)
 
 # Set default build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

@@ -328,8 +328,12 @@ size_t lcl_list_len(const lcl_value *list);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
 
 /*
- * Push a value onto the end of a list.
- * Note: list_io is a pointer to a pointer because the list may be reallocated.
+ * Push a value onto the end of a list. Does not take ownership of
+ * `value`; the list takes its own +1 reference, leaving the caller's
+ * reference unchanged.
+ *
+ * Note: list_io is a pointer to a pointer because the list may be
+ * reallocated or cloned (copy-on-write) when it has refc > 1.
  */
 lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
 
@@ -350,22 +354,32 @@ size_t lcl_dict_len(const lcl_value *dict);
 
 /*
  * Get an item from a dictionary by key.
+ * Returns LCL_OK on success, LCL_ERROR if the key is absent.
+ * The returned value has +1 refcount.
  */
 lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
                         lcl_value **out);
 
 /*
- * Puts a value into a dictionary with key.
+ * Put a value into a dictionary under `key`. Does not take ownership
+ * of `value`; the dictionary takes its own +1 reference, leaving the
+ * caller's reference unchanged.
+ * Note: dict_io is a pointer to a pointer because the dict may be
+ * cloned (copy-on-write) when it has refc > 1.
  */
 lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
 
 /*
- * Deletes a value into a dictionary with key.
+ * Delete the entry for `key`. Returns LCL_OK on success,
+ * LCL_ERROR if the key is absent.
+ * Note: dict_io is a pointer to a pointer because the dict may be
+ * cloned (copy-on-write) when it has refc > 1.
  */
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
 
 /*
- * Get all keys from a dictionary as a list.
+ * Get all keys from a dictionary as a freshly-built list.
+ * The returned list has +1 refcount.
  */
 lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
 

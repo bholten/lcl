@@ -749,8 +749,6 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
   pspec->rest_name = NULL;
 
   p->body = body;
-  p->capture_ns = 0;
-  p->captured_ns = NULL;
 
   v = (lcl_value *)calloc(1, sizeof(*v));
 
