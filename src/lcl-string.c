@@ -298,8 +298,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
 
     first = 0;
 
-    ok = sbuf_append_styled(&b, key, ks) &&
-         sbuf_putc(&b, ' ') &&
+    ok = sbuf_append_styled(&b, key, ks) && sbuf_putc(&b, ' ') &&
          sbuf_append_styled(&b, vs, vst);
     lcl_ref_dec(val);
 

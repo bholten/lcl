@@ -100,4 +100,3 @@ lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
     }
   }
 }
-

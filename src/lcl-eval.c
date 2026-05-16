@@ -282,8 +282,8 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
             return def_rc;
           }
 
-          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name,
-                          def_val) != LCL_OK) {
+          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val) !=
+              LCL_OK) {
             lcl_ref_dec(def_val);
             LCL_ERR_MSG(interp, "out of memory binding parameter");
             goto bind_error;
@@ -308,8 +308,8 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
           }
         }
 
-        if (lcl_env_let(&interp->env, p->pspec.rest_name, rest_list)
-            != LCL_OK) {
+        if (lcl_env_let(&interp->env, p->pspec.rest_name, rest_list) !=
+            LCL_OK) {
           lcl_ref_dec(rest_list);
           LCL_ERR_MSG(interp, "out of memory binding rest parameter");
           goto bind_error;

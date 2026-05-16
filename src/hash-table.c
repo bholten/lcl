@@ -12,7 +12,7 @@
  * (19 digits vs.  the canonical 20), and the type was `unsigned long`
  * which C89 only guarantees at ≥32 bits. Both are now fixed. */
 #define LCL_FNV64_OFFSET_BASIS 14695981039346656037ULL
-#define LCL_FNV64_PRIME        1099511628211ULL
+#define LCL_FNV64_PRIME 1099511628211ULL
 
 uint64_t lcl_hash_fnv1a(const char *s) {
   uint64_t h = LCL_FNV64_OFFSET_BASIS;

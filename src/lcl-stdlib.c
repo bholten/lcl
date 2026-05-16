@@ -12,9 +12,13 @@
 /* Bugfix: portable C89 overflow-checked arithmetic on long.  Each
  * returns 1 on success (writes *out), 0 on overflow. */
 static int safe_add_long(long a, long b, long *out) {
-  if (b > 0 && a > LONG_MAX - b) return 0;
+  if (b > 0 && a > LONG_MAX - b) {
+    return 0;
+  }
 
-  if (b < 0 && a < LONG_MIN - b) return 0;
+  if (b < 0 && a < LONG_MIN - b) {
+    return 0;
+  }
 
   *out = a + b;
 
@@ -25,16 +29,22 @@ static int safe_sub_long(long a, long b, long *out) {
   /* a - LONG_MIN = a + 2^63. -LONG_MIN is not representable, so handle
    * separately via unsigned arithmetic when b == LONG_MIN. */
   if (b == LONG_MIN) {
-    if (a >= 0) return 0;
+    if (a >= 0) {
+      return 0;
+    }
 
     *out = (long)((unsigned long)a - (unsigned long)b);
 
     return 1;
   }
 
-  if (b > 0 && a < LONG_MIN + b) return 0;
+  if (b > 0 && a < LONG_MIN + b) {
+    return 0;
+  }
 
-  if (b < 0 && a > LONG_MAX + b) return 0;
+  if (b < 0 && a > LONG_MAX + b) {
+    return 0;
+  }
 
   *out = a - b;
 
@@ -56,20 +66,31 @@ static int safe_add_size(size_t a, size_t b, size_t *out) {
 }
 
 static int safe_mul_long(long a, long b, long *out) {
-  if (a == 0 || b == 0) { *out = 0; return 1; }
+  if (a == 0 || b == 0) {
+    *out = 0;
+    return 1;
+  }
   /* |LONG_MIN| isn't representable, so it gets a dedicated path. */
   if (a == LONG_MIN) {
-    if (b == 1) { *out = LONG_MIN; return 1; }
+    if (b == 1) {
+      *out = LONG_MIN;
+      return 1;
+    }
     return 0;
   }
   if (b == LONG_MIN) {
-    if (a == 1) { *out = LONG_MIN; return 1; }
+    if (a == 1) {
+      *out = LONG_MIN;
+      return 1;
+    }
     return 0;
   }
   {
     long aa = a < 0 ? -a : a;
     long bb = b < 0 ? -b : b;
-    if (aa > LONG_MAX / bb) return 0;
+    if (aa > LONG_MAX / bb) {
+      return 0;
+    }
   }
   *out = a * b;
   return 1;
@@ -461,9 +482,9 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
     }
 
     switch (op) {
-    case 0: result = (li <  ri); break;
+    case 0: result = (li < ri); break;
     case 1: result = (li <= ri); break;
-    case 2: result = (li >  ri); break;
+    case 2: result = (li > ri); break;
     case 3: result = (li >= ri); break;
     default: return LCL_RC_ERR;
     }
@@ -478,9 +499,9 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
   }
 
   switch (op) {
-  case 0: result = (left <  right); break;
+  case 0: result = (left < right); break;
   case 1: result = (left <= right); break;
-  case 2: result = (left >  right); break;
+  case 2: result = (left > right); break;
   case 3: result = (left >= right); break;
   default: return LCL_RC_ERR;
   }
@@ -2447,7 +2468,8 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
 
           free_if_owned(prog, prog_owned);
           free(ns_name);
-          LCL_ERR_MSG(interp, "namespace: out of memory pre-populating builder");
+          LCL_ERR_MSG(interp,
+                      "namespace: out of memory pre-populating builder");
           return LCL_RC_ERR;
         }
       }
@@ -2638,8 +2660,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
 
   if (ns_name_v->type == LCL_NAMESPACE) {
     ns = ns_name_v;
-  } else if (ns_name_v->type == LCL_CELL &&
-             ns_name_v->as.cell.inner != NULL &&
+  } else if (ns_name_v->type == LCL_CELL && ns_name_v->as.cell.inner != NULL &&
              ns_name_v->as.cell.inner->type == LCL_NAMESPACE) {
     ns = lcl_ref_inc(ns_name_v->as.cell.inner);
     lcl_ref_dec(ns_name_v);

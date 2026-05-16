@@ -18,14 +18,22 @@ void lcl_normalize_decimal_to_c(char *buf) {
   char *p;
   size_t sep_len;
 
-  if (!buf) return;
+  if (!buf) {
+    return;
+  }
   lc = localeconv();
-  if (!lc) return;
+  if (!lc) {
+    return;
+  }
   sep = lc->decimal_point;
-  if (!sep || !*sep || strcmp(sep, ".") == 0) return;
+  if (!sep || !*sep || strcmp(sep, ".") == 0) {
+    return;
+  }
 
   p = strstr(buf, sep);
-  if (!p) return;
+  if (!p) {
+    return;
+  }
   sep_len = strlen(sep);
   *p = '.';
   if (sep_len > 1) {
@@ -59,7 +67,9 @@ size_t lcl_parse_double_c(const char *s, double *out) {
   int substituted = 0;
   double val;
 
-  if (!s || !out) return 0;
+  if (!s || !out) {
+    return 0;
+  }
 
   lc = localeconv();
   sep = lc ? lc->decimal_point : ".";
@@ -76,7 +86,7 @@ size_t lcl_parse_double_c(const char *s, double *out) {
       if (pre + sep_len + slen - pre <= sizeof(buf)) {
         memcpy(buf, s, pre);
         memcpy(buf + pre, sep, sep_len);
-        memcpy(buf + pre + sep_len, dot + 1, slen - pre);  /* includes NUL */
+        memcpy(buf + pre + sep_len, dot + 1, slen - pre); /* includes NUL */
         to_parse = buf;
         substituted = 1;
       }
@@ -84,7 +94,9 @@ size_t lcl_parse_double_c(const char *s, double *out) {
   }
 
   val = strtod(to_parse, &endptr);
-  if (endptr == to_parse) return 0;
+  if (endptr == to_parse) {
+    return 0;
+  }
   *out = val;
 
   if (substituted) {
@@ -92,7 +104,7 @@ size_t lcl_parse_double_c(const char *s, double *out) {
     size_t off_buf = (size_t)(endptr - buf);
 
     if (off_buf <= pre) {
-      return off_buf;  /* stopped before / at the start of the separator */
+      return off_buf; /* stopped before / at the start of the separator */
     }
 
     /* Past the separator — strtod consumed the multi-byte sep atomically. */

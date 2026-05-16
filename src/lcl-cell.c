@@ -148,8 +148,7 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
 
     return cycle_check_value(target, val->as.cell.inner, visited);
 
-  default:
-    return 0;
+  default: return 0;
   }
 }
 
