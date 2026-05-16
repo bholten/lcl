@@ -58,7 +58,9 @@ static char *api_read_file(const char *path) {
 }
 
 lcl_type lcl_value_type_of(const lcl_value *value) {
-  return value->type;
+  /* Bugfix: NULL-safe — embedders may pass an `out` from a failed
+     call. */
+  return value ? value->type : LCL_STRING;
 }
 
 int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
@@ -112,6 +114,12 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
   interp->err_file_owned = interp->cur_file ? 1 : 0;
   interp->err_line = interp->cur_line;
   interp->err_msg = msg;
+  /* Bugfix #52: `msg` is borrowed (caller-owned static or literal),
+   * so make ownership explicit. LCL_ERR_CLEAR above already zeroes
+   * the flag, but re-asserting here keeps the invariant local to
+   * this function — robust against future reorderings of CLEAR or
+   * additions of an early-return path. */
+  interp->err_msg_owned = 0;
 }
 
 void lcl_clear_error(lcl_interp *interp) {

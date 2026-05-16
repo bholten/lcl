@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -7,6 +8,93 @@
 #include "lcl-values.h"
 
 #include "lcl-stdlib.h"
+
+/* Bugfix: portable C89 overflow-checked arithmetic on long.  Each
+ * returns 1 on success (writes *out), 0 on overflow. */
+static int safe_add_long(long a, long b, long *out) {
+  if (b > 0 && a > LONG_MAX - b) {
+    return 0;
+  }
+
+  if (b < 0 && a < LONG_MIN - b) {
+    return 0;
+  }
+
+  *out = a + b;
+
+  return 1;
+}
+
+static int safe_sub_long(long a, long b, long *out) {
+  /* a - LONG_MIN = a + 2^63. -LONG_MIN is not representable, so handle
+   * separately via unsigned arithmetic when b == LONG_MIN. */
+  if (b == LONG_MIN) {
+    if (a >= 0) {
+      return 0;
+    }
+
+    *out = (long)((unsigned long)a - (unsigned long)b);
+
+    return 1;
+  }
+
+  if (b > 0 && a < LONG_MIN + b) {
+    return 0;
+  }
+
+  if (b < 0 && a > LONG_MAX + b) {
+    return 0;
+  }
+
+  *out = a - b;
+
+  return 1;
+}
+
+/* Bugfix: Unsigned size_t add with overflow detection. Returns 0
+ * (false) on overflow; result is left unmodified in that
+ * case. C89-friendly: uses `(size_t)-1` for SIZE_MAX rather than
+ * <stdint.h>'s SIZE_MAX. */
+static int safe_add_size(size_t a, size_t b, size_t *out) {
+  if (b > (size_t)-1 - a) {
+    return 0;
+  }
+
+  *out = a + b;
+
+  return 1;
+}
+
+static int safe_mul_long(long a, long b, long *out) {
+  if (a == 0 || b == 0) {
+    *out = 0;
+    return 1;
+  }
+  /* |LONG_MIN| isn't representable, so it gets a dedicated path. */
+  if (a == LONG_MIN) {
+    if (b == 1) {
+      *out = LONG_MIN;
+      return 1;
+    }
+    return 0;
+  }
+  if (b == LONG_MIN) {
+    if (a == 1) {
+      *out = LONG_MIN;
+      return 1;
+    }
+    return 0;
+  }
+  {
+    long aa = a < 0 ? -a : a;
+    long bb = b < 0 ? -b : b;
+    if (aa > LONG_MAX / bb) {
+      return 0;
+    }
+  }
+  *out = a * b;
+  return 1;
+}
 
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
                              lcl_c_proc_fn fn);
@@ -61,29 +149,6 @@ static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   lcl_ref_dec(result);
-
-  return LCL_RC_OK;
-}
-
-/** DEPRECATED - use + alias io::puts **/
-static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
-  int i;
-  (void)interp;
-
-  for (i = 0; i < argc; i++) {
-    const char *str = lcl_value_to_string(argv[i]);
-    fputs(str, stdout);
-
-    if (i + 1 < argc) {
-      fputc(' ', stdout);
-    }
-  }
-
-  fputc('\n', stdout);
-  fflush(stdout);
-
-  *out = lcl_string_new("");
 
   return LCL_RC_OK;
 }
@@ -189,7 +254,12 @@ static int c_add(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
-      sum += v;
+
+      if (!safe_add_long(sum, v, &sum)) {
+        LCL_ERR_MSG(interp, "integer overflow in +");
+
+        return LCL_RC_ERR;
+      }
     }
 
     *out = lcl_int_new(sum);
@@ -228,7 +298,12 @@ static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 1; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
-      result -= v;
+
+      if (!safe_sub_long(result, v, &result)) {
+        LCL_ERR_MSG(interp, "integer overflow in -");
+
+        return LCL_RC_ERR;
+      }
     }
 
     *out = lcl_int_new(result);
@@ -266,7 +341,11 @@ static int c_mult(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < argc; i++) {
       long v;
       lcl_value_to_int(argv[i], &v);
-      product *= v;
+
+      if (!safe_mul_long(product, v, &product)) {
+        LCL_ERR_MSG(interp, "integer overflow in *");
+        return LCL_RC_ERR;
+      }
     }
 
     *out = lcl_int_new(product);
@@ -343,6 +422,14 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
+  /* Bugfix: LONG_MIN % -1 is UB on most platforms (the quotient
+   * LONG_MIN/-1 = -LONG_MIN overflows). The mathematical remainder is
+   * 0. */
+  if (dividend == LONG_MIN && divisor == -1) {
+    *out = lcl_int_new(0);
+    return LCL_RC_OK;
+  }
+
   result = dividend % divisor;
 
   *out = lcl_int_new(result);
@@ -350,108 +437,78 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int c_lt(lcl_interp *interp, int argc, lcl_value **argv,
-                lcl_value **out) {
-  long result;
+/* Bugfix: Compare two values numerically. When both operands are
+ * integral, compare as `long` to preserve precision near LONG_MAX;
+ * otherwise fall back to double comparison. `op` selects <, <=, >,
+ * >=. */
+static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
   double left;
   double right;
-  (void)interp;
+  long result;
 
   if (argc != 2) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
+  if (all_args_integral(argc, argv)) {
+    long li, ri;
+
+    if (lcl_value_to_int(argv[0], &li) != LCL_OK ||
+        lcl_value_to_int(argv[1], &ri) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    switch (op) {
+    case 0: result = (li < ri); break;
+    case 1: result = (li <= ri); break;
+    case 2: result = (li > ri); break;
+    case 3: result = (li >= ri); break;
+    default: return LCL_RC_ERR;
+    }
+
+    *out = lcl_int_new(result);
+    return LCL_RC_OK;
+  }
+
+  if (lcl_value_to_float(argv[0], &left) != LCL_OK ||
+      lcl_value_to_float(argv[1], &right) != LCL_OK) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
-    return LCL_RC_ERR;
+  switch (op) {
+  case 0: result = (left < right); break;
+  case 1: result = (left <= right); break;
+  case 2: result = (left > right); break;
+  case 3: result = (left >= right); break;
+  default: return LCL_RC_ERR;
   }
-
-  result = left < right;
 
   *out = lcl_int_new(result);
-
   return LCL_RC_OK;
+}
+
+static int c_lt(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
+  (void)interp;
+  return c_compare(argc, argv, 0, out);
 }
 
 static int c_lte(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  long result;
-  double left;
-  double right;
   (void)interp;
-
-  if (argc != 2) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  result = left <= right;
-
-  *out = lcl_int_new(result);
-
-  return LCL_RC_OK;
+  return c_compare(argc, argv, 1, out);
 }
 
 static int c_gt(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
-  long result;
-  double left;
-  double right;
   (void)interp;
-
-  if (argc != 2) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  result = left > right;
-
-  *out = lcl_int_new(result);
-
-  return LCL_RC_OK;
+  return c_compare(argc, argv, 2, out);
 }
 
 static int c_gte(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  long result;
-  double left;
-  double right;
   (void)interp;
-
-  if (argc != 2) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[0], &left) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[1], &right) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  result = left >= right;
-
-  *out = lcl_int_new(result);
-
-  return LCL_RC_OK;
+  return c_compare(argc, argv, 3, out);
 }
 
 #define EQ_STACK_MAX 256
@@ -593,16 +650,16 @@ static int value_to_double(lcl_value *v, double *out) {
 
   if (v->type == LCL_STRING) {
     const char *s = lcl_value_to_string(v);
-    char *endptr;
+    size_t end;
     double d;
 
     if (!s || *s == '\0') {
       return 0;
     }
 
-    d = strtod(s, &endptr);
+    end = lcl_parse_double_c(s, &d);
 
-    if (*endptr == '\0') {
+    if (end > 0 && s[end] == '\0') {
       *out = d;
       return 1;
     }
@@ -930,6 +987,7 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   const char *prefix = "_G";
   char buf[128];
+  int n;
 
   if (argc > 1) {
     LCL_ERR_MSG(interp, "gensym: expected 0 or 1 arguments");
@@ -938,10 +996,26 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc == 1) {
     prefix = lcl_value_to_string(argv[0]);
+    /* Bugfix #50: reject overlong prefixes before they silently
+     * truncate. Truncation would produce non-unique names (e.g. two
+     * different long prefixes that share their first ~100 chars would
+     * collide), defeating gensym's contract. Cap conservatively at
+     * 96 bytes — leaves room for a 20-digit `unsigned long` plus the
+     * NUL. */
+    if (strlen(prefix) > 96) {
+      LCL_ERR_MSG(interp, "gensym: prefix too long (max 96 bytes)");
+      return LCL_RC_ERR;
+    }
   }
 
+  /* Bugfix #50: counter is `unsigned long` to avoid signed-overflow
+   * UB on extremely long-running interpreters. Format with `%lu`. */
   interp->gensym_counter++;
-  snprintf(buf, sizeof(buf), "%s%d", prefix, interp->gensym_counter);
+  n = snprintf(buf, sizeof(buf), "%s%lu", prefix, interp->gensym_counter);
+  if (n < 0 || (size_t)n >= sizeof(buf)) {
+    LCL_ERR_MSG(interp, "gensym: name too long");
+    return LCL_RC_ERR;
+  }
   *out = lcl_string_new(buf);
 
   return *out ? LCL_RC_OK : LCL_RC_ERR;
@@ -1219,6 +1293,11 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     }
     result_var = strdup(lcl_value_to_string(rv));
     lcl_ref_dec(rv);
+
+    if (!result_var) {
+      LCL_ERR_MSG(interp, "catch: out of memory");
+      return LCL_RC_ERR;
+    }
   }
 
   if (argc >= 3) {
@@ -1231,6 +1310,12 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
 
     error_var = strdup(lcl_value_to_string(ev));
     lcl_ref_dec(ev);
+
+    if (!error_var) {
+      free(result_var);
+      LCL_ERR_MSG(interp, "catch: out of memory");
+      return LCL_RC_ERR;
+    }
   }
 
   if (get_body_program(interp, args[0], "<catch>", &prog, &prog_owned) !=
@@ -1360,6 +1445,15 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   if (argc == 3) {
     else_body_idx = 2;
   } else if (argc == 4) {
+    /* Bugfix: 4-arg form requires the literal keyword `else` at
+       args[2]. */
+    const lcl_word *kw = args[2];
+
+    if (kw->np != 1 || kw->wp[0].kind != LCL_WP_LIT ||
+        strcmp(kw->wp[0].as.lit.s, "else") != 0) {
+      return LCL_RC_ERR;
+    }
+
     else_body_idx = 3;
   }
 
@@ -1868,8 +1962,8 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
   int body_owned = 0;
   lcl_value *last = NULL;
   const char *varname;
-  int i;
-  int list_len;
+  size_t i;
+  size_t list_len;
   int rc;
 
   if (argc != 3) {
@@ -1909,12 +2003,12 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  list_len = (int)lcl_list_len(list_v);
+  list_len = lcl_list_len(list_v);
 
   for (i = 0; i < list_len; i++) {
     lcl_value *elem = NULL;
 
-    if (lcl_list_get(list_v, (size_t)i, &elem) != LCL_OK) {
+    if (lcl_list_get(list_v, i, &elem) != LCL_OK) {
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       free_if_owned(body_p, body_owned);
@@ -2343,12 +2437,34 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         hash_iter it = {0};
         const char *key;
         lcl_value *value;
+        int prepop_failed = 0;
 
         while (hash_table_iterate(existing_ns->as.namespace.namespace, &it,
                                   &key, &value)) {
-          hash_table_put(target->overlay->locals, key, value);
-          lcl_dict_put(&target->exports, key, value);
+          if (!prepop_failed) {
+            if (!hash_table_put(target->overlay->locals, key, value) ||
+                lcl_dict_put(&target->exports, key, value) != LCL_OK) {
+              prepop_failed = 1;
+            }
+          }
+
           lcl_ref_dec(value);
+        }
+
+        if (prepop_failed) {
+          lcl_value *leaked_exports;
+          lcl_ref_dec(existing_ns);
+          leaked_exports = lcl_def_target_pop(interp);
+
+          if (leaked_exports) {
+            lcl_ref_dec(leaked_exports);
+          }
+
+          free_if_owned(prog, prog_owned);
+          free(ns_name);
+          LCL_ERR_MSG(interp,
+                      "namespace: out of memory pre-populating builder");
+          return LCL_RC_ERR;
         }
       }
 
@@ -2359,8 +2475,16 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   interp->env.frame = target->overlay;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
+    lcl_value *leaked_exports;
     interp->env.frame = old_frame;
-    lcl_def_target_pop(interp);
+    /* Bugfix: lcl_def_target_pop returns the exports dict with +1
+     * ref; decref it here on the error path or it leaks. */
+    leaked_exports = lcl_def_target_pop(interp);
+
+    if (leaked_exports) {
+      lcl_ref_dec(leaked_exports);
+    }
+
     free_if_owned(prog, prog_owned);
     free(ns_name);
     LCL_ERR_MSG(interp, "namespace: max recursion depth exceeded");
@@ -2370,27 +2494,41 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   interp->depth++;
   rc = LCL_RC_OK;
 
-  for (i = 0; i < prog->ncmd; i++) {
-    lcl_command *cmd = &prog->cmd[i];
+  {
+    /* Bugfix: `namespace eval`'s body runs for side effects; its last
+     * command's value is discarded. Suppress tail-position
+     * propagation so a self-recursive call inside the body cannot
+     * escape via LCL_RC_TAILCALL. */
+    int saved_tail_position = interp->in_tail_position;
+    interp->in_tail_position = 0;
 
-    if (last) {
-      lcl_ref_dec(last);
-      last = NULL;
-    }
+    for (i = 0; i < prog->ncmd; i++) {
+      lcl_command *cmd = &prog->cmd[i];
 
-    rc = lcl_call_from_words(interp, cmd, &last);
-
-    if (rc != LCL_RC_OK) {
-      if (rc != LCL_RC_RETURN) {
-        interp->err_line = cmd->line;
-        if (interp->err_file_owned && interp->err_file) {
-          free((void *)interp->err_file);
-        }
-        interp->err_file = prog->file ? strdup(prog->file) : NULL;
-        interp->err_file_owned = prog->file ? 1 : 0;
+      if (last) {
+        lcl_ref_dec(last);
+        last = NULL;
       }
-      break;
+
+      rc = lcl_call_from_words(interp, cmd, &last);
+
+      if (rc != LCL_RC_OK) {
+        if (rc != LCL_RC_RETURN) {
+          interp->err_line = cmd->line;
+
+          if (interp->err_file_owned && interp->err_file) {
+            free((void *)interp->err_file);
+          }
+
+          interp->err_file = prog->file ? strdup(prog->file) : NULL;
+          interp->err_file_owned = prog->file ? 1 : 0;
+        }
+
+        break;
+      }
     }
+
+    interp->in_tail_position = saved_tail_position;
   }
 
   interp->depth--;
@@ -2406,6 +2544,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     if (exports) {
       lcl_ref_dec(exports);
     }
+
     free(ns_name);
     return rc;
   }
@@ -2515,7 +2654,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
 
   if (ns_name_v->type == LCL_NAMESPACE) {
     ns = ns_name_v;
-  } else if (ns_name_v->type == LCL_CELL &&
+  } else if (ns_name_v->type == LCL_CELL && ns_name_v->as.cell.inner != NULL &&
              ns_name_v->as.cell.inner->type == LCL_NAMESPACE) {
     ns = lcl_ref_inc(ns_name_v->as.cell.inner);
     lcl_ref_dec(ns_name_v);
@@ -2531,7 +2670,17 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
     lcl_ref_dec(ns_name_v);
 
     if (ns->type == LCL_CELL) {
-      lcl_value *inner = lcl_ref_inc(ns->as.cell.inner);
+      lcl_value *inner;
+
+      /* Bugfxi: Cell may have been cleared (NULL inner) by
+       * lcl_frame_clear / lcl_frame_free's cycle-breaker. */
+      if (!ns->as.cell.inner) {
+        LCL_ERR_MSG(interp, "import: cell is empty");
+        lcl_ref_dec(ns);
+        return LCL_RC_ERR;
+      }
+
+      inner = lcl_ref_inc(ns->as.cell.inner);
       lcl_ref_dec(ns);
       ns = inner;
     }
@@ -2874,6 +3023,11 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
 
         {
           int j;
+          /* Bugfix: `subst`'s embedded commands run for their string
+           * values; they are not in tail position relative to subst's
+           * caller. Suppress tail-position propagation. */
+          int saved_tail_position = interp->in_tail_position;
+          interp->in_tail_position = 0;
 
           for (j = 0; j < prog->ncmd; j++) {
             lcl_command *cmd = &prog->cmd[j];
@@ -2888,9 +3042,11 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
             if (rc != LCL_RC_OK) {
               if (rc != LCL_RC_RETURN) {
                 interp->err_line = cmd->line;
+
                 if (interp->err_file_owned && interp->err_file) {
                   free((void *)interp->err_file);
                 }
+
                 interp->err_file = prog->file ? strdup(prog->file) : NULL;
                 interp->err_file_owned = prog->file ? 1 : 0;
               }
@@ -2898,6 +3054,8 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
               break;
             }
           }
+
+          interp->in_tail_position = saved_tail_position;
         }
 
         interp->depth--;
@@ -3654,6 +3812,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_program *prog = NULL;
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
+  int saved_tail_position = interp->in_tail_position;
 
   if (argc < 1) {
     return LCL_RC_ERR;
@@ -3681,6 +3840,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     for (i = 0; i < argc; i++) {
+      size_t part_len;
       if (lcl_eval_word_to_str(interp, args[i], &parts[i]) != LCL_RC_OK) {
         int j;
 
@@ -3691,12 +3851,34 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
         free(parts);
         return LCL_RC_ERR;
       }
-      total_len += strlen(lcl_value_to_string(parts[i]));
+      part_len = strlen(lcl_value_to_string(parts[i]));
+      if (!safe_add_size(total_len, part_len, &total_len)) {
+        int j;
+        /* Bugfix: parts[0..i] inclusive are populated; clean them
+           up. */
+        for (j = 0; j <= i; j++) {
+          lcl_ref_dec(parts[j]);
+        }
+
+        free(parts);
+        LCL_ERR_MSG(interp, "eval: combined script length overflows size_t");
+        return LCL_RC_ERR;
+      }
     }
 
-    total_len += (size_t)(argc - 1);
+    /* Bugfix: Account for the (argc - 1) inter-arg spaces and the
+       trailing NUL. */
+    if (!safe_add_size(total_len, (size_t)(argc - 1), &total_len) ||
+        !safe_add_size(total_len, 1, &total_len)) {
+      for (i = 0; i < argc; i++) {
+        lcl_ref_dec(parts[i]);
+      }
+      free(parts);
+      LCL_ERR_MSG(interp, "eval: combined script length overflows size_t");
+      return LCL_RC_ERR;
+    }
 
-    script_str = malloc(total_len + 1);
+    script_str = malloc(total_len);
     if (!script_str) {
       for (i = 0; i < argc; i++) {
         lcl_ref_dec(parts[i]);
@@ -3743,13 +3925,31 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
 
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
+    int is_last_cmd = (i == prog->ncmd - 1);
 
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
     }
 
+    /* Bugfix: Only the final command of the eval body inherits the
+     * caller's tail position. Mid-body commands must not be in tail
+     * position, or a self-recursive call inside the body would escape
+     * via LCL_RC_TAILCALL and abandon the rest of the script. */
+    interp->in_tail_position = saved_tail_position && is_last_cmd;
     rc = lcl_call_from_words(interp, cmd, &last);
+
+    if (rc == LCL_RC_TAILCALL) {
+      interp->in_tail_position = saved_tail_position;
+      interp->depth--;
+      lcl_program_free(prog);
+
+      if (out) {
+        *out = NULL;
+      }
+
+      return rc;
+    }
 
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
@@ -3758,6 +3958,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
         if (interp->err_file_owned && interp->err_file) {
           free((void *)interp->err_file);
         }
+
         interp->err_file = prog->file ? strdup(prog->file) : NULL;
         interp->err_file_owned = prog->file ? 1 : 0;
       }
@@ -3766,6 +3967,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
+  interp->in_tail_position = saved_tail_position;
   interp->depth--;
   lcl_program_free(prog);
 
@@ -3840,6 +4042,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
   int i;
+  int saved_tail_position = interp->in_tail_position;
 
   if (argc != 1) {
     return LCL_RC_ERR;
@@ -3876,13 +4079,30 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
 
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
+    int is_last_cmd = (i == prog->ncmd - 1);
 
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
     }
 
+    /* Bugfix: Only the loaded file's final command inherits the
+     * caller's tail position. Mid-file commands run as ordinary
+     * top-level scripts. */
+    interp->in_tail_position = saved_tail_position && is_last_cmd;
     rc = lcl_call_from_words(interp, cmd, &last);
+
+    if (rc == LCL_RC_TAILCALL) {
+      interp->in_tail_position = saved_tail_position;
+      interp->depth--;
+      lcl_program_free(prog);
+
+      if (out) {
+        *out = NULL;
+      }
+
+      return rc;
+    }
 
     if (rc != LCL_RC_OK) {
       if (rc != LCL_RC_RETURN) {
@@ -3900,6 +4120,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
+  interp->in_tail_position = saved_tail_position;
   interp->depth--;
   lcl_program_free(prog);
 
@@ -4539,7 +4760,10 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (step > 0) {
-    for (i = start; i < end; i += step) {
+    i = start;
+
+    while (i < end) {
+      long next;
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
@@ -4553,9 +4777,20 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
       }
 
       lcl_ref_dec(num);
+
+      /* Bugfix: stop on overflow rather than wrapping around — the
+       * wrap would produce a value < end again, looping forever. */
+      if (!safe_add_long(i, step, &next)) {
+        break;
+      }
+
+      i = next;
     }
   } else {
-    for (i = start; i > end; i += step) {
+    i = start;
+
+    while (i > end) {
+      long next;
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
@@ -4568,6 +4803,13 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
       }
 
       lcl_ref_dec(num);
+
+      /* Bugfix: stop on overflow (step is negative here). */
+      if (!safe_add_long(i, step, &next)) {
+        break;
+      }
+
+      i = next;
     }
   }
 
@@ -5072,8 +5314,9 @@ static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
     if (end != s && *end == '\0') {
       *out = lcl_int_new(1);
     } else {
-      (void)strtod(s, &end);
-      *out = lcl_int_new(end != s && *end == '\0' ? 1 : 0);
+      double d;
+      size_t fend = lcl_parse_double_c(s, &d);
+      *out = lcl_int_new(fend > 0 && s[fend] == '\0' ? 1 : 0);
     }
   } else {
     *out = lcl_int_new(0);
@@ -5154,6 +5397,13 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (call_argc == 0) {
     return lcl_call_proc(interp, func, 0, NULL, out);
+  }
+
+  /* Bugfix: lcl_call_proc's API uses `int argc`; refuse lists too
+     large to fit. */
+  if (call_argc > (size_t)INT_MAX) {
+    LCL_ERR_MSG(interp, "apply: argument list too large");
+    return LCL_RC_ERR;
   }
 
   call_argv = (lcl_value **)malloc(call_argc * sizeof(lcl_value *));
@@ -5250,18 +5500,22 @@ static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  if (argv[0]->type == LCL_FLOAT) {
-    *out = lcl_int_new((long)argv[0]->as.f);
-    return LCL_RC_OK;
-  }
-
+  /* Bugfix: lcl_value_to_int handles LCL_FLOAT and LCL_STRING safely
+   * (rejects NaN/Inf, out-of-range floats, and ERANGE strtol
+   * results). */
   if (lcl_value_to_int(argv[0], &val) == LCL_OK) {
     *out = lcl_int_new(val);
     return LCL_RC_OK;
   }
 
+  /* String fallback: parse as float, then range-check before casting. */
   if (lcl_value_to_float(argv[0], &fval) == LCL_OK) {
-    *out = lcl_int_new((long)fval);
+    if (lcl_double_to_long(fval, &val) != LCL_OK) {
+      LCL_ERR_MSG(interp, "value out of range for int");
+      return LCL_RC_ERR;
+    }
+
+    *out = lcl_int_new(val);
     return LCL_RC_OK;
   }
 
@@ -6732,7 +6986,38 @@ static int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  result_len = strlen(src) + (size_t)count * (new_len - old_len);
+  /* Bugfix: compute the result length with overflow detection. The
+   * original form `strlen(src) + count*(new_len-old_len)` had two
+   * problems: signed-style `new_len - old_len` underflows as `size_t`
+   * when shrinking (saved only by lucky modular cancellation), and
+   * `count*new_len` can genuinely overflow on adversarial inputs,
+   * producing an undersized buffer for the rewrite loop. */
+  {
+    size_t src_len = strlen(src);
+    size_t total_new;
+    size_t total_old = (size_t)count * old_len; /* <= src_len by construction */
+
+    if (new_len > 0 && (size_t)count > (size_t)-1 / new_len) {
+      LCL_ERR_MSG(interp, "String::replace: result too large");
+      return LCL_RC_ERR;
+    }
+
+    total_new = (size_t)count * new_len;
+
+    if (total_new > (size_t)-1 - (src_len - total_old)) {
+      LCL_ERR_MSG(interp, "String::replace: result too large");
+      return LCL_RC_ERR;
+    }
+
+    result_len = (src_len - total_old) + total_new;
+
+    if (result_len == (size_t)-1) {
+      /* malloc(result_len + 1) below would overflow */
+      LCL_ERR_MSG(interp, "String::replace: result too large");
+      return LCL_RC_ERR;
+    }
+  }
+
   result = malloc(result_len + 1);
 
   if (!result) {
@@ -6937,7 +7222,6 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "assert", c_assert);
   lcl_register_proc(interp, "assert_eq", c_assert_eq);
   lcl_register_proc(interp, "assert_neq", c_assert_neq);
-  lcl_register_proc(interp, "puts", c_puts);
 
   lcl_register_proc(interp, "and", c_and);
   lcl_register_proc(interp, "or", c_or);

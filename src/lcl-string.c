@@ -46,17 +46,24 @@ static void lcl_reify_str_int(lcl_value *value) {
 
 static void lcl_reify_str_float(lcl_value *value) {
   char buf[32];
+  size_t len;
   int m = snprintf(buf, sizeof(buf), "%.17g", value->as.f);
   if (m < 0 || (size_t)m >= sizeof(buf)) {
     return;
   }
-  value->str_repr = (char *)malloc((size_t)m + 1);
+
+  /* Bugfix: `%g` honors LC_NUMERIC, which would break round-trip
+   * parsing on non-'.' locales (spec §10 determinism). Force ASCII
+   * '.'. */
+  lcl_normalize_decimal_to_c(buf);
+  len = strlen(buf);
+  value->str_repr = (char *)malloc(len + 1);
 
   if (!value->str_repr) {
     return;
   }
 
-  memcpy(value->str_repr, buf, (size_t)m + 1);
+  memcpy(value->str_repr, buf, len + 1);
 }
 
 enum elem_style { ELEM_BARE, ELEM_BRACED, ELEM_QUOTED };
@@ -96,87 +103,153 @@ static enum elem_style choose_element_style(const char *s) {
   return has_special ? ELEM_BRACED : ELEM_BARE;
 }
 
-static size_t quoted_len(const char *s) {
-  size_t n = 2;
-  const char *p;
+/* Bugfix: Growing string buffer for single-pass list/dict
+ * stringification.
+ *
+ * The previous implementation sized the result with one pass calling
+ * `lcl_value_to_string(elem)`, then wrote with a second pass calling
+ * it again. If a recursive reify failed in pass 1 (leaving str_repr
+ * NULL → "" fallback) and then succeeded in pass 2 (returning the
+ * real, longer string), the buffer was undersized and pass 2
+ * overflowed it. A single pass with a growing buffer eliminates the
+ * inconsistency entirely. */
 
-  for (p = s; *p; p++) {
-    char c = *p;
+typedef struct {
+  char *buf;
+  size_t len;
+  size_t cap;
+} sbuf;
 
-    if (c == '\\' || c == '$' || c == '[' || c == '"') {
-      n += 2;
-    } else {
-      n += 1;
-    }
+static int sbuf_reserve(sbuf *b, size_t additional) {
+  /* Reserve room for `additional` more bytes plus 1 for the trailing NUL. */
+  size_t want;
+  size_t newcap;
+  char *p;
+
+  if (additional > (size_t)-1 - 1 - b->len) {
+    return 0;
   }
 
-  return n;
+  want = b->len + additional + 1;
+
+  if (want <= b->cap) {
+    return 1;
+  }
+
+  newcap = b->cap ? b->cap : 32;
+
+  while (newcap < want) {
+    if (newcap > ((size_t)-1) / 2) {
+      return 0;
+    }
+
+    newcap *= 2;
+  }
+
+  p = (char *)realloc(b->buf, newcap);
+
+  if (!p) {
+    return 0;
+  }
+
+  b->buf = p;
+  b->cap = newcap;
+
+  return 1;
 }
 
-static char *write_quoted(char *dst, const char *s) {
-  const char *p;
-  *dst++ = '"';
-
-  for (p = s; *p; p++) {
-    char c = *p;
-
-    if (c == '\\' || c == '$' || c == '[' || c == '"') {
-      *dst++ = '\\';
-    }
-
-    *dst++ = c;
+static int sbuf_append(sbuf *b, const char *s, size_t n) {
+  if (!sbuf_reserve(b, n)) {
+    return 0;
   }
 
-  *dst++ = '"';
-  return dst;
+  memcpy(b->buf + b->len, s, n);
+  b->len += n;
+
+  return 1;
+}
+
+static int sbuf_putc(sbuf *b, char c) {
+  if (!sbuf_reserve(b, 1)) {
+    return 0;
+  }
+
+  b->buf[b->len++] = c;
+
+  return 1;
+}
+
+static char *sbuf_finish(sbuf *b) {
+  if (!sbuf_reserve(b, 0)) {
+    free(b->buf);
+    return NULL;
+  }
+
+  b->buf[b->len] = '\0';
+
+  return b->buf;
+}
+
+static int sbuf_append_styled(sbuf *b, const char *s, enum elem_style style) {
+  size_t n;
+
+  if (!s) {
+    s = "";
+  }
+  n = strlen(s);
+
+  switch (style) {
+  case ELEM_BARE: return sbuf_append(b, s, n);
+  case ELEM_BRACED:
+    return sbuf_putc(b, '{') && sbuf_append(b, s, n) && sbuf_putc(b, '}');
+  case ELEM_QUOTED: {
+    const char *p;
+
+    if (!sbuf_putc(b, '"')) {
+      return 0;
+    }
+
+    for (p = s; *p; p++) {
+      char c = *p;
+
+      if (c == '\\' || c == '$' || c == '[' || c == '"') {
+        if (!sbuf_putc(b, '\\')) {
+          return 0;
+        }
+      }
+
+      if (!sbuf_putc(b, c)) {
+        return 0;
+      }
+    }
+
+    return sbuf_putc(b, '"');
+  }
+  }
+
+  return 0;
 }
 
 static void lcl_reify_str_list(lcl_value *value) {
   size_t len = lcl_list_len(value);
-  size_t total = 0;
+  sbuf b;
   size_t i;
-  char *buf;
-  char *p;
+
+  b.buf = NULL;
+  b.len = 0;
+  b.cap = 0;
 
   for (i = 0; i < len; i++) {
     lcl_value *elem = NULL;
     const char *s;
     enum elem_style style;
-
-    if (lcl_list_get(value, i, &elem) != LCL_OK) {
-      continue;
-    }
-
-    s = lcl_value_to_string(elem);
-    style = choose_element_style(s);
-
-    switch (style) {
-    case ELEM_BARE: total += strlen(s); break;
-    case ELEM_BRACED: total += strlen(s) + 2; break;
-    case ELEM_QUOTED: total += quoted_len(s); break;
-    }
-
-    lcl_ref_dec(elem);
-  }
-
-  total += len;
-
-  buf = (char *)malloc(total + 1);
-
-  if (!buf) {
-    return;
-  }
-
-  p = buf;
-
-  for (i = 0; i < len; i++) {
-    lcl_value *elem = NULL;
-    const char *s;
-    size_t slen;
-    enum elem_style style;
+    int ok;
 
     if (i > 0) {
-      *p++ = ' ';
+      if (!sbuf_putc(&b, ' ')) {
+        free(b.buf);
+        return;
+      }
     }
 
     if (lcl_list_get(value, i, &elem) != LCL_OK) {
@@ -184,119 +257,58 @@ static void lcl_reify_str_list(lcl_value *value) {
     }
 
     s = lcl_value_to_string(elem);
-    slen = strlen(s);
     style = choose_element_style(s);
-
-    switch (style) {
-    case ELEM_BARE:
-      memcpy(p, s, slen);
-      p += slen;
-      break;
-    case ELEM_BRACED:
-      *p++ = '{';
-      memcpy(p, s, slen);
-      p += slen;
-      *p++ = '}';
-      break;
-    case ELEM_QUOTED: p = write_quoted(p, s); break;
-    }
-
+    ok = sbuf_append_styled(&b, s, style);
     lcl_ref_dec(elem);
+
+    if (!ok) {
+      free(b.buf);
+      return;
+    }
   }
 
-  *p = '\0';
-
-  value->str_repr = buf;
+  value->str_repr = sbuf_finish(&b);
 }
 
 static void lcl_reify_str_dict(lcl_value *value) {
-  lcl_dict_it it = {0};
+  lcl_dict_it it;
   const char *key;
   lcl_value *val;
-  size_t total = 0;
-  char *buf;
-  char *p;
+  sbuf b;
   int first = 1;
 
-  while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
-    const char *vs = lcl_value_to_string(val);
-    enum elem_style ks = choose_element_style(key);
-    enum elem_style vst = choose_element_style(vs);
-
-    switch (ks) {
-    case ELEM_BARE: total += strlen(key); break;
-    case ELEM_BRACED: total += strlen(key) + 2; break;
-    case ELEM_QUOTED: total += quoted_len(key); break;
-    }
-
-    switch (vst) {
-    case ELEM_BARE: total += strlen(vs); break;
-    case ELEM_BRACED: total += strlen(vs) + 2; break;
-    case ELEM_QUOTED: total += quoted_len(vs); break;
-    }
-
-    total += 2;
-    lcl_ref_dec(val);
-  }
-
-  buf = (char *)malloc(total + 1);
-
-  if (!buf) {
-    return;
-  }
-
-  p = buf;
+  b.buf = NULL;
+  b.len = 0;
+  b.cap = 0;
   it.i = 0;
 
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
-    size_t klen = strlen(key);
-    size_t vlen = strlen(vs);
     enum elem_style ks = choose_element_style(key);
     enum elem_style vst = choose_element_style(vs);
+    int ok;
 
     if (!first) {
-      *p++ = ' ';
+      if (!sbuf_putc(&b, ' ')) {
+        lcl_ref_dec(val);
+        free(b.buf);
+        return;
+      }
     }
 
     first = 0;
 
-    switch (ks) {
-    case ELEM_BARE:
-      memcpy(p, key, klen);
-      p += klen;
-      break;
-    case ELEM_BRACED:
-      *p++ = '{';
-      memcpy(p, key, klen);
-      p += klen;
-      *p++ = '}';
-      break;
-    case ELEM_QUOTED: p = write_quoted(p, key); break;
-    }
-
-    *p++ = ' ';
-
-    switch (vst) {
-    case ELEM_BARE:
-      memcpy(p, vs, vlen);
-      p += vlen;
-      break;
-    case ELEM_BRACED:
-      *p++ = '{';
-      memcpy(p, vs, vlen);
-      p += vlen;
-      *p++ = '}';
-      break;
-    case ELEM_QUOTED: p = write_quoted(p, vs); break;
-    }
-
+    ok = sbuf_append_styled(&b, key, ks) && sbuf_putc(&b, ' ') &&
+         sbuf_append_styled(&b, vs, vst);
     lcl_ref_dec(val);
+
+    if (!ok) {
+      free(b.buf);
+      return;
+    }
   }
 
-  *p = '\0';
-
-  value->str_repr = buf;
+  value->str_repr = sbuf_finish(&b);
 }
 
 const char *lcl_value_to_string(lcl_value *value) {

@@ -704,6 +704,9 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_value *io_ns = lcl_ns_new(IO_NS);
   lcl_define_take(interp, IO_NS, io_ns);
 
+  /* Add legacy puts to the global namespace */
+  lcl_register_proc(interp, "puts", c_io_puts);
+
   lcl_ns_def(io_ns, "open_file",
              lcl_c_proc_new("io::open_file", c_io_open_file));
   lcl_ns_def(io_ns, "close_file",

@@ -227,7 +227,8 @@ Test::suite "Namespaces" {
             }
         }
 
-        Test::eq [Ns::keys $math3] (val test)
+        ;; Hash iteration order is not specified — sort before comparing.
+        Test::eq [List::sort [Ns::keys $math3]] (test val)
         Test::eq [Ns::name $math3] math3
         Test::eq [Ns::has? $math3 test] 1
     }
@@ -2795,6 +2796,412 @@ Test::suite "Macros" {
         level-a 10
         ;; Both macros expanded and ran: trace has a then b
         Test::eq $trace [list a b]
+    }
+}
+
+Test::suite "Issue #23: integer conversion overflow safety" {
+    Test::case "int rejects out-of-range float (positive)" {
+        ;; (long)1e20 is UB on every common platform — should error,
+        ;; not silently clamp to LONG_MIN/garbage.
+        let errored [catch { int 1e20 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int rejects out-of-range float (negative)" {
+        let errored [catch { int -1e20 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int rejects overflowing integer string" {
+        ;; strtol returns LONG_MAX with errno=ERANGE; bug accepts as valid.
+        let errored [catch { int "99999999999999999999" }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int rejects NaN" {
+        ;; NaN→long is UB. strtod (via the `float` conversion) accepts "nan"
+        ;; on glibc/musl, so we materialize NaN that way to avoid relying
+        ;; on a particular arithmetic-error policy here.
+        let nan [float "nan"]
+        let errored [catch { int $nan }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int still accepts in-range values" {
+        Test::eq [int 42] 42
+        Test::eq [int 3.7] 3
+        Test::eq [int "-100"] -100
+    }
+}
+
+Test::suite "Issue #36: integer arithmetic overflow detection" {
+    ;; Signed integer overflow is C UB and triggers UBSan; we detect it
+    ;; explicitly and return LCL_RC_ERR so scripts can `catch` it.
+
+    Test::case "+ near LONG_MAX errors, doesn't wrap" {
+        let errored [catch { + 9223372036854775807 1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "+ small ints still work" {
+        Test::eq [+ 1 2 3] 6
+        Test::eq [+ -5 10] 5
+    }
+
+    Test::case "- subtraction overflow errors" {
+        ;; LONG_MAX - (-1) = LONG_MAX + 1 → overflow
+        let errored [catch { - 9223372036854775807 -1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "- small ints still work" {
+        Test::eq [- 10 3 2] 5
+    }
+
+    Test::case "* overflow errors" {
+        let errored [catch { * 9223372036854775000 1000 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "* small ints still work" {
+        Test::eq [* 7 8] 56
+        Test::eq [* 2 3 4] 24
+    }
+
+    Test::case "% LONG_MIN -1 returns 0 (not UB)" {
+        ;; The buggy code computed LONG_MIN % -1 directly — UB on x86 because
+        ;; the quotient LONG_MIN/-1 = -LONG_MIN overflows. Mathematically the
+        ;; remainder is 0; we return that instead of UB-trapping or erroring.
+        let long_min [- -9223372036854775807 1]
+        Test::eq [% $long_min -1] 0
+    }
+
+    Test::case "% small ints still work" {
+        Test::eq [% 10 3] 1
+        Test::eq [% -10 3] -1
+    }
+
+    Test::case "List::range still works for normal cases" {
+        Test::eq [len [List::range 0 5]] 5
+        Test::eq [len [List::range 0 10 2]] 5
+    }
+}
+
+Test::suite "Issue #34: single-pass list/dict stringification" {
+    ;; The previous two-pass implementation computed each element's size
+    ;; via lcl_value_to_string(elem) then re-called it to write — between
+    ;; calls a partial-OOM could shift an element from "" (fallback) to
+    ;; its real representation, overflowing the buffer. The fix replaces
+    ;; both reify functions with a single growing-buffer pass. These
+    ;; smoke tests exercise the round-trip behavior across the styles
+    ;; that the new code paths produce.
+
+    Test::case "empty list stringifies" {
+        Test::eq [len [list]] 0
+        Test::eq [String::length [list]] 0
+    }
+
+    Test::case "empty dict stringifies" {
+        Test::eq [len [dict]] 0
+        Test::eq [String::length [dict]] 0
+    }
+
+    Test::case "nested list with mixed styles round-trips" {
+        let inner [list "has space" plain "br\}ace"]
+        let outer [list $inner $inner]
+        Test::eq [len $outer] 2
+        Test::eq [len [get $outer 0]] 3
+    }
+
+    Test::case "dict round-trips with quoted keys and values" {
+        let d [dict "k 1" "v 1" plain "br\}ace"]
+        Test::eq [get $d "k 1"] "v 1"
+        Test::eq [get $d plain] "br\}ace"
+    }
+
+    Test::case "deeply nested list stringifies" {
+        let l [list [list [list a b] c] d]
+        Test::eq [len $l] 2
+        Test::eq [len [get $l 0]] 2
+        Test::eq [len [get [get $l 0] 0]] 2
+    }
+}
+
+Test::suite "Issue #32: single-subcmd dispatch handles SPECIAL CPROCs safely" {
+    ;; A proc whose result is a SPECIAL CPROC (e.g. `$if`) used as a single-
+    ;; subcommand call: `[get_if]`. The single-word fast path called through
+    ;; `fn.proc` (normal-proc signature) instead of `fn.spec` (special-form
+    ;; signature) — undefined behavior. The fix routes through `fn.spec`
+    ;; when `kind == LCL_CK_SPECIAL`.
+    Test::case "returning a special and calling it errors cleanly" {
+        proc get_if {} { return $if }
+        let errored [catch { [get_if] }]
+        Test::eq $errored 1
+    }
+}
+
+Test::suite "Issue #31: cycle detection sees through containers" {
+    ;; The spec rejects mutual recursion at proc-def time because refcounting
+    ;; cannot collect cycles. Before this fix, cycle_check_value only
+    ;; recursed through LCL_PROC, so a proc hidden inside a list/dict/cell
+    ;; was invisible to the check and the cycle was created (and leaked).
+
+    Test::case "cell -> list -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [list $p] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> list -> list -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [list [list $p]] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> dict -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [dict k $p] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> cell -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let inner [ref $p]
+        let errored [catch { set! c $inner }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell can hold list with non-capturing procs" {
+        var c [ref [list]]
+        let p [lambda {x} { + $x 1 }]
+        let errored [catch { set! c [list $p] }]
+        Test::eq $errored 0
+    }
+
+    Test::case "cell can hold list of primitive values" {
+        var c [ref [list]]
+        let errored [catch { set! c [list 1 2 3] }]
+        Test::eq $errored 0
+    }
+}
+
+Test::suite "Issue #30: String::replace handles edge cases without overflow" {
+    ;; The actual size_t overflow requires ~2^64 bytes of input — not
+    ;; reachable in a normal test. These cases exercise the same arithmetic
+    ;; (count*(new_len-old_len)) on small inputs to lock in correctness
+    ;; under the new overflow-checked code path.
+    Test::case "replace shrinks (new shorter than old)" {
+        Test::eq [String::replace "aaaaaa" "aa" ""] ""
+    }
+
+    Test::case "replace expands (new longer than old)" {
+        Test::eq [String::replace "ab" "a" "xxx"] "xxxb"
+    }
+
+    Test::case "replace same length" {
+        Test::eq [String::replace "abc" "b" "B"] "aBc"
+    }
+
+    Test::case "replace with no matches returns source" {
+        Test::eq [String::replace "abc" "z" "Z"] "abc"
+    }
+
+    Test::case "replace many occurrences of long old_str" {
+        ;; (old_len=4, new_len=2, count=4) — exercises count*(2-4) underflow.
+        Test::eq [String::replace "abcdabcdabcdabcd" "abcd" "xy"] "xyxyxyxy"
+    }
+}
+
+Test::suite "Issue #29: integer comparison precision" {
+    ;; LONG_MAX-1 (9223372036854775806) and LONG_MAX (9223372036854775807) both
+    ;; round to 2^63 when converted to double, so all four comparisons would
+    ;; produce wrong results when args were integers cast via double.
+    Test::case "< between adjacent large ints is correct" {
+        Test::assert [< 9223372036854775806 9223372036854775807]
+        Test::assert [not [< 9223372036854775807 9223372036854775806]]
+    }
+
+    Test::case "> between adjacent large ints is correct" {
+        Test::assert [> 9223372036854775807 9223372036854775806]
+        Test::assert [not [> 9223372036854775806 9223372036854775807]]
+    }
+
+    Test::case "<= and >= behave correctly at the boundary" {
+        Test::assert [<= 9223372036854775806 9223372036854775807]
+        Test::assert [>= 9223372036854775807 9223372036854775806]
+        Test::assert [<= 9223372036854775807 9223372036854775807]
+    }
+
+    Test::case "mixed int/float comparison still uses float path" {
+        ;; When either operand is float, comparing via double is expected.
+        Test::assert [< 1 2.5]
+        Test::assert [> 3.5 3]
+    }
+}
+
+Test::suite "Issue #28: stray ] is a parse error, not silent truncation" {
+    Test::case "stray ] at top level errors" {
+        ;; Before fix: silently compiles only `list a` and ignores the rest.
+        ;; After fix: compile error, eval propagates LCL_RC_ERR.
+        let errored [catch { eval "list a ] list b" }]
+        Test::eq $errored 1
+    }
+
+    Test::case "stray ] between commands errors" {
+        let errored [catch { eval "let x 1 ; ] ; let y 2" }]
+        Test::eq $errored 1
+    }
+}
+
+Test::suite "Issue #25: eval does not propagate tail position to inner commands" {
+    Test::case "self-recursive call inside eval body does not escape eval" {
+        ;; If `eval` doesn't reset in_tail_position per command, the
+        ;; recursive `recur` call below is detected as a tail call
+        ;; (saved_tail_position && callee == current_proc) and escapes
+        ;; via LCL_RC_TAILCALL — abandoning the `return marker` after.
+        ;;
+        ;; Buggy behavior: returns the accumulator (e.g. 3).
+        ;; Correct behavior: returns "marker".
+        proc recur {n acc} {
+            if [== $n 0] {
+                return $acc
+            }
+            eval {
+                recur [- $n 1] [+ $acc 1]
+                return marker
+            }
+        }
+        Test::eq [recur 3 0] marker
+    }
+}
+
+Test::suite "Issue #46: float stringification is locale-independent" {
+    Test::case "stringified float contains ASCII '.' as decimal separator" {
+        ;; Force a real FLOAT via arithmetic (not just a literal string),
+        ;; then interpolate to trigger lcl_reify_str_float.
+        let f [+ 1.0 2.14]
+        let s "$f"
+        ;; On any locale (de_DE etc. included), the serialized form must
+        ;; contain ASCII '.', never ',' — spec §10 determinism.
+        Test::assert [>= [String::find $s "."] 0]
+    }
+
+    Test::case "float parses ASCII '.' regardless of runtime locale" {
+        ;; lcl_parse_double_c must accept '.' on any locale.
+        let parsed [float "3.14"]
+        ;; Round-trip approximate (cant Test::eq due to %.17g precision
+        ;; widening "3.14" to "3.1400000000000001").
+        let diff [- $parsed 3.14]
+        Test::assert [< $diff 0.0000000001]
+        Test::assert [> $diff -0.0000000001]
+    }
+}
+
+Test::suite "Issue #38: if validates the else keyword" {
+    Test::case "4-arg if with bogus keyword errors when cond is false" {
+        ;; Pre-fix: silently accepts and runs the 4th-arg branch.
+        ;; Post-fix: errors structurally before evaluating any branch.
+        let errored [catch { if 0 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with bogus keyword errors when cond is true" {
+        ;; Validation is syntactic — the keyword check fires regardless
+        ;; of which branch the condition would have selected.
+        let errored [catch { if 1 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with else keyword still works" {
+        Test::eq [if 1 {+ 7 0} else {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} else {+ 0 7}] 7
+    }
+
+    Test::case "3-arg if positional-else still works" {
+        Test::eq [if 1 {+ 7 0} {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} {+ 0 7}] 7
+    }
+
+    Test::case "2-arg if no-else still works" {
+        Test::eq [if 1 {+ 7 0}] 7
+        Test::eq [if 0 {+ 7 0}] ""
+    }
+}
+
+Test::suite "Issue #50: gensym prefix length and counter" {
+    Test::case "default gensym produces _GN names" {
+        let a [gensym]
+        let b [gensym]
+        ;; Names must differ; both must start with `_G`.
+        Test::assert [!= $a $b]
+        Test::assert [== [String::find $a "_G"] 0]
+        Test::assert [== [String::find $b "_G"] 0]
+    }
+
+    Test::case "custom prefix is honored" {
+        let s [gensym myprefix]
+        Test::assert [== [String::find $s "myprefix"] 0]
+    }
+
+    Test::case "overlong prefix is rejected" {
+        ;; Build a 97-byte prefix (> 96-byte cap).
+        var p ""
+        var i 0
+        while {[< $i 97]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 1
+    }
+
+    Test::case "96-byte prefix is accepted" {
+        var p ""
+        var i 0
+        while {[< $i 96]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 0
+    }
+}
+
+Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
+    Test::case "trailing :: is a parse error" {
+        ;; Pre-fix: scanner accepted "$foo::", env_get_value split
+        ;; "foo::" into segment "foo" + empty rest, and silently
+        ;; returned $foo's value.
+        let foo 5
+        let r [catch { eval "puts \$foo::" }]
+        Test::eq $r 1
+    }
+
+    Test::case "::digit (non-identifier-start) is a parse error" {
+        ;; Pre-fix: scanner happily consumed "::1bad" as part of the
+        ;; varname, deferring to a runtime "undefined variable".
+        let foo 5
+        let r [catch { eval "puts \$foo::1bad" }]
+        Test::eq $r 1
+    }
+
+    Test::case "valid single :: still parses" {
+        namespace ns48a { let x 7 }
+        Test::eq $ns48a::x 7
+    }
+
+    Test::case "valid nested :: still parses" {
+        namespace ns48b { namespace inner { let y 11 } }
+        Test::eq $ns48b::inner::y 11
+    }
+
+    Test::case "underscore-led segment after :: still parses" {
+        namespace ns48c { let _x 13 }
+        Test::eq $ns48c::_x 13
     }
 }
 

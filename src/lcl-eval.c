@@ -184,13 +184,6 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
     }
 
     interp->env.frame = child;
-    if (p->capture_ns && p->captured_ns) {
-      if (interp->env.current_ns) {
-        lcl_ref_dec(interp->env.current_ns);
-      }
-
-      interp->env.current_ns = lcl_ref_inc(p->captured_ns);
-    }
 
     {
       int min_args = p->pspec.n_required;
@@ -225,27 +218,40 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
     }
 
     for (i = 0; i < p->nupvals; i++) {
-      hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
+      if (!hash_table_put(child->locals, p->upvals[i].name,
+                          p->upvals[i].value)) {
+        LCL_ERR_MSG(interp, "out of memory binding upvalue");
+        goto bind_error;
+      }
     }
 
     if (p->self_name != NULL) {
-      hash_table_put(child->locals, p->self_name, proc_val);
+      if (!hash_table_put(child->locals, p->self_name, proc_val)) {
+        LCL_ERR_MSG(interp, "out of memory binding proc name");
+        goto bind_error;
+      }
     }
 
     {
       int arg_idx = 0;
 
       for (i = 0; i < p->pspec.n_required; i++) {
-        lcl_env_let(&interp->env, p->pspec.params[i].name,
-                    current_argv[arg_idx++]);
+        if (lcl_env_let(&interp->env, p->pspec.params[i].name,
+                        current_argv[arg_idx++]) != LCL_OK) {
+          LCL_ERR_MSG(interp, "out of memory binding parameter");
+          goto bind_error;
+        }
       }
 
       for (i = 0; i < p->pspec.n_optional; i++) {
         int pidx = p->pspec.n_required + i;
 
         if (arg_idx < current_argc) {
-          lcl_env_let(&interp->env, p->pspec.params[pidx].name,
-                      current_argv[arg_idx++]);
+          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name,
+                          current_argv[arg_idx++]) != LCL_OK) {
+            LCL_ERR_MSG(interp, "out of memory binding parameter");
+            goto bind_error;
+          }
         } else {
           lcl_value *def_val = NULL;
           int def_rc = lcl_eval_program(interp, p->pspec.params[pidx].def_prog,
@@ -269,7 +275,12 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
             return def_rc;
           }
 
-          lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val);
+          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val) !=
+              LCL_OK) {
+            lcl_ref_dec(def_val);
+            LCL_ERR_MSG(interp, "out of memory binding parameter");
+            goto bind_error;
+          }
           lcl_ref_dec(def_val);
         }
       }
@@ -277,12 +288,45 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       if (p->pspec.rest_name) {
         lcl_value *rest_list = lcl_list_new();
 
-        while (arg_idx < current_argc) {
-          lcl_list_push(&rest_list, current_argv[arg_idx++]);
+        if (!rest_list) {
+          LCL_ERR_MSG(interp, "out of memory allocating rest list");
+          goto bind_error;
         }
 
-        lcl_env_let(&interp->env, p->pspec.rest_name, rest_list);
+        while (arg_idx < current_argc) {
+          if (lcl_list_push(&rest_list, current_argv[arg_idx++]) != LCL_OK) {
+            lcl_ref_dec(rest_list);
+            LCL_ERR_MSG(interp, "out of memory appending to rest list");
+            goto bind_error;
+          }
+        }
+
+        if (lcl_env_let(&interp->env, p->pspec.rest_name, rest_list) !=
+            LCL_OK) {
+          lcl_ref_dec(rest_list);
+          LCL_ERR_MSG(interp, "out of memory binding rest parameter");
+          goto bind_error;
+        }
         lcl_ref_dec(rest_list);
+      }
+
+      if (0) {
+      bind_error:
+        interp->env = saved;
+        lcl_frame_ref_dec(child);
+
+        if (owns_argv) {
+          int j;
+
+          for (j = 0; j < current_argc; j++) {
+            lcl_ref_dec(current_argv[j]);
+          }
+
+          free(current_argv);
+        }
+
+        interp->current_proc = saved_current_proc;
+        return LCL_RC_ERR;
       }
     }
 
@@ -338,6 +382,15 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
+        /* Bugfix #58: distinguish cleared-cell from other cell_get
+         * failures so the user sees a useful error instead of a
+         * generic propagation. */
+        if (!val->as.cell.inner) {
+          LCL_ERR_MSG(interp, "use of cleared cell");
+          lcl_ref_dec(val);
+          return LCL_RC_ERR;
+        }
+
         if (lcl_cell_get(val, &inner) != LCL_OK) {
           lcl_ref_dec(val);
           return LCL_RC_ERR;
@@ -445,8 +498,18 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       lcl_ref_dec(result);
       return rc;
     } else if (result->type == LCL_CPROC) {
-      rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
+      /* Bugfix: Route SPECIAL forms through their raw-words
+       * signature; calling them through `fn.proc` is a
+       * type-mismatched function-pointer call. Normal CPROCs go
+       * through `fn.proc` as before. */
+      if (result->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+        rc = result->as.c_proc.fn->fn.spec(interp, 0, NULL, out);
+      } else {
+        rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
+      }
+
       lcl_ref_dec(result);
+
       return rc;
     }
 
@@ -465,8 +528,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
+    const char *cmd_name;
     callee = NULL;
-    const char *cmd_name = lcl_value_to_string(name);
+    cmd_name = lcl_value_to_string(name);
 
     if (lcl_env_get_command(&interp->env, cmd_name, &callee) != LCL_OK) {
       if (cmd->argc == 1) {
@@ -750,6 +814,15 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
+
+        /* Bugfix #58: see lcl_eval_word above; same cleared-cell
+         * guard applies for the multi-piece concatenation path. */
+        if (!val->as.cell.inner) {
+          LCL_ERR_MSG(interp, "use of cleared cell");
+          lcl_ref_dec(val);
+          free(buf);
+          return LCL_RC_ERR;
+        }
 
         if (lcl_cell_get(val, &inner) != LCL_OK) {
           lcl_ref_dec(val);

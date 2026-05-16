@@ -46,10 +46,10 @@ set(LCL_SOURCES
   src/lcl-opaque.c
   src/lcl-proc.c
   src/lcl-program.c
+  src/lcl-program-push.c
   src/lcl-ref.c
   src/lcl-scan.c
   src/lcl-stdlib.c
-  src/lcl-str.c
   src/lcl-string.c
   src/lcl-word.c
   src/str-compat.c
@@ -57,7 +57,7 @@ set(LCL_SOURCES
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(LCL_COMPILE_OPTIONS -Wall -Wextra)
+set(LCL_COMPILE_OPTIONS -Wall -Wextra -Wdeclaration-after-statement)
 
 # Set default build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -408,6 +408,15 @@ if(LCL_BUILD_TESTS)
   if(LCL_ENABLE_ASAN)
     target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
   endif()
+
+  # Allows lcl-test to intercept calloc/strndup/strdup and return NULL on
+  # demand without modifying the core sources.
+  target_link_options(lcl-test PRIVATE
+    -Wl,--wrap=calloc
+    -Wl,--wrap=strndup
+    -Wl,--wrap=strdup
+    -Wl,--wrap=lcl_program_push_command
+    -Wl,--wrap=hash_table_put)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

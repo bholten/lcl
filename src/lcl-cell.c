@@ -1,3 +1,4 @@
+#include "hash-table.h"
 #include "lcl-compile.h"
 #include "lcl-values.h"
 
@@ -95,11 +96,60 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
     return 0;
   }
 
-  if (val->type == LCL_PROC) {
+  switch (val->type) {
+  case LCL_PROC:
     return cycle_check_proc(target, val->as.procedure.proc, visited);
+
+  case LCL_LIST: {
+    /* Bugfix: A proc capturing `target` may be hidden inside any list
+       element. */
+    size_t i;
+
+    for (i = 0; i < val->as.list.len; i++) {
+      if (cycle_check_value(target, val->as.list.items[i], visited)) {
+        return 1;
+      }
+    }
+
+    return 0;
   }
 
-  return 0;
+  case LCL_DICT: {
+    hash_iter it;
+    const char *k;
+    lcl_value *v;
+
+    it.i = 0;
+
+    while (hash_table_iterate(val->as.dict.dictionary, &it, &k, &v)) {
+      int found = cycle_check_value(target, v, visited);
+      lcl_ref_dec(v); /* hash_table_iterate increments refcount */
+
+      if (found) {
+        return 1;
+      }
+    }
+
+    return 0;
+  }
+
+  case LCL_CELL:
+    if (val == target) {
+      return 1;
+    }
+
+    if (cell_set_contains(visited, val)) {
+      return 0;
+    }
+
+    if (!cell_set_add(visited, val)) {
+      return 0;
+    }
+
+    return cycle_check_value(target, val->as.cell.inner, visited);
+
+  default: return 0;
+  }
 }
 
 int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
@@ -110,12 +160,11 @@ int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
     return 0;
   }
 
-  if (value->type != LCL_PROC) {
-    return 0;
-  }
-
+  /* Bugfix: The value can be any container — a proc that closes over
+   * `cell` may be stored inside a list, dict, or nested cell. Walk
+   * the value graph looking for one. */
   cell_set_init(&visited);
-  result = cycle_check_proc(cell, value->as.procedure.proc, &visited);
+  result = cycle_check_value(cell, value, &visited);
   cell_set_free(&visited);
 
   return result;
@@ -137,6 +186,17 @@ lcl_value *lcl_cell_new(lcl_value *init) {
 
 lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out) {
   if (!cell || cell->type != LCL_CELL || !out) {
+    return LCL_ERROR;
+  }
+
+  /* Bugfix #58: a cell whose `inner` is NULL is a carcass — it was
+   * cleared by `lcl_frame_clear` / `lcl_frame_free`'s cycle-breaker
+   * (see #39). Reading from such a cell must be an error; previously
+   * we returned LCL_OK with `*out == NULL`, which silently propagated
+   * a NULL value through every caller and violated the implicit
+   * "OK ⇒ non-NULL out" contract. */
+  if (!cell->as.cell.inner) {
+    *out = NULL;
     return LCL_ERROR;
   }
 
