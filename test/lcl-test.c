@@ -17,10 +17,15 @@
 extern void *__real_calloc(size_t nmemb, size_t size);
 extern char *__real_strndup(const char *s, size_t n);
 extern char *__real_strdup(const char *s);
+extern int   __real_lcl_program_push_command(lcl_program *p, lcl_command *src);
+extern int   __real_hash_table_put(hash_table *ht, const char *key,
+                                   lcl_value *value);
 
 static int oom_calloc_fail_at  = -1;  /* -1: disabled */
 static int oom_strndup_fail_at = -1;
 static int oom_strdup_fail_at  = -1;
+static int oom_push_command_fail_at = -1;
+static int oom_hash_put_fail_at = -1;
 
 /* When set, fail the next strdup whose argument equals this string exactly.
  * Used to target a specific strdup call in noisy paths without counting. */
@@ -68,6 +73,32 @@ char *__wrap_strdup(const char *s) {
   }
 
   return __real_strdup(s);
+}
+
+int __wrap_lcl_program_push_command(lcl_program *p, lcl_command *src) {
+  if (oom_push_command_fail_at == 0) {
+    oom_push_command_fail_at = -1;
+    return 0;
+  }
+
+  if (oom_push_command_fail_at > 0) {
+    oom_push_command_fail_at--;
+  }
+
+  return __real_lcl_program_push_command(p, src);
+}
+
+int __wrap_hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
+  if (oom_hash_put_fail_at == 0) {
+    oom_hash_put_fail_at = -1;
+    return 0;
+  }
+
+  if (oom_hash_put_fail_at > 0) {
+    oom_hash_put_fail_at--;
+  }
+
+  return __real_hash_table_put(ht, key, value);
 }
 
 /**
@@ -606,6 +637,262 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
  * Fixed behavior: lcl_program_compile returns NULL cleanly.
  * --------------------------------------------------------------------------- */
 
+/* ISSUES #47 — Param/upvalue binding ignores OOM. We invoke a lambda
+ * whose body references `+`, so `+` becomes an upvalue. The upvalue-bind
+ * loop in lcl_call_user_proc runs BEFORE the param-bind loop, so the
+ * first hash_table_put after we set the counter is the upval bind for
+ * `+`.  Pre-fix: the failure is swallowed; body looks up `+` in the
+ * parent frame chain (falls through to the global ns), so it appears to
+ * succeed — eval returns OK with the binding silently missing. That's
+ * the exact "silent drop" the issue describes. Post-fix: the failure
+ * propagates as LCL_RC_ERR.  */
+static int test_issue47_param_bind_oom(void) {
+  extern lcl_interp *lcl_test_interp;
+  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  const char *err;
+  int rc;
+
+  /* Use lambda (no self_name) so the FIRST hash_table_put inside
+   * lcl_call_user_proc is the param-bind via lcl_env_let. */
+  prog = lcl_program_compile("[lambda {x} { + $x 1 }] 10", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+
+  lcl_clear_error(lcl_test_interp);
+  oom_hash_put_fail_at = 0;
+
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+
+  oom_hash_put_fail_at = -1;
+  err = lcl_interp_error_msg(lcl_test_interp);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  /* Post-fix: error mentions parameter / out-of-memory.
+   * Pre-fix: error mentions "undefined" (from body trying to read $x). */
+  ASSERT_TRUE(err != NULL);
+  ASSERT_TRUE(strstr(err, "undefined") == NULL);
+
+  if (result) lcl_ref_dec(result);
+  lcl_program_free(prog);
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
+/* ISSUE #45 — `skip_balanced` recurses on alternating `(`/`[`. A
+ * crafted `[([([(... )])])]` of depth N exhausts the C stack. We build
+ * the worst case at depth 300 and expect `lcl_program_compile` to
+ * return NULL cleanly (parse error). Pre-fix: ASan SEGV from stack
+ * overflow. */
+static int test_issue45_skip_balanced_depth_limit(void) {
+  enum { DEPTH = 20000 };
+  size_t total = (size_t)DEPTH * 2 * 2;  /* DEPTH "([" + DEPTH "])" */
+  char *src = (char *)malloc(total + 1);
+  size_t i;
+  lcl_program *prog;
+
+  ASSERT_TRUE(src != NULL);
+  for (i = 0; i < DEPTH; i++) {
+    src[i * 2]     = '[';
+    src[i * 2 + 1] = '(';
+  }
+  for (i = 0; i < DEPTH; i++) {
+    src[DEPTH * 2 + i * 2]     = ')';
+    src[DEPTH * 2 + i * 2 + 1] = ']';
+  }
+  src[total] = '\0';
+
+  prog = lcl_program_compile(src, "test.lcl");
+
+  /* Either NULL (parse error from depth limit) or non-NULL (somehow
+   * succeeded). What we MUST NOT see is a crash. */
+  ASSERT_TRUE(prog == NULL);
+
+  if (prog) lcl_program_free(prog);
+  free(src);
+  return 1;
+}
+
+/* ISSUE #42 — `lcl_dict_clone_shallow` ignores `hash_table_put` return.
+ * On OOM the clone is silently truncated. We force the first put inside
+ * the clone iteration to fail, trigger COW on a shared dict, and verify:
+ * (a) lcl_dict_put returns LCL_ERROR, (b) the caller's dict pointer is
+ * unchanged, and (c) LSan sees no leak from the partial clone. */
+static int test_issue42_dict_clone_put_oom(void) {
+  lcl_value *d;
+  lcl_value *shared;
+  lcl_result rc;
+  lcl_value *kept;
+
+  d = lcl_dict_new();
+  ASSERT_TRUE(d != NULL);
+  {
+    lcl_value *v1 = lcl_string_new("v1");
+    lcl_value *v2 = lcl_string_new("v2");
+    ASSERT_TRUE(lcl_dict_put(&d, "k1", v1) == LCL_OK);
+    ASSERT_TRUE(lcl_dict_put(&d, "k2", v2) == LCL_OK);
+    lcl_ref_dec(v1);  /* dict_put didn't take ownership */
+    lcl_ref_dec(v2);
+  }
+
+  /* Bump refc to force COW on the next put. */
+  shared = lcl_ref_inc(d);
+
+  /* Fail the first hash_table_put after this point — it will be the
+   * first iterator-put inside lcl_dict_clone_shallow. */
+  oom_hash_put_fail_at = 0;
+
+  {
+    lcl_value *v3 = lcl_string_new("v3");
+    rc = lcl_dict_put(&d, "k3", v3);
+    lcl_ref_dec(v3);  /* dict_put doesn't take ownership */
+  }
+
+  oom_hash_put_fail_at = -1;
+
+  ASSERT_TRUE(rc == LCL_ERROR);
+  /* On clone failure, dict_io must NOT have been swapped. */
+  ASSERT_TRUE(d == shared);
+
+  /* Original dict still intact: "k1" and "k2" still resolvable. */
+  ASSERT_TRUE(lcl_dict_get(d, "k1", &kept) == LCL_OK);
+  lcl_ref_dec(kept);
+  ASSERT_TRUE(lcl_dict_get(d, "k2", &kept) == LCL_OK);
+  lcl_ref_dec(kept);
+
+  lcl_ref_dec(shared);
+  lcl_ref_dec(d);
+  return 1;
+}
+
+/* ISSUE #41 — `s_namespace`'s re-entry pre-population loop does not
+ * check the return of `hash_table_put` / `lcl_dict_put`. On OOM the
+ * overlay and exports drift apart and we proceed into the body with a
+ * silently-inconsistent builder. Setup creates `__i41_ns` with one
+ * binding; re-entry triggers the pre-pop loop, where we force the first
+ * hash_table_put to fail and verify s_namespace bails with LCL_RC_ERR
+ * (and no LSan leak). */
+static int test_issue41_namespace_reentry_oom(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_program *setup;
+  lcl_program *reentry;
+  lcl_value *result = NULL;
+  int rc;
+
+  setup = lcl_program_compile("namespace __i41_ns { let x 1 }", "test.lcl");
+  ASSERT_TRUE(setup != NULL);
+  rc = lcl_eval_program(lcl_test_interp, setup, &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  if (result) { lcl_ref_dec(result); result = NULL; }
+  lcl_program_free(setup);
+
+  reentry = lcl_program_compile("namespace __i41_ns { let y 2 }", "test.lcl");
+  ASSERT_TRUE(reentry != NULL);
+
+  /* The first hash_table_put after this point is the pre-pop loop's
+   * hash_table_put(overlay->locals, "x", ...) in s_namespace. */
+  oom_hash_put_fail_at = 0;
+
+  rc = lcl_eval_program(lcl_test_interp, reentry, &result);
+
+  /* Disable any residual counter (defensive — should be -1 already). */
+  oom_hash_put_fail_at = -1;
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+
+  if (result) lcl_ref_dec(result);
+  lcl_program_free(reentry);
+  return 1;
+}
+
+/* ISSUE #40 — `s_namespace` discards the +1 ref returned by
+ * `lcl_def_target_pop` on the max-recursion-depth error branch, leaking
+ * the exports dict it owned. We trigger the branch by setting
+ * `max_depth = depth + 1` so the first `namespace` nested call hits the
+ * cap. LSan catches the leaked dict pre-fix; clean post-fix.
+ *
+ * (LCL's command is bare `namespace name { body }` — no `eval` keyword,
+ * see project-lcl-namespace-no-eval.) */
+static int test_issue40_namespace_max_depth_leak(void) {
+  extern lcl_interp *lcl_test_interp;
+  int saved_max_depth = lcl_test_interp->max_depth;
+  int saved_depth = lcl_test_interp->depth;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  int rc;
+
+  lcl_test_interp->max_depth = saved_depth + 1;
+
+  prog = lcl_program_compile("namespace __i40_ns { let x 1 }", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+
+  lcl_test_interp->max_depth = saved_max_depth;
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+
+  if (result) lcl_ref_dec(result);
+  lcl_program_free(prog);
+  return 1;
+}
+
+/* ISSUE #39 — s_import dereferences `as.cell.inner` without NULL-check.
+ * lcl_frame_clear / lcl_frame_free's cycle-breaker NULLs cell.inner for
+ * lambda-captured cells; if `import` is then called on such a cell, the
+ * type-check (line ~2608) segfaults on NULL. We simulate the cleared-cell
+ * state directly (`lcl_cell_new(NULL)`) and verify `import` errors cleanly. */
+static int test_issue39_import_cleared_cell(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *cell;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  int rc;
+
+  cell = lcl_cell_new(NULL);
+  ASSERT_TRUE(cell != NULL);
+  ASSERT_TRUE(cell->as.cell.inner == NULL);
+
+  /* Bind the broken cell so `import __i39_broken` resolves to it. */
+  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i39_broken", cell)
+              == LCL_OK);
+  lcl_ref_dec(cell);
+
+  prog = lcl_program_compile("import __i39_broken", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  /* Pre-fix: segfault. Post-fix: clean LCL_RC_ERR. */
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+
+  if (result) lcl_ref_dec(result);
+  lcl_program_free(prog);
+  return 1;
+}
+
+/* ISSUE #37 — lcl_program_push_command failure leaks the local `cmd`'s
+ * words and pieces. We inject a forced failure on the 2nd push so the 1st
+ * command lands in `p->cmd` (freed by lcl_program_free) and the 2nd is
+ * dropped from the failure path. Pre-fix, LSan reports a leak from the
+ * 2nd cmd's word/piece allocations; post-fix, clean.
+ */
+static int test_issue37_push_command_leak(void) {
+  /* Two commands. The 2nd has substantive words to make the leak observable. */
+  const char *src = "first\nsecond foo bar baz\n";
+  lcl_program *prog;
+
+  /* Counter = 1 → 1st push succeeds, 2nd fails. */
+  oom_push_command_fail_at = 1;
+
+  prog = lcl_program_compile(src, "test.lcl");
+
+  /* Must fail cleanly — and ASan/LSan must see no leaked allocations
+   * from the dropped 2nd command. */
+  ASSERT_TRUE(prog == NULL);
+  ASSERT_TRUE(oom_push_command_fail_at == -1);
+  return 1;
+}
+
 static int test_issue24_scanner_strndup_oom(void) {
   const char *src = "puts $foo\n";
   lcl_program *prog;
@@ -646,26 +933,47 @@ int run_test(void) {
   RUN(test_quoted_close_paren_in_list);
   RUN(test_comment_in_list_literal);
 
-  /* Regression tests for ISSUES.md #22 (COW clone NULL deref) */
+  /* Regression tests for ISSUE #22 (COW clone NULL deref) */
   RUN(test_issue22_dict_put_clone_oom);
   RUN(test_issue22_dict_del_clone_oom);
   RUN(test_issue22_list_push_clone_oom);
   RUN(test_issue22_list_set_clone_oom);
 
-  /* Regression test for ISSUES.md #24 (scanner strndup NULL deref) */
+  /* Regression test for ISSUE #24 (scanner strndup NULL deref) */
   RUN(test_issue24_scanner_strndup_oom);
 
-  /* Regression test for ISSUES.md #26 (hash used overcounts on tomb reuse) */
+  /* Regression test for ISSUE #26 (hash used overcounts on tomb reuse) */
   RUN(test_issue26_hash_used_tombstone_reuse);
 
-  /* Regression test for ISSUES.md #27 (FNV-1a constants / type width) */
+  /* Regression test for ISSUE #27 (FNV-1a constants / type width) */
   RUN(test_issue27_fnv1a_known_vector);
 
-  /* Regression test for ISSUES.md #33 (c_catch strdup NULL not handled) */
+  /* Regression test for ISSUE #33 (c_catch strdup NULL not handled) */
   RUN(test_issue33_catch_strdup_oom);
 
-  /* Regression test for ISSUES.md #35 (public API NULL safety) */
+  /* Regression test for ISSUE #35 (public API NULL safety) */
   RUN(test_issue35_public_api_null_safety);
+
+  /* Regression test for ISSUE #37 (push_command failure leaks cmd) */
+  RUN(test_issue37_push_command_leak);
+
+  /* Regression test for ISSUE #39 (import NULL-derefs cleared cell) */
+  RUN(test_issue39_import_cleared_cell);
+
+  /* Regression test for ISSUE #40 (namespace max-depth leak) */
+  RUN(test_issue40_namespace_max_depth_leak);
+
+  /* Regression test for ISSUE #41 (namespace re-entry OOM) */
+  RUN(test_issue41_namespace_reentry_oom);
+
+  /* Regression test for ISSUE #42 (dict clone swallows put OOM) */
+  RUN(test_issue42_dict_clone_put_oom);
+
+  /* Regression test for ISSUE #45 (skip_balanced stack overflow) */
+  RUN(test_issue45_skip_balanced_depth_limit);
+
+  /* Regression test for ISSUE #47 (param bind ignores OOM) */
+  RUN(test_issue47_param_bind_oom);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

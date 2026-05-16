@@ -54,8 +54,15 @@ static lcl_value *lcl_dict_clone_shallow(lcl_value *dict) {
   }
 
   while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &value)) {
-    hash_table_put(new_dict->as.dict.dictionary, k, value);
+    int put_ok = hash_table_put(new_dict->as.dict.dictionary, k, value);
+    /* Bugfix: The iterator yielded `value` with +1 ref; always
+       decref. */
     lcl_ref_dec(value);
+
+    if (!put_ok) {
+      lcl_ref_dec(new_dict);
+      return NULL;
+    }
   }
 
   return new_dict;

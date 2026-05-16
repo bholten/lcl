@@ -58,6 +58,13 @@ static void skip_intra_ws(lcl_scan *sc) {
   }
 }
 
+/* Same-type nesting (`[[[...]]]`) is depth-counted iteratively below;
+ * the only true recursion is alternating types (e.g. `[ ( [ ... ] )
+ * ]`). Cap the recursion to a sane depth so adversarial input like
+ * `[([([(...)])])]` of depth 10k+ can't blow the C stack — return -1
+ * instead. */
+#define LCL_SCAN_MAX_NEST 256
+
 /* Refactor:
  *
  * skip_balanced -- advance sc->i past a balanced open_ch/close_ch
@@ -65,12 +72,20 @@ static void skip_intra_ws(lcl_scan *sc) {
  *
  * sc->i must point to the character AFTER the opening delimiter.
  *
+ * `rec_depth` tracks how many alternating-type nestings deep we are;
+ * public callers pass 0.
+ *
  * On success sc->i points one past the closing delimiter; returns 0.
  *
- * On unmatched delimiter returns -1.
+ * On unmatched delimiter or nesting past LCL_SCAN_MAX_NEST returns -1.
  */
-static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch) {
+static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
+                         int rec_depth) {
   long depth = 1;
+
+  if (rec_depth > LCL_SCAN_MAX_NEST) {
+    return -1;
+  }
 
   while (sc->i < sc->len) {
     char c = sc->s[sc->i++];
@@ -118,11 +133,11 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch) {
         return -1;
       }
     } else if (c == '(' && open_ch != '(') {
-      if (skip_balanced(sc, '(', ')') != 0) {
+      if (skip_balanced(sc, '(', ')', rec_depth + 1) != 0) {
         return -1;
       }
     } else if (c == '[' && open_ch != '[') {
-      if (skip_balanced(sc, '[', ']') != 0) {
+      if (skip_balanced(sc, '[', ']', rec_depth + 1) != 0) {
         return -1;
       }
     } else if (c == '"') {
@@ -309,7 +324,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     sc->i++;
     begin = sc->i;
 
-    if (skip_balanced(sc, '(', ')') != 0) {
+    if (skip_balanced(sc, '(', ')', 0) != 0) {
       return -1;
     }
 
@@ -352,7 +367,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     sc->i += 2;
     begin = sc->i;
 
-    if (skip_balanced(sc, '{', '}') != 0) {
+    if (skip_balanced(sc, '{', '}', 0) != 0) {
       return -1;
     }
 
@@ -526,7 +541,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         sc->i++;
         begin = sc->i;
 
-        if (skip_balanced(sc, '[', ']') != 0) {
+        if (skip_balanced(sc, '[', ']', 0) != 0) {
           return -1;
         }
 

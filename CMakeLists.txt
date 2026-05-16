@@ -46,6 +46,7 @@ set(LCL_SOURCES
   src/lcl-opaque.c
   src/lcl-proc.c
   src/lcl-program.c
+  src/lcl-program-push.c
   src/lcl-ref.c
   src/lcl-scan.c
   src/lcl-stdlib.c
@@ -414,7 +415,9 @@ if(LCL_BUILD_TESTS)
   target_link_options(lcl-test PRIVATE
     -Wl,--wrap=calloc
     -Wl,--wrap=strndup
-    -Wl,--wrap=strdup)
+    -Wl,--wrap=strdup
+    -Wl,--wrap=lcl_program_push_command
+    -Wl,--wrap=hash_table_put)
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

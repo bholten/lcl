@@ -3079,5 +3079,58 @@ Test::suite "Issue #25: eval does not propagate tail position to inner commands"
     }
 }
 
+Test::suite "Issue #46: float stringification is locale-independent" {
+    Test::case "stringified float contains ASCII '.' as decimal separator" {
+        ;; Force a real FLOAT via arithmetic (not just a literal string),
+        ;; then interpolate to trigger lcl_reify_str_float.
+        let f [+ 1.0 2.14]
+        let s "$f"
+        ;; On any locale (de_DE etc. included), the serialized form must
+        ;; contain ASCII '.', never ',' — spec §10 determinism.
+        Test::assert [>= [String::find $s "."] 0]
+    }
+
+    Test::case "float parses ASCII '.' regardless of runtime locale" {
+        ;; lcl_parse_double_c must accept '.' on any locale.
+        let parsed [float "3.14"]
+        ;; Round-trip approximate (cant Test::eq due to %.17g precision
+        ;; widening "3.14" to "3.1400000000000001").
+        let diff [- $parsed 3.14]
+        Test::assert [< $diff 0.0000000001]
+        Test::assert [> $diff -0.0000000001]
+    }
+}
+
+Test::suite "Issue #38: if validates the else keyword" {
+    Test::case "4-arg if with bogus keyword errors when cond is false" {
+        ;; Pre-fix: silently accepts and runs the 4th-arg branch.
+        ;; Post-fix: errors structurally before evaluating any branch.
+        let errored [catch { if 0 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with bogus keyword errors when cond is true" {
+        ;; Validation is syntactic — the keyword check fires regardless
+        ;; of which branch the condition would have selected.
+        let errored [catch { if 1 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with else keyword still works" {
+        Test::eq [if 1 {+ 7 0} else {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} else {+ 0 7}] 7
+    }
+
+    Test::case "3-arg if positional-else still works" {
+        Test::eq [if 1 {+ 7 0} {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} {+ 0 7}] 7
+    }
+
+    Test::case "2-arg if no-else still works" {
+        Test::eq [if 1 {+ 7 0}] 7
+        Test::eq [if 0 {+ 7 0}] ""
+    }
+}
+
 Test::run
 

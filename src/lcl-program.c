@@ -49,6 +49,9 @@ lcl_program *lcl_program_compile(const char *src, const char *file) {
     case 0: return p;
     case 1:
       if (!lcl_program_push_command(p, &cmd)) {
+        /* Bugfix: push_command does not consume `cmd` on failure;
+         * free its owned words/pieces before discarding. */
+        lcl_command_free(&cmd);
         lcl_program_free(p);
         return NULL;
       }
@@ -88,6 +91,7 @@ lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
     case 0: return p;
     case 1:
       if (!lcl_program_push_command(p, &cmd)) {
+        lcl_command_free(&cmd);
         lcl_program_free(p);
         return NULL;
       }
@@ -97,25 +101,3 @@ lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
   }
 }
 
-int lcl_program_push_command(lcl_program *p, lcl_command *src) {
-  int idx;
-
-  if (p->ncmd >= p->cap) {
-    int newcap = p->cap ? p->cap * 2 : 4;
-    size_t bytes = (size_t)newcap * sizeof(*p->cmd);
-    void *nv = realloc(p->cmd, bytes);
-
-    if (!nv) {
-      return 0;
-    }
-
-    p->cmd = (lcl_command *)nv;
-    p->cap = newcap;
-  }
-
-  idx = p->ncmd++;
-  p->cmd[idx] = *src;
-  memset(src, 0, sizeof(*src));
-
-  return 1;
-}

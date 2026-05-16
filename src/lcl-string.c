@@ -46,17 +46,24 @@ static void lcl_reify_str_int(lcl_value *value) {
 
 static void lcl_reify_str_float(lcl_value *value) {
   char buf[32];
+  size_t len;
   int m = snprintf(buf, sizeof(buf), "%.17g", value->as.f);
   if (m < 0 || (size_t)m >= sizeof(buf)) {
     return;
   }
-  value->str_repr = (char *)malloc((size_t)m + 1);
+
+  /* Bugfix: `%g` honors LC_NUMERIC, which would break round-trip
+   * parsing on non-'.' locales (spec §10 determinism). Force ASCII
+   * '.'. */
+  lcl_normalize_decimal_to_c(buf);
+  len = strlen(buf);
+  value->str_repr = (char *)malloc(len + 1);
 
   if (!value->str_repr) {
     return;
   }
 
-  memcpy(value->str_repr, buf, (size_t)m + 1);
+  memcpy(value->str_repr, buf, len + 1);
 }
 
 enum elem_style { ELEM_BARE, ELEM_BRACED, ELEM_QUOTED };

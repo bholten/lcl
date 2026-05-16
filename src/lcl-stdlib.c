@@ -13,8 +13,11 @@
  * returns 1 on success (writes *out), 0 on overflow. */
 static int safe_add_long(long a, long b, long *out) {
   if (b > 0 && a > LONG_MAX - b) return 0;
+
   if (b < 0 && a < LONG_MIN - b) return 0;
+
   *out = a + b;
+
   return 1;
 }
 
@@ -23,12 +26,32 @@ static int safe_sub_long(long a, long b, long *out) {
    * separately via unsigned arithmetic when b == LONG_MIN. */
   if (b == LONG_MIN) {
     if (a >= 0) return 0;
+
     *out = (long)((unsigned long)a - (unsigned long)b);
+
     return 1;
   }
+
   if (b > 0 && a < LONG_MIN + b) return 0;
+
   if (b < 0 && a > LONG_MAX + b) return 0;
+
   *out = a - b;
+
+  return 1;
+}
+
+/* Bugfix: Unsigned size_t add with overflow detection. Returns 0
+ * (false) on overflow; result is left unmodified in that
+ * case. C89-friendly: uses `(size_t)-1` for SIZE_MAX rather than
+ * <stdint.h>'s SIZE_MAX. */
+static int safe_add_size(size_t a, size_t b, size_t *out) {
+  if (b > (size_t)-1 - a) {
+    return 0;
+  }
+
+  *out = a + b;
+
   return 1;
 }
 
@@ -629,16 +652,16 @@ static int value_to_double(lcl_value *v, double *out) {
 
   if (v->type == LCL_STRING) {
     const char *s = lcl_value_to_string(v);
-    char *endptr;
+    size_t end;
     double d;
 
     if (!s || *s == '\0') {
       return 0;
     }
 
-    d = strtod(s, &endptr);
+    end = lcl_parse_double_c(s, &d);
 
-    if (*endptr == '\0') {
+    if (end > 0 && s[end] == '\0') {
       *out = d;
       return 1;
     }
@@ -1407,6 +1430,15 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   if (argc == 3) {
     else_body_idx = 2;
   } else if (argc == 4) {
+    /* Bugfix: 4-arg form requires the literal keyword `else` at
+       args[2]. */
+    const lcl_word *kw = args[2];
+
+    if (kw->np != 1 || kw->wp[0].kind != LCL_WP_LIT ||
+        strcmp(kw->wp[0].as.lit.s, "else") != 0) {
+      return LCL_RC_ERR;
+    }
+
     else_body_idx = 3;
   }
 
@@ -1915,8 +1947,8 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
   int body_owned = 0;
   lcl_value *last = NULL;
   const char *varname;
-  int i;
-  int list_len;
+  size_t i;
+  size_t list_len;
   int rc;
 
   if (argc != 3) {
@@ -1956,12 +1988,12 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  list_len = (int)lcl_list_len(list_v);
+  list_len = lcl_list_len(list_v);
 
   for (i = 0; i < list_len; i++) {
     lcl_value *elem = NULL;
 
-    if (lcl_list_get(list_v, (size_t)i, &elem) != LCL_OK) {
+    if (lcl_list_get(list_v, i, &elem) != LCL_OK) {
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       free_if_owned(body_p, body_owned);
@@ -2390,12 +2422,33 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         hash_iter it = {0};
         const char *key;
         lcl_value *value;
+        int prepop_failed = 0;
 
         while (hash_table_iterate(existing_ns->as.namespace.namespace, &it,
                                   &key, &value)) {
-          hash_table_put(target->overlay->locals, key, value);
-          lcl_dict_put(&target->exports, key, value);
+          if (!prepop_failed) {
+            if (!hash_table_put(target->overlay->locals, key, value) ||
+                lcl_dict_put(&target->exports, key, value) != LCL_OK) {
+              prepop_failed = 1;
+            }
+          }
+
           lcl_ref_dec(value);
+        }
+
+        if (prepop_failed) {
+          lcl_value *leaked_exports;
+          lcl_ref_dec(existing_ns);
+          leaked_exports = lcl_def_target_pop(interp);
+
+          if (leaked_exports) {
+            lcl_ref_dec(leaked_exports);
+          }
+
+          free_if_owned(prog, prog_owned);
+          free(ns_name);
+          LCL_ERR_MSG(interp, "namespace: out of memory pre-populating builder");
+          return LCL_RC_ERR;
         }
       }
 
@@ -2406,8 +2459,16 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   interp->env.frame = target->overlay;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
+    lcl_value *leaked_exports;
     interp->env.frame = old_frame;
-    lcl_def_target_pop(interp);
+    /* Bugfix: lcl_def_target_pop returns the exports dict with +1
+     * ref; decref it here on the error path or it leaks. */
+    leaked_exports = lcl_def_target_pop(interp);
+
+    if (leaked_exports) {
+      lcl_ref_dec(leaked_exports);
+    }
+
     free_if_owned(prog, prog_owned);
     free(ns_name);
     LCL_ERR_MSG(interp, "namespace: max recursion depth exceeded");
@@ -2578,6 +2639,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
   if (ns_name_v->type == LCL_NAMESPACE) {
     ns = ns_name_v;
   } else if (ns_name_v->type == LCL_CELL &&
+             ns_name_v->as.cell.inner != NULL &&
              ns_name_v->as.cell.inner->type == LCL_NAMESPACE) {
     ns = lcl_ref_inc(ns_name_v->as.cell.inner);
     lcl_ref_dec(ns_name_v);
@@ -2593,7 +2655,17 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
     lcl_ref_dec(ns_name_v);
 
     if (ns->type == LCL_CELL) {
-      lcl_value *inner = lcl_ref_inc(ns->as.cell.inner);
+      lcl_value *inner;
+
+      /* Bugfxi: Cell may have been cleared (NULL inner) by
+       * lcl_frame_clear / lcl_frame_free's cycle-breaker. */
+      if (!ns->as.cell.inner) {
+        LCL_ERR_MSG(interp, "import: cell is empty");
+        lcl_ref_dec(ns);
+        return LCL_RC_ERR;
+      }
+
+      inner = lcl_ref_inc(ns->as.cell.inner);
       lcl_ref_dec(ns);
       ns = inner;
     }
@@ -3753,6 +3825,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     for (i = 0; i < argc; i++) {
+      size_t part_len;
       if (lcl_eval_word_to_str(interp, args[i], &parts[i]) != LCL_RC_OK) {
         int j;
 
@@ -3763,12 +3836,34 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
         free(parts);
         return LCL_RC_ERR;
       }
-      total_len += strlen(lcl_value_to_string(parts[i]));
+      part_len = strlen(lcl_value_to_string(parts[i]));
+      if (!safe_add_size(total_len, part_len, &total_len)) {
+        int j;
+        /* Bugfix: parts[0..i] inclusive are populated; clean them
+           up. */
+        for (j = 0; j <= i; j++) {
+          lcl_ref_dec(parts[j]);
+        }
+
+        free(parts);
+        LCL_ERR_MSG(interp, "eval: combined script length overflows size_t");
+        return LCL_RC_ERR;
+      }
     }
 
-    total_len += (size_t)(argc - 1);
+    /* Bugfix: Account for the (argc - 1) inter-arg spaces and the
+       trailing NUL. */
+    if (!safe_add_size(total_len, (size_t)(argc - 1), &total_len) ||
+        !safe_add_size(total_len, 1, &total_len)) {
+      for (i = 0; i < argc; i++) {
+        lcl_ref_dec(parts[i]);
+      }
+      free(parts);
+      LCL_ERR_MSG(interp, "eval: combined script length overflows size_t");
+      return LCL_RC_ERR;
+    }
 
-    script_str = malloc(total_len + 1);
+    script_str = malloc(total_len);
     if (!script_str) {
       for (i = 0; i < argc; i++) {
         lcl_ref_dec(parts[i]);
@@ -5204,8 +5299,9 @@ static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
     if (end != s && *end == '\0') {
       *out = lcl_int_new(1);
     } else {
-      (void)strtod(s, &end);
-      *out = lcl_int_new(end != s && *end == '\0' ? 1 : 0);
+      double d;
+      size_t fend = lcl_parse_double_c(s, &d);
+      *out = lcl_int_new(fend > 0 && s[fend] == '\0' ? 1 : 0);
     }
   } else {
     *out = lcl_int_new(0);
@@ -5286,6 +5382,13 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (call_argc == 0) {
     return lcl_call_proc(interp, func, 0, NULL, out);
+  }
+
+  /* Bugfix: lcl_call_proc's API uses `int argc`; refuse lists too
+     large to fit. */
+  if (call_argc > (size_t)INT_MAX) {
+    LCL_ERR_MSG(interp, "apply: argument list too large");
+    return LCL_RC_ERR;
   }
 
   call_argv = (lcl_value **)malloc(call_argc * sizeof(lcl_value *));

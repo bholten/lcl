@@ -225,27 +225,40 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
     }
 
     for (i = 0; i < p->nupvals; i++) {
-      hash_table_put(child->locals, p->upvals[i].name, p->upvals[i].value);
+      if (!hash_table_put(child->locals, p->upvals[i].name,
+                          p->upvals[i].value)) {
+        LCL_ERR_MSG(interp, "out of memory binding upvalue");
+        goto bind_error;
+      }
     }
 
     if (p->self_name != NULL) {
-      hash_table_put(child->locals, p->self_name, proc_val);
+      if (!hash_table_put(child->locals, p->self_name, proc_val)) {
+        LCL_ERR_MSG(interp, "out of memory binding proc name");
+        goto bind_error;
+      }
     }
 
     {
       int arg_idx = 0;
 
       for (i = 0; i < p->pspec.n_required; i++) {
-        lcl_env_let(&interp->env, p->pspec.params[i].name,
-                    current_argv[arg_idx++]);
+        if (lcl_env_let(&interp->env, p->pspec.params[i].name,
+                        current_argv[arg_idx++]) != LCL_OK) {
+          LCL_ERR_MSG(interp, "out of memory binding parameter");
+          goto bind_error;
+        }
       }
 
       for (i = 0; i < p->pspec.n_optional; i++) {
         int pidx = p->pspec.n_required + i;
 
         if (arg_idx < current_argc) {
-          lcl_env_let(&interp->env, p->pspec.params[pidx].name,
-                      current_argv[arg_idx++]);
+          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name,
+                          current_argv[arg_idx++]) != LCL_OK) {
+            LCL_ERR_MSG(interp, "out of memory binding parameter");
+            goto bind_error;
+          }
         } else {
           lcl_value *def_val = NULL;
           int def_rc = lcl_eval_program(interp, p->pspec.params[pidx].def_prog,
@@ -269,7 +282,12 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
             return def_rc;
           }
 
-          lcl_env_let(&interp->env, p->pspec.params[pidx].name, def_val);
+          if (lcl_env_let(&interp->env, p->pspec.params[pidx].name,
+                          def_val) != LCL_OK) {
+            lcl_ref_dec(def_val);
+            LCL_ERR_MSG(interp, "out of memory binding parameter");
+            goto bind_error;
+          }
           lcl_ref_dec(def_val);
         }
       }
@@ -277,12 +295,45 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       if (p->pspec.rest_name) {
         lcl_value *rest_list = lcl_list_new();
 
-        while (arg_idx < current_argc) {
-          lcl_list_push(&rest_list, current_argv[arg_idx++]);
+        if (!rest_list) {
+          LCL_ERR_MSG(interp, "out of memory allocating rest list");
+          goto bind_error;
         }
 
-        lcl_env_let(&interp->env, p->pspec.rest_name, rest_list);
+        while (arg_idx < current_argc) {
+          if (lcl_list_push(&rest_list, current_argv[arg_idx++]) != LCL_OK) {
+            lcl_ref_dec(rest_list);
+            LCL_ERR_MSG(interp, "out of memory appending to rest list");
+            goto bind_error;
+          }
+        }
+
+        if (lcl_env_let(&interp->env, p->pspec.rest_name, rest_list)
+            != LCL_OK) {
+          lcl_ref_dec(rest_list);
+          LCL_ERR_MSG(interp, "out of memory binding rest parameter");
+          goto bind_error;
+        }
         lcl_ref_dec(rest_list);
+      }
+
+      if (0) {
+      bind_error:
+        interp->env = saved;
+        lcl_frame_ref_dec(child);
+
+        if (owns_argv) {
+          int j;
+
+          for (j = 0; j < current_argc; j++) {
+            lcl_ref_dec(current_argv[j]);
+          }
+
+          free(current_argv);
+        }
+
+        interp->current_proc = saved_current_proc;
+        return LCL_RC_ERR;
       }
     }
 
