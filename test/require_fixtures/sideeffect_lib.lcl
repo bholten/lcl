@@ -1,0 +1,9 @@
+;; Fixture: a require'd file may legitimately mutate global cell state
+;; via set! on a cell that already exists at global scope. Used to
+;; verify side effects persist (and to verify they happen exactly once
+;; under caching).
+set! require_se_counter [+ $require_se_counter 1]
+
+namespace selib {
+    proc nop {} { 0 }
+}

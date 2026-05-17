@@ -2366,11 +2366,111 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
   return current;
 }
 
+/* isolate { body }
+ *
+ * Evaluate body in the current frame with the namespace def-target
+ * stack temporarily emptied. While the body runs, `let`/`var`/`proc`
+ * create local bindings in the current frame instead of writing
+ * through to any enclosing `namespace` builder's exports.
+ *
+ * This is the scope-barrier counterpart to `namespace`: it lets a
+ * proc that runs inside a namespace body keep its own `let`s local
+ * without leaking them into the namespace under construction. */
+static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
+                     lcl_value **out) {
+  lcl_program *prog = NULL;
+  int prog_owned = 0;
+  int saved_def_depth;
+  int saved_tail_position;
+  lcl_return_code rc;
+  lcl_value *last = NULL;
+  int i;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "isolate: expected 1 argument (body)");
+    return LCL_RC_ERR;
+  }
+
+  if (get_body_program(interp, args[0], "<isolate>", &prog, &prog_owned) !=
+      LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  saved_def_depth = interp->def_depth;
+  saved_tail_position = interp->in_tail_position;
+  interp->def_depth = 0;
+  rc = LCL_RC_OK;
+
+  for (i = 0; i < prog->ncmd; i++) {
+    lcl_command *cmd = &prog->cmd[i];
+    int is_last_cmd = (i == prog->ncmd - 1);
+
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    /* Only the final command inherits the caller's tail position; mid-
+     * body tail calls must not escape the isolate block. */
+    interp->in_tail_position = saved_tail_position && is_last_cmd;
+    rc = lcl_call_from_words(interp, cmd, &last);
+
+    if (rc == LCL_RC_TAILCALL) {
+      interp->def_depth = saved_def_depth;
+      interp->in_tail_position = saved_tail_position;
+      free_if_owned(prog, prog_owned);
+
+      if (out) {
+        *out = NULL;
+      }
+
+      return rc;
+    }
+
+    if (rc != LCL_RC_OK) {
+      if (rc != LCL_RC_RETURN) {
+        interp->err_line = cmd->line;
+
+        if (interp->err_file_owned && interp->err_file) {
+          free((void *)interp->err_file);
+        }
+
+        interp->err_file = prog->file ? strdup(prog->file) : NULL;
+        interp->err_file_owned = prog->file ? 1 : 0;
+      }
+
+      break;
+    }
+  }
+
+  interp->def_depth = saved_def_depth;
+  interp->in_tail_position = saved_tail_position;
+  free_if_owned(prog, prog_owned);
+
+  if (rc == LCL_RC_OK || rc == LCL_RC_RETURN) {
+    *out = last ? last : lcl_string_new("");
+    return rc;
+  }
+
+  if (last) {
+    lcl_ref_dec(last);
+  }
+
+  return rc;
+}
+
 /* Note: `namespace eval` simplified to `namespace`. */
 static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
                        lcl_value **out) {
   /* namespace { body }      - anonymous, returns ns value
-   * namespace name { body } - named, auto-attaches to registry */
+   * namespace name { body } - named, auto-attaches to registry
+   *
+   * Re-entering an existing namespace mutates the existing namespace's
+   * hash table in place rather than rebuilding and rebinding a new
+   * namespace value. This makes `namespace foo { let X 1 }` from
+   * inside a proc body persist correctly (the bind wouldn't propagate
+   * out of the proc frame otherwise) and makes qualified-path
+   * re-entry (`namespace a::b { ... }`) preserve prior bindings. */
   int named;
   const lcl_word *body_word;
   lcl_value *name_v = NULL;
@@ -2384,6 +2484,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *last = NULL;
   lcl_value *exports = NULL;
   lcl_value *ns = NULL;
+  lcl_value *existing_ns = NULL;
 
   if (argc < 1 || argc > 2) {
     LCL_ERR_MSG(interp, "namespace: expected 1 or 2 arguments");
@@ -2423,24 +2524,23 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   target = &interp->def_stack[interp->def_depth - 1];
   old_frame = interp->env.frame;
 
-  /* If re-entering an existing namespace, pre-populate overlay with
-   * its bindings. This handles both top-level re-entry and nested
-   * re-entry within a builder. */
-  if (ns_name && !strchr(ns_name, ':')) {
-    lcl_value *existing_ns = NULL;
-    /* Look up the namespace - either from environment (top-level) or
-     * from parent builder's overlay (nested). lcl_env_get_value will
-     * check the current frame chain which includes the parent
-     * overlay. */
-    if (lcl_env_get_value(&interp->env, ns_name, &existing_ns) == LCL_OK) {
-      if (existing_ns->type == LCL_NAMESPACE) {
+  /* If re-entering an existing namespace, look it up and pre-populate
+   * the overlay with its bindings. existing_ns is held across the
+   * body's evaluation so the end-of-build path can mutate it in
+   * place. lcl_env_get_value handles both unqualified ("foo") and
+   * qualified ("a::b::c") names. */
+  if (ns_name) {
+    lcl_value *found = NULL;
+
+    if (lcl_env_get_value(&interp->env, ns_name, &found) == LCL_OK) {
+      if (found->type == LCL_NAMESPACE) {
         hash_iter it = {0};
         const char *key;
         lcl_value *value;
         int prepop_failed = 0;
 
-        while (hash_table_iterate(existing_ns->as.namespace.namespace, &it,
-                                  &key, &value)) {
+        while (hash_table_iterate(found->as.namespace.namespace, &it, &key,
+                                  &value)) {
           if (!prepop_failed) {
             if (!hash_table_put(target->overlay->locals, key, value) ||
                 lcl_dict_put(&target->exports, key, value) != LCL_OK) {
@@ -2453,7 +2553,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
 
         if (prepop_failed) {
           lcl_value *leaked_exports;
-          lcl_ref_dec(existing_ns);
+          lcl_ref_dec(found);
           leaked_exports = lcl_def_target_pop(interp);
 
           if (leaked_exports) {
@@ -2466,9 +2566,11 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
                       "namespace: out of memory pre-populating builder");
           return LCL_RC_ERR;
         }
-      }
 
-      lcl_ref_dec(existing_ns);
+        existing_ns = found;
+      } else {
+        lcl_ref_dec(found);
+      }
     }
   }
 
@@ -2485,6 +2587,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(leaked_exports);
     }
 
+    lcl_ref_dec(existing_ns);
     free_if_owned(prog, prog_owned);
     free(ns_name);
     LCL_ERR_MSG(interp, "namespace: max recursion depth exceeded");
@@ -2545,8 +2648,46 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
       lcl_ref_dec(exports);
     }
 
+    lcl_ref_dec(existing_ns);
     free(ns_name);
     return rc;
+  }
+
+  /* Re-entry path: mutate the existing namespace in place by dumping
+   * the (pre-pop + body) exports into its hash table. This skips
+   * rebuild-and-rebind entirely; all live references to the
+   * namespace value observe the new bindings immediately, and a
+   * proc-body-scoped rebind can no longer shadow the outer
+   * binding. */
+  if (existing_ns) {
+    hash_iter it = {0};
+    const char *key;
+    lcl_value *value;
+    int put_failed = 0;
+
+    while (hash_table_iterate(exports->as.dict.dictionary, &it, &key, &value)) {
+      if (!put_failed) {
+        if (!hash_table_put(existing_ns->as.namespace.namespace, key, value)) {
+          put_failed = 1;
+        }
+      }
+
+      lcl_ref_dec(value);
+    }
+
+    lcl_ref_dec(exports);
+
+    if (put_failed) {
+      lcl_ref_dec(existing_ns);
+      free(ns_name);
+      LCL_ERR_MSG(interp,
+                  "namespace: out of memory mutating existing namespace");
+      return LCL_RC_ERR;
+    }
+
+    free(ns_name);
+    *out = existing_ns;
+    return LCL_RC_OK;
   }
 
   ns = lcl_ns_from_dict(exports, ns_name);
@@ -4133,6 +4274,274 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   return rc;
+}
+
+/* lift_namespaces_to_caller
+ *
+ * Iterate a dict of (name -> namespace value) and bind each entry into
+ * the caller's frame (or into the surrounding namespace builder when
+ * `require` is itself called from inside a `namespace` block).
+ *
+ * Returns LCL_OK on success. On failure, partial bindings may have
+ * already been made; caller is responsible for error reporting. */
+static lcl_result lift_namespaces_to_caller(lcl_interp *interp,
+                                            lcl_value *cached_dict) {
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *value;
+  lcl_result final_rc = LCL_OK;
+
+  while (
+      hash_table_iterate(cached_dict->as.dict.dictionary, &it, &key, &value)) {
+    lcl_result r;
+
+    if (interp->def_depth > 0) {
+      r = lcl_def_target_bind(interp, key, value);
+    } else {
+      r = lcl_env_let(&interp->env, key, value);
+    }
+
+    lcl_ref_dec(value);
+
+    if (r != LCL_OK) {
+      final_rc = LCL_ERROR;
+    }
+  }
+
+  return final_rc;
+}
+
+/* find_global_frame: walk to the root of a frame chain. The interp's
+ * root frame is shared by all closures (procs defined in namespaces
+ * still root-anchor here), so this is the right parent for a
+ * require'd file: it gives access to built-in procs without leaking
+ * any of the caller's local bindings. */
+static lcl_frame *find_global_frame(lcl_frame *f) {
+  if (!f) {
+    return NULL;
+  }
+
+  while (f->parent) {
+    f = f->parent;
+  }
+
+  return f;
+}
+
+/* require <path>
+ *
+ * Scoped load: evaluate <path> in a fresh frame parented to global,
+ * collect every top-level binding whose value is a namespace, and lift
+ * just those into the caller's scope. Loose let/var/proc bindings are
+ * discarded. Subsequent calls with the same resolved absolute path are
+ * served from cache without re-evaluating the file.
+ *
+ * Differs from `load` in that:
+ *   - `load` evaluates inline at the call site (textual include);
+ *     `require` evaluates in an isolated frame (module import).
+ *   - `load` runs the file every call; `require` caches by abs path.
+ *   - `load` exposes every top-level binding; `require` exposes only
+ *     namespaces (the explicit "module surface"). */
+static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
+                     lcl_value **out) {
+  lcl_value *path_v = NULL;
+  const char *path;
+  char abs_path[4096];
+  lcl_value *cached_dict = NULL;
+  char *src = NULL;
+  lcl_program *prog = NULL;
+  lcl_frame *overlay = NULL;
+  lcl_frame *saved_frame = NULL;
+  lcl_frame *global_frame = NULL;
+  lcl_return_code rc = LCL_RC_OK;
+  lcl_value *last = NULL;
+  int i;
+  int saved_tail_position;
+  hash_iter it = {0};
+  const char *key;
+  lcl_value *value;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "require: expected 1 argument (path)");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word_to_str(interp, args[0], &path_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  path = lcl_value_to_string(path_v);
+
+  if (!realpath(path, abs_path)) {
+    LCL_ERR_MSG(interp, "require: could not resolve path");
+    lcl_ref_dec(path_v);
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(path_v);
+
+  /* Cache lookup. A hit means we already lifted this module's
+   * namespaces once; just re-lift them at the new call site. */
+  if (interp->require_cache &&
+      lcl_dict_get(interp->require_cache, abs_path, &cached_dict) == LCL_OK) {
+    lcl_result lift_rc = lift_namespaces_to_caller(interp, cached_dict);
+    lcl_ref_dec(cached_dict);
+
+    if (lift_rc != LCL_OK) {
+      LCL_ERR_MSG(interp, "require: failed to bind cached namespace");
+      return LCL_RC_ERR;
+    }
+
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
+  }
+
+  /* Cache miss: read, compile, evaluate in an isolated overlay frame. */
+  src = read_file(abs_path, NULL);
+
+  if (!src) {
+    LCL_ERR_MSG(interp, "require: could not read file");
+    return LCL_RC_ERR;
+  }
+
+  prog = lcl_program_compile(src, abs_path);
+  free(src);
+
+  if (!prog) {
+    LCL_ERR_MSG(interp, "require: compile error");
+    return LCL_RC_ERR;
+  }
+
+  global_frame = find_global_frame(interp->env.frame);
+  overlay = lcl_frame_new(global_frame);
+
+  if (!overlay) {
+    lcl_program_free(prog);
+    LCL_ERR_MSG(interp, "require: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  if (interp->max_depth && interp->depth >= interp->max_depth) {
+    lcl_frame_ref_dec(overlay);
+    lcl_program_free(prog);
+    LCL_ERR_MSG(interp, "require: max recursion depth exceeded");
+    return LCL_RC_ERR;
+  }
+
+  saved_frame = interp->env.frame;
+  saved_tail_position = interp->in_tail_position;
+  interp->env.frame = overlay;
+  interp->depth++;
+
+  /* The body of a require runs for side effects + collected
+   * namespaces; suppress tail-position propagation so a self-recursive
+   * call inside cannot escape via LCL_RC_TAILCALL. */
+  interp->in_tail_position = 0;
+
+  for (i = 0; i < prog->ncmd; i++) {
+    lcl_command *cmd = &prog->cmd[i];
+
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    rc = lcl_call_from_words(interp, cmd, &last);
+
+    if (rc != LCL_RC_OK) {
+      if (rc != LCL_RC_RETURN) {
+        interp->err_line = cmd->line;
+
+        if (interp->err_file_owned && interp->err_file) {
+          free((void *)interp->err_file);
+        }
+
+        interp->err_file = prog->file ? strdup(prog->file) : NULL;
+        interp->err_file_owned = prog->file ? 1 : 0;
+      }
+
+      break;
+    }
+  }
+
+  interp->in_tail_position = saved_tail_position;
+  interp->depth--;
+  interp->env.frame = saved_frame;
+
+  if (last) {
+    lcl_ref_dec(last);
+    last = NULL;
+  }
+
+  if (rc != LCL_RC_OK && rc != LCL_RC_RETURN) {
+    lcl_frame_clear(overlay);
+    lcl_frame_ref_dec(overlay);
+    lcl_program_free(prog);
+    return rc;
+  }
+
+  /* Collect namespaces from the overlay's locals. Procs defined
+   * inside namespaces in the file still close over the overlay frame,
+   * so we cannot free the overlay outright — its refcount will drop
+   * when nothing references it. */
+  cached_dict = lcl_dict_new();
+
+  if (!cached_dict) {
+    lcl_frame_clear(overlay);
+    lcl_frame_ref_dec(overlay);
+    lcl_program_free(prog);
+    LCL_ERR_MSG(interp, "require: out of memory creating cache entry");
+    return LCL_RC_ERR;
+  }
+
+  while (hash_table_iterate(overlay->locals, &it, &key, &value)) {
+    if (value->type == LCL_NAMESPACE) {
+      if (lcl_dict_put(&cached_dict, key, value) != LCL_OK) {
+        lcl_ref_dec(value);
+        lcl_ref_dec(cached_dict);
+        lcl_frame_clear(overlay);
+        lcl_frame_ref_dec(overlay);
+        lcl_program_free(prog);
+        LCL_ERR_MSG(interp, "require: out of memory caching namespace");
+        return LCL_RC_ERR;
+      }
+    }
+
+    lcl_ref_dec(value);
+  }
+
+  /* Drop our reference to the overlay; closures inside lifted
+   * namespaces hold their own refs. */
+  lcl_frame_ref_dec(overlay);
+  lcl_program_free(prog);
+
+  /* Install in the require cache. */
+  if (!interp->require_cache) {
+    interp->require_cache = lcl_dict_new();
+
+    if (!interp->require_cache) {
+      lcl_ref_dec(cached_dict);
+      LCL_ERR_MSG(interp, "require: out of memory creating cache");
+      return LCL_RC_ERR;
+    }
+  }
+
+  if (lcl_dict_put(&interp->require_cache, abs_path, cached_dict) != LCL_OK) {
+    lcl_ref_dec(cached_dict);
+    LCL_ERR_MSG(interp, "require: failed to cache require result");
+    return LCL_RC_ERR;
+  }
+
+  /* Lift the just-collected namespaces into the caller. */
+  if (lift_namespaces_to_caller(interp, cached_dict) != LCL_OK) {
+    lcl_ref_dec(cached_dict);
+    LCL_ERR_MSG(interp, "require: failed to bind namespace into caller");
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(cached_dict);
+  *out = lcl_string_new("");
+  return LCL_RC_OK;
 }
 
 /* find the end of a callable expression starting with [ */
@@ -6583,6 +6992,37 @@ static int c_ns_name(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* Ns::set ns name value - bind name to value in namespace
+ *
+ * Programmatic write into a namespace, without going through the
+ * syntactic `namespace foo { ... }` builder. Mutates the namespace's
+ * underlying hash table in place, so all references to the namespace
+ * value observe the new binding. Returns the bound value. */
+static int c_ns_set(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
+  const char *name;
+
+  if (argc != 3) {
+    LCL_ERR_MSG(interp, "Ns::set: expected 3 arguments (ns name value)");
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    LCL_ERR_MSG(interp, "Ns::set: first argument must be a namespace");
+    return LCL_RC_ERR;
+  }
+
+  name = lcl_value_to_string(argv[1]);
+
+  if (!hash_table_put(argv[0]->as.namespace.namespace, name, argv[2])) {
+    LCL_ERR_MSG(interp, "Ns::set: failed to bind in namespace");
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_ref_inc(argv[2]);
+  return LCL_RC_OK;
+}
+
 /* Ns::has? ns name - check if binding exists in namespace */
 static int c_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
@@ -7281,9 +7721,11 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "macroexpand", s_macroexpand);
   lcl_register_spec(interp, "eval", s_eval);
   lcl_register_spec(interp, "load", s_load);
+  lcl_register_spec(interp, "require", s_require);
   lcl_register_spec(interp, "subst", s_subst);
   lcl_register_spec(interp, "quasiquote", s_quasiquote);
   lcl_register_spec(interp, "namespace", s_namespace);
+  lcl_register_spec(interp, "isolate", s_isolate);
   lcl_register_spec(interp, "import", s_import);
   lcl_register_spec(interp, "->", s_thread_first);
   lcl_register_spec(interp, "->>", s_thread_last);
@@ -7366,4 +7808,5 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_ns_def(ns_ns, "keys", lcl_c_proc_new("Ns::keys", c_ns_keys));
   lcl_ns_def(ns_ns, "name", lcl_c_proc_new("Ns::name", c_ns_name));
   lcl_ns_def(ns_ns, "has?", lcl_c_proc_new("Ns::has?", c_ns_has));
+  lcl_ns_def(ns_ns, "set", lcl_c_proc_new("Ns::set", c_ns_set));
 }

@@ -1,0 +1,3 @@
+;; Fixture: unbalanced brace triggers a compile error.
+namespace bad_ns {
+    let x 1

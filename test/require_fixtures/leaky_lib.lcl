@@ -1,0 +1,10 @@
+;; Fixture: a library with loose top-level bindings that should NOT
+;; be lifted to the caller. Only `leakylib` should appear.
+let LOOSE_CONST 8080
+var loose_counter 0
+proc loose_helper {} { return "leaked" }
+
+namespace leakylib {
+    let port 9090
+    proc serve {} { return $port }
+}

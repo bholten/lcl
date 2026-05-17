@@ -1,0 +1,8 @@
+;; Fixture: procs inside namespaces should still be able to reference
+;; file-level let bindings via lexical closure, even though those
+;; bindings are not lifted to the caller.
+let HELPER_CONST 42
+
+namespace closurelib {
+    proc get_helper_const {} { return $HELPER_CONST }
+}
