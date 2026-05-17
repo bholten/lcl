@@ -433,6 +433,85 @@ Test::suite "Namespace" {
 }
 
 ;; ============================================================================
+;; Qualified self-reference inside a namespace builder
+;; ============================================================================
+;; Regression for LCL_FEATURE_REQUESTS.md feature 6: while the body of
+;; `namespace foo { ... }` is running, foo isn't yet bound as a namespace
+;; value, so `$foo::X` used to fail with "undefined variable". Fix:
+;; lcl_env_get_value's qualified-path resolution walks the def_target
+;; stack for a name that matches a "::"-bounded prefix of the key, and
+;; resolves the suffix from that target's overlay.
+
+Test::suite "Qualified self-reference" {
+    Test::case "self-reference reads let binding while still building" {
+        namespace qsr_simple {
+            let X "value"
+            Test::eq $qsr_simple::X "value"
+        }
+    }
+
+    Test::case "self-reference reads var (cell) and dereferences it" {
+        namespace qsr_cell {
+            var counter 0
+            set! counter [+ $qsr_cell::counter 1]
+            Test::eq $qsr_cell::counter 1
+        }
+    }
+
+    Test::case "self-reference works from inside a proc defined in the namespace" {
+        namespace qsr_proc {
+            let Y "via proc"
+            proc qsr_reader {} { $qsr_proc::Y }
+            Test::eq [qsr_reader] "via proc"
+        }
+    }
+
+    Test::case "self-reference works through nested namespace" {
+        namespace qsr_outer {
+            namespace qsr_inner { let X 99 }
+            Test::eq $qsr_outer::qsr_inner::X 99
+        }
+    }
+
+    Test::case "self-reference works with qualified namespace name" {
+        namespace qsr_alpha::qsr_beta {
+            let Z 42
+            Test::eq $qsr_alpha::qsr_beta::Z 42
+        }
+    }
+
+    Test::case "self-reference fails for non-existent binding" {
+        namespace qsr_missing {
+            let present 1
+            Test::raises { puts $qsr_missing::absent }
+        }
+    }
+
+    Test::case {bare $foo (no qualifier) inside namespace foo still fails} {
+        ;; The partial-build state isn't a first-class value; only
+        ;; suffix-bearing keys go through the def_target fallback.
+        Test::raises {
+            namespace qsr_bare {
+                let X 1
+                puts $qsr_bare
+            }
+        }
+    }
+
+    Test::case "sibling namespace lookup uses already-built namespace, not target" {
+        namespace qsr_sibling::first { let A 1 }
+        namespace qsr_sibling::second {
+            ;; first is already a real namespace value; resolution
+            ;; should go through normal env_get_simple, not def_target.
+            Test::eq $qsr_sibling::first::A 1
+            let B 2
+            ;; self-reference for the in-progress namespace still works
+            Test::eq $qsr_sibling::second::B 2
+        }
+    }
+}
+
+;; ============================================================================
 ;; Namespace re-entry (in-place mutation)
 ;; ============================================================================
 
@@ -795,6 +874,99 @@ Test::suite "Isolate" {
         }
         Test::eq $iso_outer_q::public_two 2
         Test::eq $iso_qroot::iso_qleaf::qy 7
+    }
+}
+
+;; ============================================================================
+;; Proc-call boundary blocks def-target leakage
+;; ============================================================================
+;; Regression for LCL_FEATURE_REQUESTS.md feature 5: helper procs called
+;; from inside a namespace block used to leak their var/proc declarations
+;; into the enclosing namespace because the def-target stack was dynamically
+;; scoped through proc calls. Fix: lcl_call_user_proc raises def_floor for
+;; the duration of the call, so internal bindings stay local.
+
+Test::suite "Proc-call boundary stops def-target leakage" {
+    Test::case "var inside helper proc does not leak to caller's namespace" {
+        proc pclb_helper1 {} {
+            var pclb_private "set by helper"
+        }
+        namespace pclb_ns1 {
+            pclb_helper1
+            let pclb_public 1
+        }
+        Test::eq [Ns::has? $pclb_ns1 pclb_private] 0
+        Test::eq $pclb_ns1::pclb_public 1
+    }
+
+    Test::case "proc inside helper proc does not leak to caller's namespace" {
+        proc pclb_helper2 {} {
+            proc pclb_inner {} { 42 }
+        }
+        namespace pclb_ns2 {
+            pclb_helper2
+        }
+        Test::eq [Ns::has? $pclb_ns2 pclb_inner] 0
+    }
+
+    Test::case "let inside eval body of helper does not leak (call-boundary applies through eval)" {
+        proc pclb_helper3 {body} {
+            eval $body
+        }
+        namespace pclb_ns3 {
+            pclb_helper3 { let pclb_from_body "x" }
+        }
+        ;; eval runs in the helper's frame, which is below the floor,
+        ;; so let in body stays local to the helper.
+        Test::eq [Ns::has? $pclb_ns3 pclb_from_body] 0
+    }
+
+    Test::case "explicit namespace re-entry from inside helper still extends the namespace" {
+        ;; Proc-call boundary only blocks IMPLICIT def-target inheritance.
+        ;; Code that explicitly re-enters via `namespace foo { ... }`
+        ;; pushes its own target above the floor, so let/var/proc inside
+        ;; that re-entry still write to foo as expected.
+        namespace pclb_ns4 { let initial 1 }
+        proc pclb_extender {} {
+            namespace pclb_ns4 { let added_by_proc 2 }
+        }
+        pclb_extender
+        Test::eq $pclb_ns4::initial 1
+        Test::eq $pclb_ns4::added_by_proc 2
+    }
+
+    Test::case "nested helper calls do not leak through multiple proc boundaries" {
+        proc pclb_inner_helper {} {
+            var deeply_nested "x"
+        }
+        proc pclb_outer_helper {} {
+            var also_nested "y"
+            pclb_inner_helper
+        }
+        namespace pclb_ns5 {
+            pclb_outer_helper
+        }
+        Test::eq [Ns::has? $pclb_ns5 deeply_nested] 0
+        Test::eq [Ns::has? $pclb_ns5 also_nested] 0
+    }
+
+    Test::case "helper proc with private var and helper procs (Dagwood task_impl pattern)" {
+        ;; Dagwood's task_impl pattern from the bug report — no isolate
+        ;; needed once the proc-call boundary blocks the leak.
+        proc pclb_task_impl {task_name body} {
+            var _task #{}
+            proc pclb_always_run {v} { puts "always_run $v" }
+            eval $body
+        }
+        namespace pclb_proj {
+            pclb_task_impl "task1" { }
+            let pclb_proj_var 1
+        }
+        ;; The helper's private state stays out of pclb_proj.
+        Test::eq [Ns::has? $pclb_proj _task] 0
+        Test::eq [Ns::has? $pclb_proj pclb_always_run] 0
+        ;; The project's own bindings still land in pclb_proj.
+        Test::eq $pclb_proj::pclb_proj_var 1
     }
 }
 

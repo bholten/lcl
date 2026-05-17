@@ -51,12 +51,15 @@ void lcl_env_free(lcl_env *env);
 
 lcl_result lcl_env_let_take(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_let(lcl_env *env, const char *name, lcl_value *value);
-lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out);
-lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out);
+lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
+                             lcl_value **out);
+lcl_result lcl_env_get_command(lcl_interp *interp, const char *key,
+                               lcl_value **out);
 lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value);
 lcl_result lcl_env_set_bang(lcl_env *eng, const char *name, lcl_value *value);
 
-lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent);
+lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent,
+                               const char *name);
 lcl_value *lcl_def_target_pop(lcl_interp *interp);
 lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
                                lcl_value *value);
@@ -72,6 +75,14 @@ typedef struct {
 typedef struct {
   lcl_value *exports;
   lcl_frame *overlay;
+  /* When the def_target was pushed by `namespace foo { ... }`, this
+   * holds a strdup'd copy of "foo" (or the full qualified path for
+   * `namespace a::b::c { ... }`). Qualified-name lookup uses this to
+   * resolve self-references like `$foo::X` while the body is still
+   * executing — see lcl_env_get_value's def_stack fallback. NULL for
+   * anonymous targets (e.g. `namespace { ... }` with no name) so the
+   * lookup never matches them. */
+  char *name;
 } lcl_def_target;
 
 #define LCL_DEF_STACK_MAX 16

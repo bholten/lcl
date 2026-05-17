@@ -154,7 +154,7 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out) {
     return LCL_ERROR;
   }
 
-  return lcl_env_get_value(&interp->env, name, out);
+  return lcl_env_get_value(interp, name, out);
 }
 
 lcl_result lcl_register_proc(lcl_interp *interp, const char *name,
