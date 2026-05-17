@@ -391,6 +391,45 @@ Test::suite "Namespace" {
 
         Test::eq [ns5::qux] 42
     }
+
+    ;; --- Qualified path root anchoring (regression) ---
+    ;; `namespace foo::bar { ... }` inside an enclosing `namespace baz`
+    ;; used to create the root `foo` in the builder's overlay frame,
+    ;; orphaning the sub-namespace when the overlay popped. Roots now
+    ;; anchor at the global frame so the qualified path is always
+    ;; reachable absolutely.
+
+    Test::case "qualified path with new root inside enclosing namespace" {
+        namespace qroot_outer1 {
+            namespace qroot_new1::qleaf1 { let x 1 }
+        }
+        ;; Root is created at global and reachable absolutely.
+        Test::eq $qroot_new1::qleaf1::x 1
+    }
+
+    Test::case "qualified path with existing root inside enclosing namespace" {
+        ;; Pre-existing root: should be found via lexical chain, not re-created.
+        namespace qroot_existing { let initial 1 }
+        namespace qroot_outer2 {
+            namespace qroot_existing::qleaf2 { let y 2 }
+        }
+        Test::eq $qroot_existing::initial 1
+        Test::eq $qroot_existing::qleaf2::y 2
+    }
+
+    Test::case "qualified path inside proc body (Dagwood pattern)" {
+        ;; namespace ${proj}::${task} inside a proc that itself
+        ;; runs inside namespace ${proj} { ... }.
+        namespace qrootD { let marker 1 }
+        proc qrootD_helper {leaf} {
+            namespace qrootD::$leaf { let from_proc 7 }
+        }
+        namespace qrootD {
+            qrootD_helper task1
+        }
+        Test::eq $qrootD::task1::from_proc 7
+        Test::eq $qrootD::marker 1
+    }
 }
 
 ;; ============================================================================
@@ -745,8 +784,9 @@ Test::suite "Isolate" {
         ;; either erroring with "failed to create namespace" or, when
         ;; the qualified path hit the re-entry branch, segfaulting at
         ;; line 2668. The fix uses a def_floor so the inner push goes
-        ;; to a fresh slot above the outer's. Here we just assert the
-        ;; outer namespace's own exports survive the inner activity.
+        ;; to a fresh slot above the outer's. With the qualified-root
+        ;; anchor fix, the inner qualified namespace also survives
+        ;; (its root is anchored at the global frame).
         namespace iso_outer_q {
             isolate {
                 namespace iso_qroot::iso_qleaf { let qy 7 }
@@ -754,6 +794,7 @@ Test::suite "Isolate" {
             let public_two 2
         }
         Test::eq $iso_outer_q::public_two 2
+        Test::eq $iso_qroot::iso_qleaf::qy 7
     }
 }
 
