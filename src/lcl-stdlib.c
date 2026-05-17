@@ -2411,6 +2411,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_program *prog = NULL;
   int prog_owned = 0;
   int saved_def_floor;
+  int saved_def_lookup_floor;
   int saved_tail_position;
   lcl_return_code rc;
   lcl_value *last = NULL;
@@ -2426,17 +2427,22 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  /* Raise the def-target floor to the current depth so that bare
-   * `let`/`var`/`proc` inside the body fall through to frame-local
-   * binding. A nested `namespace` inside the body still pushes its
-   * own target above the floor, where its body's bindings land. The
-   * stack itself stays intact — previously this used `def_depth = 0`,
-   * which made a nested namespace's push overwrite the enclosing
-   * namespace's def_stack slot, corrupting its exports.
+  /* Raise BOTH floors to the current depth: def_floor blocks bare
+   * `let`/`var`/`proc` from writing through to an enclosing builder,
+   * and def_lookup_floor blocks $foo::X self-references from seeing
+   * through to it. A user-proc call raises only def_floor (so helpers
+   * stay self-contained for writes but transparent for self-reference
+   * reads); isolate is the full-barrier form.
+   *
+   * The def_stack itself stays intact — previously this used
+   * `def_depth = 0`, which made a nested namespace's push overwrite
+   * the enclosing namespace's def_stack slot, corrupting its exports.
    */
   saved_def_floor = interp->def_floor;
+  saved_def_lookup_floor = interp->def_lookup_floor;
   saved_tail_position = interp->in_tail_position;
   interp->def_floor = interp->def_depth;
+  interp->def_lookup_floor = interp->def_depth;
   rc = LCL_RC_OK;
 
   for (i = 0; i < prog->ncmd; i++) {
@@ -2455,6 +2461,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (rc == LCL_RC_TAILCALL) {
       interp->def_floor = saved_def_floor;
+      interp->def_lookup_floor = saved_def_lookup_floor;
       interp->in_tail_position = saved_tail_position;
       free_if_owned(prog, prog_owned);
 
@@ -2482,6 +2489,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   interp->def_floor = saved_def_floor;
+  interp->def_lookup_floor = saved_def_lookup_floor;
   interp->in_tail_position = saved_tail_position;
   free_if_owned(prog, prog_owned);
 
