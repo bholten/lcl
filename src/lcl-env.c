@@ -108,24 +108,114 @@ static lcl_result env_get_simple(lcl_env *env, const char *key,
   return LCL_ERROR;
 }
 
-lcl_result lcl_env_get_command(lcl_env *env, const char *key, lcl_value **out) {
-  if (!env || !out) {
+lcl_result lcl_env_get_command(lcl_interp *interp, const char *key,
+                               lcl_value **out) {
+  if (!interp || !out) {
     return LCL_ERROR;
   }
-  return lcl_env_get_value(env, key, out);
+  return lcl_env_get_value(interp, key, out);
 }
 
-lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
+/* find_def_target_for_self: walk the def_target stack from top to the
+ * floor, returning the topmost target whose name is a "::"-bounded
+ * prefix of `key` and writing the un-consumed suffix into
+ * *suffix_out.
+ *
+ * Used by lcl_env_get_value to resolve qualified self-references like
+ * `$foo::X` (inside `namespace foo { ... }`, target name "foo") or
+ * `$alpha::beta::X` (inside `namespace alpha::beta { ... }`, target
+ * name "alpha::beta") while the namespace value itself isn't yet
+ * bound. Exact-match-without-suffix never resolves, because there's
+ * no namespace value to return — the partial build state isn't a
+ * first-class value. */
+static lcl_def_target *find_def_target_for_self(lcl_interp *interp,
+                                                const char *key,
+                                                const char **suffix_out) {
+  int i;
+
+  for (i = interp->def_depth - 1; i >= interp->def_floor; i--) {
+    lcl_def_target *t = &interp->def_stack[i];
+    size_t namelen;
+
+    if (!t->name) {
+      continue;
+    }
+
+    namelen = strlen(t->name);
+
+    if (strncmp(key, t->name, namelen) == 0 && key[namelen] == ':' &&
+        key[namelen + 1] == ':') {
+      *suffix_out = key + namelen + 2;
+      return t;
+    }
+  }
+
+  return NULL;
+}
+
+lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
+                             lcl_value **out) {
+  lcl_env *env;
   char first[256];
   const char *rest = NULL;
   lcl_value *current = NULL;
 
-  if (!env || !out) {
+  if (!interp || !out) {
     return LCL_ERROR;
   }
 
+  env = &interp->env;
+
   if (env_get_simple(env, key, out) == LCL_OK) {
     return LCL_OK;
+  }
+
+  /* The key may be a qualified self-reference into an in-progress
+   * namespace builder — `namespace foo { puts $foo::X }` or
+   * `namespace alpha::beta { puts $alpha::beta::X }`. Check the
+   * def_target stack for a name whose "::"-bounded prefix matches
+   * the key, and resolve the un-consumed suffix from that target's
+   * overlay. */
+  {
+    const char *suffix = NULL;
+    lcl_def_target *target = find_def_target_for_self(interp, key, &suffix);
+
+    if (target) {
+      char part[256];
+      const char *next_rest = NULL;
+      int has_more = lcl_ns_split(suffix, part, sizeof(part), &next_rest);
+      const char *part_name = has_more ? part : suffix;
+      lcl_value *first_val = NULL;
+
+      if (!hash_table_get(target->overlay->locals, part_name, &first_val)) {
+        return LCL_ERROR;
+      }
+
+      if (!has_more) {
+        /* If the overlay binding is a cell (created via `var`), follow
+         * to the inner value so `$foo::counter` matches non-builder
+         * semantics where `$foo::counter` dereferences the cell. */
+        if (first_val->type == LCL_CELL) {
+          lcl_value *inner = NULL;
+
+          if (lcl_cell_get(first_val, &inner) != LCL_OK) {
+            lcl_ref_dec(first_val);
+            return LCL_ERROR;
+          }
+
+          lcl_ref_dec(first_val);
+          *out = inner;
+          return LCL_OK;
+        }
+
+        *out = first_val;
+        return LCL_OK;
+      }
+
+      current = first_val;
+      rest = next_rest;
+      goto walk_rest;
+    }
   }
 
   if (!lcl_ns_split(key, first, sizeof(first), &rest)) {
@@ -136,6 +226,7 @@ lcl_result lcl_env_get_value(lcl_env *env, const char *key, lcl_value **out) {
     return LCL_ERROR;
   }
 
+walk_rest:
   while (rest && *rest) {
     lcl_value *next = NULL;
     char part[256];
@@ -260,10 +351,12 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
   return LCL_ERROR;
 }
 
-lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent) {
+lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent,
+                               const char *name) {
   lcl_def_target *target;
   lcl_value *exports;
   lcl_frame *overlay;
+  char *name_copy = NULL;
 
   if (!interp) {
     return LCL_ERROR;
@@ -286,9 +379,20 @@ lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent) {
     return LCL_ERROR;
   }
 
+  if (name) {
+    name_copy = strdup(name);
+
+    if (!name_copy) {
+      lcl_frame_ref_dec(overlay);
+      lcl_ref_dec(exports);
+      return LCL_ERROR;
+    }
+  }
+
   target = &interp->def_stack[interp->def_depth];
   target->exports = exports;
   target->overlay = overlay;
+  target->name = name_copy;
   interp->def_depth++;
 
   return LCL_OK;
@@ -311,6 +415,11 @@ lcl_value *lcl_def_target_pop(lcl_interp *interp) {
   if (target->overlay) {
     lcl_frame_ref_dec(target->overlay);
     target->overlay = NULL;
+  }
+
+  if (target->name) {
+    free(target->name);
+    target->name = NULL;
   }
 
   return exports;

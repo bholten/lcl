@@ -666,7 +666,7 @@ int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
       continue;
     }
 
-    if (lcl_env_get_value(&interp->env, name, &val) == LCL_OK) {
+    if (lcl_env_get_value(interp, name, &val) == LCL_OK) {
       upvals[nupvals].name = strdup(name);
 
       if (!upvals[nupvals].name) {

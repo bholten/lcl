@@ -876,7 +876,7 @@ static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
 
   name = lcl_value_to_string(name_v);
 
-  if (lcl_env_get_value(&interp->env, name, &binding) != LCL_OK) {
+  if (lcl_env_get_value(interp, name, &binding) != LCL_OK) {
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
@@ -919,13 +919,13 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   name1 = lcl_value_to_string(name1_v);
   name2 = lcl_value_to_string(name2_v);
 
-  if (lcl_env_get_value(&interp->env, name1, &binding1) != LCL_OK) {
+  if (lcl_env_get_value(interp, name1, &binding1) != LCL_OK) {
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_get_value(&interp->env, name2, &binding2) != LCL_OK) {
+  if (lcl_env_get_value(interp, name2, &binding2) != LCL_OK) {
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
     lcl_ref_dec(binding1);
@@ -1042,7 +1042,7 @@ static int c_get(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_get_value(&interp->env, lcl_value_to_string(argv[0]), &val) !=
+  if (lcl_env_get_value(interp, lcl_value_to_string(argv[0]), &val) !=
       LCL_OK) {
     return LCL_RC_ERR;
   }
@@ -1086,7 +1086,7 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
   /* Look up the cell to check for cycles before mutating. If the
    * value is a proc that captures this cell, assigning it would
    * create a reference cycle that can never be freed. */
-  if (lcl_env_get_value(&interp->env, name_str, &cell) == LCL_OK) {
+  if (lcl_env_get_value(interp, name_str, &cell) == LCL_OK) {
     if (cell->type == LCL_CELL && lcl_cell_would_cycle(cell, val_v)) {
       LCL_ERR_MSG(interp, "assignment would create reference cycle "
                           "(mutual recursion not allowed)");
@@ -2308,7 +2308,7 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
     lcl_value *ns = NULL;
     lcl_frame *global = NULL;
 
-    if (lcl_env_get_value(&interp->env, path, &ns) == LCL_OK) {
+    if (lcl_env_get_value(interp, path, &ns) == LCL_OK) {
       if (ns->type != LCL_NAMESPACE) {
         lcl_ref_dec(ns);
         return NULL;
@@ -2333,7 +2333,7 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
     return ns;
   }
 
-  if (lcl_env_get_value(&interp->env, first, &current) != LCL_OK) {
+  if (lcl_env_get_value(interp, first, &current) != LCL_OK) {
     lcl_frame *global = NULL;
 
     current = lcl_ns_new(first);
@@ -2553,7 +2553,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     prog_owned = prog_owned_flag;
   }
 
-  if (lcl_def_target_push(interp, interp->env.frame) != LCL_OK) {
+  if (lcl_def_target_push(interp, interp->env.frame, ns_name) != LCL_OK) {
     free_if_owned(prog, prog_owned);
     free(ns_name);
     return LCL_RC_ERR;
@@ -2570,7 +2570,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   if (ns_name) {
     lcl_value *found = NULL;
 
-    if (lcl_env_get_value(&interp->env, ns_name, &found) == LCL_OK) {
+    if (lcl_env_get_value(interp, ns_name, &found) == LCL_OK) {
       if (found->type == LCL_NAMESPACE) {
         hash_iter it = {0};
         const char *key;
@@ -2840,7 +2840,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
   } else {
     ns_name = lcl_value_to_string(ns_name_v);
 
-    if (lcl_env_get_value(&interp->env, ns_name, &ns) != LCL_OK) {
+    if (lcl_env_get_value(interp, ns_name, &ns) != LCL_OK) {
       LCL_ERR_MSG(interp, "import: namespace not found");
       lcl_ref_dec(ns_name_v);
       return LCL_RC_ERR;
@@ -3050,7 +3050,7 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
           memcpy(name, src + start, name_len);
           name[name_len] = '\0';
 
-          if (lcl_env_get_value(&interp->env, name, &val) != LCL_OK) {
+          if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
             free(name);
             goto err;
           }
@@ -3106,7 +3106,7 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
           memcpy(name, src + start, name_len);
           name[name_len] = '\0';
 
-          if (lcl_env_get_value(&interp->env, name, &val) != LCL_OK) {
+          if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
             free(name);
             goto err;
           }
@@ -4961,7 +4961,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_value *name = callee;
     callee = NULL;
 
-    if (lcl_env_get_command(&interp->env, lcl_value_to_string(name), &callee) !=
+    if (lcl_env_get_command(interp, lcl_value_to_string(name), &callee) !=
         LCL_OK) {
       LCL_ERR_MSG(interp, "macroexpand: unknown command");
       lcl_ref_dec(name);

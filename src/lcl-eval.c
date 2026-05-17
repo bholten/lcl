@@ -155,12 +155,21 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
   lcl_env saved = interp->env;
   int saved_tail_position = interp->in_tail_position;
   lcl_value *saved_current_proc = interp->current_proc;
+  /* Raise the def-target floor for the duration of this proc call so
+   * that bare `let`/`var`/`proc` inside the body (or anything called
+   * from it) does not write through to a `namespace` builder active
+   * at the call site. A nested `namespace foo { ... }` inside the
+   * body still pushes its own target above the floor and works
+   * normally. Restored on every exit path. See spec §6 /
+   * def_floor. */
+  int saved_def_floor = interp->def_floor;
 
   lcl_value **current_argv = argv;
   int current_argc = argc;
   int owns_argv = 0;
 
   interp->current_proc = proc_val;
+  interp->def_floor = interp->def_depth;
 
   for (;;) {
     /* Bugfix:
@@ -180,6 +189,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       }
 
       interp->current_proc = saved_current_proc;
+      interp->def_floor = saved_def_floor;
       return LCL_RC_ERR;
     }
 
@@ -213,6 +223,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         }
 
         interp->current_proc = saved_current_proc;
+        interp->def_floor = saved_def_floor;
         return LCL_RC_ERR;
       }
     }
@@ -272,6 +283,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
             }
 
             interp->current_proc = saved_current_proc;
+            interp->def_floor = saved_def_floor;
             return def_rc;
           }
 
@@ -326,6 +338,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
         }
 
         interp->current_proc = saved_current_proc;
+        interp->def_floor = saved_def_floor;
         return LCL_RC_ERR;
       }
     }
@@ -364,6 +377,7 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
   }
 
   interp->current_proc = saved_current_proc;
+  interp->def_floor = saved_def_floor;
   return rc;
 }
 
@@ -375,7 +389,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
     case LCL_WP_VAR: {
       lcl_value *val = NULL;
 
-      if (lcl_env_get_value(&interp->env, wp->as.var.name, &val) != LCL_OK) {
+      if (lcl_env_get_value(interp, wp->as.var.name, &val) != LCL_OK) {
         LCL_ERR_MSG(interp, "undefined variable");
         return LCL_RC_ERR;
       }
@@ -532,7 +546,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     callee = NULL;
     cmd_name = lcl_value_to_string(name);
 
-    if (lcl_env_get_command(&interp->env, cmd_name, &callee) != LCL_OK) {
+    if (lcl_env_get_command(interp, cmd_name, &callee) != LCL_OK) {
       if (cmd->argc == 1) {
         *out = name;
         return LCL_RC_OK;
@@ -581,7 +595,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       lcl_value *name = callee;
       callee = NULL;
 
-      if (lcl_env_get_command(&interp->env, lcl_value_to_string(name),
+      if (lcl_env_get_command(interp, lcl_value_to_string(name),
                               &callee) != LCL_OK) {
         lcl_ref_dec(name);
         return LCL_RC_ERR;
@@ -807,7 +821,7 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       size_t slen;
       size_t need;
 
-      if (lcl_env_get_value(&interp->env, wp->as.var.name, &val) != LCL_OK) {
+      if (lcl_env_get_value(interp, wp->as.var.name, &val) != LCL_OK) {
         free(buf);
         return LCL_RC_ERR;
       }
