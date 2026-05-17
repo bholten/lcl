@@ -2272,8 +2272,31 @@ static int buf_append_char(char **buf, size_t *len, size_t *cap, char c) {
   return buf_append(buf, len, cap, &c, 1);
 }
 
+/* find_global_frame: walk to the root of a frame chain. Used to
+ * anchor qualified-path root namespaces and require'd modules at the
+ * shared global frame regardless of where the call site lives. */
+static lcl_frame *find_global_frame(lcl_frame *f) {
+  if (!f) {
+    return NULL;
+  }
+
+  while (f->parent) {
+    f = f->parent;
+  }
+
+  return f;
+}
+
 /* resolve or create a namespace path like "a::b::c".
  * Creates intermediate namespaces as needed.
+ *
+ * When the root segment isn't already reachable via the lexical
+ * chain, it's created and bound in the *global* frame, not the
+ * current frame. This makes qualified-path declarations like
+ * `namespace foo::bar { ... }` survive an enclosing namespace builder
+ * — previously the root landed in the builder's overlay and was
+ * discarded when the overlay popped, orphaning the sub-namespace.
+ *
  * Returns the final namespace with +1 refcount, or NULL on error. */
 static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
                                             const char *path) {
@@ -2283,6 +2306,7 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
 
   if (!lcl_ns_split(path, first, sizeof(first), &rest)) {
     lcl_value *ns = NULL;
+    lcl_frame *global = NULL;
 
     if (lcl_env_get_value(&interp->env, path, &ns) == LCL_OK) {
       if (ns->type != LCL_NAMESPACE) {
@@ -2299,7 +2323,9 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
       return NULL;
     }
 
-    if (lcl_env_let(&interp->env, path, ns) != LCL_OK) {
+    global = find_global_frame(interp->env.frame);
+
+    if (!global || !hash_table_put(global->locals, path, ns)) {
       lcl_ref_dec(ns);
       return NULL;
     }
@@ -2308,13 +2334,17 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
   }
 
   if (lcl_env_get_value(&interp->env, first, &current) != LCL_OK) {
+    lcl_frame *global = NULL;
+
     current = lcl_ns_new(first);
 
     if (!current) {
       return NULL;
     }
 
-    if (lcl_env_let(&interp->env, first, current) != LCL_OK) {
+    global = find_global_frame(interp->env.frame);
+
+    if (!global || !hash_table_put(global->locals, first, current)) {
       lcl_ref_dec(current);
       return NULL;
     }
@@ -4317,23 +4347,6 @@ static lcl_result lift_namespaces_to_caller(lcl_interp *interp,
   }
 
   return final_rc;
-}
-
-/* find_global_frame: walk to the root of a frame chain. The interp's
- * root frame is shared by all closures (procs defined in namespaces
- * still root-anchor here), so this is the right parent for a
- * require'd file: it gives access to built-in procs without leaking
- * any of the caller's local bindings. */
-static lcl_frame *find_global_frame(lcl_frame *f) {
-  if (!f) {
-    return NULL;
-  }
-
-  while (f->parent) {
-    f = f->parent;
-  }
-
-  return f;
 }
 
 /* require <path>
