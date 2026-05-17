@@ -94,6 +94,13 @@ struct lcl_interp {
   lcl_value *current_proc;
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
+  /* `isolate` raises def_floor to the current def_depth so that
+   * `let`/`var`/`proc`/etc. inside the body do not write through to
+   * any enclosing namespace builder. Pushes from a nested `namespace`
+   * inside the body still allocate above the floor, so the call sees
+   * `def_depth > def_floor` and writes to its own target. Saved and
+   * restored across the isolate body. */
+  int def_floor;
   int in_subcmd;
   unsigned long gensym_counter;
   lcl_value *require_cache;
