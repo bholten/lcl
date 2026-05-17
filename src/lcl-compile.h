@@ -96,6 +96,7 @@ struct lcl_interp {
   int def_depth;
   int in_subcmd;
   unsigned long gensym_counter;
+  lcl_value *require_cache;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

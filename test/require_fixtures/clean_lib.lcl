@@ -1,0 +1,8 @@
+;; Fixture: a clean library exposing a single namespace.
+namespace cleanlib {
+    var version "1.0"
+
+    proc greet {who} { return "hi $who" }
+
+    proc add {a b} { + $a $b }
+}

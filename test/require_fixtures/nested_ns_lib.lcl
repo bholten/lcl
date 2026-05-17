@@ -1,0 +1,9 @@
+;; Fixture: top-level namespaces include both unqualified and qualified
+;; (nested-path) namespaces. Both should lift to the caller.
+namespace nestedlib {
+    let top_v 1
+}
+
+namespace nestedlib::sub {
+    let deep_v 42
+}

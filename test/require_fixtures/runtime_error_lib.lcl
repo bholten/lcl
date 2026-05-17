@@ -1,0 +1,12 @@
+;; Fixture: triggers a runtime error mid-evaluation to verify that
+;; require propagates the error (and the namespace defined before
+;; the error is NOT lifted, because evaluation stopped).
+namespace good_before_err {
+    let v 1
+}
+
+error "boom from required file"
+
+namespace never_reached {
+    let v 2
+}

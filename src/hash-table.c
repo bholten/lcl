@@ -20,8 +20,8 @@
 typedef char lcl_u64_size_check[sizeof(lcl_u64) == 8 ? 1 : -1];
 
 /* Bugfix: Canonical 64-bit FNV-1a parameters (RFC draft
- * Eastlake/Hansen).  The previous offset basis was missing a digit
- * (19 digits vs.  the canonical 20), and the type was `unsigned long`
+ * Eastlake/Hansen). The previous offset basis was missing a digit (19
+ * digits vs. the canonical 20), and the type was `unsigned long`
  * which C89 only guarantees at ≥32 bits. Both are now fixed.
  * `LCL_U64_C` applies the right integer suffix for the active
  * `lcl_u64` definition (UL on LP64, ULL on LLP64). */

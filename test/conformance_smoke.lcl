@@ -1,6 +1,12 @@
 ;; Lcl Conformance Smoke Tests
 ;; This test suite covers core LCL functionality using the Test framework.
 ;; Run with: ./lcl test/conformance_smoke.lcl
+
+;; Top-level cell seeded for the Require suite's side-effect test.
+;; Required files evaluate in an overlay whose parent is the global
+;; frame, so a globally-scoped cell is visible for set!.
+var require_se_counter 0
+
 ;; ============================================================================
 ;; Immutability & Substitution
 ;; ============================================================================
@@ -384,6 +390,316 @@ Test::suite "Namespace" {
         }
 
         Test::eq [ns5::qux] 42
+    }
+}
+
+;; ============================================================================
+;; Namespace re-entry (in-place mutation)
+;; ============================================================================
+
+Test::suite "Namespace re-entry" {
+    Test::case "let inside namespace re-entry from proc body persists" {
+        namespace re_ns1 { var existing "ok" }
+        proc add_let {} {
+            namespace re_ns1 { let FROM_PROC "value" }
+        }
+        add_let
+        Test::eq $re_ns1::FROM_PROC "value"
+        Test::eq $re_ns1::existing "ok"
+    }
+
+    Test::case "var inside namespace re-entry from proc body persists" {
+        namespace re_ns2 {}
+        proc add_var {} {
+            namespace re_ns2 { var COUNT 0 }
+        }
+        add_var
+        Test::eq $re_ns2::COUNT 0
+        set! re_ns2::COUNT 5
+        Test::eq $re_ns2::COUNT 5
+    }
+
+    Test::case "proc inside namespace re-entry from proc body persists" {
+        namespace re_ns3 {}
+        proc add_proc {} {
+            namespace re_ns3 { proc helper {} { return 42 } }
+        }
+        add_proc
+        Test::eq [re_ns3::helper] 42
+    }
+
+    Test::case "dynamic name var inside namespace re-entry from proc body" {
+        namespace re_ns4 {}
+        proc bind_dynamic {n v} {
+            namespace re_ns4 { var $n $v }
+        }
+        bind_dynamic "DYNAMIC_NAME" "dynamic_value"
+        Test::eq $re_ns4::DYNAMIC_NAME "dynamic_value"
+    }
+
+    Test::case "qualified-path re-entry preserves prior bindings" {
+        namespace re_qual::sub { let X 1 }
+        namespace re_qual::sub { let Y 2 }
+        Test::eq $re_qual::sub::X 1
+        Test::eq $re_qual::sub::Y 2
+    }
+
+    Test::case "namespace value identity preserved across re-entry" {
+        namespace re_ns5 { let A 1 }
+        let captured $re_ns5
+        namespace re_ns5 { let B 2 }
+        ;; The captured reference sees the new binding because we
+        ;; mutated in place.
+        Test::eq [Ns::has? $captured B] 1
+        Test::eq [Ns::has? $captured A] 1
+    }
+
+    Test::case "set! across re-entry still works (regression)" {
+        namespace re_ns6 { var counter 0 }
+        proc bump {} {
+            namespace re_ns6 { set! counter [+ $counter 1] }
+        }
+        bump
+        bump
+        bump
+        Test::eq $re_ns6::counter 3
+    }
+}
+
+;; ============================================================================
+;; Ns::set
+;; ============================================================================
+
+Test::suite "Ns::set" {
+    Test::case "binds a new name into namespace" {
+        namespace nsset_ns1 {}
+        Ns::set $nsset_ns1 X 42
+        Test::eq $nsset_ns1::X 42
+        Test::eq [Ns::has? $nsset_ns1 X] 1
+    }
+
+    Test::case "overwrites existing binding" {
+        namespace nsset_ns2 { let X 1 }
+        Ns::set $nsset_ns2 X 99
+        Test::eq $nsset_ns2::X 99
+    }
+
+    Test::case "supports the Dagwood-style def pattern" {
+        namespace nsset_proj {}
+        proc nsset_def {ns name value} {
+            Ns::set [getvar $ns] $name $value
+            return $value
+        }
+        nsset_def nsset_proj alpha 10
+        nsset_def nsset_proj beta  "hello"
+        Test::eq $nsset_proj::alpha 10
+        Test::eq $nsset_proj::beta "hello"
+    }
+
+    Test::case "errors when first arg is not a namespace" {
+        Test::raises { Ns::set "not a ns" X 1 }
+    }
+
+    Test::case "errors on wrong arity" {
+        namespace nsset_ns3 {}
+        Test::raises { Ns::set $nsset_ns3 X }
+        Test::raises { Ns::set }
+    }
+
+    Test::case "value can be any type" {
+        namespace nsset_ns4 {}
+        Ns::set $nsset_ns4 a_list [list 1 2 3]
+        Ns::set $nsset_ns4 a_dict [dict k v]
+        Test::eq [len $nsset_ns4::a_list] 3
+        Test::eq [get $nsset_ns4::a_dict k] v
+    }
+}
+
+;; ============================================================================
+;; Require
+;; ============================================================================
+
+Test::suite "Require" {
+    Test::case "namespace is lifted into caller" {
+        require test/require_fixtures/clean_lib.lcl
+        Test::eq $cleanlib::version "1.0"
+        Test::eq [cleanlib::greet "world"] "hi world"
+        Test::eq [cleanlib::add 2 3] 5
+    }
+
+    Test::case "loose top-level let is discarded" {
+        require test/require_fixtures/leaky_lib.lcl
+        ;; The lifted namespace is present.
+        Test::eq [leakylib::serve] 9090
+        ;; LOOSE_CONST, loose_counter, loose_helper must NOT leak.
+        Test::raises { $LOOSE_CONST }
+        Test::raises { $loose_counter }
+        ;; Bareword `loose_helper` with no args would silently fall
+        ;; back to the literal string "loose_helper" (lcl-eval.c), so
+        ;; we invoke it with an arg to force unknown-command resolution.
+        Test::raises { loose_helper junk }
+    }
+
+    Test::case "nested-path namespaces lift" {
+        require test/require_fixtures/nested_ns_lib.lcl
+        Test::eq $nestedlib::top_v 1
+        Test::eq $nestedlib::sub::deep_v 42
+    }
+
+    Test::case "procs in namespace see file-level constants via closure" {
+        require test/require_fixtures/closure_lib.lcl
+        Test::eq [closurelib::get_helper_const] 42
+        ;; But HELPER_CONST is not visible at caller scope.
+        Test::raises { $HELPER_CONST }
+    }
+
+    Test::case "repeated require is cached (file body runs once)" {
+        ;; require_se_counter is seeded as a top-level (global) cell at
+        ;; the bottom of this file — required files see it via the
+        ;; overlay's parent chain into the global frame.
+        set! require_se_counter 0
+        require test/require_fixtures/sideeffect_lib.lcl
+        require test/require_fixtures/sideeffect_lib.lcl
+        require test/require_fixtures/sideeffect_lib.lcl
+        ;; Cache means body evaluated exactly once across the 3 calls.
+        Test::eq $require_se_counter 1
+        ;; Namespace is still bound after cache-served requires.
+        Test::eq [selib::nop] 0
+    }
+
+    Test::case "missing file errors cleanly" {
+        Test::raises { require /no/such/path/here.lcl }
+    }
+
+    Test::case "compile error in required file propagates" {
+        Test::raises { require test/require_fixtures/compile_error_lib.lcl }
+    }
+
+    Test::case "runtime error in required file propagates" {
+        Test::raises { require test/require_fixtures/runtime_error_lib.lcl }
+        ;; The namespace defined before the error must NOT be cached
+        ;; or lifted; the require returned an error, so partial state
+        ;; should be discarded.
+        Test::raises { $good_before_err::v }
+    }
+
+    Test::case "require inside namespace lifts into that namespace" {
+        namespace req_outer {
+            require test/require_fixtures/clean_lib.lcl
+        }
+        ;; cleanlib should be a member of req_outer, not at top level
+        ;; (because the require ran inside a builder, its def-target
+        ;; was active and lifted bindings went there).
+        Test::eq [Ns::has? $req_outer cleanlib] 1
+        Test::eq [req_outer::cleanlib::greet "alice"] "hi alice"
+    }
+
+    Test::case "require: too few args is an error" {
+        Test::raises { require }
+    }
+
+    Test::case "require: too many args is an error" {
+        Test::raises { require foo bar }
+    }
+}
+
+;; ============================================================================
+;; Isolate
+;; ============================================================================
+
+Test::suite "Isolate" {
+    Test::case "let inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns1 {
+            isolate { let local_leak "nope" }
+            let public_one 1
+        }
+        ;; The isolated let should be discarded.
+        Test::eq [Ns::has? $iso_ns1 local_leak] 0
+        ;; But subsequent bare lets in the namespace still land in it.
+        Test::eq $iso_ns1::public_one 1
+    }
+
+    Test::case "var inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns2 {
+            isolate { var hidden_counter 0 }
+        }
+        Test::eq [Ns::has? $iso_ns2 hidden_counter] 0
+    }
+
+    Test::case "proc inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns3 {
+            isolate { proc hidden_helper {} { 42 } }
+            proc public_helper {} { 99 }
+        }
+        Test::eq [Ns::has? $iso_ns3 hidden_helper] 0
+        Test::eq [iso_ns3::public_helper] 99
+    }
+
+    Test::case "isolate inside proc inside namespace (Dagwood task_impl pattern)" {
+        namespace iso_ns4 {
+            proc task_impl {body} {
+                isolate { eval $body }
+            }
+        }
+        namespace iso_ns4 {
+            iso_ns4::task_impl { let tmp_file "out.txt" }
+        }
+        ;; tmp_file must not have leaked into iso_ns4
+        Test::eq [Ns::has? $iso_ns4 tmp_file] 0
+    }
+
+    Test::case "isolate returns body's last value" {
+        Test::eq [isolate { + 1 2 }] 3
+    }
+
+    Test::case "empty body returns empty string" {
+        Test::eq [isolate { }] {}
+    }
+
+    Test::case "isolate outside any namespace is a no-op for scoping" {
+        isolate { let iso_top_x 7 }
+        Test::eq $iso_top_x 7
+    }
+
+    Test::case "nested isolate behaves the same as a single isolate" {
+        namespace iso_ns5 {
+            isolate {
+                isolate { let inner_x 1 }
+                let middle_x 2
+            }
+        }
+        Test::eq [Ns::has? $iso_ns5 inner_x] 0
+        Test::eq [Ns::has? $iso_ns5 middle_x] 0
+    }
+
+    Test::case "def_depth is restored after isolate error" {
+        catch {
+            namespace iso_ns6 {
+                isolate { error "boom" }
+                let after_err 42
+            }
+        }
+        ;; After the error, the namespace's def-target was properly popped,
+        ;; so a brand-new namespace builder still works normally.
+        namespace iso_ns7 { let post 1 }
+        Test::eq $iso_ns7::post 1
+    }
+
+    Test::case "return inside isolate returns from enclosing proc" {
+        proc iso_returns {} {
+            isolate { return 99 }
+            ;; unreachable
+            return 0
+        }
+        Test::eq [iso_returns] 99
+    }
+
+    Test::case "isolate: too few args is an error" {
+        Test::raises { isolate }
+    }
+
+    Test::case "isolate: too many args is an error" {
+        Test::raises { isolate {x} {y} }
     }
 }
 

@@ -71,6 +71,7 @@ void lcl_interp_free(lcl_interp *interp) {
 
   lcl_ref_dec(interp->env.current_ns);
   lcl_ref_dec(interp->env.global_ns);
+  lcl_ref_dec(interp->require_cache);
 
   free(interp);
 }
