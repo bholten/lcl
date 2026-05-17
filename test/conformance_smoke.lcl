@@ -701,6 +701,60 @@ Test::suite "Isolate" {
     Test::case "isolate: too many args is an error" {
         Test::raises { isolate {x} {y} }
     }
+
+    ;; --- namespace inside isolate (regression: feature 4 in LCL_FEATURE_REQUESTS) ---
+    ;; Setting def_depth=0 used to make a nested namespace's def_target_push
+    ;; overwrite the enclosing namespace's def_stack slot, leaving the outer
+    ;; with NULL exports and either "failed to create namespace" or a segfault.
+
+    Test::case "unqualified namespace inside isolate inside outer namespace" {
+        namespace iso_ns_inner1 {
+            isolate {
+                namespace just_sub_a { let inner_x 1 }
+            }
+            let outer_one 1
+        }
+        ;; The inner namespace was isolated, so it must not leak into
+        ;; the outer namespace's exports. The outer's normal exports survive.
+        Test::eq [Ns::has? $iso_ns_inner1 just_sub_a] 0
+        Test::eq $iso_ns_inner1::outer_one 1
+    }
+
+    Test::case "qualified namespace inside top-level isolate" {
+        isolate {
+            namespace iso_top_root::iso_top_leaf { let qx 9 }
+        }
+        ;; Qualified path resolves via current frame, so the namespace
+        ;; survives outside isolate (root binding made via lcl_env_let).
+        Test::eq $iso_top_root::iso_top_leaf::qx 9
+    }
+
+    Test::case "re-entering an existing namespace inside isolate (regression: line 2668 NULL deref)" {
+        namespace iso_reenter_root::iso_reenter_leaf { let first 1 }
+        isolate {
+            namespace iso_reenter_root::iso_reenter_leaf { let second 2 }
+        }
+        ;; Re-entry must extend the existing namespace in place, not crash.
+        Test::eq $iso_reenter_root::iso_reenter_leaf::first 1
+        Test::eq $iso_reenter_root::iso_reenter_leaf::second 2
+    }
+
+    Test::case "qualified namespace inside isolate inside outer namespace" {
+        ;; The bug: isolate's `def_depth = 0` reset caused the inner
+        ;; namespace's def_stack push to overwrite the outer's slot,
+        ;; either erroring with "failed to create namespace" or, when
+        ;; the qualified path hit the re-entry branch, segfaulting at
+        ;; line 2668. The fix uses a def_floor so the inner push goes
+        ;; to a fresh slot above the outer's. Here we just assert the
+        ;; outer namespace's own exports survive the inner activity.
+        namespace iso_outer_q {
+            isolate {
+                namespace iso_qroot::iso_qleaf { let qy 7 }
+            }
+            let public_two 2
+        }
+        Test::eq $iso_outer_q::public_two 2
+    }
 }
 
 ;; ============================================================================

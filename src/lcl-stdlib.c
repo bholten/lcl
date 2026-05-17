@@ -961,13 +961,13 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
 
   name = lcl_value_to_string(argv[0]);
 
-  if (strstr(name, "::") && interp->def_depth == 0) {
+  if (strstr(name, "::") && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     return LCL_RC_ERR;
   }
 
-  if (interp->def_depth > 0) {
+  if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name, argv[1]) != LCL_OK) {
       return LCL_RC_ERR;
     }
@@ -1129,7 +1129,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
 
   name_str = lcl_value_to_string(name_v);
 
-  if (strstr(name_str, "::") && interp->def_depth == 0) {
+  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     lcl_ref_dec(name_v);
@@ -1141,7 +1141,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
     return LCL_RC_ERR;
   }
 
-  if (interp->def_depth > 0) {
+  if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_var(interp, name_str, init_v) != LCL_OK) {
       lcl_ref_dec(name_v);
       lcl_ref_dec(init_v);
@@ -2380,7 +2380,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
                      lcl_value **out) {
   lcl_program *prog = NULL;
   int prog_owned = 0;
-  int saved_def_depth;
+  int saved_def_floor;
   int saved_tail_position;
   lcl_return_code rc;
   lcl_value *last = NULL;
@@ -2396,9 +2396,17 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  saved_def_depth = interp->def_depth;
+  /* Raise the def-target floor to the current depth so that bare
+   * `let`/`var`/`proc` inside the body fall through to frame-local
+   * binding. A nested `namespace` inside the body still pushes its
+   * own target above the floor, where its body's bindings land. The
+   * stack itself stays intact — previously this used `def_depth = 0`,
+   * which made a nested namespace's push overwrite the enclosing
+   * namespace's def_stack slot, corrupting its exports.
+   */
+  saved_def_floor = interp->def_floor;
   saved_tail_position = interp->in_tail_position;
-  interp->def_depth = 0;
+  interp->def_floor = interp->def_depth;
   rc = LCL_RC_OK;
 
   for (i = 0; i < prog->ncmd; i++) {
@@ -2416,7 +2424,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
     rc = lcl_call_from_words(interp, cmd, &last);
 
     if (rc == LCL_RC_TAILCALL) {
-      interp->def_depth = saved_def_depth;
+      interp->def_floor = saved_def_floor;
       interp->in_tail_position = saved_tail_position;
       free_if_owned(prog, prog_owned);
 
@@ -2443,7 +2451,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  interp->def_depth = saved_def_depth;
+  interp->def_floor = saved_def_floor;
   interp->in_tail_position = saved_tail_position;
   free_if_owned(prog, prog_owned);
 
@@ -2750,7 +2758,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         }
       }
     } else {
-      if (interp->def_depth > 0) {
+      if (interp->def_depth > interp->def_floor) {
         if (lcl_def_target_bind(interp, ns_name, ns) != LCL_OK) {
           lcl_ref_dec(ns);
           free(ns_name);
@@ -2851,7 +2859,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
         return LCL_RC_ERR;
       }
 
-      if (interp->def_depth > 0) {
+      if (interp->def_depth > interp->def_floor) {
         if (lcl_def_target_bind(interp, key, value) != LCL_OK) {
           lcl_ref_dec(value);
           lcl_ref_dec(ns);
@@ -2902,7 +2910,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
         return LCL_RC_ERR;
       }
 
-      if (interp->def_depth > 0) {
+      if (interp->def_depth > interp->def_floor) {
         if (lcl_def_target_bind(interp, name_str, value) != LCL_OK) {
           lcl_ref_dec(value);
           lcl_ref_dec(name_v);
@@ -4295,7 +4303,7 @@ static lcl_result lift_namespaces_to_caller(lcl_interp *interp,
       hash_table_iterate(cached_dict->as.dict.dictionary, &it, &key, &value)) {
     lcl_result r;
 
-    if (interp->def_depth > 0) {
+    if (interp->def_depth > interp->def_floor) {
       r = lcl_def_target_bind(interp, key, value);
     } else {
       r = lcl_env_let(&interp->env, key, value);
@@ -4821,7 +4829,7 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
 
   name_str = lcl_value_to_string(name_v);
 
-  if (strstr(name_str, "::") && interp->def_depth == 0) {
+  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
@@ -4835,7 +4843,7 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
     return rc;
   }
 
-  if (interp->def_depth > 0) {
+  if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
@@ -4876,7 +4884,7 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
 
   name_str = lcl_value_to_string(name_v);
 
-  if (strstr(name_str, "::") && interp->def_depth == 0) {
+  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
@@ -4892,7 +4900,7 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
 
   ((lcl_proc *)lam->as.procedure.proc)->is_macro = 1;
 
-  if (interp->def_depth > 0) {
+  if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
