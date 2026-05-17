@@ -105,13 +105,23 @@ struct lcl_interp {
   lcl_value *current_proc;
   lcl_def_target def_stack[LCL_DEF_STACK_MAX];
   int def_depth;
-  /* `isolate` raises def_floor to the current def_depth so that
-   * `let`/`var`/`proc`/etc. inside the body do not write through to
-   * any enclosing namespace builder. Pushes from a nested `namespace`
-   * inside the body still allocate above the floor, so the call sees
-   * `def_depth > def_floor` and writes to its own target. Saved and
-   * restored across the isolate body. */
+  /* `isolate` and user-proc calls raise `def_floor` to the current
+   * `def_depth` so that `let`/`var`/`proc`/etc. inside the body do
+   * not write through to any enclosing namespace builder. Pushes from
+   * a nested `namespace` inside the body still allocate above the
+   * floor, so the call sees `def_depth > def_floor` and writes to its
+   * own target. Saved and restored across the isolate body and across
+   * each user-proc call. */
   int def_floor;
+  /* `def_lookup_floor` is a separate barrier governing self-reference
+   * READS (find_def_target_for_self). Isolate raises both floors —
+   * it's a full barrier for the body. User-proc calls raise only
+   * `def_floor`, NOT `def_lookup_floor`, so a helper proc called from
+   * inside `namespace foo { ... }` can still resolve $foo::X via the
+   * def_target fallback (the namespace is conceptually "still in
+   * scope" for reads even though the helper's own let/var/proc don't
+   * leak through). */
+  int def_lookup_floor;
   int in_subcmd;
   unsigned long gensym_counter;
   lcl_value *require_cache;

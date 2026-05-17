@@ -509,6 +509,144 @@ Test::suite "Qualified self-reference" {
             Test::eq $qsr_sibling::second::B 2
         }
     }
+
+    ;; --- Self-reference through proc-call boundary ---
+    ;; Regression: user-proc calls raise def_floor (to block helper
+    ;; bindings from leaking into the caller's namespace) but must
+    ;; NOT raise def_lookup_floor. So $foo::X from inside a helper
+    ;; proc called from foo's body still resolves via the def_target
+    ;; overlay fallback.
+
+    Test::case "self-reference works through a helper proc that evals body" {
+        proc qsr_reader1 {body} { eval $body }
+        namespace qsr_through_proc1 {
+            let X "via-proc"
+            qsr_reader1 { Test::eq $qsr_through_proc1::X "via-proc" }
+        }
+    }
+
+    Test::case "self-reference works through multiple nested proc calls" {
+        proc qsr_layer3 {body} { eval $body }
+        proc qsr_layer2 {body} { qsr_layer3 $body }
+        proc qsr_layer1 {body} { qsr_layer2 $body }
+        namespace qsr_through_proc2 {
+            let X 42
+            qsr_layer1 { Test::eq $qsr_through_proc2::X 42 }
+        }
+    }
+
+    Test::case "self-reference reads a var (cell) through a proc call" {
+        proc qsr_reader2 {body} { eval $body }
+        namespace qsr_through_proc3 {
+            var counter 7
+            qsr_reader2 { Test::eq $qsr_through_proc3::counter 7 }
+        }
+    }
+
+    Test::case "self-reference works for qualified ns name through proc call" {
+        proc qsr_reader3 {body} { eval $body }
+        namespace qsr_q1::qsr_q2 {
+            let Z "qual-via-proc"
+            qsr_reader3 { Test::eq $qsr_q1::qsr_q2::Z "qual-via-proc" }
+        }
+    }
+
+    Test::case "isolate cuts off self-reference even through proc calls" {
+        ;; Isolate is the full barrier: raises both def_floor (writes)
+        ;; AND def_lookup_floor (reads). A proc call inside isolate
+        ;; cannot see outer-namespace self-references.
+        proc qsr_reader4 {body} { eval $body }
+        namespace qsr_through_isolate {
+            let X "should-be-hidden"
+            isolate {
+                Test::raises { qsr_reader4 { puts $qsr_through_isolate::X } }
+            }
+        }
+    }
+}
+
+;; ============================================================================
+;; Helper-proc binding leak regression (Dagwood feedback round 3)
+;; ============================================================================
+;; The user reported that `proc` declarations inside a helper proc
+;; still leaked even after the def_floor fix. Could not reproduce
+;; (likely a misread of the unknown-command-returns-string
+;; fallback). These tests lock in the actual behavior: var, let,
+;; proc, and macro declarations inside a helper all stay local.
+
+Test::suite "Helper-proc binding leak (all forms)" {
+    Test::case "proc inside helper does not leak (Ns::has? check)" {
+        proc hlp_proc_helper {} {
+            proc hlp_proc_inner {} { 42 }
+        }
+        namespace hlp_proc_ns1 {
+            hlp_proc_helper
+        }
+        Test::eq [Ns::has? $hlp_proc_ns1 hlp_proc_inner] 0
+    }
+
+    Test::case "proc inside helper that evals body does not leak" {
+        proc hlp_proc_helper2 {body} {
+            proc hlp_proc_inner2 {} { 99 }
+            eval $body
+        }
+        namespace hlp_proc_ns2 {
+            hlp_proc_helper2 { }
+        }
+        Test::eq [Ns::has? $hlp_proc_ns2 hlp_proc_inner2] 0
+    }
+
+    Test::case "var inside helper that evals body does not leak" {
+        proc hlp_var_helper {body} {
+            var hlp_var_state "private"
+            eval $body
+        }
+        namespace hlp_var_ns {
+            hlp_var_helper { }
+        }
+        Test::eq [Ns::has? $hlp_var_ns hlp_var_state] 0
+    }
+
+    Test::case "let inside helper that evals body does not leak" {
+        proc hlp_let_helper {body} {
+            let hlp_let_const "private"
+            eval $body
+        }
+        namespace hlp_let_ns {
+            hlp_let_helper { }
+        }
+        Test::eq [Ns::has? $hlp_let_ns hlp_let_const] 0
+    }
+
+    Test::case "macro inside helper that evals body does not leak" {
+        proc hlp_macro_helper {body} {
+            macro hlp_macro_inner {} { quote {1} }
+            eval $body
+        }
+        namespace hlp_macro_ns {
+            hlp_macro_helper { }
+        }
+        Test::eq [Ns::has? $hlp_macro_ns hlp_macro_inner] 0
+    }
+
+    Test::case "all forms together stay local (Dagwood task_impl shape)" {
+        proc hlp_task_impl {body} {
+            var _task #{}
+            let TASK_PRIVATE "x"
+            proc hlp_attr_setter {v} { puts $v }
+            macro hlp_attr_macro {} { quote {0} }
+            eval $body
+        }
+        namespace hlp_proj {
+            hlp_task_impl { }
+            let proj_var 1
+        }
+        Test::eq [Ns::has? $hlp_proj _task] 0
+        Test::eq [Ns::has? $hlp_proj TASK_PRIVATE] 0
+        Test::eq [Ns::has? $hlp_proj hlp_attr_setter] 0
+        Test::eq [Ns::has? $hlp_proj hlp_attr_macro] 0
+        Test::eq $hlp_proj::proj_var 1
+    }
 }
 
 ;; ============================================================================

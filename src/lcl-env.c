@@ -116,10 +116,10 @@ lcl_result lcl_env_get_command(lcl_interp *interp, const char *key,
   return lcl_env_get_value(interp, key, out);
 }
 
-/* find_def_target_for_self: walk the def_target stack from top to the
- * floor, returning the topmost target whose name is a "::"-bounded
- * prefix of `key` and writing the un-consumed suffix into
- * *suffix_out.
+/* find_def_target_for_self: walk the def_target stack from top to
+ * def_lookup_floor, returning the topmost target whose name is a
+ * "::"-bounded prefix of `key` and writing the un-consumed suffix
+ * into *suffix_out.
  *
  * Used by lcl_env_get_value to resolve qualified self-references like
  * `$foo::X` (inside `namespace foo { ... }`, target name "foo") or
@@ -127,13 +127,19 @@ lcl_result lcl_env_get_command(lcl_interp *interp, const char *key,
  * name "alpha::beta") while the namespace value itself isn't yet
  * bound. Exact-match-without-suffix never resolves, because there's
  * no namespace value to return — the partial build state isn't a
- * first-class value. */
+ * first-class value.
+ *
+ * Walks down to def_lookup_floor (not def_floor) so that a helper
+ * proc called from inside `namespace foo { ... }` can still resolve
+ * $foo::X — user-proc calls raise def_floor (to block writes) but
+ * leave def_lookup_floor alone (so reads remain transparent through
+ * the call). `isolate` raises both. */
 static lcl_def_target *find_def_target_for_self(lcl_interp *interp,
                                                 const char *key,
                                                 const char **suffix_out) {
   int i;
 
-  for (i = interp->def_depth - 1; i >= interp->def_floor; i--) {
+  for (i = interp->def_depth - 1; i >= interp->def_lookup_floor; i--) {
     lcl_def_target *t = &interp->def_stack[i];
     size_t namelen;
 
