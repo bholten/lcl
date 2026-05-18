@@ -54,6 +54,7 @@ puts "Status: $status"
 | `curl::set_verb $handle $method` | Set HTTP method (GET, POST, etc.) |
 | `curl::set_header $handle $header...` | Add HTTP headers |
 | `curl::set_body $handle $data` | Set request body |
+| `curl::set_nobody $handle $long` | Set nobody |
 | `curl::set_user_agent $handle $ua` | Set User-Agent header |
 
 ### Timeouts & Connection
