@@ -585,6 +585,11 @@ static int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /*
+ * Nobody
+ */
+CURL_LONG_OPTION(c_curl_set_nobody, CURLOPT_NOBODY)
+
+/*
  * Connection Settings
  */
 CURL_LONG_OPTION(c_curl_set_option_accept_timeout_ms, CURLOPT_ACCEPTTIMEOUT_MS)
@@ -992,6 +997,8 @@ void lcl_register_curl(lcl_interp *interp) {
              lcl_c_proc_new("curl::set_header", c_curl_set_header));
   lcl_ns_def(curl_ns, "set_body",
              lcl_c_proc_new("curl::set_body", c_curl_set_body));
+  lcl_ns_def(curl_ns, "set_nobody",
+             lcl_c_proc_new("curl::set_nobody", c_curl_set_nobody));
   lcl_ns_def(
       curl_ns, "set_user_agent",
       lcl_c_proc_new("curl::set_user_agent", c_curl_set_option_user_agent));
