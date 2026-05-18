@@ -110,6 +110,28 @@ static int c_clock(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* time::monotonic_us -> microseconds since arbitrary monotonic point */
+static int c_monotonic_us(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
+  struct timespec ts;
+  unsigned long long usec;
+  (void)interp;
+  (void)argc;
+  (void)argv;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  /* On 64-bit platforms `long` is wide enough to hold microseconds
+   * since boot for any realistic uptime. On 32-bit it wraps after ~35
+   * minutes — acceptable since lcl_int_new takes long. */
+  usec = (unsigned long long)ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000;
+
+  *out = lcl_int_new((long)usec);
+  return LCL_RC_OK;
+}
+
 /* time::localtime ?timestamp? -> dict with local time components */
 static int c_localtime(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
@@ -255,7 +277,8 @@ static int c_strftime(lcl_interp *interp, int argc, lcl_value **argv,
 /* time::difftime t1 t2 -> difference in seconds (t1 - t2) */
 static int c_difftime(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
-  long t1, t2;
+  long t1;
+  long t2;
   double diff;
 
   if (argc < 2) {
@@ -357,6 +380,8 @@ void lcl_register_time(lcl_interp *interp) {
 
   lcl_ns_def(time_ns, "time", lcl_c_proc_new("time::time", c_time));
   lcl_ns_def(time_ns, "clock", lcl_c_proc_new("time::clock", c_clock));
+  lcl_ns_def(time_ns, "monotonic_us",
+             lcl_c_proc_new("time::monotonic_s", c_monotonic_us));
   lcl_ns_def(time_ns, "localtime",
              lcl_c_proc_new("time::localtime", c_localtime));
   lcl_ns_def(time_ns, "gmtime", lcl_c_proc_new("time::gmtime", c_gmtime));

@@ -15,28 +15,29 @@ project lcl {
 
     arg BUILD_TYPE debug
 
-    def ALL_PKGS (-DLCL_BUILD_TESTS=ON
+    let ALL_PKGS (-DLCL_BUILD_TESTS=ON
                   -DLCL_BUILD_CURL=ON
                   -DLCL_BUILD_IO=ON
                   -DLCL_BUILD_JSON=ON
                   -DLCL_BUILD_CRYPTO=ON
                   -DLCL_BUILD_REGEX=ON
                   -DLCL_BUILD_PROCESS=ON
+                  -DLCL_BUILD_TIME=ON
                   -DLCL_BUILD_MATH=ON
                   -DLCL_BUILD_EXPECT=ON)
 
-    def ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
+    let ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
                   -DLCL_BUILD_SH_LIB=ON
                   -DLCL_BUILD_CURL_DSL_LIB=ON)
 
-    def DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON
+    let DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON
                     -DLCL_BUILD_TESTS=ON
                     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
                     -DCMAKE_BUILD_TYPE=Debug)
 
-    def RELEASE_OPTS (-DCMAKE_BUILD_TYPE=Release)
+    let RELEASE_OPTS (-DCMAKE_BUILD_TYPE=Release)
 
-    def STATIC_OPTS (-DLCL_BUILD_SHARED=OFF
+    let STATIC_OPTS (-DLCL_BUILD_SHARED=OFF
                      -DLCL_BUILD_STATIC=ON
                      -DCMAKE_BUILD_TYPE=Release)
 
