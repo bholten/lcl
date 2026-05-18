@@ -3831,10 +3831,12 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
 
     case QQ_EVAL:
     case QQ_SPLICE: {
-      lcl_program *prog;
+      lcl_scan sc;
+      lcl_word w;
       lcl_value *val = NULL;
       const char *saved_file;
       int saved_line;
+      int scan_rc;
       int eval_rc;
       int j;
 
@@ -3844,22 +3846,31 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
         }
       }
 
-      prog = lcl_program_compile(node->text, "<quasiquote>");
+      /* The unquote text is a single syntactic word ($var, [...],
+       * {...}, (...), #{...}, or a bare word). Evaluate it as a word
+       * so a variable substitution like ,$var yields the variable's
+       * value — not a one-word program that would dispatch that value
+       * as a zero-arg command if its string form happened to name a
+       * proc or built-in. */
+      memset(&w, 0, sizeof(w));
+      lcl_scan_init(&sc, node->text);
+      scan_rc = lcl_scan_word(&sc, &w);
 
-      if (!prog) {
-        LCL_ERR_MSG(interp, "failed to compile unquote expression");
+      if (scan_rc < 0) {
+        lcl_word_free_contents(&w);
+        LCL_ERR_MSG(interp, "failed to parse unquote expression");
         return 0;
       }
 
       saved_file = interp->cur_file;
       saved_line = interp->cur_line;
 
-      eval_rc = lcl_eval_program(interp, prog, &val);
+      eval_rc = lcl_eval_word(interp, &w, &val);
 
       interp->cur_file = saved_file;
       interp->cur_line = saved_line;
 
-      lcl_program_free(prog);
+      lcl_word_free_contents(&w);
 
       if (eval_rc != LCL_RC_OK) {
         return 0;

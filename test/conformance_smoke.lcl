@@ -2679,6 +2679,23 @@ Test::suite "Quasiquote" {
         ;; The dict will be stringified - "name" is at position 6
         Test::eq [String::find $d "name"] 6
     }
+
+    Test::case "unquote of value that names a proc" {
+        ;; Regression: ,$var must do variable substitution, NOT command
+        ;; dispatch. If the value's string form happens to match a callable
+        ;; name, qq_build previously evaluated the unquote text as a
+        ;; one-word program, which dispatched the proc with zero args and
+        ;; raised "too few arguments" mid-expansion.
+        proc GET {url} { return $url }
+        let danger "GET"
+        Test::eq [quasiquote {method ,$danger}] {method GET}
+    }
+
+    Test::case "unquote of value that names a builtin" {
+        ;; Same regression, exercised against a built-in command name.
+        let danger "puts"
+        Test::eq [quasiquote {cmd ,$danger}] {cmd puts}
+    }
 }
 
 ;; ============================================================================
