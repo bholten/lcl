@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }} / ${{ matrix.build_type }} / ${{ matrix.package_set }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
+        package_set: [core, linux-full]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install apt dependencies
+        run: |
+          DEPS=$(./ci/package-set.sh apt "${{ matrix.package_set }}")
+          if [ -n "$DEPS" ]; then
+            sudo apt-get update
+            # shellcheck disable=SC2086  # word splitting is intentional
+            sudo apt-get install -y $DEPS
+          fi
+
+      - name: Select compiler
+        run: |
+          case "${{ matrix.compiler }}" in
+            gcc)   echo "CC=gcc"   >> "$GITHUB_ENV" ;;
+            clang) echo "CC=clang" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Configure
+        run: |
+          # Drop the per-line flags from package-set.sh into a single
+          # argv expansion. CMake handles repeated -D flags fine.
+          mapfile -t FLAGS < <(./ci/package-set.sh flags "${{ matrix.package_set }}")
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            "${FLAGS[@]}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: C-level regression tests
+        run: ./build/lcl-test
+
+      # The .lcl test suites use `puts` (from lcl-io). `core` doesn't
+      # link lcl-io, so those suites only run for package sets that
+      # include it. The `core` row's job is to confirm the engine
+      # compiles and the C-level harness passes — the script suites
+      # are exercised by the `*-full` rows.
+      - name: Conformance suite
+        if: matrix.package_set != 'core'
+        run: ./build/lcl test/conformance_smoke.lcl
+
+      - name: Anaphoric-macros suite
+        if: matrix.package_set != 'core'
+        run: ./build/lcl test/anaphoric_macros.lcl

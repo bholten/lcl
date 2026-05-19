@@ -1,5 +1,7 @@
 # Lcl - Lexical Command Language
 
+[![CI](https://github.com/bholten/lcl/actions/workflows/ci.yml/badge.svg)](https://github.com/bholten/lcl/actions/workflows/ci.yml)
+
 > **Pre-alpha software**: This project is in early development. APIs, syntax, and semantics may change substantially.
 
 Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides the simplicity and extensibility of Tcl while adding modern features like closures, immutable bindings, and namespaces.

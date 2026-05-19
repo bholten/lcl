@@ -1,0 +1,56 @@
+/*
+ * LCL version macros and runtime accessor.
+ *
+ * This header is generated at configure time from PROJECT_VERSION in
+ * CMakeLists.txt. The macros are available for compile-time version
+ * checks; lcl_version() returns the same string at runtime, which is
+ * what an embedder should query to detect a linker-version mismatch
+ * (i.e. when the binary was compiled against headers from one version
+ * but linked against a shared library of another).
+ *
+ * Use:
+ *   #include <lcl-version.h>
+ *
+ *   #if LCL_VERSION_NUMBER < 200
+ *   // workaround for pre-0.2.0
+ *   #endif
+ *
+ *   printf("linked against %s\n", lcl_version());
+ *
+ * Version policy: see VERSIONING.md at the repo root.
+ */
+
+#ifndef LCL_VERSION_H
+#define LCL_VERSION_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define LCL_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define LCL_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define LCL_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define LCL_VERSION_STRING "@PROJECT_VERSION@"
+
+/*
+ * Single integer for #if comparisons.
+ *   MAJOR * 10000 + MINOR * 100 + PATCH
+ * e.g. 0.1.0 -> 100, 1.2.3 -> 10203.
+ * MINOR and PATCH are each clamped to 0..99 by convention.
+ */
+#define LCL_VERSION_NUMBER \
+    (LCL_VERSION_MAJOR * 10000 + LCL_VERSION_MINOR * 100 + LCL_VERSION_PATCH)
+
+/*
+ * Runtime version string. Returns the same value as LCL_VERSION_STRING
+ * at the time the library was compiled. Use to detect linker-version
+ * mismatches between the header you compiled against and the shared
+ * library you're loading.
+ */
+const char *lcl_version(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LCL_VERSION_H */
