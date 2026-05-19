@@ -6,6 +6,13 @@ project(lcl
   LANGUAGES C
 )
 
+set(LCL_VERSION_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/lcl-version.h.in"
+  "${LCL_VERSION_HEADER_DIR}/lcl-version.h"
+  @ONLY
+)
+
 option(LCL_BUILD_SHARED "Build shared library" ON)
 option(LCL_BUILD_STATIC "Build static library" ON)
 option(LCL_BUILD_CLI "Build command-line interpreter" ON)
@@ -89,6 +96,7 @@ if(LCL_BUILD_SHARED)
   target_include_directories(lcl_shared
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<BUILD_INTERFACE:${LCL_VERSION_HEADER_DIR}>
       $<INSTALL_INTERFACE:include>
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -108,6 +116,7 @@ if(LCL_BUILD_STATIC)
   target_include_directories(lcl_static
     PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<BUILD_INTERFACE:${LCL_VERSION_HEADER_DIR}>
       $<INSTALL_INTERFACE:include>
     PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -446,7 +455,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     )
   endif()
 
-  install(FILES include/lcl.h
+  install(FILES
+    include/lcl.h
+    ${LCL_VERSION_HEADER_DIR}/lcl-version.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 

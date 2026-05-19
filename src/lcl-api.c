@@ -4,7 +4,12 @@
 #include "lcl-compile.h"
 #include "lcl-eval.h"
 #include "lcl-values.h"
+#include "lcl-version.h"
 #include "str-compat.h"
+
+const char *lcl_version(void) {
+  return LCL_VERSION_STRING;
+}
 
 typedef struct {
   const char *name;

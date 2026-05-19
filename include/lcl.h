@@ -21,6 +21,8 @@
 
 #include <stddef.h>
 
+#include "lcl-version.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
