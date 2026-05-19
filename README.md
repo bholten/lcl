@@ -798,6 +798,15 @@ Lcl is **pre-alpha** software. While the core language is functional, expect:
 
 Contributions and feedback are welcome!
 
+## Versioning
+
+Lcl follows [Semantic Versioning](https://semver.org/) with a pre-1.0
+carve-out: PATCH bumps are non-breaking, MINOR bumps within 0.x may
+include breaking changes. See [VERSIONING.md](VERSIONING.md) for the
+full policy. Query the version at runtime with `lcl --version` or
+`lcl_version()`; at compile time with `LCL_VERSION_NUMBER` from
+`<lcl-version.h>`.
+
 ## License
 
 MIT

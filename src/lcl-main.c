@@ -93,8 +93,13 @@ static char *read_stdin(void) {
 
 static void print_usage(const char *prog) {
   fprintf(stderr, "Usage: %s [options] <script.lcl> [args...]\n", prog);
-  fprintf(stderr, "       %s -c <code>    Execute code directly\n", prog);
-  fprintf(stderr, "       %s -            Read script from stdin\n", prog);
+  fprintf(stderr, "       %s -c <code>      Execute code directly\n", prog);
+  fprintf(stderr, "       %s -              Read script from stdin\n", prog);
+  fprintf(stderr, "       %s --version, -v  Print version and exit\n", prog);
+}
+
+static void print_version(void) {
+  printf("lcl %s\n", lcl_version());
 }
 
 static lcl_interp *create_interp(void) {
@@ -173,6 +178,11 @@ int main(int argc, char **argv) {
   if (argc < 2) {
     print_usage(argv[0]);
     return 1;
+  }
+
+  if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0) {
+    print_version();
+    return 0;
   }
 
   interp = create_interp();

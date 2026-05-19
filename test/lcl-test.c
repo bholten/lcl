@@ -7,6 +7,7 @@
 #include "lcl-eval.h"
 #include "lcl-values.h"
 #include "lcl-stdlib.h"
+#include "lcl-version.h"
 
 /* ---------------------------------------------------------------------------
  * OOM injection (linked via -Wl,--wrap=calloc,--wrap=strndup).
@@ -652,6 +653,45 @@ static int test_issue59_eval_program_cur_file_uaf(void) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Version surface: compile-time macros and runtime accessor must agree,
+ * the version string must be well-formed (non-empty, no trailing
+ * whitespace, "MAJOR.MINOR.PATCH" shape), and LCL_VERSION_NUMBER must
+ * match the macros. Catches CMake `configure_file` drift and accidental
+ * hard-codes anywhere in the version pipeline.
+ * --------------------------------------------------------------------------- */
+static int test_version_surface(void) {
+  const char *vs = lcl_version();
+  char expected[32];
+  int n;
+
+  /* Runtime string is non-NULL, non-empty, and matches the macro. */
+  ASSERT_TRUE(vs != NULL);
+  ASSERT_TRUE(vs[0] != '\0');
+  ASSERT_STREQ(vs, LCL_VERSION_STRING);
+
+  /* Macros agree with the string: reformat from the integer components
+   * and compare. If `configure_file` substituted MAJOR/MINOR/PATCH
+   * inconsistently with PROJECT_VERSION, this trips. */
+  n = snprintf(expected, sizeof(expected), "%d.%d.%d",
+               LCL_VERSION_MAJOR, LCL_VERSION_MINOR, LCL_VERSION_PATCH);
+  ASSERT_TRUE(n > 0 && (size_t)n < sizeof(expected));
+  ASSERT_STREQ(LCL_VERSION_STRING, expected);
+
+  /* MINOR and PATCH stay in 0..99 — invariant of LCL_VERSION_NUMBER. */
+  ASSERT_TRUE(LCL_VERSION_MAJOR >= 0);
+  ASSERT_TRUE(LCL_VERSION_MINOR >= 0 && LCL_VERSION_MINOR < 100);
+  ASSERT_TRUE(LCL_VERSION_PATCH >= 0 && LCL_VERSION_PATCH < 100);
+
+  /* LCL_VERSION_NUMBER decomposes correctly. */
+  ASSERT_TRUE(LCL_VERSION_NUMBER ==
+              LCL_VERSION_MAJOR * 10000 +
+              LCL_VERSION_MINOR * 100 +
+              LCL_VERSION_PATCH);
+
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------
  * Issue #33 — `c_catch` doesn't NULL-check `strdup` of its result/error
  * var-name arguments. On OOM, the strdup of `result_var` returns NULL and
  * the function silently completes without binding the user's variable —
@@ -1121,6 +1161,9 @@ int run_test(void) {
 
   /* Regression test for ISSUE #59 (lcl_eval_program cur_file UAF) */
   RUN(test_issue59_eval_program_cur_file_uaf);
+
+  /* Version surface: macros + lcl_version() agree with PROJECT_VERSION */
+  RUN(test_version_surface);
 
   /* Regression test for ISSUE #37 (push_command failure leaks cmd) */
   RUN(test_issue37_push_command_leak);
