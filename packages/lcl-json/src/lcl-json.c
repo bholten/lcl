@@ -62,21 +62,33 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
   type = lcl_value_type_of(value);
 
   switch (type) {
-  case LCL_STRING: return cJSON_CreateString(lcl_value_to_string(value));
+  case LCL_STRING: {
+    const char *s = lcl_value_to_string(value);
+
+    if (!s) {
+      return NULL;
+    }
+
+    return cJSON_CreateString(s);
+  }
 
   case LCL_INT: {
     long n;
+
     if (lcl_value_to_int(value, &n) != LCL_OK) {
       return NULL;
     }
+
     return cJSON_CreateNumber((double)n);
   }
 
   case LCL_FLOAT: {
     double f;
+
     if (lcl_value_to_float(value, &f) != LCL_OK) {
       return NULL;
     }
+
     return cJSON_CreateNumber((double)f);
   }
 
@@ -141,6 +153,13 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
       }
 
       key_str = lcl_value_to_string(key);
+
+      if (!key_str) {
+        lcl_ref_dec(key);
+        lcl_ref_dec(keys);
+        cJSON_Delete(obj);
+        return NULL;
+      }
 
       if (lcl_dict_get(value, key_str, &val) != LCL_OK) {
         lcl_ref_dec(key);
@@ -320,13 +339,14 @@ static int c_json_decode(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   const char *json_str;
   cJSON *json;
-  (void)interp;
 
   if (argc != 1) {
     return LCL_RC_ERR;
   }
 
-  json_str = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &json_str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
   json = cJSON_Parse(json_str);
 
   if (!json) {

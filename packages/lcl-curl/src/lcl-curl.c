@@ -16,13 +16,13 @@
                      lcl_value **out) {                                        \
     struct curl_context *ctx;                                                  \
     const char *val;                                                           \
-    (void)interp;                                                              \
     (void)out;                                                                 \
     if (argc < 2)                                                              \
       return LCL_RC_ERR;                                                       \
     if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
       return LCL_RC_ERR;                                                       \
-    val = lcl_value_to_string(argv[1]);                                        \
+    if (lcl_value_to_cstring(interp, argv[1], &val) != LCL_OK)                 \
+      return LCL_RC_ERR;                                                       \
     return (curl_easy_setopt(ctx->curl, curl_opt, val) == CURLE_OK)            \
                ? LCL_RC_OK                                                     \
                : LCL_RC_ERR;                                                   \
@@ -524,7 +524,6 @@ static int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
   const char *header;
   int i;
   int rc;
-  (void)interp;
   (void)out;
 
   if (argc < 2) {
@@ -536,7 +535,10 @@ static int c_curl_set_header(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   for (i = 1; i < argc; i++) {
-    header = lcl_value_to_string(argv[i]);
+    if (lcl_value_to_cstring(interp, argv[i], &header) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
     ctx->headers = curl_slist_append(ctx->headers, header);
   }
 
@@ -554,7 +556,6 @@ static int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
   struct curl_context *ctx;
   const char *body;
   int rc;
-  (void)interp;
   (void)out;
 
   if (argc < 2) {
@@ -565,7 +566,9 @@ static int c_curl_set_body(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  body = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[1], &body) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   /*
    * Use CURLOPT_COPYPOSTFIELDS instead of CURLOPT_POSTFIELDS.

@@ -66,6 +66,8 @@ void lcl_ref_dec(lcl_value *value);
 
 lcl_value *lcl_string_new(const char *str);
 const char *lcl_value_to_string(lcl_value *value);
+lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
+                                const char **out);
 
 lcl_value *lcl_int_new(const long n);
 lcl_value *lcl_float_new(const double f);

@@ -79,14 +79,15 @@ static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
   expect_pattern *p;
   const char *str;
   int nocase = 0;
-  (void)interp;
 
   if (argc < 1) {
     lcl_set_error(interp, "expect::pattern requires a string argument");
     return LCL_RC_ERR;
   }
 
-  str = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (argc >= 2) {
     lcl_value *v = NULL;
@@ -144,7 +145,9 @@ static int c_expect_regex(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  str = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (argc >= 2) {
     lcl_value *v = NULL;
@@ -408,7 +411,10 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  buf = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &buf) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   patterns = argv[1];
 
   if (lcl_value_type_of(patterns) != LCL_LIST) {
@@ -432,16 +438,19 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (!p) {
       const char *lit = lcl_value_to_string(pat_val);
-      const char *found = strstr(buf, lit);
 
-      if (found) {
-        pos = (int)(found - buf);
-        end = (size_t)pos + strlen(lit);
+      if (lit) {
+        const char *found = strstr(buf, lit);
 
-        if (best_pos < 0 || pos < best_pos) {
-          best_pos = pos;
-          best_idx = i;
-          best_end = end;
+        if (found) {
+          pos = (int)(found - buf);
+          end = (size_t)pos + strlen(lit);
+
+          if (best_pos < 0 || pos < best_pos) {
+            best_pos = pos;
+            best_idx = i;
+            best_end = end;
+          }
         }
       }
 
@@ -637,7 +646,7 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
       if (!p) {
         const char *lit = lcl_value_to_string(pat_val);
 
-        if (strstr(buf, lit)) {
+        if (lit && strstr(buf, lit)) {
           matched = 1;
           matched_idx = i;
           lcl_ref_dec(pat_val);
@@ -714,6 +723,13 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     chunk = lcl_value_to_string(read_result);
+
+    if (!chunk) {
+      free(buf);
+      lcl_ref_dec(read_result);
+      lcl_set_error(interp, "out of memory");
+      return LCL_RC_ERR;
+    }
 
     if (strlen(chunk) == 0) {
       lcl_value *alive_proc = NULL;

@@ -67,14 +67,19 @@ int c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
   const char *file_perm;
   FILE *handle;
   lcl_value *handle_value;
-  (void)interp;
 
   if (argc < 2) {
     return LCL_RC_ERR;
   }
 
-  filename = lcl_value_to_string(argv[0]);
-  file_perm = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[0], &filename) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &file_perm) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   handle = fopen(filename, file_perm);
 
   if (!handle) {
@@ -163,8 +168,6 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
   FILE *handle = NULL;
   const char *str;
 
-  (void)interp;
-
   if (argc < 2) {
     return LCL_RC_ERR;
   }
@@ -178,7 +181,9 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  str = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[1], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (fputs(str, handle) == EOF) {
     return LCL_RC_ERR;
@@ -191,10 +196,14 @@ int c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
 static int c_io_puts(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   int i;
-  (void)interp;
 
   for (i = 0; i < argc; i++) {
-    const char *str = lcl_value_to_string(argv[i]);
+    const char *str;
+
+    if (lcl_value_to_cstring(interp, argv[i], &str) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
     fputs(str, stdout);
 
     if (i + 1 < argc) {
@@ -215,14 +224,15 @@ int c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
   char *contents = NULL;
   const char *path;
 
-  (void)interp;
   (void)out;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
   contents = read_file(path);
 
   if (!contents) {
@@ -243,14 +253,18 @@ int c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   FILE *f;
 
-  (void)interp;
-
   if (argc < 2) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
-  contents = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &contents) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   len = strlen(contents);
 
   f = fopen(path, "wb");
@@ -330,16 +344,18 @@ int c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   const char *env;
   const char *env_val;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  env = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &env) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   env_val = getenv(env);
 
-  if (!env) {
+  if (!env_val) {
     *out = lcl_string_new("");
   } else {
     *out = lcl_string_new(env_val);
@@ -356,13 +372,14 @@ int c_io_glob(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   lcl_value *result;
   lcl_value *item;
 
-  (void)interp;
-
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  gl = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &gl) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   err = glob(gl, 0, NULL, &glob_buf);
 
   if (err == 0) {
@@ -388,13 +405,14 @@ int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
                lcl_value **out) {
   const char *path;
   long mode = 0755;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (argc >= 2) {
     if (lcl_value_to_int(argv[1], &mode) != LCL_OK) {
@@ -414,13 +432,14 @@ int c_io_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
 int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
                lcl_value **out) {
   const char *path;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (rmdir(path) != 0) {
     return LCL_RC_ERR;
@@ -434,13 +453,14 @@ int c_io_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
 int c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   const char *path;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (remove(path) != 0) {
     return LCL_RC_ERR;
@@ -455,14 +475,18 @@ int c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   const char *old_path;
   const char *new_path;
-  (void)interp;
 
   if (argc < 2) {
     return LCL_RC_ERR;
   }
 
-  old_path = lcl_value_to_string(argv[0]);
-  new_path = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[0], &old_path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &new_path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (rename(old_path, new_path) != 0) {
     return LCL_RC_ERR;
@@ -477,13 +501,14 @@ int c_io_exists(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   const char *path;
   struct stat st;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (stat(path, &st) == 0) {
     *out = lcl_int_new(1);
@@ -499,13 +524,14 @@ int c_io_is_file(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   const char *path;
   struct stat st;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
     *out = lcl_int_new(1);
@@ -521,13 +547,14 @@ int c_io_is_dir(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   const char *path;
   struct stat st;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
     *out = lcl_int_new(1);
@@ -543,13 +570,14 @@ int c_io_file_size(lcl_interp *interp, int argc, lcl_value **argv,
                    lcl_value **out) {
   const char *path;
   struct stat st;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (stat(path, &st) != 0) {
     return LCL_RC_ERR;
@@ -567,13 +595,15 @@ int c_io_readdir(lcl_interp *interp, int argc, lcl_value **argv,
   struct dirent *entry;
   lcl_value *result;
   lcl_value *item;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   dir = opendir(path);
 
   if (!dir) {
@@ -620,13 +650,14 @@ int c_io_getcwd(lcl_interp *interp, int argc, lcl_value **argv,
 int c_io_chdir(lcl_interp *interp, int argc, lcl_value **argv,
                lcl_value **out) {
   const char *path;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (chdir(path) != 0) {
     return LCL_RC_ERR;
@@ -641,13 +672,14 @@ int c_io_file_mtime(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   const char *path;
   struct stat st;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  path = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (stat(path, &st) != 0) {
     return LCL_RC_ERR;
@@ -665,16 +697,21 @@ int c_io_copy(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
   FILE *dst;
   char buf[8192];
   size_t n;
-  (void)interp;
 
   if (argc < 2) {
     return LCL_RC_ERR;
   }
 
-  src_path = lcl_value_to_string(argv[0]);
-  dst_path = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[0], &src_path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &dst_path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   src = fopen(src_path, "rb");
+
   if (!src) {
     return LCL_RC_ERR;
   }

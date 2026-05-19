@@ -5,23 +5,33 @@
 #include "lcl-values.h"
 
 lcl_value *lcl_string_new(const char *str) {
+  /* A STRING value's `str_repr` is its content; unlike lazy-reify
+   * types (INT/FLOAT/LIST/DICT), there is no second source of truth
+   * to reify from. So `str_repr == NULL` on a STRING is a poison
+   * state — anyone stringifying it post-#15 sees a NULL return and
+   * raises "out of memory". Treat `str == NULL` as the empty string
+   * at construction time; callers like `io::getenv` of an unset
+   * variable used to silently get "" out of this path and we want to
+   * preserve that behavior. */
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  size_t n;
 
   if (!v) {
     return NULL;
   }
 
-  if (str) {
-    size_t n = strlen(str);
-    v->str_repr = (char *)malloc(n + 1);
+  n = str ? strlen(str) : 0;
+  v->str_repr = (char *)malloc(n + 1);
 
-    if (!v->str_repr) {
-      free(v);
-      return NULL;
-    }
-
-    memcpy(v->str_repr, str, n + 1);
+  if (!v->str_repr) {
+    free(v);
+    return NULL;
   }
+
+  if (n > 0) {
+    memcpy(v->str_repr, str, n);
+  }
+  v->str_repr[n] = '\0';
 
   v->refc = 1;
   v->type = LCL_STRING;
@@ -257,6 +267,13 @@ static void lcl_reify_str_list(lcl_value *value) {
     }
 
     s = lcl_value_to_string(elem);
+
+    if (!s) {
+      lcl_ref_dec(elem);
+      free(b.buf);
+      return;
+    }
+
     style = choose_element_style(s);
     ok = sbuf_append_styled(&b, s, style);
     lcl_ref_dec(elem);
@@ -284,9 +301,18 @@ static void lcl_reify_str_dict(lcl_value *value) {
 
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
     const char *vs = lcl_value_to_string(val);
-    enum elem_style ks = choose_element_style(key);
-    enum elem_style vst = choose_element_style(vs);
+    enum elem_style ks;
+    enum elem_style vst;
     int ok;
+
+    if (!vs) {
+      lcl_ref_dec(val);
+      free(b.buf);
+      return;
+    }
+
+    ks = choose_element_style(key);
+    vst = choose_element_style(vs);
 
     if (!first) {
       if (!sbuf_putc(&b, ' ')) {
@@ -313,7 +339,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
 
 const char *lcl_value_to_string(lcl_value *value) {
   if (!value) {
-    return "";
+    return NULL;
   }
 
   if (!value->str_repr) {
@@ -346,7 +372,7 @@ const char *lcl_value_to_string(lcl_value *value) {
       value->str_repr = (char *)malloc(4);
 
       if (!value->str_repr) {
-        return "";
+        return NULL;
       }
 
       memcpy(value->str_repr, "<?>", 4);
@@ -354,7 +380,20 @@ const char *lcl_value_to_string(lcl_value *value) {
     }
   }
 
-  return value->str_repr ? value->str_repr : "";
+  return value->str_repr;
+}
+
+lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
+                                const char **out) {
+  const char *s = lcl_value_to_string(value);
+
+  if (!s) {
+    LCL_ERR_MSG(interp, "out of memory");
+    return LCL_ERROR;
+  }
+
+  *out = s;
+  return LCL_OK;
 }
 
 lcl_value *lcl_value_new_string(const char *str) {

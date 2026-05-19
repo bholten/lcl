@@ -543,6 +543,115 @@ static int test_issue35_public_api_null_safety(void) {
 }
 
 /* ---------------------------------------------------------------------------
+ * `lcl_value_to_string` returning "" was indistinguishable from
+ * an OOM during reify or a NULL input. The fix tightens the contract:
+ * NULL input or stringification OOM return NULL; genuine empty strings
+ * still return "". `lcl_value_to_cstring` is the error-surfacing helper:
+ * it converts a NULL return into an interp "out of memory" error.
+ *
+ * Companion hardening to `lcl_string_new`: `str == NULL` is treated as
+ * the empty string. A STRING value's `str_repr` is its content, with no
+ * lazy-reify path to recover it; allowing `str_repr == NULL` for a
+ * STRING would make every downstream stringify look like an OOM. Callers
+ * like `io::getenv` of an unset variable used to pass NULL into this
+ * constructor and silently get "" — the new behavior is identical from
+ * the caller's perspective but no longer poisons the value.
+ * --------------------------------------------------------------------------- */
+static int test_issue15_to_string_null_contract(void) {
+  extern lcl_interp *lcl_test_interp;
+  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  lcl_value *v;
+  const char *out;
+  const char *err;
+
+  /* (a) NULL input → NULL (was: "" pre-fix). */
+  ASSERT_TRUE(lcl_value_to_string(NULL) == NULL);
+
+  /* (b) cstring helper on NULL input: returns LCL_ERROR, sets interp
+   *     error, leaves *out untouched. */
+  lcl_clear_error(lcl_test_interp);
+  out = (const char *)0x1; /* sentinel */
+  ASSERT_TRUE(lcl_value_to_cstring(lcl_test_interp, NULL, &out) == LCL_ERROR);
+  ASSERT_TRUE(out == (const char *)0x1);
+  err = lcl_interp_error_msg(lcl_test_interp);
+  ASSERT_TRUE(err != NULL && strstr(err, "out of memory") != NULL);
+  lcl_clear_error(lcl_test_interp);
+
+  /* (c) Genuine empty string returns "" — not NULL. */
+  v = lcl_string_new("");
+  ASSERT_TRUE(v != NULL);
+  out = lcl_value_to_string(v);
+  ASSERT_TRUE(out != NULL);
+  ASSERT_STREQ(out, "");
+
+  /* (d) Successful cstring call returns LCL_OK and writes *out. */
+  lcl_ref_dec(v);
+  v = lcl_string_new("hello");
+  ASSERT_TRUE(v != NULL);
+  out = NULL;
+  ASSERT_TRUE(lcl_value_to_cstring(lcl_test_interp, v, &out) == LCL_OK);
+  ASSERT_TRUE(out != NULL);
+  ASSERT_STREQ(out, "hello");
+  lcl_ref_dec(v);
+
+  /* (e) `lcl_string_new(NULL)` produces a valid empty string, not a
+   *     poison value. Regression for io::getenv-class bugs that pass
+   *     a possibly-NULL C string into the constructor. */
+  v = lcl_string_new(NULL);
+  ASSERT_TRUE(v != NULL);
+  ASSERT_TRUE(v->type == LCL_STRING);
+  ASSERT_TRUE(v->str_repr != NULL);
+  out = lcl_value_to_string(v);
+  ASSERT_TRUE(out != NULL);
+  ASSERT_STREQ(out, "");
+  out = NULL;
+  ASSERT_TRUE(lcl_value_to_cstring(lcl_test_interp, v, &out) == LCL_OK);
+  ASSERT_STREQ(out, "");
+  lcl_ref_dec(v);
+
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Issue #59 — `lcl_eval_program` borrowed `pr->file` into `interp->cur_file`
+ * without restoring on exit. When the caller then freed the program, any
+ * later `LCL_ERR_MSG` (which strdups `cur_file`) read freed memory. Fixed
+ * by save+restore around the eval. This test deliberately mimics the
+ * pattern: compile a fresh program, eval it, free it, then trigger an
+ * error and rely on ASan to catch the UAF if the fix regressed.
+ * --------------------------------------------------------------------------- */
+static int test_issue59_eval_program_cur_file_uaf(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  int rc;
+
+  /* Start from a known cur_file. */
+  lcl_test_interp->cur_file = NULL;
+
+  prog = lcl_program_compile("+ 1 1", "i59.lcl");
+  ASSERT_TRUE(prog != NULL);
+
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  if (result) lcl_ref_dec(result);
+
+  /* Post-fix: cur_file must be restored to its pre-eval value (NULL),
+   * not still pointing at prog->file. */
+  ASSERT_TRUE(lcl_test_interp->cur_file == NULL);
+
+  lcl_program_free(prog);
+
+  /* If cur_file still pointed into the freed program, this strdup
+   * would be a use-after-free that ASan catches. */
+  LCL_ERR_MSG(lcl_test_interp, "post-free probe");
+
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------
  * Issue #33 — `c_catch` doesn't NULL-check `strdup` of its result/error
  * var-name arguments. On OOM, the strdup of `result_var` returns NULL and
  * the function silently completes without binding the user's variable —
@@ -1006,6 +1115,12 @@ int run_test(void) {
 
   /* Regression test for ISSUE #35 (public API NULL safety) */
   RUN(test_issue35_public_api_null_safety);
+
+  /* Regression test for ISSUE #15 (to-string NULL-on-OOM contract) */
+  RUN(test_issue15_to_string_null_contract);
+
+  /* Regression test for ISSUE #59 (lcl_eval_program cur_file UAF) */
+  RUN(test_issue59_eval_program_cur_file_uaf);
 
   /* Regression test for ISSUE #37 (push_command failure leaks cmd) */
   RUN(test_issue37_push_command_leak);
