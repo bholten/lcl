@@ -446,89 +446,49 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
-  /* Bugfix here:
+  /* Parse-time dispatch rule (Phase 3 of the value-substitution
+   * redesign; see lcl_value_substitution_redesign.md):
    *
-   * Special case: single-word command that's just a subcommand.
-   * The subcommand's result IS this command's result, so it IS in tail
-   * position. We evaluate it directly without clearing tail position.
+   *   An argc==1 command dispatches ONLY when its sole word is a bare
+   *   identifier (single-piece LCL_WP_LIT with braced=0).  Every
+   *   other one-word form yields the word's value without attempting
+   *   a command lookup:
    *
-   * However, if the result is callable (PROC/CPROC), we need to call
-   * it to support [[...]] syntax (call the result of inner
-   * subcommand). */
-  if (cmd->argc == 1 && cmd->w[0].np == 1 &&
-      cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
-    lcl_value *result = NULL;
-    rc = lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, &result);
+   *     [$x]      -> value of $x
+   *     [expr]    -> result of evaluating expr
+   *     [{lit}]   -> the literal bytes "lit"
+   *     ["$a $b"] -> the concatenated string
+   *     [42]      -> 42 (well, "42" pre-coercion)
+   *
+   *   This replaces the previous runtime check that dispatched
+   *   stringy values whose form happened to match a registered
+   *   command, and closes the class of bugs where a value like "GET"
+   *   silently became a zero-arg call to `proc GET`.
+   *
+   *   `[apply $x]` and `[apply [expr]]` remain the explicit ways to
+   *   dispatch a value as a call. See `apply` in lcl-stdlib.c. */
+  if (cmd->argc == 1) {
+    int is_bare_identifier = (cmd->w[0].np == 1 &&
+                              cmd->w[0].wp[0].kind == LCL_WP_LIT &&
+                              !cmd->w[0].braced);
 
-    if (rc != LCL_RC_OK) {
+    if (!is_bare_identifier) {
+      /* SUBCMD-only words preserve in_subcmd=0 and tail position so
+       * the inner program's command head can expand macros and its
+       * tail call can TCO. Inline lcl_eval_program rather than
+       * routing through lcl_eval_word (which sets in_subcmd=1). */
+      if (cmd->w[0].np == 1 && cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
+        return lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, out);
+      }
+
+      /* VAR, braced LIT, or multi-piece concatenation. Clear tail
+       * position before evaluation — these forms don't pass tail
+       * position through (no inner program). */
+      interp->in_tail_position = 0;
+      rc = lcl_eval_word(interp, &cmd->w[0], out);
+      interp->in_tail_position = saved_tail_position;
       return rc;
     }
-
-    if (result->type == LCL_PROC) {
-      lcl_proc *p = (lcl_proc *)result->as.procedure.proc;
-
-      /* Bugfix TCO: Check if this is a self-recursive tail call by
-       * comparing against the currently executing proc, not just name
-       * lookup. */
-      if (saved_tail_position && result == interp->current_proc) {
-        if (!setup_tail_call(interp, 0, NULL)) {
-          lcl_ref_dec(result);
-          LCL_ERR_MSG(interp, "out of memory in tail call");
-          return LCL_RC_ERR;
-        }
-
-        lcl_ref_dec(result);
-        *out = NULL;
-        return LCL_RC_TAILCALL;
-      }
-
-      rc = lcl_call_user_proc(interp, result, p, 0, NULL, out);
-
-      if (rc == LCL_RC_OK && p->is_macro) {
-        if (was_in_subcmd) {
-          LCL_ERR_MSG(interp, "macro cannot be used in value position");
-          if (*out) {
-            lcl_ref_dec(*out);
-            *out = NULL;
-          }
-          rc = LCL_RC_ERR;
-        } else {
-          lcl_value *macro_result = *out;
-          lcl_program *macro_prog;
-          *out = NULL;
-          macro_prog =
-              lcl_program_compile(lcl_value_to_string(macro_result), "<macro>");
-          lcl_ref_dec(macro_result);
-
-          if (!macro_prog) {
-            rc = LCL_RC_ERR;
-          } else {
-            rc = lcl_eval_program(interp, macro_prog, out);
-            lcl_program_free(macro_prog);
-          }
-        }
-      }
-
-      lcl_ref_dec(result);
-      return rc;
-    } else if (result->type == LCL_CPROC) {
-      /* Bugfix: Route SPECIAL forms through their raw-words
-       * signature; calling them through `fn.proc` is a
-       * type-mismatched function-pointer call. Normal CPROCs go
-       * through `fn.proc` as before. */
-      if (result->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
-        rc = result->as.c_proc.fn->fn.spec(interp, 0, NULL, out);
-      } else {
-        rc = result->as.c_proc.fn->fn.proc(interp, 0, NULL, out);
-      }
-
-      lcl_ref_dec(result);
-
-      return rc;
-    }
-
-    *out = result;
-    return LCL_RC_OK;
   }
 
   interp->in_tail_position = 0;

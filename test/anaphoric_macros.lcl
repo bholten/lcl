@@ -32,7 +32,11 @@
 ;;   #{key val ...}      - dict literal, desugars to [dict key val ...]
 ;;
 ;; Important notes:
-;; - if conditions need [$it] not {$it} for proper evaluation
+;; - if conditions can use $it directly (variable substitution) — do
+;;   NOT use {$it} (literal string, always truthy) and do NOT use
+;;   [$it] (legacy one-word-dispatch trap; harmless today, but the
+;;   parse-time-rule redesign will make [$it] yield the value instead
+;;   of dispatching, so use $it for forward compatibility)
 ;; - if requires 'else' keyword for else branch
 ;; - Use () list literals for passing structured data to macros:
 ;;   [macro (({cond1} {body1}) ({cond2} {body2}))]
@@ -53,7 +57,7 @@
 macro aif {condition then_body else_body} {
     quasiquote {
         let it ,$condition
-        if [$it] {,$then_body} else {,$else_body}
+        if $it {,$then_body} else {,$else_body}
     }
 }
 
@@ -67,7 +71,7 @@ macro aif {condition then_body else_body} {
 macro awhen {condition body} {
     quasiquote {
         let it ,$condition
-        if [$it] {,$body}
+        if $it {,$body}
     }
 }
 
@@ -82,7 +86,7 @@ macro awhile {condition body} {
     quasiquote {
         while {1} {
             var it ,$condition
-            if [$it] {,$body} else {break}
+            if $it {,$body} else {break}
         }
     }
 }
@@ -180,7 +184,7 @@ macro acond {clauses} {
 
     quasiquote {
         let it ,$condition
-        if [$it] {,$body} else {,$rest_code}
+        if $it {,$body} else {,$rest_code}
     }
 }
 

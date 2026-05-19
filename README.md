@@ -29,6 +29,7 @@ The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C+
 | `if`       | `if {expr} {body} elseif ...`    | `if $cond {then} else {else}` (Scheme-style, value-based)      |
 | Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
 | Quoting    | `expr` command for expressions   | Expressions are just commands                                  |
+| Dispatch   | `[$x]` runtime-dispatches if `$x` names a command | `[$x]` returns the value of `$x`; `[apply $x]` dispatches (see below) |
 | Philosophy | "Everything is a string"         | "Everything is a string... inside a closure"                   |
 
 Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
@@ -92,8 +93,11 @@ proc make_counter {start} {
     }]
 }
 let c [make_counter 10]
-puts [$c]  ;; 11
-puts [$c]  ;; 12
+puts [apply $c]  ;; 11
+puts [apply $c]  ;; 12
+;; Note: [$c] does NOT call the closure — it returns the closure value.
+;; `apply` is the explicit way to invoke a callable held in a variable.
+;; See the "Dispatch and apply" section below for the design rationale.
 ```
 
 ## Language Features
@@ -434,6 +438,95 @@ puts $c               ;; 3
    puts [app::run]     ;; 42
    ```
 
+### Dispatch and `apply`
+
+Lcl's dispatch rule is a deliberate departure from Tcl that is worth
+calling out explicitly. Tcl users in particular should read this
+section before being surprised by the behavior.
+
+**The rule:** A one-word command (a subcommand `[word]` or a
+standalone statement) **dispatches** only when its sole word is a
+**bare identifier** — a name like `foo` with no `$`, no `[...]`, no
+braces, no quotes, no special syntax. Every other form — `$var`,
+`[expr]`, `{lit}`, `(list)`, `#{dict}`, literal numbers, multi-piece
+concatenation — is a **value form**, and yields its value when used as
+a one-word command. No command lookup is attempted.
+
+To dispatch a value-form (e.g. a closure held in a variable, or a
+command name stored as a string), use `apply`.
+
+```tcl
+;; Value forms — these never dispatch:
+let val "GET"
+puts [$val]              ;; -> "GET" (variable substitution, NOT a call to GET)
+
+let c [lambda {} { 42 }]
+puts [proc? [$c]]        ;; -> 1 (the closure value, not a call)
+
+puts [42]                ;; -> 42
+puts [{hello world}]     ;; -> "hello world"
+
+;; Bare identifiers — these dispatch:
+proc GET {} { return "called" }
+puts [GET]               ;; -> "called"
+
+;; Explicit dispatch via apply:
+puts [apply $c]          ;; -> 42 (call the closure stored in $c)
+puts [apply "GET"]       ;; -> "called" (call by name)
+puts [apply ${+} 1 2 3]  ;; -> 6 (apply a builtin)
+
+;; Spread a list as args via the @ operator
+proc sum3 {a b c} { + $a $b $c }
+let args (10 20 30)
+puts [apply ${sum3} @$args]  ;; -> 60
+```
+
+**Why this design?**
+
+Tcl's one-word dispatch rule is *runtime-decided*: at the head of a
+one-word program, Tcl evaluates the word, then looks the result up as
+a command. If the value's string form happens to match a registered
+command, Tcl dispatches. This is convenient — `eval $cmd` works for
+stored command names — but it leaks. Anywhere a value's string form
+might coincide with a proc name (cached values, macro template
+substitutions, anaphoric conditions), Tcl will silently dispatch
+instead of returning the value. The same source line can mean two
+different things depending on data flowing through it.
+
+Lcl makes the dispatch decision at **parse time**. The shape of the
+source determines whether a one-word command dispatches; the data
+flowing through it doesn't. A `$var` is always a variable lookup,
+never a call. An `[expr]` always yields whatever `expr` returned. The
+Tcl idiom of dispatching a stored name survives via `eval $cmd` —
+`eval` compiles `$cmd`'s value as source, and a one-word source like
+`GET` is a bare identifier that dispatches. Use `apply` when you want
+value-dispatch instead.
+
+**`apply` vs `eval`** — these are complementary, not overlapping:
+
+- `eval str` is *source-evaluation*: compile `str` as Lcl source and run it.
+- `apply value args…` is *value-dispatch*: take a callable value and call it.
+
+`apply` resolves:
+- `PROC` (non-macro) — call directly with the args.
+- `CPROC` normal — call directly.
+- `CPROC` special — error ("cannot apply special form"; specials want raw
+  unevaluated words, which `apply` doesn't carry).
+- `PROC` with `is_macro=1` — error ("cannot apply macro"; use
+  `macroexpand` + `eval` for programmatic macro use).
+- `STRING` — look up as a command name and recurse.
+- Anything else — error ("not callable").
+
+**Tcl-to-Lcl migration cheat sheet:**
+
+| Tcl                 | Lcl                |
+|---------------------|--------------------|
+| `eval $cmd`         | `apply $cmd` (or `eval $cmd` if `$cmd` is source text) |
+| `[$closure]`        | `[apply $closure]` |
+| `[[expr]]`          | `[apply [expr]]`   |
+| `$closure $a $b`    | `apply $closure $a $b` |
+| `apply $fn $args` (list-splat) | `apply $fn @$args` (`@` spreads the list) |
+
 ### Eval and Subst
 
 ```tcl
@@ -451,11 +544,13 @@ puts [subst {x is $x, sum is [+ 1 2]}]
 ## Operators
 
 ```tcl
-;; Arithmetic
+;; Arithmetic — integer-preserving when the result is exact,
+;; otherwise float.
 puts [+ 1 2 3]         ;; 6
 puts [- 10 3]          ;; 7
 puts [* 2 3 4]         ;; 24
-puts [/ 10 3]          ;; 3
+puts [/ 10 2]          ;; 5    (exact integer result)
+puts [/ 10 3]          ;; 3.333... (non-integer result -> float)
 
 ;; Comparison
 puts [== $a $b]        ;; value equality (deep for lists/dicts)
@@ -502,9 +597,12 @@ let code [quasiquote { + ,@$args }]
 puts [eval $code]  ;; 6
 
 ;; Building a macro
+;; Note: wrap params and body in literal braces so the expansion
+;; produces a well-formed `proc` call. Quasiquote's unquote inlines
+;; values directly — it doesn't re-quote them.
 proc defun {name params body} {
     quasiquote {
-        proc ,$name ,$params ,$body
+        proc ,$name {,@$params} {,$body}
     }
 }
 
