@@ -2,16 +2,16 @@
 
 File system and I/O operations for LCL.
 
+## Requirements
+
+- LCL core engine
+- POSIX system headers: `dirent.h`, `sys/stat.h`, `glob.h`
+- **Portability:** POSIX (Linux, macOS, BSD). Not portable to Windows as-is due to use of `dirent.h`, `sys/stat.h` mode bits, and `glob.h`.
+
 ## Build
 
 ```bash
-# From the lcl root directory
-cmake -DLCL_BUILD_IO=ON -B build
-cmake --build build
-
-# Or standalone
-cd packages/lcl-io
-cmake -B build
+cmake -S . -B build -DLCL_BUILD_IO=ON
 cmake --build build
 ```
 
@@ -103,3 +103,19 @@ foreach f $files {
 | Function | Description |
 |----------|-------------|
 | `io::getenv $name` | Get environment variable |
+
+## Tests
+
+Tests live in `packages/lcl-io/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-io
+```
+
+The `LCL_BUILD_TEST_LIB` flag is required because the test suite uses the `Test::suite` framework. `LCL_BUILD_IO` is the package under test, which itself provides `puts`.

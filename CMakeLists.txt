@@ -15,6 +15,9 @@ configure_file(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(EmbedFile)
+include(PackageTest)
+
+enable_testing()
 
 option(LCL_BUILD_SHARED "Build shared library" ON)
 option(LCL_BUILD_STATIC "Build static library" ON)
@@ -395,6 +398,24 @@ if(LCL_BUILD_TESTS)
     -Wl,--wrap=strdup
     -Wl,--wrap=lcl_program_push_command
     -Wl,--wrap=hash_table_put)
+
+  add_test(NAME lcl-test-c COMMAND lcl-test)
+
+  if(LCL_BUILD_CLI AND LCL_BUILD_IO AND LCL_BUILD_TEST_LIB)
+    add_test(
+      NAME conformance-smoke
+      COMMAND $<TARGET_FILE:lcl-cli>
+              "${CMAKE_CURRENT_SOURCE_DIR}/test/conformance_smoke.lcl"
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    add_test(
+      NAME anaphoric-macros
+      COMMAND $<TARGET_FILE:lcl-cli>
+              "${CMAKE_CURRENT_SOURCE_DIR}/test/anaphoric_macros.lcl"
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+  endif()
 endif()
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

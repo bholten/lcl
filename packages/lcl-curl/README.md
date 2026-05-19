@@ -2,16 +2,16 @@
 
 HTTP client bindings for LCL using libcurl.
 
+## Requirements
+
+- LCL core engine
+- libcurl 7.x or 8.x (libcurl4-openssl-dev on Debian/Ubuntu, curl via Homebrew on macOS)
+- **Portability:** Portable wherever libcurl builds — Linux, macOS, BSD, and Windows.
+
 ## Build
 
 ```bash
-# From the lcl root directory
-cmake -DLCL_BUILD_CURL=ON -B build
-cmake --build build
-
-# Or standalone
-cd packages/lcl-curl
-cmake -B build
+cmake -S . -B build -DLCL_BUILD_CURL=ON
 cmake --build build
 ```
 
@@ -154,3 +154,20 @@ if {[curl::is_timeout $c]} {
 |----------|-------------|
 | `curl::set_follow_location $handle $bool` | Follow redirects |
 | `curl::set_max_redirects $handle $n` | Maximum redirects |
+
+## Tests
+
+Tests live in `packages/lcl-curl/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_CURL=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-curl
+```
+
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).

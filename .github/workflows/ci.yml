@@ -30,7 +30,6 @@ jobs:
           DEPS=$(./ci/package-set.sh apt "${{ matrix.package_set }}")
           if [ -n "$DEPS" ]; then
             sudo apt-get update
-            # shellcheck disable=SC2086  # word splitting is intentional
             sudo apt-get install -y $DEPS
           fi
 
@@ -43,8 +42,6 @@ jobs:
 
       - name: Configure
         run: |
-          # Drop the per-line flags from package-set.sh into a single
-          # argv expansion. CMake handles repeated -D flags fine.
           mapfile -t FLAGS < <(./ci/package-set.sh flags "${{ matrix.package_set }}")
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
@@ -53,18 +50,6 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: C-level regression tests
-        run: ./build/lcl-test
-
-      # The .lcl test suites use `puts` (from lcl-io). `core` doesn't
-      # link lcl-io, so those suites only run for package sets that
-      # include it. The `core` row's job is to confirm the engine
-      # compiles and the C-level harness passes — the script suites
-      # are exercised by the `*-full` rows.
-      - name: Conformance suite
-        if: matrix.package_set != 'core'
-        run: ./build/lcl test/conformance_smoke.lcl
-
-      - name: Anaphoric-macros suite
-        if: matrix.package_set != 'core'
-        run: ./build/lcl test/anaphoric_macros.lcl
+      - name: Run tests (ctest)
+        working-directory: build
+        run: ctest --output-on-failure

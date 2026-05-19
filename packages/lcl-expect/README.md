@@ -2,6 +2,20 @@
 
 Expect-style automation for Lcl. Provides pattern-based matching for automating interactive programs, leveraging Lcl's lexical scoping for clean handler closures.
 
+## Requirements
+
+- LCL core engine
+- lcl-process (process spawning and PTY support)
+- POSIX pseudo-terminal support (`openpty`, `forkpty`)
+- **Portability:** POSIX (Linux, macOS, BSD). Not portable to Windows as-is — relies on POSIX pseudo-terminals via lcl-process.
+
+## Build
+
+```bash
+cmake -S . -B build -DLCL_BUILD_EXPECT=ON
+cmake --build build
+```
+
 ## Overview
 
 lcl-expect provides a Tcl Expect-like interface for automating interactive programs via PTY or pipes. It combines low-level C primitives for pattern matching with a high-level Lcl convenience layer.
@@ -394,3 +408,20 @@ expect::close $s
 ## Dependencies
 
 - `lcl-process` - Process spawning and PTY support
+
+## Tests
+
+Tests live in `packages/lcl-expect/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_EXPECT=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-expect
+```
+
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).

@@ -2,6 +2,20 @@
 
 Process spawning and management for LCL.
 
+## Requirements
+
+- LCL core engine
+- POSIX `fork`/`execvp`, `pipe`, `waitpid`
+- POSIX pseudo-terminal support (`openpty`/`forkpty`) for PTY-backed spawns
+- **Portability:** POSIX (Linux, macOS, BSD). Not portable to Windows due to use of `fork`/`exec` and pseudo-terminals.
+
+## Build
+
+```bash
+cmake -S . -B build -DLCL_BUILD_PROCESS=ON
+cmake --build build
+```
+
 ## Features
 
 - **Safe by default**: Commands use argv lists, not shell parsing
@@ -9,7 +23,23 @@ Process spawning and management for LCL.
 - **Stream operations**: Send to stdin, read from stdout/stderr
 - **Resource management**: Handles auto-cleanup via finalizers
 
-## API
+## Usage
+
+```tcl
+;; Synchronous capture
+let result [process::run (echo hello)]
+puts [get $result stdout]  ;; hello
+
+;; Asynchronous interactive control
+let h [process::spawn (cat)]
+process::send $h "hello\n"
+process::close-stdin $h
+let output [process::read $h]
+process::wait $h
+process::close $h
+```
+
+## API Reference
 
 ### process::run
 
@@ -77,21 +107,6 @@ process::kill $h #{signal KILL}   ;; Send specific signal
 process::close $h                 ;; Close handle, free resources
 ```
 
-## Building
-
-As a subproject:
-```cmake
-add_subdirectory(packages/lcl-process)
-target_link_libraries(your_target PRIVATE lcl_process)
-```
-
-Standalone:
-```bash
-cd packages/lcl-process
-cmake -B build && cmake --build build
-./build/lcl-process-test test/process_test.lcl
-```
-
 ## Example: Expect-like Pattern
 
 ```tcl
@@ -109,3 +124,20 @@ if [String::find $response "Password:"] {
 process::wait $h
 process::close $h
 ```
+
+## Tests
+
+Tests live in `packages/lcl-process/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_PROCESS=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-process
+```
+
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).
