@@ -734,9 +734,9 @@ line2"
 Lcl is designed to be embedded in C applications:
 
 ```c
-#include "lcl.h"
+#include <lcl.h>
 
-int main() {
+int main(void) {
     lcl_interp *interp = lcl_interp_new();
     lcl_register_core(interp);
 
@@ -749,7 +749,27 @@ int main() {
 }
 ```
 
-Link with `-llcl` or include the source files directly.
+For a fuller tour — registering a C function as a Lcl command,
+defining a Lcl variable from C, extracting the result, and
+surfacing error location — see [`examples/embed_example.c`](examples/embed_example.c).
+Build it from the project's CMake with:
+
+```bash
+cmake -S . -B build -DLCL_BUILD_EXAMPLES=ON
+cmake --build build
+./build/examples/embed_example
+```
+
+To consume Lcl from your own CMake project after `cmake --install`:
+
+```cmake
+find_package(lcl REQUIRED)
+
+add_executable(myapp myapp.c)
+target_link_libraries(myapp PRIVATE lcl::lcl)
+```
+
+Or link directly: `gcc myapp.c -o myapp -llcl`.
 
 ## Known Limitations
 
