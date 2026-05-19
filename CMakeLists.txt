@@ -13,6 +13,9 @@ configure_file(
   @ONLY
 )
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(EmbedFile)
+
 option(LCL_BUILD_SHARED "Build shared library" ON)
 option(LCL_BUILD_STATIC "Build static library" ON)
 option(LCL_BUILD_CLI "Build command-line interpreter" ON)
@@ -300,21 +303,12 @@ if(LCL_BUILD_EXPECT)
 
   add_subdirectory(packages/lcl-expect)
 
-  # Generate expect-data.h from expect.lcl using xxd
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(EXPECT_SRC ${CMAKE_CURRENT_SOURCE_DIR}/packages/lcl-expect/src/expect.lcl)
-  set(EXPECT_DATA ${CMAKE_CURRENT_BINARY_DIR}/expect-data.h)
-
-  add_custom_command(
-    OUTPUT ${EXPECT_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i packages/lcl-expect/src/expect.lcl > ${EXPECT_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${EXPECT_SRC}
-    COMMENT "Generating expect-data.h from expect.lcl"
+  lcl_embed_file(
+    INPUT  packages/lcl-expect/src/expect.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/expect-data.h
+    SYMBOL packages_lcl_expect_src_expect_lcl
+    TARGET generate_expect_data
   )
-
-  add_custom_target(generate_expect_data DEPENDS ${EXPECT_DATA})
 
   if(LCL_BUILD_SHARED)
     target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_EXPECT)
@@ -332,21 +326,12 @@ if(LCL_BUILD_EXPECT)
 endif()
 
 if(LCL_BUILD_TEST_LIB)
-  # Generate test-framework-data.h from Test.lcl using xxd
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(TEST_FRAMEWORK_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/test/src/Test.lcl)
-  set(TEST_FRAMEWORK_DATA ${CMAKE_CURRENT_BINARY_DIR}/test-framework-data.h)
-
-  add_custom_command(
-    OUTPUT ${TEST_FRAMEWORK_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/test/src/Test.lcl > ${TEST_FRAMEWORK_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${TEST_FRAMEWORK_SRC}
-    COMMENT "Generating test-framework-data.h from Test.lcl"
+  lcl_embed_file(
+    INPUT  lib/test/src/Test.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/test-framework-data.h
+    SYMBOL lib_test_src_Test_lcl
+    TARGET generate_test_framework_data
   )
-
-  add_custom_target(generate_test_framework_data DEPENDS ${TEST_FRAMEWORK_DATA})
 
   if(LCL_BUILD_CLI)
     add_dependencies(lcl-cli generate_test_framework_data)
@@ -356,20 +341,12 @@ if(LCL_BUILD_TEST_LIB)
 endif()
 
 if(LCL_BUILD_SH_LIB)
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(SH_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/sh/src/sh.lcl)
-  set(SH_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/sh-lib-data.h)
-
-  add_custom_command(
-    OUTPUT ${SH_LIB_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/sh/src/sh.lcl > ${SH_LIB_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${SH_LIB_SRC}
-    COMMENT "Generating sh-lib-data.h from sh.lcl"
+  lcl_embed_file(
+    INPUT  lib/sh/src/sh.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sh-lib-data.h
+    SYMBOL lib_sh_src_sh_lcl
+    TARGET generate_sh_lib_data
   )
-
-  add_custom_target(generate_sh_lib_data DEPENDS ${SH_LIB_DATA})
 
   if(LCL_BUILD_CLI)
     add_dependencies(lcl-cli generate_sh_lib_data)
@@ -380,20 +357,12 @@ endif()
 
 
 if(LCL_BUILD_CURL_DSL_LIB)
-  find_program(XXD_EXECUTABLE xxd REQUIRED)
-
-  set(CURL_DSL_LIB_SRC ${CMAKE_CURRENT_SOURCE_DIR}/lib/curl-dsl/src/curl-dsl.lcl)
-  set(CURL_DSL_LIB_DATA ${CMAKE_CURRENT_BINARY_DIR}/curl-dsl-lib-data.h)
-
-  add_custom_command(
-    OUTPUT ${CURL_DSL_LIB_DATA}
-    COMMAND ${XXD_EXECUTABLE} -i lib/curl-dsl/src/curl-dsl.lcl > ${CURL_DSL_LIB_DATA}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS ${CURL_DSL_LIB_SRC}
-    COMMENT "Generating curl-dsl-lib-data.h from curl-dsl.lcl"
+  lcl_embed_file(
+    INPUT  lib/curl-dsl/src/curl-dsl.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/curl-dsl-lib-data.h
+    SYMBOL lib_curl_dsl_src_curl_dsl_lcl
+    TARGET generate_curl_dsl_lib_data
   )
-
-  add_custom_target(generate_curl_dsl_lib_data DEPENDS ${CURL_DSL_LIB_DATA})
 
   if(LCL_BUILD_CLI)
     add_dependencies(lcl-cli generate_curl_dsl_lib_data)

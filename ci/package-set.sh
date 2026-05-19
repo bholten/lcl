@@ -41,10 +41,10 @@ print_apt_core() {
 print_apt_linux_full() {
     # OpenSSL for lcl-crypto. lcl-curl and lcl-json pull libcurl and
     # cJSON sources via CMake FetchContent and do not need apt deps.
-    # xxd is needed for the embedded-library generation step.
+    # Embedded-library generation is pure CMake (see
+    # cmake/EmbedFile.cmake) — no xxd required.
     cat <<'EOF'
 libssl-dev
-xxd
 EOF
 }
 
