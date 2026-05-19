@@ -243,13 +243,16 @@ static int c_strftime(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  fmt = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &fmt) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (argc >= 2) {
     if (lcl_value_to_int(argv[1], &ts) != LCL_OK) {
       lcl_set_error(interp, "time::strftime: expected integer timestamp");
       return LCL_RC_ERR;
     }
+
     t = (time_t)ts;
   } else {
     t = time(NULL);

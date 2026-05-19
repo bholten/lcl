@@ -48,7 +48,11 @@ static int c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  pattern = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &pattern) != LCL_OK) {
+    free(re);
+    return LCL_RC_ERR;
+  }
+
   errcode = regcomp(&re->re, pattern, REG_EXTENDED | REG_NOSUB);
 
   if (errcode != 0) {
@@ -68,7 +72,6 @@ static int c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
   struct lcl_regex *re = NULL;
   int status;
   const char *str = NULL;
-  (void)interp;
 
   if (argc < 2) {
     return LCL_RC_ERR;
@@ -78,7 +81,10 @@ static int c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  str = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[1], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   status = regexec(&re->re, str, (size_t)0, NULL, 0);
 
   *out = lcl_int_new(status == 0 ? 1 : 0);
@@ -101,8 +107,13 @@ static int c_match(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  pattern = lcl_value_to_string(argv[0]);
-  str = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[0], &pattern) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   errcode = regcomp(&re, pattern, REG_EXTENDED | REG_NOSUB);
 

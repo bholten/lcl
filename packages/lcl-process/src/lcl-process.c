@@ -227,6 +227,10 @@ static const char *get_opt_str(lcl_value *opts, const char *key,
   result = lcl_value_to_string(v);
   lcl_ref_dec(v);
 
+  if (!result) {
+    return def;
+  }
+
   return result;
 }
 
@@ -286,8 +290,6 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
   size_t limit;
   int rc = LCL_RC_OK;
 
-  (void)interp;
-
   if (argc < 1) {
     return LCL_RC_ERR;
   }
@@ -323,6 +325,14 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
 
       lcl_list_get(argv_list, j, &arg);
       s = lcl_value_to_string(arg);
+
+      if (!s) {
+        lcl_ref_dec(arg);
+        free(cmd);
+        lcl_set_error(interp, "out of memory");
+        return LCL_RC_ERR;
+      }
+
       slen = strlen(s);
 
       cmd = (char *)realloc(cmd, cmd_len + slen + 2);
@@ -362,10 +372,28 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
 
     for (i = 0; i < argv_len; i++) {
       lcl_value *arg = NULL;
+      const char *s;
       lcl_list_get(argv_list, i, &arg);
-      exec_argv[i] = strdup(lcl_value_to_string(arg));
+      s = lcl_value_to_string(arg);
+
+      if (!s) {
+        size_t k;
+
+        for (k = 0; k < i; k++) {
+          free(exec_argv[k]);
+        }
+
+        free(exec_argv);
+        lcl_ref_dec(arg);
+        lcl_set_error(interp, "out of memory");
+
+        return LCL_RC_ERR;
+      }
+
+      exec_argv[i] = strdup(s);
       lcl_ref_dec(arg);
     }
+
     exec_argv[argv_len] = NULL;
   }
 
@@ -427,8 +455,13 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
           if (lcl_list_get(keys, ki, &key_val) == LCL_OK) {
             const char *key = lcl_value_to_string(key_val);
 
-            if (lcl_dict_get(env_dict, key, &val) == LCL_OK) {
-              setenv(key, lcl_value_to_string(val), 1);
+            if (key && lcl_dict_get(env_dict, key, &val) == LCL_OK) {
+              const char *val_s = lcl_value_to_string(val);
+
+              if (val_s) {
+                setenv(key, val_s, 1);
+              }
+
               lcl_ref_dec(val);
             }
 
@@ -578,8 +611,6 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   int pty_rows;
   int pty_cols;
 
-  (void)interp;
-
   if (argc < 1) {
     return LCL_RC_ERR;
   }
@@ -610,8 +641,25 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
 
   for (i = 0; i < argv_len; i++) {
     lcl_value *arg = NULL;
+    const char *s;
     lcl_list_get(argv_list, i, &arg);
-    exec_argv[i] = strdup(lcl_value_to_string(arg));
+    s = lcl_value_to_string(arg);
+
+    if (!s) {
+      size_t k;
+
+      for (k = 0; k < i; k++) {
+        free(exec_argv[k]);
+      }
+
+      free(exec_argv);
+      lcl_ref_dec(arg);
+      lcl_set_error(interp, "out of memory");
+
+      return LCL_RC_ERR;
+    }
+
+    exec_argv[i] = strdup(s);
     lcl_ref_dec(arg);
   }
 
@@ -697,8 +745,13 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
           if (lcl_list_get(keys, ki, &key_val) == LCL_OK) {
             const char *key = lcl_value_to_string(key_val);
 
-            if (lcl_dict_get(env_dict, key, &val) == LCL_OK) {
-              setenv(key, lcl_value_to_string(val), 1);
+            if (key && lcl_dict_get(env_dict, key, &val) == LCL_OK) {
+              const char *val_s = lcl_value_to_string(val);
+
+              if (val_s) {
+                setenv(key, val_s, 1);
+              }
+
               lcl_ref_dec(val);
             }
 
@@ -819,7 +872,6 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
   const char *data;
   size_t len;
   ssize_t written;
-  (void)interp;
 
   if (argc < 2) {
     return LCL_RC_ERR;
@@ -835,7 +887,10 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  data = lcl_value_to_string(argv[1]);
+  if (lcl_value_to_cstring(interp, argv[1], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   len = strlen(data);
 
   written = write(h->stdin_fd, data, len);
@@ -1063,8 +1118,14 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
       lcl_value *p = NULL;
 
       if (lcl_list_get(patterns, i, &p) == LCL_OK) {
-        pattern_strs[i] = lcl_value_to_string(p);
-        pattern_lens[i] = strlen(pattern_strs[i]);
+        const char *ps = lcl_value_to_string(p);
+
+        if (!ps) {
+          ps = "";
+        }
+
+        pattern_strs[i] = ps;
+        pattern_lens[i] = strlen(ps);
         lcl_ref_dec(p);
       } else {
         pattern_strs[i] = "";
@@ -1072,8 +1133,14 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
       }
     }
   } else {
-    pattern_strs[0] = lcl_value_to_string(patterns);
-    pattern_lens[0] = strlen(pattern_strs[0]);
+    const char *ps = lcl_value_to_string(patterns);
+
+    if (!ps) {
+      ps = "";
+    }
+
+    pattern_strs[0] = ps;
+    pattern_lens[0] = strlen(ps);
   }
 
   buf = (char *)malloc(buf_size);

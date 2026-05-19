@@ -55,13 +55,13 @@ static int c_crypto_sha256(lcl_interp *interp, int argc, lcl_value **argv,
   EVP_MD_CTX *ctx;
   char *hex;
 
-  (void)interp;
-
   if (argc != 1) {
     return LCL_RC_ERR;
   }
 
-  data = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   ctx = EVP_MD_CTX_new();
 
@@ -98,13 +98,14 @@ static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
   unsigned int hash_len = 0;
   EVP_MD_CTX *ctx;
   char *hex;
-  (void)interp;
 
   if (argc != 1) {
     return LCL_RC_ERR;
   }
 
-  data = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   ctx = EVP_MD_CTX_new();
 
@@ -144,15 +145,22 @@ static int c_crypto_hmac(lcl_interp *interp, int argc, lcl_value **argv,
   unsigned int hmac_len = 0;
   char *hex;
 
-  (void)interp;
-
   if (argc != 3) {
     return LCL_RC_ERR;
   }
 
-  key = lcl_value_to_string(argv[0]);
-  data = lcl_value_to_string(argv[1]);
-  algo = lcl_value_to_string(argv[2]);
+  if (lcl_value_to_cstring(interp, argv[0], &key) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[2], &algo) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
   md = get_md_by_name(algo);
 
   if (!md) {
@@ -190,15 +198,22 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   size_t sig_len = 0;
   char *hex = NULL;
   int result = LCL_RC_ERR;
-  (void)interp;
 
   if (argc != 3) {
     return LCL_RC_ERR;
   }
 
-  key_pem = lcl_value_to_string(argv[0]);
-  data = lcl_value_to_string(argv[1]);
-  algo = lcl_value_to_string(argv[2]);
+  if (lcl_value_to_cstring(interp, argv[0], &key_pem) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[2], &algo) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   md = get_md_by_name(algo);
 
@@ -207,6 +222,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   bio = BIO_new_mem_buf(key_pem, -1);
+
   if (!bio) {
     goto cleanup;
   }
@@ -258,6 +274,7 @@ static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   hex = bytes_to_hex(sig, sig_len);
+
   if (!hex) {
     goto cleanup;
   }
@@ -291,15 +308,22 @@ static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
   size_t sig_len = 0;
   char *hex = NULL;
   int result = LCL_RC_ERR;
-  (void)interp;
 
   if (argc != 3) {
     return LCL_RC_ERR;
   }
 
-  key_pem = lcl_value_to_string(argv[0]);
-  data = lcl_value_to_string(argv[1]);
-  curve = lcl_value_to_string(argv[2]);
+  if (lcl_value_to_cstring(interp, argv[0], &key_pem) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[2], &curve) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
 
   if (strcmp(curve, "p256") == 0) {
     md = EVP_sha256();
@@ -385,13 +409,14 @@ static int c_crypto_base64_encode(lcl_interp *interp, int argc,
   BUF_MEM *buf = NULL;
   char *result_str = NULL;
   int rc = LCL_RC_ERR;
-  (void)interp;
 
   if (argc != 1) {
     return LCL_RC_ERR;
   }
 
-  data = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
   data_len = strlen(data);
 
   b64 = BIO_new(BIO_f_base64());
@@ -450,13 +475,14 @@ static int c_crypto_base64_decode(lcl_interp *interp, int argc,
   char *decoded = NULL;
   int decoded_len;
   int rc = LCL_RC_ERR;
-  (void)interp;
 
   if (argc != 1) {
     return LCL_RC_ERR;
   }
 
-  data = lcl_value_to_string(argv[0]);
+  if (lcl_value_to_cstring(interp, argv[0], &data) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
   data_len = strlen(data);
   decoded = (char *)malloc(data_len + 1);
 

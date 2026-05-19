@@ -264,6 +264,9 @@ lcl_type lcl_value_type_of(const lcl_value *value);
 
 /*
  * Create a new string value.
+ *
+ * `str == NULL` is accepted and treated as the empty string; the
+ * returned value is a regular STRING that stringifies to "".
  */
 lcl_value *lcl_string_new(const char *str);
 
@@ -294,9 +297,25 @@ lcl_value *lcl_ns_new(const char *name);
 
 /*
  * Get the string representation of any value.
- * The returned string is owned by the value; do not free it.
+ *
+ * Returns a borrowed pointer owned by the value; do not free it.
+ *
+ * Returns NULL if `value` is NULL, or if stringification required an
+ * allocation that failed (out of memory). Callers that cannot
+ * tolerate NULL should use lcl_value_to_cstring(), which converts
+ * NULL into an interpreter error.
  */
 const char *lcl_value_to_string(lcl_value *value);
+
+/*
+ * Convert a value to a borrowed C string, raising an interpreter
+ * error on failure. On success returns LCL_OK and writes the borrowed
+ * pointer to *out. On NULL input or stringification OOM, sets the
+ * interp error to "out of memory" and returns LCL_ERROR; *out is left
+ * untouched.
+ */
+lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
+                                const char **out);
 
 /*
  * Convert a value to an integer.

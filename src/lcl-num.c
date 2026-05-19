@@ -184,6 +184,10 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
     const char *str = lcl_value_to_string(value);
     long val;
 
+    if (!str) {
+      break;
+    }
+
     errno = 0;
     val = strtol(str, &endptr, 10);
 
@@ -215,6 +219,10 @@ lcl_result lcl_value_to_float(lcl_value *value, double *out) {
   case LCL_STRING: {
     const char *str = lcl_value_to_string(value);
     double val;
+
+    if (!str) {
+      break;
+    }
 
     /* Bugfix: lcl_parse_double_c is locale-independent — strings
      * serialized by lcl_reify_str_float always use ASCII '.',

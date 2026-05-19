@@ -504,7 +504,11 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     lcl_value *name = callee;
     const char *cmd_name;
     callee = NULL;
-    cmd_name = lcl_value_to_string(name);
+
+    if (lcl_value_to_cstring(interp, name, &cmd_name) != LCL_OK) {
+      lcl_ref_dec(name);
+      return LCL_RC_ERR;
+    }
 
     if (lcl_env_get_command(interp, cmd_name, &callee) != LCL_OK) {
       if (cmd->argc == 1) {
@@ -553,10 +557,15 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     {
       lcl_value *name = callee;
+      const char *name_str;
       callee = NULL;
 
-      if (lcl_env_get_command(interp, lcl_value_to_string(name),
-                              &callee) != LCL_OK) {
+      if (lcl_value_to_cstring(interp, name, &name_str) != LCL_OK) {
+        lcl_ref_dec(name);
+        return LCL_RC_ERR;
+      }
+
+      if (lcl_env_get_command(interp, name_str, &callee) != LCL_OK) {
         lcl_ref_dec(name);
         return LCL_RC_ERR;
       }
@@ -652,16 +661,23 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         } else {
           lcl_value *macro_result = *out;
           lcl_program *macro_prog;
+          const char *macro_src;
           *out = NULL;
-          macro_prog =
-              lcl_program_compile(lcl_value_to_string(macro_result), "<macro>");
-          lcl_ref_dec(macro_result);
 
-          if (!macro_prog) {
+          if (lcl_value_to_cstring(interp, macro_result, &macro_src) !=
+              LCL_OK) {
+            lcl_ref_dec(macro_result);
             rc = LCL_RC_ERR;
           } else {
-            rc = lcl_eval_program(interp, macro_prog, out);
-            lcl_program_free(macro_prog);
+            macro_prog = lcl_program_compile(macro_src, "<macro>");
+            lcl_ref_dec(macro_result);
+
+            if (!macro_prog) {
+              rc = LCL_RC_ERR;
+            } else {
+              rc = lcl_eval_program(interp, macro_prog, out);
+              lcl_program_free(macro_prog);
+            }
           }
         }
       }
@@ -808,7 +824,12 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
         val = inner;
       }
 
-      s = lcl_value_to_string(val);
+      if (lcl_value_to_cstring(interp, val, &s) != LCL_OK) {
+        lcl_ref_dec(val);
+        free(buf);
+        return LCL_RC_ERR;
+      }
+
       slen = strlen(s);
       need = len + slen + 1;
 
@@ -853,7 +874,12 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
         return rc;
       }
 
-      s = lcl_value_to_string(result);
+      if (lcl_value_to_cstring(interp, result, &s) != LCL_OK) {
+        lcl_ref_dec(result);
+        free(buf);
+        return LCL_RC_ERR;
+      }
+
       slen = strlen(s);
       need = len + slen + 1;
 
@@ -914,6 +940,15 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
   int saved_tail_position = interp->in_tail_position;
+  /* `cur_file` is a borrowed pointer into the running program's owned
+   * `file` field. If we leave it set after returning, the caller's
+   * `lcl_program_free` turns it into a dangling pointer that the next
+   * `LCL_ERR_MSG` will strdup from — a use-after-free.  Save+restore
+   * around the whole program so the borrow stays scoped to the eval
+   * that owns it. `cur_line` mirrors the same pattern for consistent
+   * error context. */
+  const char *saved_file = interp->cur_file;
+  int saved_line = interp->cur_line;
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     LCL_ERR_MSG(interp, "maximum recursion depth exceeded");
@@ -939,6 +974,8 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
 
     if (rc == LCL_RC_TAILCALL) {
       interp->in_tail_position = saved_tail_position;
+      interp->cur_file = saved_file;
+      interp->cur_line = saved_line;
       interp->depth--;
 
       if (out) {
@@ -963,6 +1000,8 @@ int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
   }
 
   interp->in_tail_position = saved_tail_position;
+  interp->cur_file = saved_file;
+  interp->cur_line = saved_line;
   interp->depth--;
 
   if (out) {
