@@ -27,3 +27,14 @@ target_link_libraries(lcl_crypto
 lcl_add_package_test(NAME lcl-crypto         COMMAND test/crypto_test.lcl)
 lcl_add_package_test(NAME lcl-crypto-ecdsa   COMMAND test/ecdsa_test.lcl)
 lcl_add_package_test(NAME lcl-crypto-signing COMMAND test/signing_test.lcl)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_crypto
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-crypto.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()

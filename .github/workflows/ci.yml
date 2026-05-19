@@ -53,3 +53,52 @@ jobs:
       - name: Run tests (ctest)
         working-directory: build
         run: ctest --output-on-failure
+
+  install-verify:
+    name: install / consume via find_package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install apt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Configure install-shaped build
+        run: |
+          cmake -S . -B build-install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLCL_BUILD_SHARED=ON \
+            -DLCL_BUILD_STATIC=ON \
+            -DLCL_BUILD_CLI=ON \
+            -DLCL_BUILD_IO=ON \
+            -DLCL_BUILD_MATH=ON \
+            -DLCL_BUILD_TIME=ON \
+            -DLCL_BUILD_REGEX=ON \
+            -DLCL_BUILD_PROCESS=ON \
+            -DLCL_BUILD_EXPECT=ON \
+            -DLCL_BUILD_CRYPTO=ON \
+            -DLCL_BUILD_TESTS=OFF \
+            -DLCL_ENABLE_ASAN=OFF
+
+      - name: Build
+        run: cmake --build build-install --parallel
+
+      - name: Install to temp prefix
+        run: cmake --install build-install --prefix "$RUNNER_TEMP/lcl-install"
+
+      - name: Configure consumer against installed lcl
+        run: |
+          cmake -S ci/install-test -B "$RUNNER_TEMP/lcl-consumer-build" \
+            -Dlcl_DIR="$RUNNER_TEMP/lcl-install/lib/cmake/lcl"
+
+      - name: Build consumer
+        run: cmake --build "$RUNNER_TEMP/lcl-consumer-build" --parallel
+
+      - name: Run consumer binaries
+        run: |
+          "$RUNNER_TEMP/lcl-consumer-build/verify-core"
+          "$RUNNER_TEMP/lcl-consumer-build/verify-io"
+          "$RUNNER_TEMP/lcl-consumer-build/verify-crypto"

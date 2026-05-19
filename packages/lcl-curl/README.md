@@ -2,6 +2,12 @@
 
 HTTP client bindings for LCL using libcurl.
 
+> **0.1.0 note:** `lcl-curl` is built and used in-tree only; it is
+> not part of the `cmake --install` artifact. The package vendors
+> libcurl via `FetchContent`, and a shipping decision for vendored
+> deps is deferred. Use it by building LCL with `-DLCL_BUILD_CURL=ON`
+> and consuming `lcl_curl` directly from your own CMake build.
+
 ## Requirements
 
 - LCL core engine

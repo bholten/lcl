@@ -1,6 +1,8 @@
 #ifndef LCL_IO_H
 #define LCL_IO_H
 
+#include <lcl.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

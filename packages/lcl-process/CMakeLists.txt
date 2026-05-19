@@ -29,3 +29,14 @@ if(NOT HAVE_OPENPTY_IN_LIBC)
 endif()
 
 lcl_add_package_test(NAME lcl-process COMMAND test/process_test.lcl)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_process
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-process.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()

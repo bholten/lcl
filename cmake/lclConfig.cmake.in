@@ -1,5 +1,28 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
+set(_lcl_install_deps @LCL_INSTALL_DEPS@)
+
+foreach(_lcl_dep IN LISTS _lcl_install_deps)
+  find_dependency(${_lcl_dep})
+endforeach()
+
+unset(_lcl_install_deps)
+unset(_lcl_dep)
+
 include("${CMAKE_CURRENT_LIST_DIR}/lclTargets.cmake")
+
+if(NOT TARGET lcl::lcl)
+  if(TARGET lcl::lcl_static)
+    add_library(lcl::lcl INTERFACE IMPORTED)
+    set_target_properties(lcl::lcl PROPERTIES
+      INTERFACE_LINK_LIBRARIES lcl::lcl_static)
+  elseif(TARGET lcl::lcl_shared)
+    add_library(lcl::lcl INTERFACE IMPORTED)
+    set_target_properties(lcl::lcl PROPERTIES
+      INTERFACE_LINK_LIBRARIES lcl::lcl_shared)
+  endif()
+endif()
 
 check_required_components(lcl)
