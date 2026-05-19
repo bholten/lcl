@@ -4231,6 +4231,104 @@ static char *read_file(const char *path, size_t *out_len) {
   return buf;
 }
 
+/* apply callable arg1 arg2 ... argN
+ *
+ * Explicit value-dispatch primitive. The complement to `eval`:
+ * - `eval`  takes a *source string* and runs it as code.
+ * - `apply` takes a *value* and dispatches it as a call.
+ *
+ * Resolution:
+ *   LCL_PROC (non-macro)  -> call via lcl_call_user_proc
+ *   LCL_CPROC, normal     -> call fn.proc(interp, N, &argv[1], out)
+ *   LCL_CPROC, special    -> error: cannot apply special form
+ *   LCL_PROC, is_macro    -> error: cannot apply macro
+ *   LCL_STRING            -> resolve as a command name, recurse
+ *   anything else         -> error: not callable
+ *
+ * See lcl_value_substitution_redesign.md for the design rationale —
+ * this is the explicit-dispatch keyword that replaces the implicit
+ * one-word-program dispatch once the parse-time rule lands. */
+static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
+                   lcl_value **out) {
+  lcl_value *callee;
+  int call_argc;
+  lcl_value **call_argv;
+  lcl_value *resolved = NULL;
+
+  if (argc < 1) {
+    LCL_ERR_MSG(interp, "apply requires a callable");
+    return LCL_RC_ERR;
+  }
+
+  callee = argv[0];
+  call_argc = argc - 1;
+  call_argv = (call_argc > 0) ? &argv[1] : NULL;
+
+  /* Follow STRING -> command lookup. A single hop is enough in
+   * practice (commands resolve to PROC/CPROC values), but we loop to
+   * handle the pathological case of a string that resolves to another
+   * string. */
+  while (callee->type == LCL_STRING) {
+    const char *name = lcl_value_to_string(callee);
+    lcl_value *next = NULL;
+
+    if (lcl_env_get_command(interp, name, &next) != LCL_OK) {
+      const size_t name_len = strlen(name);
+      const size_t prefix_len = 17;
+      char *buf = (char *)malloc(name_len + prefix_len + 1);
+
+      if (buf) {
+        memcpy(buf, "unknown command: ", prefix_len);
+        memcpy(buf + prefix_len, name, name_len + 1);
+        LCL_ERR_MSG_DUP(interp, buf);
+        free(buf);
+      } else {
+        LCL_ERR_MSG(interp, "unknown command");
+      }
+
+      lcl_ref_dec(resolved);
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(resolved);
+    resolved = next;
+    callee = resolved;
+  }
+
+  if (callee->type == LCL_CPROC) {
+    int rc;
+
+    if (callee->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+      LCL_ERR_MSG(interp, "cannot apply special form");
+      lcl_ref_dec(resolved);
+      return LCL_RC_ERR;
+    }
+
+    rc = callee->as.c_proc.fn->fn.proc(interp, call_argc, call_argv, out);
+    lcl_ref_dec(resolved);
+    return rc;
+  }
+
+  if (callee->type == LCL_PROC) {
+    lcl_proc *p = (lcl_proc *)callee->as.procedure.proc;
+    int rc;
+
+    if (p->is_macro) {
+      LCL_ERR_MSG(interp, "cannot apply macro");
+      lcl_ref_dec(resolved);
+      return LCL_RC_ERR;
+    }
+
+    rc = lcl_call_user_proc(interp, callee, p, call_argc, call_argv, out);
+    lcl_ref_dec(resolved);
+    return rc;
+  }
+
+  LCL_ERR_MSG(interp, "not callable");
+  lcl_ref_dec(resolved);
+  return LCL_RC_ERR;
+}
+
 static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
                   lcl_value **out) {
   lcl_value *path_v = NULL;
@@ -5812,80 +5910,6 @@ static int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv,
       argv[0]->type == LCL_PROC || argv[0]->type == LCL_CPROC ? 1 : 0);
 
   return LCL_RC_OK;
-}
-
-/* apply fn args-list - call fn with elements of args-list as arguments */
-static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
-  lcl_value *func;
-  lcl_value *args_list;
-  lcl_value **call_argv;
-  size_t call_argc;
-  size_t i;
-  int rc;
-
-  if (argc != 2) {
-    LCL_ERR_MSG(interp, "apply requires exactly 2 arguments: fn args-list");
-    return LCL_RC_ERR;
-  }
-
-  func = argv[0];
-  args_list = argv[1];
-
-  if (!lcl_is_callable(func)) {
-    LCL_ERR_MSG(interp, "apply: first argument must be a procedure");
-    return LCL_RC_ERR;
-  }
-
-  if (args_list->type != LCL_LIST) {
-    LCL_ERR_MSG(interp, "apply: second argument must be a list");
-    return LCL_RC_ERR;
-  }
-
-  call_argc = lcl_list_len(args_list);
-
-  if (call_argc == 0) {
-    return lcl_call_proc(interp, func, 0, NULL, out);
-  }
-
-  /* Bugfix: lcl_call_proc's API uses `int argc`; refuse lists too
-     large to fit. */
-  if (call_argc > (size_t)INT_MAX) {
-    LCL_ERR_MSG(interp, "apply: argument list too large");
-    return LCL_RC_ERR;
-  }
-
-  call_argv = (lcl_value **)malloc(call_argc * sizeof(lcl_value *));
-
-  if (!call_argv) {
-    LCL_ERR_MSG(interp, "out of memory");
-    return LCL_RC_ERR;
-  }
-
-  for (i = 0; i < call_argc; i++) {
-    if (lcl_list_get(args_list, i, &call_argv[i]) != LCL_OK) {
-      size_t j;
-
-      for (j = 0; j < i; j++) {
-        lcl_ref_dec(call_argv[j]);
-      }
-
-      free(call_argv);
-      LCL_ERR_MSG(interp, "apply: failed to get list element");
-
-      return LCL_RC_ERR;
-    }
-  }
-
-  rc = lcl_call_proc(interp, func, (int)call_argc, call_argv, out);
-
-  for (i = 0; i < call_argc; i++) {
-    lcl_ref_dec(call_argv[i]);
-  }
-
-  free(call_argv);
-
-  return rc;
 }
 
 /* arity fn - return (min max) where max is -1 for unbounded */
@@ -7739,7 +7763,6 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "cell?", c_is_cell);
   lcl_register_proc(interp, "proc?", c_is_proc);
 
-  lcl_register_proc(interp, "apply", c_apply);
   lcl_register_proc(interp, "arity", c_arity);
 
   lcl_register_proc(interp, "int", c_to_int);
@@ -7760,6 +7783,7 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_spec(interp, "macro", s_macro);
   lcl_register_spec(interp, "macroexpand", s_macroexpand);
   lcl_register_spec(interp, "eval", s_eval);
+  lcl_register_proc(interp, "apply", c_apply);
   lcl_register_spec(interp, "load", s_load);
   lcl_register_spec(interp, "require", s_require);
   lcl_register_spec(interp, "subst", s_subst);

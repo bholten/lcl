@@ -132,8 +132,8 @@ Test::suite "User Procs" {
             return [lambda {} { set! n [+ $n 1]; $n }]
         }
         let c [makeCounter 10]
-        Test::eq [$c] 11
-        Test::eq [$c] 12
+        Test::eq [apply $c] 11
+        Test::eq [apply $c] 12
     }
 
     Test::case "lambda expression" {
@@ -150,10 +150,10 @@ Test::suite "User Procs" {
             }]
         }]
         let lam_count [$lambda_counter 10]
-        $lam_count
-        $lam_count
-        $lam_count
-        Test::eq [$lam_count] 14
+        apply $lam_count
+        apply $lam_count
+        apply $lam_count
+        Test::eq [apply $lam_count] 14
     }
 }
 
@@ -2087,9 +2087,9 @@ Test::suite "Lexical Scoping" {
         }
         let c1 [make_counter]
         let c2 [make_counter]
-        Test::eq [$c1] 1
-        Test::eq [$c1] 2
-        Test::eq [$c2] 1
+        Test::eq [apply $c1] 1
+        Test::eq [apply $c1] 2
+        Test::eq [apply $c2] 1
     }
 
     Test::case "proc parameter shadows outer" {
@@ -2106,9 +2106,9 @@ Test::suite "Lexical Scoping" {
         foreach iter_val [list 1 2 3] {
             set! closures [List::push $closures [lambda {} { $iter_val }]]
         }
-        Test::eq [[get $closures 0]] 1
-        Test::eq [[get $closures 1]] 2
-        Test::eq [[get $closures 2]] 3
+        Test::eq [apply [get $closures 0]] 1
+        Test::eq [apply [get $closures 1]] 2
+        Test::eq [apply [get $closures 2]] 3
     }
 
     Test::case "mutual recursion is rejected" {
@@ -2970,8 +2970,9 @@ Test::suite "Rest Parameters" {
 
 Test::suite "Apply and Arity" {
     Test::case "apply with c proc" {
-        Test::eq [apply ${+} (1 2 3)] 6
-        Test::eq [apply ${*} (2 3 4)] 24
+        ;; varargs: apply fn arg1 arg2 ...
+        Test::eq [apply ${+} 1 2 3] 6
+        Test::eq [apply ${*} 2 3 4] 24
     }
 
     Test::case "apply with user proc" {
@@ -2980,14 +2981,71 @@ Test::suite "Apply and Arity" {
             foreach x $xs { set! acc [+ $acc $x] }
             $acc
         }
-        Test::eq [apply ${sum} (10 20 30)] 60
-        Test::eq [apply ${sum} ()] 0
+        Test::eq [apply ${sum} 10 20 30] 60
+        Test::eq [apply ${sum}] 0
     }
 
-    Test::case "apply with spread" {
+    Test::case "apply with @ spread (list splat)" {
+        ;; list-splat now via @ spread rather than implicit splat
         proc window {n (step 1) *xs} { list $n $step $xs }
         let args (3 2 "a" "b" "c")
-        Test::eq [apply ${window} $args] (3 2 ("a" "b" "c"))
+        Test::eq [apply ${window} @$args] (3 2 ("a" "b" "c"))
+    }
+
+    Test::case "apply on a stored command name (string)" {
+        ;; Resolution path: STRING -> command lookup -> dispatch.
+        ;; This replaces the implicit `eval $cmd` Tcl idiom.
+        proc greet {who} { return "hello $who" }
+        let name "greet"
+        Test::eq [apply $name "world"] "hello world"
+    }
+
+    Test::case "apply on a stored builtin name (string)" {
+        let op "+"
+        Test::eq [apply $op 1 2 3 4] 10
+    }
+
+    Test::case "apply on a lambda value" {
+        let f [lambda {x} { + $x 1 }]
+        Test::eq [apply $f 41] 42
+    }
+
+    Test::case "apply on a closure" {
+        proc make_counter {start} {
+            var n $start
+            return [lambda {} { set! n [+ $n 1]; $n }]
+        }
+        let c [make_counter 10]
+        Test::eq [apply $c] 11
+        Test::eq [apply $c] 12
+    }
+
+    Test::case "apply errors on unknown command name" {
+        let rc [catch { apply "no_such_command_xyzzy" } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on non-callable value" {
+        let rc [catch { apply 42 } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on special form" {
+        ;; "if" is a special form - apply cannot dispatch it because
+        ;; specials want raw words, not pre-evaluated values.
+        let rc [catch { apply "if" 1 {} {} } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on macro" {
+        macro my_macro {x} { quasiquote {,$x} }
+        let rc [catch { apply "my_macro" 1 } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply with zero args" {
+        proc noargs {} { return "ok" }
+        Test::eq [apply ${noargs}] "ok"
     }
 
     Test::case "arity of required-only proc" {
@@ -3013,6 +3071,101 @@ Test::suite "Apply and Arity" {
     Test::case "arity of c proc" {
         ;; C procs report (0 -1) since their arity isn't tracked
         Test::eq [arity ${+}] (0 -1)
+    }
+}
+
+;; ============================================================================
+;; Parse-time dispatch rule (value-substitution redesign, Phase 3)
+;; ============================================================================
+;;
+;; The argc==1 dispatch rule: a one-word command dispatches its first word
+;; only when that word is a bare identifier (single-piece, unbracketed LIT).
+;; Every other form yields the word's value without any command-lookup
+;; attempt. This eliminates the previous runtime "is this value callable?"
+;; hybrid that caused values matching proc names to silently dispatch.
+;;
+;; See lcl_value_substitution_redesign.md for full rationale.
+
+Test::suite "Parse-time dispatch rule" {
+
+    Test::case {[$x] returns value when $x names a registered proc} {
+        ;; Before Phase 3: silent dispatch -> "too few arguments" error.
+        ;; After Phase 3: clean variable substitution.
+        proc GET {url} { return "ignored" }
+        let val "GET"
+        Test::eq [$val] "GET"
+    }
+
+    Test::case {[$x] returns value when $x names a builtin} {
+        let val "puts"
+        Test::eq [$val] "puts"
+    }
+
+    Test::case {eval {$x} returns value, not dispatch} {
+        proc GET {url} { return "ignored" }
+        let val "GET"
+        Test::eq [eval {$val}] "GET"
+    }
+
+    Test::case {[$c] returns the closure value, not a call} {
+        ;; Closure-as-value: [$c] is no longer a zero-arg invocation. Use
+        ;; `apply $c` for invocation.
+        let c [lambda {} { 42 }]
+        Test::eq [proc? [$c]] 1
+    }
+
+    Test::case {[apply $c] invokes the closure} {
+        let c [lambda {} { 42 }]
+        Test::eq [apply $c] 42
+    }
+
+    Test::case {[{literal}] returns the literal string} {
+        Test::eq [{hello world}] "hello world"
+    }
+
+    Test::case {[42] returns the literal value} {
+        Test::eq [42] 42
+    }
+
+    Test::case "multi-piece concat one-word program returns string" {
+        let a hello
+        let b world
+        Test::eq [eval {"$a $b"}] "hello world"
+    }
+
+    Test::case "bare-id one-word still dispatches" {
+        ;; Bare identifiers retain their dispatch behavior (the Tcl idiom).
+        proc plain {} { return "called" }
+        Test::eq [plain] "called"
+    }
+
+    Test::case {eval $cmd dispatches stored command name (Tcl idiom)} {
+        ;; `eval $cmd` compiles to a one-word program with a bare-identifier
+        ;; word — so the parse-time rule routes it through dispatch. The
+        ;; Tcl pattern of "run this stored command name" survives.
+        proc CMD {} { return "dispatched" }
+        let cmd "CMD"
+        Test::eq [eval $cmd] "dispatched"
+    }
+
+    Test::case {[[expr]] needs apply now} {
+        ;; The [[inner]] pattern (call the result of inner) is no longer
+        ;; automatic. Inner subcommand yields the value; outer apply
+        ;; dispatches it.
+        let closures (
+            [lambda {} { 1 }]
+            [lambda {} { 2 }]
+        )
+        Test::eq [apply [get $closures 0]] 1
+        Test::eq [apply [get $closures 1]] 2
+    }
+
+    Test::case "subcmd inside concat word unchanged" {
+        ;; Within a value-position [...] inside a larger string, one-word
+        ;; programs still yield values - exactly as before. This guards
+        ;; against accidental semantic drift in the multi-piece word path.
+        let x 42
+        Test::eq "x=[$x]" "x=42"
     }
 }
 
@@ -3665,15 +3818,18 @@ Test::suite "Issue #34: single-pass list/dict stringification" {
     }
 }
 
-Test::suite "Issue #32: single-subcmd dispatch handles SPECIAL CPROCs safely" {
-    ;; A proc whose result is a SPECIAL CPROC (e.g. `$if`) used as a single-
-    ;; subcommand call: `[get_if]`. The single-word fast path called through
-    ;; `fn.proc` (normal-proc signature) instead of `fn.spec` (special-form
-    ;; signature) — undefined behavior. The fix routes through `fn.spec`
-    ;; when `kind == LCL_CK_SPECIAL`.
-    Test::case "returning a special and calling it errors cleanly" {
+Test::suite "Issue #32: dispatch handles SPECIAL CPROCs safely" {
+    ;; Originally a regression test for a buggy single-subcmd dispatch path:
+    ;; `[get_if]` (where get_if returned $if) routed through fn.proc instead
+    ;; of fn.spec — undefined behavior.
+    ;;
+    ;; After the parse-time-rule redesign (Phase 3 of the value-substitution
+    ;; redesign), `[get_if]` no longer dispatches its result — it returns the
+    ;; value. Explicit dispatch via `apply` is the migration target, and
+    ;; `apply` itself rejects special forms cleanly.
+    Test::case "applying a special-form value errors cleanly" {
         proc get_if {} { return $if }
-        let errored [catch { [get_if] }]
+        let errored [catch { apply [get_if] }]
         Test::eq $errored 1
     }
 }
