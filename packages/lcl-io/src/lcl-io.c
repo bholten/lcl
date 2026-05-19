@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <glob.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,6 +142,10 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
+  if (buff_size <= 0 || buff_size > INT_MAX) {
+    return LCL_RC_ERR;
+  }
+
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
       LCL_OK) {
     return LCL_RC_ERR;
@@ -150,9 +155,9 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  buff = malloc(sizeof(char) * buff_size);
+  buff = malloc((size_t)buff_size);
 
-  if (fgets(buff, buff_size, handle) == NULL) {
+  if (fgets(buff, (int)buff_size, handle) == NULL) {
     free(buff);
     return LCL_RC_BREAK;
   }

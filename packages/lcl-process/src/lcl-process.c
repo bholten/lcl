@@ -335,11 +335,16 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
 
       slen = strlen(s);
 
-      cmd = (char *)realloc(cmd, cmd_len + slen + 2);
+      {
+        char *new_cmd = (char *)realloc(cmd, cmd_len + slen + 2);
 
-      if (!cmd) {
-        lcl_ref_dec(arg);
-        return LCL_RC_ERR;
+        if (!new_cmd) {
+          lcl_ref_dec(arg);
+          free(cmd);
+          return LCL_RC_ERR;
+        }
+
+        cmd = new_cmd;
       }
 
       if (j > 0) {
@@ -446,7 +451,8 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
       lcl_value *keys = NULL;
 
       if (lcl_dict_keys(env_dict, &keys) == LCL_OK && keys) {
-        size_t ki, klen = lcl_list_len(keys);
+        size_t ki;
+        size_t klen = lcl_list_len(keys);
 
         for (ki = 0; ki < klen; ki++) {
           lcl_value *key_val = NULL;
@@ -518,11 +524,11 @@ static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_dict_put(&result, "status", tmp);
   lcl_ref_dec(tmp);
 
-  tmp = lcl_string_new(stdout_data ? stdout_data : "");
+  tmp = lcl_string_new(stdout_data);
   lcl_dict_put(&result, "stdout", tmp);
   lcl_ref_dec(tmp);
 
-  tmp = lcl_string_new(stderr_data ? stderr_data : "");
+  tmp = lcl_string_new(stderr_data);
   lcl_dict_put(&result, "stderr", tmp);
   lcl_ref_dec(tmp);
 
@@ -736,7 +742,8 @@ int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
       lcl_value *keys = NULL;
 
       if (lcl_dict_keys(env_dict, &keys) == LCL_OK && keys) {
-        size_t ki, klen = lcl_list_len(keys);
+        size_t ki;
+        size_t klen = lcl_list_len(keys);
 
         for (ki = 0; ki < klen; ki++) {
           lcl_value *key_val = NULL;
@@ -981,7 +988,7 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
     FD_ZERO(&rfds);
     FD_SET(fd, &rfds);
     tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    tv.tv_usec = (long)(timeout_ms % 1000) * 1000;
 
     ret = select(fd + 1, &rfds, NULL, NULL, &tv);
 
@@ -1179,7 +1186,7 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     tv.tv_sec = wait_ms / 1000;
-    tv.tv_usec = (wait_ms % 1000) * 1000;
+    tv.tv_usec = (long)(wait_ms % 1000) * 1000;
 
     ret = select(fd + 1, &rfds, NULL, NULL, &tv);
     elapsed_ms += wait_ms;
@@ -1336,7 +1343,7 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
       {
         struct timeval tv;
         tv.tv_sec = 0;
-        tv.tv_usec = interval * 1000;
+        tv.tv_usec = (long)interval * 1000;
         select(0, NULL, NULL, NULL, &tv);
       }
 
@@ -1572,7 +1579,8 @@ static int c_process_is_pty(lcl_interp *interp, int argc, lcl_value **argv,
 static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
   process_handle *h;
-  long rows, cols;
+  long rows;
+  long cols;
   struct winsize ws;
   (void)interp;
 

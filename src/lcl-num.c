@@ -63,7 +63,8 @@ size_t lcl_parse_double_c(const char *s, double *out) {
   char *endptr;
   struct lconv *lc;
   const char *sep;
-  size_t pre = 0, sep_len = 0;
+  size_t pre = 0;
+  size_t sep_len = 0;
   int substituted = 0;
   double val;
 

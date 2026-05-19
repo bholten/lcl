@@ -374,7 +374,7 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
 
   if (n_req + n_opt > 0) {
     pspec->params =
-        (lcl_param *)calloc((size_t)(n_req + n_opt), sizeof(lcl_param));
+        (lcl_param *)calloc((size_t)n_req + (size_t)n_opt, sizeof(lcl_param));
 
     if (!pspec->params) {
       LCL_ERR_MSG(interp, "out of memory");

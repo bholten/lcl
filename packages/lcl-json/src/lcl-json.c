@@ -127,7 +127,8 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
   case LCL_DICT: {
     cJSON *obj = cJSON_CreateObject();
     lcl_value *keys = NULL;
-    size_t len, i;
+    size_t len;
+    size_t i;
 
     if (!obj) {
       return NULL;

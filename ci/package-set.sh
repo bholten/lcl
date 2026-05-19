@@ -33,6 +33,14 @@ print_flags_linux_full() {
 EOF
 }
 
+print_flags_macos_full() {
+    # Currently identical to linux-full: every package's README claims
+    # macOS support, and lcl-process already branches openpty linkage
+    # on platform in CMake. Kept as a separate set so divergence (if
+    # any feature ends up Linux-only) is a one-line change.
+    print_flags_linux_full
+}
+
 print_apt_core() {
     # Build essentials are pre-installed on GitHub's ubuntu-latest.
     # Nothing extra needed for the core build.
@@ -49,11 +57,27 @@ libssl-dev
 EOF
 }
 
+print_brew_core() {
+    # Xcode CLT supplies a C toolchain on macos-latest runners.
+    # Nothing extra needed for the core build.
+    :
+}
+
+print_brew_macos_full() {
+    # OpenSSL for lcl-crypto (Homebrew openssl is keg-only; the
+    # workflow exports OPENSSL_ROOT_DIR so find_package can locate it).
+    # libcurl and cJSON come in via FetchContent.
+    cat <<'EOF'
+openssl@3
+EOF
+}
+
 case "$mode" in
     flags)
         case "$set_name" in
             core)        print_flags_core ;;
             linux-full)  print_flags_linux_full ;;
+            macos-full)  print_flags_macos_full ;;
             *) echo "unknown package set: $set_name" >&2; exit 2 ;;
         esac
         ;;
@@ -64,12 +88,20 @@ case "$mode" in
             *) echo "unknown package set: $set_name" >&2; exit 2 ;;
         esac
         ;;
+    brew)
+        case "$set_name" in
+            core)        print_brew_core ;;
+            macos-full)  print_brew_macos_full ;;
+            *) echo "unknown package set: $set_name" >&2; exit 2 ;;
+        esac
+        ;;
     list)
         echo core
         echo linux-full
+        echo macos-full
         ;;
     *)
-        echo "usage: $0 {flags|apt|list} [<set>]" >&2
+        echo "usage: $0 {flags|apt|brew|list} [<set>]" >&2
         exit 2
         ;;
 esac

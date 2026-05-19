@@ -74,7 +74,7 @@
       return LCL_RC_ERR;                                                       \
     if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
       return LCL_RC_ERR;                                                       \
-    *out = lcl_string_new(val ? val : "");                                     \
+    *out = lcl_string_new(val);                                                \
     return LCL_RC_OK;                                                          \
   }
 

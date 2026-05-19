@@ -16,21 +16,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
         compiler: [gcc, clang]
         build_type: [Debug, Release]
-        package_set: [core, linux-full]
+        package_set: [core, linux-full, macos-full]
+        exclude:
+          # Apple's `gcc` is a clang alias on GitHub runners — skip
+          # the redundant row.
+          - os: macos-latest
+            compiler: gcc
+          # Package sets are OS-specific (apt vs brew install lists).
+          - os: macos-latest
+            package_set: linux-full
+          - os: ubuntu-latest
+            package_set: macos-full
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install apt dependencies
+      - name: Install apt dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           DEPS=$(./ci/package-set.sh apt "${{ matrix.package_set }}")
           if [ -n "$DEPS" ]; then
             sudo apt-get update
             sudo apt-get install -y $DEPS
+          fi
+
+      - name: Install brew dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          DEPS=$(./ci/package-set.sh brew "${{ matrix.package_set }}")
+          if [ -n "$DEPS" ]; then
+            brew install $DEPS
+          fi
+          # Homebrew openssl is keg-only; expose its prefix so
+          # find_package(OpenSSL) in lcl-crypto can locate it.
+          if brew --prefix openssl@3 >/dev/null 2>&1; then
+            echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
           fi
 
       - name: Select compiler
@@ -42,7 +66,11 @@ jobs:
 
       - name: Configure
         run: |
-          mapfile -t FLAGS < <(./ci/package-set.sh flags "${{ matrix.package_set }}")
+          # macOS runners ship bash 3.2 (no `mapfile`); use a portable
+          # read loop instead.
+          FLAGS=()
+          while IFS= read -r line; do FLAGS+=("$line"); done \
+            < <(./ci/package-set.sh flags "${{ matrix.package_set }}")
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             "${FLAGS[@]}"
