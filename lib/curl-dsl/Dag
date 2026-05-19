@@ -3,11 +3,11 @@
 ;; A library providing nicer DSL for interacting with CURL
 ;;
 ;; REQUIRES: lcl-curl package (provides curl:: namespace)
-             lcl-json package (provides json:: namespace)
+;;           lcl-json package (provides json:: namespace)
 
 project CurlDSL {
-    def SOURCE src/curl-dsl.lcl
-    def BUILD  build/curl-dsl-lib-data.h
+    let SOURCE src/curl-dsl.lcl
+    let BUILD  build/curl-dsl-lib-data.h
 
     task pre_reqs {
         outputs build/
@@ -19,7 +19,7 @@ project CurlDSL {
     task build {
         inputs  ${CurlDSL::SOURCE}
         outputs ${CurlDSL::BUILD}
-        depends_on CurlDSL:pre_reqs
+        depends_on CurlDSL::pre_reqs
         run {
             xxd -i ${CurlDSL::SOURCE} >> ${CurlDSL::BUILD}
         }
