@@ -2,20 +2,18 @@
 
 Cryptographic functions for LCL using OpenSSL.
 
+## Requirements
+
+- LCL core engine
+- OpenSSL 1.1+ (libssl-dev on Debian/Ubuntu, openssl on macOS via Homebrew)
+- **Portability:** Portable wherever OpenSSL builds — Linux, macOS, BSD, and Windows.
+
 ## Build
 
 ```bash
-# From the lcl root directory
-cmake -DLCL_BUILD_CRYPTO=ON -B build
-cmake --build build
-
-# Or standalone
-cd packages/lcl-crypto
-cmake -B build
+cmake -S . -B build -DLCL_BUILD_CRYPTO=ON
 cmake --build build
 ```
-
-Requires OpenSSL development libraries.
 
 ## Usage
 
@@ -85,3 +83,22 @@ let sig [crypto::sign_ecdsa $ec_key "message" p256]
 |----------|-------------|
 | `crypto::base64_encode $data` | Encode string to base64 |
 | `crypto::base64_decode $data` | Decode base64 to string |
+
+## Tests
+
+Tests live in `packages/lcl-crypto/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_CRYPTO=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-crypto
+```
+
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).
+
+The crypto package has three test files: `lcl-crypto` (core), `lcl-crypto-ecdsa` (ECDSA signing), and `lcl-crypto-signing` (RSA-PSS signing). The `-R lcl-crypto` filter matches all three.

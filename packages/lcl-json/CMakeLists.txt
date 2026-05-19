@@ -34,3 +34,5 @@ target_compile_options(lcl_json PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_json
   PRIVATE lcl::lcl cjson
 )
+
+lcl_add_package_test(NAME lcl-json COMMAND test/test.lcl)

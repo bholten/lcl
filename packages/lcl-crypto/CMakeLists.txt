@@ -23,3 +23,7 @@ target_link_libraries(lcl_crypto
   PRIVATE lcl::lcl
   PUBLIC OpenSSL::SSL OpenSSL::Crypto
 )
+
+lcl_add_package_test(NAME lcl-crypto         COMMAND test/crypto_test.lcl)
+lcl_add_package_test(NAME lcl-crypto-ecdsa   COMMAND test/ecdsa_test.lcl)
+lcl_add_package_test(NAME lcl-crypto-signing COMMAND test/signing_test.lcl)

@@ -2,16 +2,16 @@
 
 JSON encoding and decoding for LCL using cJSON.
 
+## Requirements
+
+- LCL core engine
+- cJSON (vendored or system-installed; pure C99)
+- **Portability:** Very wide. cJSON is pure C99 and builds on Linux, macOS, BSD, Windows, and embedded targets.
+
 ## Build
 
 ```bash
-# From the lcl root directory
-cmake -DLCL_BUILD_JSON=ON -B build
-cmake --build build
-
-# Or standalone
-cd packages/lcl-json
-cmake -B build
+cmake -S . -B build -DLCL_BUILD_JSON=ON
 cmake --build build
 ```
 
@@ -73,3 +73,20 @@ let items [get $parsed items]
 - JSON booleans are distinct from LCL integers. Use `json::true` and `json::false` when you need actual JSON boolean values in output.
 - JSON null is represented as an opaque value. Use `json::null?` to check for null values.
 - Numbers that fit in a long integer are decoded as LCL integers; others become floats.
+
+## Tests
+
+Tests live in `packages/lcl-json/test/`. Run via ctest:
+
+```bash
+cmake -S . -B build \
+  -DLCL_BUILD_JSON=ON \
+  -DLCL_BUILD_TESTS=ON \
+  -DLCL_BUILD_IO=ON \
+  -DLCL_BUILD_TEST_LIB=ON \
+  -DLCL_BUILD_CLI=ON
+cmake --build build
+ctest --test-dir build -R lcl-json
+```
+
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).

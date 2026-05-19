@@ -17,3 +17,5 @@ target_include_directories(lcl_time
 
 target_compile_options(lcl_time PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_time PRIVATE lcl::lcl)
+
+lcl_add_package_test(NAME lcl-time COMMAND test/test.lcl)

@@ -27,3 +27,5 @@ check_function_exists(openpty HAVE_OPENPTY_IN_LIBC)
 if(NOT HAVE_OPENPTY_IN_LIBC)
   target_link_libraries(lcl_process PRIVATE util)
 endif()
+
+lcl_add_package_test(NAME lcl-process COMMAND test/process_test.lcl)

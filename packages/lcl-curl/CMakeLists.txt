@@ -38,3 +38,5 @@ target_link_libraries(lcl_curl
   PUBLIC lcl::lcl
   PRIVATE libcurl
 )
+
+lcl_add_package_test(NAME lcl-curl COMMAND test/test.lcl)
