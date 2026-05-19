@@ -818,7 +818,8 @@ Lcl is **pre-alpha** software. While the core language is functional, expect:
 - Bugs and edge cases
 - Limited documentation
 
-Contributions and feedback are welcome!
+Contributions and feedback are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for how to build, test, and submit a PR.
 
 ## Versioning
 
