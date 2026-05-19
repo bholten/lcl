@@ -5,8 +5,8 @@
 ;; REQUIRES: lcl-process package (provides process:: namespace)
 
 project Sh {
-    def SOURCE src/sh.lcl
-    def BUILD  build/sh.h
+    let SOURCE src/sh.lcl
+    let BUILD  build/sh.h
 
     task pre_reqs {
         outputs build/

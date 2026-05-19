@@ -13,8 +13,6 @@ project lcl {
         description "The Lcl programming language"
     }
 
-    arg BUILD_TYPE debug
-
     let ALL_PKGS (-DLCL_BUILD_TESTS=ON
                   -DLCL_BUILD_CURL=ON
                   -DLCL_BUILD_IO=ON
