@@ -156,6 +156,32 @@ static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  int i;
+
+  for (i = 0; i < argc; i++) {
+    const char *str;
+
+    if (lcl_value_to_cstring(interp, argv[i], &str) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    fputs(str, stdout);
+
+    if (i + 1 < argc) {
+      fputc(' ', stdout);
+    }
+  }
+
+  fputc('\n', stdout);
+  fflush(stdout);
+
+  *out = lcl_string_new("");
+
+  return LCL_RC_OK;
+}
+
 static int c_and(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int b;
@@ -8047,6 +8073,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "assert", c_assert);
   lcl_register_proc(interp, "assert_eq", c_assert_eq);
   lcl_register_proc(interp, "assert_neq", c_assert_neq);
+
+  lcl_register_proc(interp, "puts", c_puts);
 
   lcl_register_proc(interp, "and", c_and);
   lcl_register_proc(interp, "or", c_or);
