@@ -505,15 +505,15 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_dict_put(&result, "index", tmp);
     lcl_ref_dec(tmp);
 
-    tmp = lcl_string_new(before ? before : "");
+    tmp = lcl_string_new(before);
     lcl_dict_put(&result, "before", tmp);
     lcl_ref_dec(tmp);
 
-    tmp = lcl_string_new(match_str ? match_str : "");
+    tmp = lcl_string_new(match_str);
     lcl_dict_put(&result, "match", tmp);
     lcl_ref_dec(tmp);
 
-    tmp = lcl_string_new(after ? after : "");
+    tmp = lcl_string_new(after);
     lcl_dict_put(&result, "after", tmp);
     lcl_ref_dec(tmp);
 
@@ -818,78 +818,6 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /*
- * expect::test-call-lambda pairs
- *
- * TEST FUNCTION: Extract a lambda from a list of pairs and call it.
- * This is for debugging the inline lambda issue.
- *
- * pairs: list of (key handler) pairs
- * Returns: result of calling the first handler with a test dict
- */
-static int c_expect_test_call_lambda(lcl_interp *interp, int argc,
-                                     lcl_value **argv, lcl_value **out) {
-  lcl_value *pairs;
-  lcl_value *pair = NULL;
-  lcl_value *handler = NULL;
-  lcl_value *test_arg;
-  lcl_value *handler_args[1];
-  int rc;
-
-  if (argc < 1) {
-    lcl_set_error(interp, "expect::test-call-lambda requires pairs");
-    return LCL_RC_ERR;
-  }
-
-  pairs = argv[0];
-
-  if (lcl_value_type_of(pairs) != LCL_LIST || lcl_list_len(pairs) == 0) {
-    lcl_set_error(interp, "pairs must be a non-empty list");
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_list_get(pairs, 0, &pair) != LCL_OK) {
-    lcl_set_error(interp, "failed to get first pair");
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_type_of(pair) != LCL_LIST || lcl_list_len(pair) < 2) {
-    lcl_ref_dec(pair);
-    lcl_set_error(interp, "pair must be a list of (key handler)");
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_list_get(pair, 1, &handler) != LCL_OK) {
-    lcl_ref_dec(pair);
-    lcl_set_error(interp, "failed to get handler from pair");
-    return LCL_RC_ERR;
-  }
-
-  lcl_ref_dec(pair);
-
-  if (!lcl_is_callable(handler)) {
-    lcl_ref_dec(handler);
-    lcl_set_error(interp, "handler is not callable");
-    return LCL_RC_ERR;
-  }
-
-  test_arg = lcl_dict_new();
-
-  {
-    lcl_value *tmp = lcl_string_new("test-data");
-    lcl_dict_put(&test_arg, "data", tmp);
-    lcl_ref_dec(tmp);
-  }
-
-  handler_args[0] = test_arg;
-  rc = lcl_call_proc(interp, handler, 1, handler_args, out);
-
-  lcl_ref_dec(test_arg);
-  lcl_ref_dec(handler);
-
-  return rc;
-}
-
-/*
  * expect::match handle pairs ?opts?
  *
  * Pattern/handler matching with closures.
@@ -1103,20 +1031,17 @@ static int c_expect_loop(lcl_interp *interp, int argc, lcl_value **argv,
 
     rc = c_expect_match(interp, argc, argv, &result);
 
-    if (rc == LCL_RC_BREAK) {
-      *out = result ? result : lcl_string_new("");
-      return LCL_RC_OK;
-    } else if (rc == LCL_RC_CONTINUE) {
+    if (rc == LCL_RC_CONTINUE) {
       continue;
-    } else if (rc != LCL_RC_OK) {
+    }
+    if (rc != LCL_RC_OK && rc != LCL_RC_BREAK) {
       if (result) {
         lcl_ref_dec(result);
       }
       return rc;
-    } else {
-      *out = result ? result : lcl_string_new("");
-      return LCL_RC_OK;
     }
+    *out = result ? result : lcl_string_new("");
+    return LCL_RC_OK;
   }
 }
 

@@ -20,7 +20,8 @@
 #define MATH_TWO_ARG_FN(fn_name, fn)                                           \
   static int fn_name(lcl_interp *interp, int argc, lcl_value **argv,           \
                      lcl_value **out) {                                        \
-    double a, b;                                                               \
+    double a;                                                                  \
+    double b;                                                                  \
     (void)interp;                                                              \
     if (argc < 2)                                                              \
       return LCL_RC_ERR;                                                       \
@@ -135,7 +136,8 @@ static int c_isinf(lcl_interp *interp, int argc, lcl_value **argv,
 /* math::min a b -> minimum of a and b */
 static int c_min(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  double a, b;
+  double a;
+  double b;
   (void)interp;
 
   if (argc < 2) {
@@ -158,7 +160,8 @@ static int c_min(lcl_interp *interp, int argc, lcl_value **argv,
 /* math::max a b -> maximum of a and b */
 static int c_max(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  double a, b;
+  double a;
+  double b;
   (void)interp;
 
   if (argc < 2) {

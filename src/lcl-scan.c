@@ -171,7 +171,8 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
  * Returns new length after normalization.
  */
 static size_t normalize_separators(char *buf, size_t len) {
-  size_t j, k;
+  size_t j;
+  size_t k;
   int brace_depth = 0;
   int in_dquotes = 0;
   int bracket_depth = 0;
@@ -633,11 +634,11 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
             unsigned char ch = (unsigned char)sc->s[j];
 
             if (ch >= '0' && ch <= '9') {
-              val = val * 16 + (ch - '0');
+              val = val * 16u + (unsigned)(ch - '0');
             } else if (ch >= 'a' && ch <= 'f') {
-              val = val * 16 + (ch - 'a' + 10);
+              val = val * 16u + (unsigned)(ch - 'a') + 10u;
             } else if (ch >= 'A' && ch <= 'F') {
-              val = val * 16 + (ch - 'A' + 10);
+              val = val * 16u + (unsigned)(ch - 'A') + 10u;
             } else {
               break;
             }

@@ -15,6 +15,11 @@ set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(CURL_DISABLE_TESTS ON CACHE BOOL "" FORCE)
 set(HTTP_ONLY ON CACHE BOOL "" FORCE)
+# Disable internationalized domain names, which isn't
+# present on macOS
+set(USE_LIBIDN2   OFF CACHE BOOL "" FORCE)
+set(USE_APPLE_IDN OFF CACHE BOOL "" FORCE)
+set(USE_WIN32_IDN OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(curl)
 

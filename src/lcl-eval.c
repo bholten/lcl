@@ -934,8 +934,8 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
-                     lcl_value **out) {
+lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
+                                 lcl_value **out) {
   int i;
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;

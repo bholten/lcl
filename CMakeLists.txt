@@ -80,7 +80,10 @@ set(LCL_SOURCES
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-set(LCL_COMPILE_OPTIONS -Wall -Wextra -Wdeclaration-after-statement)
+set(LCL_COMPILE_OPTIONS
+  -Wall -Wextra -Wdeclaration-after-statement
+  -Wconversion -Wsign-conversion
+)
 
 # Set default build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -389,29 +392,34 @@ if(LCL_BUILD_EXAMPLES)
 endif()
 
 if(LCL_BUILD_TESTS)
-  add_executable(lcl-test test/lcl-test.c)
-  target_compile_definitions(lcl-test PRIVATE LCL_TEST DEBUG_REFC)
-  target_compile_options(lcl-test PRIVATE ${LCL_COMPILE_OPTIONS})
-  target_include_directories(lcl-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  # The C-level harness uses `-Wl,--wrap` to inject failures into
+  # calloc/strndup/strdup and intercept a couple of internal calls for
+  # OOM coverage. Apple's linker rejects it.
+  if(NOT APPLE)
+    add_executable(lcl-test test/lcl-test.c)
+    target_compile_definitions(lcl-test PRIVATE LCL_TEST DEBUG_REFC)
+    target_compile_options(lcl-test PRIVATE ${LCL_COMPILE_OPTIONS})
+    target_include_directories(lcl-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-  if(LCL_BUILD_STATIC)
-    target_link_libraries(lcl-test PRIVATE lcl_static)
-  else()
-    target_link_libraries(lcl-test PRIVATE lcl_shared)
+    if(LCL_BUILD_STATIC)
+      target_link_libraries(lcl-test PRIVATE lcl_static)
+    else()
+      target_link_libraries(lcl-test PRIVATE lcl_shared)
+    endif()
+
+    if(LCL_ENABLE_ASAN)
+      target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
+    endif()
+
+    target_link_options(lcl-test PRIVATE
+      -Wl,--wrap=calloc
+      -Wl,--wrap=strndup
+      -Wl,--wrap=strdup
+      -Wl,--wrap=lcl_program_push_command
+      -Wl,--wrap=hash_table_put)
+
+    add_test(NAME lcl-test-c COMMAND lcl-test)
   endif()
-
-  if(LCL_ENABLE_ASAN)
-    target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
-  endif()
-
-  target_link_options(lcl-test PRIVATE
-    -Wl,--wrap=calloc
-    -Wl,--wrap=strndup
-    -Wl,--wrap=strdup
-    -Wl,--wrap=lcl_program_push_command
-    -Wl,--wrap=hash_table_put)
-
-  add_test(NAME lcl-test-c COMMAND lcl-test)
 
   if(LCL_BUILD_CLI AND LCL_BUILD_TEST_LIB)
     add_test(

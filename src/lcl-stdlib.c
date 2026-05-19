@@ -485,7 +485,8 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
   }
 
   if (all_args_integral(argc, argv)) {
-    long li, ri;
+    long li;
+    long ri;
 
     if (lcl_value_to_int(argv[0], &li) != LCL_OK ||
         lcl_value_to_int(argv[1], &ri) != LCL_OK) {
@@ -1750,7 +1751,8 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
                    lcl_value **out) {
   lcl_program *test_p = NULL;
   lcl_program *body_p = NULL;
-  int test_owned = 0, body_owned = 0;
+  int test_owned = 0;
+  int body_owned = 0;
   lcl_value *last = NULL;
   int test_is_braced;
   int rc;
@@ -3770,7 +3772,8 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       {
         size_t kw_start = i;
         size_t brace_pos = i + 10; /* "quasiquote" */
-        size_t inner_start, inner_end;
+        size_t inner_start;
+        size_t inner_end;
         qq_node *inner_nodes;
         qq_node *node;
 
@@ -3843,7 +3846,8 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       int num_commas = 0;
       int splice = 0;
       size_t comma_start = i;
-      size_t word_start, word_end;
+      size_t word_start;
+      size_t word_end;
 
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
@@ -5307,7 +5311,9 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *callee = NULL;
   lcl_value **argv = NULL;
   lcl_proc *p;
-  int nargs, i, rc;
+  int nargs;
+  int i;
+  int rc;
 
   if (argc < 1) {
     LCL_ERR_MSG(interp, "macroexpand: expected at least a macro name");

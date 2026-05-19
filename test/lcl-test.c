@@ -9,6 +9,14 @@
 #include "lcl-stdlib.h"
 #include "lcl-version.h"
 
+/* These three are declared in the public header <lcl.h>, which we
+ * cannot include here because the internal headers above re-declare
+ * the same types and enums (lcl_result, lcl_type, LCL_OK, ...). For
+ * now just extern-forward what the test needs. */
+extern void lcl_clear_error(lcl_interp *interp);
+extern lcl_type lcl_value_type_of(const lcl_value *value);
+extern lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
+
 /* ---------------------------------------------------------------------------
  * OOM injection (linked via -Wl,--wrap=calloc,--wrap=strndup).
  * Set the counter to N to make the (N+1)th call return NULL; subsequent

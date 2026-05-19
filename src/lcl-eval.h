@@ -17,8 +17,8 @@ int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
 int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
                         const char *file, lcl_value **out);
 
-int lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
-                     lcl_value **out);
+lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
+                                 lcl_value **out);
 
 int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
                          lcl_value **out);

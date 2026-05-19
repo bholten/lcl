@@ -79,12 +79,18 @@ static char *read_stdin(void) {
   while (!feof(stdin)) {
     size_t n = fread(buf + len, 1, capacity - len - 1, stdin);
     len += n;
+
     if (len + 1 >= capacity) {
+      char *new_buf;
       capacity *= 2;
-      buf = (char *)realloc(buf, capacity);
-      if (!buf) {
+      new_buf = (char *)realloc(buf, capacity);
+
+      if (!new_buf) {
+        free(buf);
         return NULL;
       }
+
+      buf = new_buf;
     }
   }
   buf[len] = '\0';
