@@ -669,13 +669,16 @@ static int test_version_surface(void) {
   ASSERT_TRUE(vs[0] != '\0');
   ASSERT_STREQ(vs, LCL_VERSION_STRING);
 
-  /* Macros agree with the string: reformat from the integer components
-   * and compare. If `configure_file` substituted MAJOR/MINOR/PATCH
-   * inconsistently with PROJECT_VERSION, this trips. */
+  /* Macros agree with the string: reformat from the integer
+   * components and compare. If `configure_file` substituted
+   * MAJOR/MINOR/PATCH inconsistently with PROJECT_VERSION, this
+   * trips. Use strcmp directly rather than ASSERT_STREQ — the macro's
+   * NULL guard fires a `-Waddress` warning on `expected`, which the
+   * compiler knows cannot decay to NULL (it's a stack array). */
   n = snprintf(expected, sizeof(expected), "%d.%d.%d",
                LCL_VERSION_MAJOR, LCL_VERSION_MINOR, LCL_VERSION_PATCH);
   ASSERT_TRUE(n > 0 && (size_t)n < sizeof(expected));
-  ASSERT_STREQ(LCL_VERSION_STRING, expected);
+  ASSERT_TRUE(strcmp(LCL_VERSION_STRING, expected) == 0);
 
   /* MINOR and PATCH stay in 0..99 — invariant of LCL_VERSION_NUMBER. */
   ASSERT_TRUE(LCL_VERSION_MAJOR >= 0);
