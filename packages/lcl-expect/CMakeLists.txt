@@ -19,3 +19,14 @@ target_compile_options(lcl_expect PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_expect PRIVATE lcl::lcl lcl_process)
 
 lcl_add_package_test(NAME lcl-expect COMMAND test/expect_test.lcl)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_expect
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-expect.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()

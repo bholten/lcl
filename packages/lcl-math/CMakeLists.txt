@@ -17,3 +17,14 @@ target_include_directories(lcl_math
 
 target_compile_options(lcl_math PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_math PRIVATE lcl::lcl m)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_math
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-math.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()

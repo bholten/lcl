@@ -2,6 +2,12 @@
 
 JSON encoding and decoding for LCL using cJSON.
 
+> **0.1.0 note:** `lcl-json` is built and used in-tree only; it is
+> not part of the `cmake --install` artifact. The package vendors
+> cJSON via `FetchContent`, and a shipping decision for vendored
+> deps is deferred. Use it by building LCL with `-DLCL_BUILD_JSON=ON`
+> and consuming `lcl_json` directly from your own CMake build.
+
 ## Requirements
 
 - LCL core engine

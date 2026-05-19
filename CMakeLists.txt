@@ -44,6 +44,15 @@ option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
 
+# True when Lcl is the top-level CMake project (i.e. the user invoked
+# cmake on this directory directly, not as a subproject). Package
+# CMakeLists check this before adding install() rules.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(LCL_IS_TOP_LEVEL TRUE)
+else()
+  set(LCL_IS_TOP_LEVEL FALSE)
+endif()
+
 set(LCL_SOURCES
   src/hash-table.c
   src/lcl-api.c
@@ -459,6 +468,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     NAMESPACE lcl::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/lcl
   )
+
+  # Packages that have public/transitive deps record them here so
+  # lclConfig.cmake can find_dependency() them before loading the
+  # targets file.
+  set(LCL_INSTALL_DEPS "")
+  if(LCL_BUILD_CRYPTO)
+    list(APPEND LCL_INSTALL_DEPS "OpenSSL")
+  endif()
 
   configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/lclConfig.cmake.in

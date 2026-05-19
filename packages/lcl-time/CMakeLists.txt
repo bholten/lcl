@@ -19,3 +19,14 @@ target_compile_options(lcl_time PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_time PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-time COMMAND test/test.lcl)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_time
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-time.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()

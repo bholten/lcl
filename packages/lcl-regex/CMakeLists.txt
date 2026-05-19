@@ -19,3 +19,14 @@ target_compile_options(lcl_regex PRIVATE -Wall -Wextra)
 target_link_libraries(lcl_regex PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-regex COMMAND test/test.lcl)
+
+if(LCL_IS_TOP_LEVEL)
+  include(GNUInstallDirs)
+  install(TARGETS lcl_regex
+    EXPORT lclTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(FILES include/lcl-regex.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+endif()
