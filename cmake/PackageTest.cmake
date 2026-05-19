@@ -12,9 +12,9 @@
 # path to the .lcl file, relative to the package's source directory.
 # The test runs through the `lcl-cli` executable and inherits
 # whichever packages the CLI was compiled with — so the script tests
-# transitively require LCL_BUILD_IO=ON (for `puts`) and
-# LCL_BUILD_TEST_LIB=ON (for `Test::suite`). That implicit dependency
-# is expected; see the linux-full CI matrix row.
+# transitively require LCL_BUILD_TEST_LIB=ON (for `Test::suite`).
+# `puts` lives in core, so no additional package dependency is
+# implied beyond the Test framework.
 #
 # No-ops if either LCL_BUILD_TESTS or LCL_BUILD_CLI is off, so it's
 # always safe to call.

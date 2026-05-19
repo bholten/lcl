@@ -390,8 +390,6 @@ if(LCL_BUILD_TESTS)
     target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
   endif()
 
-  # Allows lcl-test to intercept calloc/strndup/strdup and return NULL on
-  # demand without modifying the core sources.
   target_link_options(lcl-test PRIVATE
     -Wl,--wrap=calloc
     -Wl,--wrap=strndup
@@ -401,7 +399,7 @@ if(LCL_BUILD_TESTS)
 
   add_test(NAME lcl-test-c COMMAND lcl-test)
 
-  if(LCL_BUILD_CLI AND LCL_BUILD_IO AND LCL_BUILD_TEST_LIB)
+  if(LCL_BUILD_CLI AND LCL_BUILD_TEST_LIB)
     add_test(
       NAME conformance-smoke
       COMMAND $<TARGET_FILE:lcl-cli>

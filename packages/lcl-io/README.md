@@ -30,14 +30,14 @@ let f [io::open_file data.txt r]
 while 1 {
     let line [io::fgets $f 1024]
     if [== [len $line] 0] { break }
-    io::puts $line
+    puts $line
 }
 io::close_file $f
 
 # Directory listing
 let files [io::readdir "."]
 foreach f $files {
-    io::puts $f
+    puts $f
 }
 ```
 
@@ -59,8 +59,9 @@ foreach f $files {
 | `io::close_file $handle` | Close file handle |
 | `io::fgets $handle $size` | Read line (up to size bytes) |
 | `io::fputs $handle $data` | Write string to file |
-| `io::puts $data` | Write string to stdout |
 | `io::flush $handle` | Flush file buffer |
+
+(For stdout writes, use bare `puts` from the core stdlib.)
 
 ### Standard Streams
 
@@ -118,4 +119,4 @@ cmake --build build
 ctest --test-dir build -R lcl-io
 ```
 
-The `LCL_BUILD_TEST_LIB` flag is required because the test suite uses the `Test::suite` framework. `LCL_BUILD_IO` is the package under test, which itself provides `puts`.
+The `LCL_BUILD_TEST_LIB` flag is required because the test suite uses the `Test::suite` framework. `LCL_BUILD_IO` is the package under test.
