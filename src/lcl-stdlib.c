@@ -1416,15 +1416,46 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  if (get_body_program(interp, args[0], "<catch>", &prog, &prog_owned) !=
-      LCL_RC_OK) {
-    free(result_var);
-    free(error_var);
-    return LCL_RC_ERR;
+  /* Compile the script here rather than via get_body_program: a
+   * substitution failure while producing the script text propagates
+   * (the argument never became a script), but a script that fails to
+   * compile is a failure of the caught script and takes the
+   * caught-error path below. */
+  if (args[0]->compiled) {
+    prog = args[0]->compiled;
+    prog_owned = 0;
+  } else {
+    lcl_value *body_v = NULL;
+    const char *body_src;
+
+    if (lcl_eval_word_to_str(interp, args[0], &body_v) != LCL_RC_OK) {
+      free(result_var);
+      free(error_var);
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_value_to_cstring(interp, body_v, &body_src) != LCL_OK) {
+      lcl_ref_dec(body_v);
+      free(result_var);
+      free(error_var);
+      return LCL_RC_ERR;
+    }
+
+    prog = lcl_program_compile(body_src, "<catch>");
+    lcl_ref_dec(body_v);
+
+    if (prog) {
+      prog_owned = 1;
+    }
   }
 
-  rc = lcl_eval_program(interp, prog, &result);
-  free_if_owned(prog, prog_owned);
+  if (!prog) {
+    LCL_ERR_MSG(interp, "syntax error in catch script");
+    rc = LCL_RC_ERR;
+  } else {
+    rc = lcl_eval_program(interp, prog, &result);
+    free_if_owned(prog, prog_owned);
+  }
 
   if (rc == LCL_RC_ERR) {
     if (error_var) {
