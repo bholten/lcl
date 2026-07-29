@@ -1906,6 +1906,50 @@ Test::suite "Error Handling" {
 }
 
 ;; ============================================================================
+;; Arity Diagnostics
+;; ============================================================================
+
+Test::suite "Arity Diagnostics" {
+    Test::case "too many args names the proc" {
+        proc sq_arity {x} { * $x $x }
+        let caught [catch { sq_arity 1 2 } res msg]
+        Test::eq $caught 1
+        Test::eq $msg {sq_arity: expected 1 argument, got 2}
+    }
+
+    Test::case "too few args" {
+        proc add_arity {a b} { + $a $b }
+        catch { add_arity 1 } res msg
+        Test::eq $msg {add_arity: expected 2 arguments, got 1}
+    }
+
+    Test::case "zero-param proc" {
+        proc noargs_arity {} { 42 }
+        catch { noargs_arity 1 } res msg
+        Test::eq $msg {noargs_arity: expected 0 arguments, got 1}
+    }
+
+    Test::case "range with optional params" {
+        proc rng_arity {a (b 2) (c 3)} { + $a $b }
+        catch { rng_arity 1 2 3 4 } res msg
+        Test::eq $msg {rng_arity: expected 1 to 3 arguments, got 4}
+    }
+
+    Test::case "rest param reports at-least" {
+        proc rest_arity {a b *rest} { + $a $b }
+        catch { rest_arity 1 } res msg
+        Test::eq $msg {rest_arity: expected at least 2 arguments, got 1}
+    }
+
+    Test::case "alias reports invoked name, not definition name" {
+        proc canonical_arity {x} { $x }
+        let alias_arity $canonical_arity
+        catch { alias_arity 1 2 } res msg
+        Test::eq $msg {alias_arity: expected 1 argument, got 2}
+    }
+}
+
+;; ============================================================================
 ;; @ Expansion Operator
 ;; ============================================================================
 

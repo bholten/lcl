@@ -4579,7 +4579,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
       return LCL_RC_ERR;
     }
 
-    rc = lcl_call_user_proc(interp, callee, p, call_argc, call_argv, out);
+    rc = lcl_call_user_proc(interp, callee, p, NULL, call_argc, call_argv, out);
     lcl_ref_dec(resolved);
     return rc;
   }
@@ -5415,7 +5415,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     }
   }
 
-  rc = lcl_call_user_proc(interp, callee, p, nargs, argv, out);
+  rc = lcl_call_user_proc(interp, callee, p, NULL, nargs, argv, out);
 
   for (i = 0; i < nargs; i++) {
     lcl_ref_dec(argv[i]);

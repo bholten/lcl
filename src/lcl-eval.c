@@ -149,7 +149,8 @@ cleanup:
 }
 
 int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
-                       int argc, lcl_value **argv, lcl_value **out) {
+                       const char *invoked_name, int argc, lcl_value **argv,
+                       lcl_value **out) {
   int i;
   int rc;
   lcl_env saved = interp->env;
@@ -200,13 +201,27 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       int max_args = p->pspec.n_required + p->pspec.n_optional;
       int has_rest = (p->pspec.rest_name != NULL);
 
-      if (current_argc < min_args) {
-        LCL_ERR_MSG(interp, "too few arguments");
-        goto arity_error;
-      }
+      if (current_argc < min_args ||
+          (!has_rest && current_argc > max_args)) {
+        char msg[160];
+        const char *pname = invoked_name ? invoked_name
+                            : p->self_name ? p->self_name
+                                           : "anonymous proc";
 
-      if (!has_rest && current_argc > max_args) {
-        LCL_ERR_MSG(interp, "too many arguments");
+        if (has_rest) {
+          snprintf(msg, sizeof(msg),
+                   "%.64s: expected at least %d argument%s, got %d", pname,
+                   min_args, min_args == 1 ? "" : "s", current_argc);
+        } else if (min_args == max_args) {
+          snprintf(msg, sizeof(msg), "%.64s: expected %d argument%s, got %d",
+                   pname, min_args, min_args == 1 ? "" : "s", current_argc);
+        } else {
+          snprintf(msg, sizeof(msg),
+                   "%.64s: expected %d to %d arguments, got %d", pname,
+                   min_args, max_args, current_argc);
+        }
+
+        LCL_ERR_MSG_DUP(interp, msg);
         goto arity_error;
       }
 
@@ -438,6 +453,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   int rc;
   int saved_tail_position = interp->in_tail_position;
   int was_in_subcmd = interp->in_subcmd;
+  char invoked_buf[64];
+  const char *invoked_name = NULL;
   interp->in_subcmd = 0;
 
   if (cmd->argc == 0) {
@@ -535,6 +552,13 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
       return LCL_RC_ERR;
     }
+
+    /* Keep the caller-facing name for diagnostics (e.g. arity errors
+     * report the alias used at the call site, not the proc's
+     * definition name). Copied because `name` is released here. */
+    strncpy(invoked_buf, cmd_name, sizeof(invoked_buf) - 1);
+    invoked_buf[sizeof(invoked_buf) - 1] = '\0';
+    invoked_name = invoked_buf;
 
     lcl_ref_dec(name);
 
@@ -647,7 +671,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         return LCL_RC_TAILCALL;
       }
 
-      rc = lcl_call_user_proc(interp, callee, p, argc, argv, out);
+      rc = lcl_call_user_proc(interp, callee, p, invoked_name, argc, argv,
+                              out);
       if (rc == LCL_RC_OK && p->is_macro) {
         if (was_in_subcmd) {
           LCL_ERR_MSG(interp, "macro cannot be used in value position");
