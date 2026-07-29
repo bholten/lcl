@@ -399,3 +399,182 @@ lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
 lcl_value *lcl_value_new_string(const char *str) {
   return lcl_string_new(str);
 }
+
+const char *lcl_type_name(lcl_type t) {
+  switch (t) {
+  case LCL_STRING: return "string";
+  case LCL_INT: return "int";
+  case LCL_FLOAT: return "float";
+  case LCL_LIST: return "list";
+  case LCL_DICT: return "dict";
+  case LCL_CELL: return "cell";
+  case LCL_PROC: return "proc";
+  case LCL_CPROC: return "cproc";
+  case LCL_NAMESPACE: return "namespace";
+  case LCL_OPAQUE: return "opaque";
+  }
+
+  return "unknown";
+}
+
+/* Type-aware representation: strings appear quoted, lists as (...),
+ * dicts as #{...} (recursively), everything else in an
+ * <angle-bracket> form that names the type. Distinguishes values
+ * that stringify identically, e.g. the list (a b) vs the string
+ * "a b". */
+static int repr_append(sbuf *b, lcl_value *v) {
+  if (!v) {
+    return sbuf_append(b, "<null>", 6);
+  }
+
+  switch (v->type) {
+  case LCL_STRING: {
+    const char *s = lcl_value_to_string(v);
+
+    if (!s) {
+      return 0;
+    }
+
+    return sbuf_append_styled(b, s, ELEM_QUOTED);
+  }
+
+  case LCL_INT:
+  case LCL_FLOAT: {
+    const char *s = lcl_value_to_string(v);
+
+    if (!s) {
+      return 0;
+    }
+
+    return sbuf_append(b, s, strlen(s));
+  }
+
+  case LCL_LIST: {
+    size_t len = lcl_list_len(v);
+    size_t i;
+
+    if (!sbuf_putc(b, '(')) {
+      return 0;
+    }
+
+    for (i = 0; i < len; i++) {
+      lcl_value *elem = NULL;
+      int ok;
+
+      if (i > 0 && !sbuf_putc(b, ' ')) {
+        return 0;
+      }
+
+      if (lcl_list_get(v, i, &elem) != LCL_OK) {
+        return 0;
+      }
+
+      ok = repr_append(b, elem);
+      lcl_ref_dec(elem);
+
+      if (!ok) {
+        return 0;
+      }
+    }
+
+    return sbuf_putc(b, ')');
+  }
+
+  case LCL_DICT: {
+    lcl_dict_it it;
+    const char *key;
+    lcl_value *val;
+    int first = 1;
+
+    it.i = 0;
+
+    if (!sbuf_append(b, "#{", 2)) {
+      return 0;
+    }
+
+    while (lcl_dict_iter((const lcl_value **)&v, &it, &key, &val) == LCL_OK) {
+      int ok;
+
+      if (!first && !sbuf_putc(b, ' ')) {
+        lcl_ref_dec(val);
+        return 0;
+      }
+
+      first = 0;
+
+      ok = sbuf_append_styled(b, key, ELEM_QUOTED) && sbuf_putc(b, ' ') &&
+           repr_append(b, val);
+      lcl_ref_dec(val);
+
+      if (!ok) {
+        return 0;
+      }
+    }
+
+    return sbuf_putc(b, '}');
+  }
+
+  case LCL_CELL:
+    return sbuf_append(b, "<cell ", 6) && repr_append(b, v->as.cell.inner) &&
+           sbuf_putc(b, '>');
+
+  case LCL_PROC: {
+    lcl_proc *p = v->as.procedure.proc;
+    const char *kind = p->is_macro ? "<macro " : "<proc ";
+
+    if (!p->self_name) {
+      return sbuf_append(b, "<lambda>", 8);
+    }
+
+    return sbuf_append(b, kind, strlen(kind)) &&
+           sbuf_append(b, p->self_name, strlen(p->self_name)) &&
+           sbuf_putc(b, '>');
+  }
+
+  case LCL_CPROC: {
+    const char *name = v->as.c_proc.fn->name;
+
+    return sbuf_append(b, "<cproc ", 7) &&
+           sbuf_append(b, name ? name : "?", strlen(name ? name : "?")) &&
+           sbuf_putc(b, '>');
+  }
+
+  case LCL_NAMESPACE: {
+    const char *qname = v->as.namespace.qname;
+
+    if (!qname) {
+      return sbuf_append(b, "<namespace>", 11);
+    }
+
+    return sbuf_append(b, "<namespace ", 11) &&
+           sbuf_append(b, qname, strlen(qname)) && sbuf_putc(b, '>');
+  }
+
+  case LCL_OPAQUE: {
+    const char *s = lcl_value_to_string(v);
+
+    if (!s) {
+      return 0;
+    }
+
+    return sbuf_append(b, s, strlen(s));
+  }
+  }
+
+  return 0;
+}
+
+char *lcl_value_repr(lcl_value *v) {
+  sbuf b;
+
+  b.buf = NULL;
+  b.len = 0;
+  b.cap = 0;
+
+  if (!repr_append(&b, v)) {
+    free(b.buf);
+    return NULL;
+  }
+
+  return sbuf_finish(&b);
+}

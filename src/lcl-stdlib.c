@@ -260,6 +260,59 @@ static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* type v - name of v's type tag ("string", "int", "list", ...) */
+static int c_type(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "type: usage: type value");
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(lcl_type_name(argv[0]->type));
+  return LCL_RC_OK;
+}
+
+/* repr v - type-aware representation: strings quoted, lists (...),
+ * dicts #{...}; distinguishes values that stringify identically */
+static int c_repr(lcl_interp *interp, int argc, lcl_value **argv,
+                  lcl_value **out) {
+  char *s;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "repr: usage: repr value");
+    return LCL_RC_ERR;
+  }
+
+  s = lcl_value_repr(argv[0]);
+
+  if (!s) {
+    LCL_ERR_MSG(interp, "out of memory");
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(s);
+  free(s);
+  return LCL_RC_OK;
+}
+
+/* String::from v - explicit conversion to v's canonical string */
+static int c_string_from(lcl_interp *interp, int argc, lcl_value **argv,
+                         lcl_value **out) {
+  const char *s;
+
+  if (argc != 1) {
+    LCL_ERR_MSG(interp, "String::from: usage: String::from value");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[0], &s) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(s);
+  return LCL_RC_OK;
+}
+
 static int all_args_integral(int argc, lcl_value **argv) {
   int i;
   for (i = 0; i < argc; i++) {
@@ -8229,6 +8282,8 @@ void lcl_register_core(lcl_interp *interp) {
 
   lcl_register_proc(interp, "int", c_to_int);
   lcl_register_proc(interp, "float", c_to_float);
+  lcl_register_proc(interp, "type", c_type);
+  lcl_register_proc(interp, "repr", c_repr);
 
   lcl_register_proc(interp, "let", c_let);
   lcl_register_proc(interp, "ref", c_ref);
@@ -8313,6 +8368,8 @@ void lcl_register_core(lcl_interp *interp) {
   string_ns = lcl_ns_new("String");
   lcl_define_take(interp, "String", string_ns);
 
+  lcl_ns_def(string_ns, "from",
+             lcl_c_proc_new("String::from", c_string_from));
   lcl_ns_def(string_ns, "upper",
              lcl_c_proc_new("String::upper", c_string_upper));
   lcl_ns_def(string_ns, "lower",

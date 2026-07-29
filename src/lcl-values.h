@@ -69,6 +69,10 @@ const char *lcl_value_to_string(lcl_value *value);
 lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
                                 const char **out);
 
+const char *lcl_type_name(lcl_type t);
+/* malloc'd type-aware representation; NULL on OOM. */
+char *lcl_value_repr(lcl_value *v);
+
 lcl_value *lcl_int_new(const long n);
 lcl_value *lcl_float_new(const double f);
 lcl_result lcl_value_to_int(lcl_value *value, long *out);

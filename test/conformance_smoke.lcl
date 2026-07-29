@@ -1906,6 +1906,61 @@ Test::suite "Error Handling" {
 }
 
 ;; ============================================================================
+;; Type Inspection (type / repr / String::from)
+;; ============================================================================
+
+Test::suite "Type inspection and conversion" {
+    Test::case "type names" {
+        Test::eq [type "hello"] string
+        Test::eq [type [+ 1 2]] int
+        Test::eq [type [+ 1.5 1]] float
+        Test::eq [type (1 2)] list
+        Test::eq [type #{a 1}] dict
+        Test::eq [type [ref 5]] cell
+        Test::eq [type [lambda {} {1}]] proc
+        Test::eq [type $List] namespace
+    }
+
+    Test::case "literals are strings until coerced" {
+        Test::eq [type 42] string
+        Test::eq [type [int 42]] int
+    }
+
+    Test::case "repr distinguishes list from string" {
+        let l (a b)
+        let s "a b"
+        Test::eq [repr $l] {("a" "b")}
+        Test::eq [repr $s] {"a b"}
+    }
+
+    Test::case "repr of numbers and nesting" {
+        Test::eq [repr [+ 1 2]] 3
+        Test::eq [repr [list [+ 1 1] (x)]] {(2 ("x"))}
+        Test::eq [repr #{k v}] {#{"k" "v"}}
+    }
+
+    Test::case "repr escapes quotes in strings" {
+        ;; repr of the 3-char string a"b is the 6-char text "a\"b"
+        Test::eq [len [repr {a"b}]] 6
+    }
+
+    Test::case "repr of cells and procs" {
+        Test::eq [repr [ref [+ 1 1]]] {<cell 2>}
+        proc repr_named {} { 1 }
+        Test::eq [repr $repr_named] {<proc repr_named>}
+        Test::eq [repr [lambda {} {1}]] {<lambda>}
+    }
+
+    Test::case "String::from converts explicitly" {
+        let l (a b)
+        let s [String::from $l]
+        Test::eq [type $s] string
+        Test::eq $s "a b"
+        Test::eq [String::from [+ 1 2]] "3"
+    }
+}
+
+;; ============================================================================
 ;; Short-Circuit and/or
 ;; ============================================================================
 
