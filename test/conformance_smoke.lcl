@@ -1853,6 +1853,56 @@ Test::suite "Error Handling" {
             Test::eq $res 6
         }
     }
+
+    Test::case "catch unknown command returns 1" {
+        let caught [catch { definitely_not_a_command 1 2 } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "catch traps syntax error in dynamic script" {
+        let code {this is [syntactically bad}
+        let caught [catch $code res msg]
+        Test::eq $caught 1
+        Test::assert [> [len $msg] 0]
+    }
+
+    Test::case "catch traps syntax error in braced literal" {
+        let caught [catch {oops [unclosed} res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "error variable empty on success" {
+        let caught [catch { + 1 1 } res msg]
+        Test::eq $caught 0
+        Test::eq $msg {}
+    }
+
+    Test::case "result variable empty on failure" {
+        let caught [catch { error "boom" } res msg]
+        Test::eq $caught 1
+        Test::eq $res {}
+    }
+
+    Test::case "nested catch: inner catches, outer sees success" {
+        let outer [catch {
+            let inner [catch { error "inner boom" } ires imsg]
+            if [!= $inner 1] { error "inner did not catch" }
+        } ores omsg]
+        Test::eq $outer 0
+    }
+
+    Test::case "error state cleared after successful catch" {
+        catch { error "transient" } res msg
+        ;; a following command must evaluate cleanly
+        Test::eq [+ 2 2] 4
+    }
+
+    Test::case "catch propagates substitution failure of its argument" {
+        ;; $no_such_script fails while constructing the argument, before
+        ;; catch owns a script; the outer catch observes that error.
+        let outer [catch { catch $no_such_script res msg } ores omsg]
+        Test::eq $outer 1
+    }
 }
 
 ;; ============================================================================
