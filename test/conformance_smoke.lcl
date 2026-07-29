@@ -1906,6 +1906,86 @@ Test::suite "Error Handling" {
 }
 
 ;; ============================================================================
+;; Short-Circuit and/or
+;; ============================================================================
+
+Test::suite "Short-circuit and/or" {
+    Test::case "and returns first falsy operand" {
+        Test::eq [and 1 0 2] 0
+        Test::eq [and 1 {} 2] {}
+    }
+
+    Test::case "and returns final operand when all truthy" {
+        Test::eq [and 1 2 3] 3
+        Test::eq [and "a" "b"] "b"
+    }
+
+    Test::case "or returns first truthy operand" {
+        Test::eq [or 0 {} 5 7] 5
+    }
+
+    Test::case "or returns final operand when all falsy" {
+        Test::eq [or 0 {}] {}
+        Test::eq [or {} 0] 0
+    }
+
+    Test::case "identities and single operand" {
+        Test::eq [and] 1
+        Test::eq [or] 0
+        Test::eq [and 7] 7
+        Test::eq [or {}] {}
+    }
+
+    Test::case "or as default-value idiom" {
+        let configured ""
+        let editor [or $configured "vi"]
+        Test::eq $editor "vi"
+    }
+
+    Test::case "and short-circuits side effects" {
+        var sc_hits 0
+        proc sc_bump {} { set! sc_hits [+ $sc_hits 1]; return 1 }
+        let r [and 0 [sc_bump]]
+        Test::eq $r 0
+        Test::eq $sc_hits 0
+    }
+
+    Test::case "or short-circuits side effects" {
+        var sc_hits2 0
+        proc sc_bump2 {} { set! sc_hits2 [+ $sc_hits2 1]; return 1 }
+        let r [or 5 [sc_bump2]]
+        Test::eq $r 5
+        Test::eq $sc_hits2 0
+    }
+
+    Test::case "later operands do evaluate when reached" {
+        var sc_hits3 0
+        proc sc_bump3 {} { set! sc_hits3 [+ $sc_hits3 1]; return 9 }
+        let r [and 1 [sc_bump3]]
+        Test::eq $r 9
+        Test::eq $sc_hits3 1
+    }
+
+    Test::case "and guards out-of-bounds indexing" {
+        let xs (1 2 3)
+        let i 5
+        let r [and [< $i [len $xs]] [get $xs $i]]
+        Test::eq $r 0
+    }
+
+    Test::case "@ spread is rejected" {
+        let sc_conds (1 1)
+        let caught [catch { and @$sc_conds } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "operand error propagates" {
+        let caught [catch { or 0 [no_such_proc_xyz 1] } res msg]
+        Test::eq $caught 1
+    }
+}
+
+;; ============================================================================
 ;; Arity Diagnostics
 ;; ============================================================================
 
