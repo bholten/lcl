@@ -182,47 +182,67 @@ static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int c_and(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
-  int b;
+/* and / or - short-circuit logical special forms (spec §8).
+ *
+ * Operands are evaluated left to right through lcl_eval_word — the
+ * same per-word machinery ordinary argument evaluation uses — but
+ * conditionally: evaluation stops at the deciding operand, so later
+ * operands can rely on guards (`and [in-bounds ...] [index ...]`).
+ *
+ * Value-returning: `and` yields the first falsy operand (else the
+ * final operand); `or` yields the first truthy operand (else the
+ * final operand). Identities: [and] -> 1, [or] -> 0.
+ *
+ * `@` spread is rejected up front: spread operands are already
+ * evaluated, so laziness buys nothing — List::all?/List::any? cover
+ * evaluated collections. */
+static int and_or_impl(lcl_interp *interp, int argc, const lcl_word **args,
+                       lcl_value **out, int stop_when_truthy,
+                       long identity, const char *name) {
+  lcl_value *val = NULL;
   int i;
 
-  if (argc < 2) {
-    LCL_ERR_MSG(interp, "and requires at least 2 arguments");
-    return LCL_RC_ERR;
-  }
-
   for (i = 0; i < argc; i++) {
-    b = lcl_value_is_true(argv[i]);
-
-    if (!b) {
-      goto ret;
+    if (args[i]->expand) {
+      char msg[96];
+      snprintf(msg, sizeof(msg),
+               "%s: @ spread is not supported; use List::%s?", name,
+               stop_when_truthy ? "any" : "all");
+      LCL_ERR_MSG_DUP(interp, msg);
+      return LCL_RC_ERR;
     }
   }
 
-ret:
-  *out = lcl_int_new(b);
+  if (argc == 0) {
+    *out = lcl_int_new(identity);
+    return LCL_RC_OK;
+  }
+
+  for (i = 0; i < argc; i++) {
+    lcl_ref_dec(val);
+    val = NULL;
+
+    if (lcl_eval_word(interp, args[i], &val) != LCL_RC_OK) {
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_value_is_true(val) == stop_when_truthy) {
+      break;
+    }
+  }
+
+  *out = val;
   return LCL_RC_OK;
 }
 
-static int c_or(lcl_interp *interp, int argc, lcl_value **argv,
+static int s_and(lcl_interp *interp, int argc, const lcl_word **args,
+                 lcl_value **out) {
+  return and_or_impl(interp, argc, args, out, 0, 1, "and");
+}
+
+static int s_or(lcl_interp *interp, int argc, const lcl_word **args,
                 lcl_value **out) {
-  int b;
-  int i;
-
-  if (argc < 2) {
-    LCL_ERR_MSG(interp, "or requires at least 2 arguments");
-    return LCL_RC_ERR;
-  }
-
-  b = lcl_value_is_true(argv[0]);
-
-  for (i = 1; i < argc; i++) {
-    b = b || lcl_value_is_true(argv[i]);
-  }
-
-  *out = lcl_int_new(b);
-  return LCL_RC_OK;
+  return and_or_impl(interp, argc, args, out, 1, 0, "or");
 }
 
 static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
@@ -8113,8 +8133,8 @@ void lcl_register_core(lcl_interp *interp) {
 
   lcl_register_proc(interp, "puts", c_puts);
 
-  lcl_register_proc(interp, "and", c_and);
-  lcl_register_proc(interp, "or", c_or);
+  lcl_register_spec(interp, "and", s_and);
+  lcl_register_spec(interp, "or", s_or);
   lcl_register_proc(interp, "not", c_not);
 
   lcl_register_proc(interp, "+", c_add);
