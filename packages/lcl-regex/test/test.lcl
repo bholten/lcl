@@ -1,16 +1,141 @@
-;; Basic tests for lcl-regexp
+;; regex:: Package Tests
 ;;
-;; Basically wraps <regex.h>
-;;
+;; POSIX ERE via <regex.h>. Every command that takes a pattern accepts
+;; either a pattern string or a compiled handle from regex::compile.
 
-Test::suite "Regex Test Suite" {
-    Test::case "Test basic regex matching" {
-        let re [regex::regcomp {re*}]
-        let result [regex::regexec $re "regex"]
-        
-        assert [opaque? $re]
-        assert [== $result 1]
+;; ============================================================================
+;; Compile & Basic Matching
+;; ============================================================================
+
+Test::suite "Compile & Basic Matching" {
+    Test::case "compile returns an opaque handle" {
+        let re [regex::compile {re*}]
+        Test::assert [opaque? $re]
+        Test::eq [regex::regexec $re "regex"] 1
+    }
+
+    Test::case "regcomp remains as an alias" {
+        let re [regex::regcomp {ab+c}]
+        Test::eq [regex::regexec $re "abbbc"] 1
+        Test::eq [regex::regexec $re "ac"] 0
+    }
+
+    Test::case "match takes a pattern string" {
+        Test::eq [regex::match {^h.llo$} "hello"] 1
+        Test::eq [regex::match {^h.llo$} "hallo!"] 0
+    }
+
+    Test::case "match takes a compiled handle" {
+        let re [regex::compile {[0-9]+}]
+        Test::eq [regex::match $re "abc123"] 1
+        Test::eq [regex::match $re "abcdef"] 0
+    }
+
+    Test::case "alternation" {
+        let re [regex::compile {^(issue|bug)-[0-9]+$}]
+        Test::eq [regex::match $re "issue-42"] 1
+        Test::eq [regex::match $re "bug-7"] 1
+        Test::eq [regex::match $re "task-9"] 0
+    }
+
+    Test::case "invalid pattern errors" {
+        let caught [catch { regex::match {[unclosed} "x" } res msg]
+        Test::eq $caught 1
     }
 }
+
+;; ============================================================================
+;; Find & Captures
+;; ============================================================================
+
+Test::suite "Find & Captures" {
+    Test::case "find returns start and end offsets" {
+        Test::eq [regex::find {[0-9]+} "ab123cd"] (2 5)
+    }
+
+    Test::case "find returns empty list on no match" {
+        Test::eq [len [regex::find {[0-9]+} "abcdef"]] 0
+    }
+
+    Test::case "captures returns whole match then groups" {
+        let caps [regex::captures {(issue|bug)-([0-9]+)} "see issue-42 here"]
+        Test::eq [len $caps] 3
+        Test::eq [get $caps 0] "issue-42"
+        Test::eq [get $caps 1] "issue"
+        Test::eq [get $caps 2] "42"
+    }
+
+    Test::case "captures returns empty list on no match" {
+        Test::eq [len [regex::captures {([0-9]+)} "abc"]] 0
+    }
+
+    Test::case "unmatched optional group is empty string" {
+        let caps [regex::captures {a(x)?b} "ab"]
+        Test::eq [len $caps] 2
+        Test::eq [get $caps 0] "ab"
+        Test::eq [get $caps 1] ""
+    }
+
+    Test::case "captures works with compiled handle" {
+        let re [regex::compile {([a-z]+)://(.+)}]
+        let caps [regex::captures $re "https://example.com"]
+        Test::eq [get $caps 1] "https"
+        Test::eq [get $caps 2] "example.com"
+    }
+}
+
+;; ============================================================================
+;; Find All, Replace, Split
+;; ============================================================================
+
+Test::suite "Find All, Replace, Split" {
+    Test::case "find_all collects every match" {
+        Test::eq [regex::find_all {[0-9]+} "a1b22c333"] (1 22 333)
+    }
+
+    Test::case "find_all with no matches is empty" {
+        Test::eq [len [regex::find_all {[0-9]+} "abc"]] 0
+    }
+
+    Test::case "find_all does not rematch anchors mid-string" {
+        Test::eq [regex::find_all {^[0-9]+} "1a2b"] (1)
+    }
+
+    Test::case "replace substitutes every match" {
+        Test::eq [regex::replace {[0-9]+} "N" "a1b22c"] "aNbNc"
+    }
+
+    Test::case "replace expands group references" {
+        Test::eq [regex::replace {(bug)-([0-9]+)} {\2:\1} "bug-42"] "42:bug"
+    }
+
+    Test::case "replace backslash-zero is the whole match" {
+        Test::eq [regex::replace {[0-9]+} {<\0>} "a12b"] "a<12>b"
+    }
+
+    Test::case "replace with no matches returns input" {
+        Test::eq [regex::replace {[0-9]+} "N" "abc"] "abc"
+    }
+
+    Test::case "split on separators" {
+        Test::eq [regex::split {,[ ]*} "a, b,c"] (a b c)
+    }
+
+    Test::case "split with no match returns whole string" {
+        Test::eq [regex::split {,} "abc"] (abc)
+    }
+
+    Test::case "split keeps empty leading and trailing fields" {
+        let parts [regex::split {,} ",a,"]
+        Test::eq [len $parts] 3
+        Test::eq [get $parts 0] ""
+        Test::eq [get $parts 1] "a"
+        Test::eq [get $parts 2] ""
+    }
+}
+
+;; ============================================================================
+;; Run Tests
+;; ============================================================================
 
 Test::run
