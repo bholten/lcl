@@ -6789,211 +6789,267 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* List::sort list - sort list lexicographically by string value */
-static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
-                       lcl_value **out) {
-  lcl_value *list;
-  lcl_value *result;
-  lcl_value **items;
-  size_t i;
-  size_t j;
-  size_t len;
+/* ---- List sort machinery ----------------------------------------
+ *
+ * All three sorts are stable merge sorts over (key, value) pairs.
+ * List::sort and List::sort_by order by the shared total ordering
+ * below; List::sort_with delegates ordering to a user comparator.
+ */
 
-  if (argc != 1) {
-    return LCL_RC_ERR;
-  }
+/* Total ordering shared by List::sort and List::sort_by keys:
+ * numeric when both operands are numeric (same coercion as the
+ * comparison operators, with the integral fast path preserved),
+ * bytewise string comparison otherwise. */
+static int lcl_order_cmp(lcl_value *a, lcl_value *b) {
+  lcl_value *pair[2];
+  double fa;
+  double fb;
+  const char *sa;
+  const char *sb;
 
-  list = argv[0];
+  pair[0] = a;
+  pair[1] = b;
 
-  if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
-  }
+  if (all_args_integral(2, pair)) {
+    long ia;
+    long ib;
 
-  len = lcl_list_len(list);
-
-  if (len == 0) {
-    *out = lcl_list_new();
-    return LCL_RC_OK;
-  }
-
-  items = malloc(len * sizeof(lcl_value *));
-
-  if (!items) {
-    return LCL_RC_ERR;
-  }
-
-  for (i = 0; i < len; i++) {
-    if (lcl_list_get(list, i, &items[i]) != LCL_OK) {
-      while (i > 0) {
-        lcl_ref_dec(items[--i]);
-      }
-
-      free(items);
-
-      return LCL_RC_ERR;
+    if (lcl_value_to_int(a, &ia) == LCL_OK &&
+        lcl_value_to_int(b, &ib) == LCL_OK) {
+      return ia < ib ? -1 : ia > ib ? 1 : 0;
     }
+  } else if (lcl_value_to_float(a, &fa) == LCL_OK &&
+             lcl_value_to_float(b, &fb) == LCL_OK) {
+    return fa < fb ? -1 : fa > fb ? 1 : 0;
   }
 
-  for (i = 1; i < len; i++) {
-    lcl_value *key = items[i];
-    const char *key_str;
-    j = i;
+  sa = lcl_value_to_string(a);
+  sb = lcl_value_to_string(b);
 
-    if (lcl_value_to_cstring(interp, key, &key_str) != LCL_OK) {
-      size_t k;
-      for (k = 0; k < len; k++) {
-        lcl_ref_dec(items[k]);
-      }
-      free(items);
-      return LCL_RC_ERR;
-    }
-
-    while (j > 0) {
-      const char *prev_str;
-
-      if (lcl_value_to_cstring(interp, items[j - 1], &prev_str) != LCL_OK) {
-        size_t k;
-
-        for (k = 0; k < len; k++) {
-          lcl_ref_dec(items[k]);
-        }
-
-        free(items);
-        return LCL_RC_ERR;
-      }
-
-      if (strcmp(prev_str, key_str) <= 0) {
-        break;
-      }
-
-      items[j] = items[j - 1];
-      j--;
-    }
-
-    items[j] = key;
-  }
-
-  result = lcl_list_new();
-
-  for (i = 0; i < len; i++) {
-    lcl_list_push(&result, items[i]);
-    lcl_ref_dec(items[i]);
-  }
-
-  free(items);
-  *out = result;
-  return LCL_RC_OK;
+  return strcmp(sa ? sa : "", sb ? sb : "");
 }
 
-/* List::sort_by f list - sort using comparison function f(a, b) -> int */
-static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+typedef struct {
+  lcl_value *key; /* owned; NULL unless sorting by key function */
+  lcl_value *val; /* owned */
+} lcl_sort_pair;
+
+/* Writes <0/0/>0 to *ord; returns nonzero to abort the sort (with
+ * the interpreter error state already set). */
+typedef int (*lcl_sort_cmp_fn)(void *ctx, const lcl_sort_pair *a,
+                               const lcl_sort_pair *b, int *ord);
+
+static int cmp_pair_val(void *ctx, const lcl_sort_pair *a,
+                        const lcl_sort_pair *b, int *ord) {
+  (void)ctx;
+  *ord = lcl_order_cmp(a->val, b->val);
+  return 0;
+}
+
+static int cmp_pair_key(void *ctx, const lcl_sort_pair *a,
+                        const lcl_sort_pair *b, int *ord) {
+  (void)ctx;
+  *ord = lcl_order_cmp(a->key, b->key);
+  return 0;
+}
+
+typedef struct {
+  lcl_interp *interp;
   lcl_value *func;
-  lcl_value *list;
-  lcl_value *result;
-  lcl_value **items;
+} lcl_user_cmp_ctx;
+
+static int cmp_pair_user(void *ctx, const lcl_sort_pair *a,
+                         const lcl_sort_pair *b, int *ord) {
+  lcl_user_cmp_ctx *u = (lcl_user_cmp_ctx *)ctx;
+  lcl_value *cmp_args[2];
+  lcl_value *res = NULL;
+  long v;
+
+  cmp_args[0] = a->val;
+  cmp_args[1] = b->val;
+
+  if (lcl_call_proc(u->interp, u->func, 2, cmp_args, &res) != LCL_RC_OK) {
+    return -1;
+  }
+
+  if (lcl_value_to_int(res, &v) != LCL_OK) {
+    lcl_ref_dec(res);
+    LCL_ERR_MSG(u->interp,
+                "List::sort_with: comparator must return an integer");
+    return -1;
+  }
+
+  lcl_ref_dec(res);
+  *ord = v < 0 ? -1 : v > 0 ? 1 : 0;
+
+  return 0;
+}
+
+/* Stable merge sort: ties keep the left run's element first. */
+static int merge_sort_pairs(lcl_sort_pair *items, lcl_sort_pair *tmp,
+                            size_t lo, size_t hi, lcl_sort_cmp_fn cmp,
+                            void *ctx) {
+  size_t mid;
   size_t i;
   size_t j;
   size_t k;
-  size_t len;
-  int rc;
 
-  if (argc != 2) {
-    return LCL_RC_ERR;
+  if (hi - lo < 2) {
+    return 0;
   }
 
-  func = argv[0];
-  list = argv[1];
+  mid = lo + (hi - lo) / 2;
 
-  if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+  if (merge_sort_pairs(items, tmp, lo, mid, cmp, ctx) != 0 ||
+      merge_sort_pairs(items, tmp, mid, hi, cmp, ctx) != 0) {
+    return -1;
   }
 
-  if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+  for (i = lo; i < hi; i++) {
+    tmp[i] = items[i];
   }
 
-  len = lcl_list_len(list);
+  i = lo;
+  j = mid;
+  k = lo;
+
+  while (i < mid && j < hi) {
+    int ord;
+
+    if (cmp(ctx, &tmp[i], &tmp[j], &ord) != 0) {
+      return -1;
+    }
+
+    if (ord <= 0) {
+      items[k++] = tmp[i++];
+    } else {
+      items[k++] = tmp[j++];
+    }
+  }
+
+  while (i < mid) {
+    items[k++] = tmp[i++];
+  }
+
+  while (j < hi) {
+    items[k++] = tmp[j++];
+  }
+
+  return 0;
+}
+
+/* Shared driver: pull elements (and, for sort_by, keys computed
+ * exactly once per element) into pairs, sort, rebuild a value list. */
+static int list_sort_common(lcl_interp *interp, lcl_value *list,
+                            lcl_value *keyfn, lcl_sort_cmp_fn cmp,
+                            void *ctx, lcl_value **out) {
+  size_t len = lcl_list_len(list);
+  size_t i;
+  lcl_sort_pair *pairs;
+  lcl_sort_pair *tmp;
+  int failed = 0;
 
   if (len == 0) {
     *out = lcl_list_new();
     return LCL_RC_OK;
   }
 
-  items = malloc(len * sizeof(lcl_value *));
+  pairs = malloc(len * sizeof(*pairs));
+  tmp = malloc(len * sizeof(*tmp));
 
-  if (!items) {
+  if (!pairs || !tmp) {
+    free(pairs);
+    free(tmp);
     return LCL_RC_ERR;
   }
 
   for (i = 0; i < len; i++) {
-    if (lcl_list_get(list, i, &items[i]) != LCL_OK) {
-      while (i > 0) {
-        lcl_ref_dec(items[--i]);
-      }
-
-      free(items);
-      return LCL_RC_ERR;
-    }
+    pairs[i].key = NULL;
+    pairs[i].val = NULL;
   }
-
-  for (i = 1; i < len; i++) {
-    lcl_value *key = items[i];
-    j = i;
-
-    while (j > 0) {
-      lcl_value *cmp_args[2];
-      lcl_value *cmp_result = NULL;
-      long cmp_val;
-
-      cmp_args[0] = items[j - 1];
-      cmp_args[1] = key;
-      rc = lcl_call_proc(interp, func, 2, cmp_args, &cmp_result);
-
-      if (rc != LCL_RC_OK) {
-        for (k = 0; k < len; k++) {
-          lcl_ref_dec(items[k]);
-        }
-
-        free(items);
-
-        return rc;
-      }
-
-      if (lcl_value_to_int(cmp_result, &cmp_val) != LCL_OK) {
-        lcl_ref_dec(cmp_result);
-
-        for (k = 0; k < len; k++) {
-          lcl_ref_dec(items[k]);
-        }
-
-        free(items);
-
-        return LCL_RC_ERR;
-      }
-
-      lcl_ref_dec(cmp_result);
-
-      if (cmp_val <= 0) {
-        break;
-      }
-
-      items[j] = items[j - 1];
-      j--;
-    }
-    items[j] = key;
-  }
-
-  result = lcl_list_new();
 
   for (i = 0; i < len; i++) {
-    lcl_list_push(&result, items[i]);
-    lcl_ref_dec(items[i]);
+    if (lcl_list_get(list, i, &pairs[i].val) != LCL_OK) {
+      failed = 1;
+      break;
+    }
+
+    if (keyfn) {
+      lcl_value *kargs[1];
+
+      kargs[0] = pairs[i].val;
+
+      if (lcl_call_proc(interp, keyfn, 1, kargs, &pairs[i].key) !=
+          LCL_RC_OK) {
+        failed = 1;
+        break;
+      }
+    }
   }
 
-  free(items);
-  *out = result;
-  return LCL_RC_OK;
+  if (!failed && merge_sort_pairs(pairs, tmp, 0, len, cmp, ctx) != 0) {
+    failed = 1;
+  }
+
+  if (!failed) {
+    lcl_value *result = lcl_list_new();
+
+    for (i = 0; i < len; i++) {
+      lcl_list_push(&result, pairs[i].val);
+    }
+
+    *out = result;
+  }
+
+  for (i = 0; i < len; i++) {
+    lcl_ref_dec(pairs[i].val);
+    lcl_ref_dec(pairs[i].key);
+  }
+
+  free(pairs);
+  free(tmp);
+
+  return failed ? LCL_RC_ERR : LCL_RC_OK;
+}
+
+/* List::sort list - stable sort by the ordinary total ordering */
+static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
+                       lcl_value **out) {
+  if (argc != 1 || argv[0]->type != LCL_LIST) {
+    LCL_ERR_MSG(interp, "List::sort: usage: List::sort list");
+    return LCL_RC_ERR;
+  }
+
+  return list_sort_common(interp, argv[0], NULL, cmp_pair_val, NULL, out);
+}
+
+/* List::sort_by f list - stable sort by key function f(elem) -> key.
+ * f runs exactly once per element (decorate-sort-undecorate); keys
+ * are compared with the ordinary total ordering. */
+static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
+                          lcl_value **out) {
+  if (argc != 2 || !lcl_is_callable(argv[0]) || argv[1]->type != LCL_LIST) {
+    LCL_ERR_MSG(interp, "List::sort_by: usage: List::sort_by keyfn list");
+    return LCL_RC_ERR;
+  }
+
+  return list_sort_common(interp, argv[1], argv[0], cmp_pair_key, NULL, out);
+}
+
+/* List::sort_with f list - stable sort with comparator f(a, b) -> int */
+static int c_list_sort_with(lcl_interp *interp, int argc, lcl_value **argv,
+                            lcl_value **out) {
+  lcl_user_cmp_ctx ctx;
+
+  if (argc != 2 || !lcl_is_callable(argv[0]) || argv[1]->type != LCL_LIST) {
+    LCL_ERR_MSG(interp, "List::sort_with: usage: List::sort_with cmp list");
+    return LCL_RC_ERR;
+  }
+
+  ctx.interp = interp;
+  ctx.func = argv[0];
+
+  return list_sort_common(interp, argv[1], NULL, cmp_pair_user, &ctx, out);
 }
 
 /* List::find pred list - find first element where pred returns true */
@@ -8233,6 +8289,8 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_ns_def(list_ns, "sort", lcl_c_proc_new("List::sort", c_list_sort));
   lcl_ns_def(list_ns, "sort_by",
              lcl_c_proc_new("List::sort_by", c_list_sort_by));
+  lcl_ns_def(list_ns, "sort_with",
+             lcl_c_proc_new("List::sort_with", c_list_sort_with));
   lcl_ns_def(list_ns, "find", lcl_c_proc_new("List::find", c_list_find));
   lcl_ns_def(list_ns, "any?", lcl_c_proc_new("List::any?", c_list_any));
   lcl_ns_def(list_ns, "all?", lcl_c_proc_new("List::all?", c_list_all));
