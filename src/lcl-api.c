@@ -119,10 +119,10 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
   interp->err_file_owned = interp->cur_file ? 1 : 0;
   interp->err_line = interp->cur_line;
   interp->err_msg = msg;
-  /* Bugfix #52: `msg` is borrowed (caller-owned static or literal),
-   * so make ownership explicit. LCL_ERR_CLEAR above already zeroes
-   * the flag, but re-asserting here keeps the invariant local to
-   * this function — robust against future reorderings of CLEAR or
+  /* Bugfix: `msg` is borrowed (caller-owned static or literal), so
+   * make ownership explicit. LCL_ERR_CLEAR above already zeroes the
+   * flag, but re-asserting here keeps the invariant local to this
+   * function — robust against future reorderings of CLEAR or
    * additions of an early-return path. */
   interp->err_msg_owned = 0;
 }

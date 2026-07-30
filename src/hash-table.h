@@ -6,7 +6,7 @@
 
 typedef struct lcl_value lcl_value;
 
-/* Bugfix #57: 64-bit unsigned type for FNV-1a hashing without
+/* Bugfix: 64-bit unsigned type for FNV-1a hashing without
  * `<stdint.h>` (C99). C89 doesn't guarantee any 64-bit integer:
  * `unsigned long` is only required to be ≥32 bits. On LP64 (Linux,
  * macOS) it's 64 bits — strict C89 works. On LLP64 (Windows MSVC x64)

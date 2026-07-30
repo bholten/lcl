@@ -189,12 +189,12 @@ lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out) {
     return LCL_ERROR;
   }
 
-  /* Bugfix #58: a cell whose `inner` is NULL is a carcass — it was
-   * cleared by `lcl_frame_clear` / `lcl_frame_free`'s cycle-breaker
-   * (see #39). Reading from such a cell must be an error; previously
-   * we returned LCL_OK with `*out == NULL`, which silently propagated
-   * a NULL value through every caller and violated the implicit
-   * "OK ⇒ non-NULL out" contract. */
+  /* Bugfix: a cell whose `inner` is NULL is a carcass — it was
+   * cleared by `lcl_frame_clear` / `lcl_frame_free`'s
+   * cycle-breaker. Reading from such a cell must be an error;
+   * previously we returned LCL_OK with `*out == NULL`, which silently
+   * propagated a NULL value through every caller and violated the
+   * implicit "OK ⇒ non-NULL out" contract. */
   if (!cell->as.cell.inner) {
     *out = NULL;
     return LCL_ERROR;

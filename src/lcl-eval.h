@@ -3,8 +3,6 @@
 
 #include "lcl-compile.h"
 
-/* invoked_name is the caller-facing command name for diagnostics; may
- * be NULL (falls back to the proc's definition name). */
 int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
                        const char *invoked_name, int argc, lcl_value **argv,
                        lcl_value **out);
@@ -23,9 +21,6 @@ int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
 lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
                                  lcl_value **out);
 
-/* Compile with lcl_program_compile_ex; on failure, record the compile
- * error (message + file + line) in the interp's error state and
- * return NULL. */
 lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
                                 const char *file);
 
