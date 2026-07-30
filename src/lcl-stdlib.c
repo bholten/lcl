@@ -120,7 +120,8 @@ static int lcl_value_is_true(lcl_value *v);
  * Shared diagnostics (#68): every stdlib failure names the proc and
  * states expected vs got, matching the user-proc arity format from
  * #62 ("name: expected X, got Y").
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 /* Arity guard. `max` < 0 means "at least min". Returns 1 when argc is
  * acceptable; otherwise records "name: expected ..., got argc" and
@@ -281,17 +282,16 @@ static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
  * evaluated, so laziness buys nothing — List::all?/List::any? cover
  * evaluated collections. */
 static int and_or_impl(lcl_interp *interp, int argc, const lcl_word **args,
-                       lcl_value **out, int stop_when_truthy,
-                       long identity, const char *name) {
+                       lcl_value **out, int stop_when_truthy, long identity,
+                       const char *name) {
   lcl_value *val = NULL;
   int i;
 
   for (i = 0; i < argc; i++) {
     if (args[i]->expand) {
       char msg[96];
-      snprintf(msg, sizeof(msg),
-               "%s: @ spread is not supported; use List::%s?", name,
-               stop_when_truthy ? "any" : "all");
+      snprintf(msg, sizeof(msg), "%s: @ spread is not supported; use List::%s?",
+               name, stop_when_truthy ? "any" : "all");
       LCL_ERR_MSG_DUP(interp, msg);
       return LCL_RC_ERR;
     }
@@ -4682,7 +4682,6 @@ static char *read_file(const char *path, size_t *out_len) {
  *   LCL_STRING            -> resolve as a command name, recurse
  *   anything else         -> error: not callable
  *
- * See lcl_value_substitution_redesign.md for the design rationale —
  * this is the explicit-dispatch keyword that replaces the implicit
  * one-word-program dispatch once the parse-time rule lands. */
 static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
@@ -6104,8 +6103,7 @@ static int c_empty(lcl_interp *interp, int argc, lcl_value **argv,
   case LCL_OPAQUE: *out = lcl_int_new(0); return LCL_RC_OK;
 
   default:
-    return err_expected_got(interp, "empty?", "list, dict, or string",
-                            argv[0]);
+    return err_expected_got(interp, "empty?", "list, dict, or string", argv[0]);
   }
 }
 
@@ -6923,7 +6921,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (lcl_value_is_true(pred_result)) {
       if (lcl_list_push(&result, elem) != LCL_OK) {
-      LCL_ERR_MSG(interp, "List::filter: out of memory");
+        LCL_ERR_MSG(interp, "List::filter: out of memory");
         lcl_ref_dec(pred_result);
         lcl_ref_dec(elem);
         lcl_ref_dec(result);
@@ -7095,9 +7093,8 @@ static int cmp_pair_user(void *ctx, const lcl_sort_pair *a,
 }
 
 /* Stable merge sort: ties keep the left run's element first. */
-static int merge_sort_pairs(lcl_sort_pair *items, lcl_sort_pair *tmp,
-                            size_t lo, size_t hi, lcl_sort_cmp_fn cmp,
-                            void *ctx) {
+static int merge_sort_pairs(lcl_sort_pair *items, lcl_sort_pair *tmp, size_t lo,
+                            size_t hi, lcl_sort_cmp_fn cmp, void *ctx) {
   size_t mid;
   size_t i;
   size_t j;
@@ -7150,8 +7147,8 @@ static int merge_sort_pairs(lcl_sort_pair *items, lcl_sort_pair *tmp,
 /* Shared driver: pull elements (and, for sort_by, keys computed
  * exactly once per element) into pairs, sort, rebuild a value list. */
 static int list_sort_common(lcl_interp *interp, lcl_value *list,
-                            lcl_value *keyfn, lcl_sort_cmp_fn cmp,
-                            void *ctx, lcl_value **out) {
+                            lcl_value *keyfn, lcl_sort_cmp_fn cmp, void *ctx,
+                            lcl_value **out) {
   size_t len = lcl_list_len(list);
   size_t i;
   lcl_sort_pair *pairs;
@@ -7189,8 +7186,7 @@ static int list_sort_common(lcl_interp *interp, lcl_value *list,
 
       kargs[0] = pairs[i].val;
 
-      if (lcl_call_proc(interp, keyfn, 1, kargs, &pairs[i].key) !=
-          LCL_RC_OK) {
+      if (lcl_call_proc(interp, keyfn, 1, kargs, &pairs[i].key) != LCL_RC_OK) {
         failed = 1;
         break;
       }
@@ -7554,7 +7550,7 @@ static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
       for (j = 0; j < sublen; j++) {
         lcl_value *subelem = NULL;
         if (lcl_list_get(elem, j, &subelem) != LCL_OK) {
-      LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
+          LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
           lcl_ref_dec(elem);
           lcl_ref_dec(result);
           return LCL_RC_ERR;
@@ -8559,8 +8555,7 @@ void lcl_register_core(lcl_interp *interp) {
   string_ns = lcl_ns_new("String");
   lcl_define_take(interp, "String", string_ns);
 
-  lcl_ns_def(string_ns, "from",
-             lcl_c_proc_new("String::from", c_string_from));
+  lcl_ns_def(string_ns, "from", lcl_c_proc_new("String::from", c_string_from));
   lcl_ns_def(string_ns, "upper",
              lcl_c_proc_new("String::upper", c_string_upper));
   lcl_ns_def(string_ns, "lower",

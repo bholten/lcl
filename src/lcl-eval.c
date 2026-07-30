@@ -201,10 +201,9 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
       int max_args = p->pspec.n_required + p->pspec.n_optional;
       int has_rest = (p->pspec.rest_name != NULL);
 
-      if (current_argc < min_args ||
-          (!has_rest && current_argc > max_args)) {
+      if (current_argc < min_args || (!has_rest && current_argc > max_args)) {
         char msg[160];
-        const char *pname = invoked_name ? invoked_name
+        const char *pname = invoked_name   ? invoked_name
                             : p->self_name ? p->self_name
                                            : "anonymous proc";
 
@@ -411,7 +410,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
 
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
-        /* Bugfix #58: distinguish cleared-cell from other cell_get
+        /* Bugfix: distinguish cleared-cell from other cell_get
          * failures so the user sees a useful error instead of a
          * generic propagation. */
         if (!val->as.cell.inner) {
@@ -463,8 +462,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
-  /* Parse-time dispatch rule (Phase 3 of the value-substitution
-   * redesign; see lcl_value_substitution_redesign.md):
+  /* Parse-time dispatch rule:
    *
    *   An argc==1 command dispatches ONLY when its sole word is a bare
    *   identifier (single-piece LCL_WP_LIT with braced=0).  Every
@@ -485,9 +483,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
    *   `[apply $x]` and `[apply [expr]]` remain the explicit ways to
    *   dispatch a value as a call. See `apply` in lcl-stdlib.c. */
   if (cmd->argc == 1) {
-    int is_bare_identifier = (cmd->w[0].np == 1 &&
-                              cmd->w[0].wp[0].kind == LCL_WP_LIT &&
-                              !cmd->w[0].braced);
+    int is_bare_identifier =
+        (cmd->w[0].np == 1 && cmd->w[0].wp[0].kind == LCL_WP_LIT &&
+         !cmd->w[0].braced);
 
     if (!is_bare_identifier) {
       /* SUBCMD-only words preserve in_subcmd=0 and tail position so
@@ -671,8 +669,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
         return LCL_RC_TAILCALL;
       }
 
-      rc = lcl_call_user_proc(interp, callee, p, invoked_name, argc, argv,
-                              out);
+      rc = lcl_call_user_proc(interp, callee, p, invoked_name, argc, argv, out);
       if (rc == LCL_RC_OK && p->is_macro) {
         if (was_in_subcmd) {
           LCL_ERR_MSG(interp, "macro cannot be used in value position");
@@ -862,8 +859,8 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       if (val->type == LCL_CELL) {
         lcl_value *inner = NULL;
 
-        /* Bugfix #58: see lcl_eval_word above; same cleared-cell
-         * guard applies for the multi-piece concatenation path. */
+        /* Bugfix: see lcl_eval_word above; same cleared-cell guard
+         * applies for the multi-piece concatenation path. */
         if (!val->as.cell.inner) {
           LCL_ERR_MSG(interp, "use of cleared cell");
           lcl_ref_dec(val);

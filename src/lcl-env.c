@@ -189,7 +189,8 @@ lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
     if (target) {
       char part[256];
       const char *next_rest = NULL;
-      const char *has_more = lcl_ns_split(suffix, part, sizeof(part), &next_rest);
+      const char *has_more =
+          lcl_ns_split(suffix, part, sizeof(part), &next_rest);
       const char *part_name = has_more ? part : suffix;
       lcl_value *first_val = NULL;
 
