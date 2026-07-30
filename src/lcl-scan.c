@@ -58,12 +58,32 @@ static void skip_intra_ws(lcl_scan *sc) {
   }
 }
 
+/* Record the first parse failure. Nested/unwinding callers also
+ * report, so only the innermost (first) message is kept. Always
+ * returns -1 so failure sites can `return scan_fail(...)`. */
+static int scan_fail(lcl_scan *sc, const char *msg, long line) {
+  if (!sc->err) {
+    sc->err = msg;
+    sc->err_line = line;
+  }
+
+  return -1;
+}
+
 /* Same-type nesting (`[[[...]]]`) is depth-counted iteratively below;
  * the only true recursion is alternating types (e.g. `[ ( [ ... ] )
  * ]`). Cap the recursion to a sane depth so adversarial input like
  * `[([([(...)])])]` of depth 10k+ can't blow the C stack — return -1
  * instead. */
 #define LCL_SCAN_MAX_NEST 256
+
+static const char *unmatched_msg(char open_ch) {
+  switch (open_ch) {
+  case '(': return "unmatched '('";
+  case '[': return "unmatched '['";
+  default: return "unmatched '{'";
+  }
+}
 
 /* Refactor:
  *
@@ -75,16 +95,19 @@ static void skip_intra_ws(lcl_scan *sc) {
  * `rec_depth` tracks how many alternating-type nestings deep we are;
  * public callers pass 0.
  *
+ * `open_line` is the line the opening delimiter appeared on —
+ * unmatched-delimiter errors are attributed there, not to EOF.
+ *
  * On success sc->i points one past the closing delimiter; returns 0.
  *
  * On unmatched delimiter or nesting past LCL_SCAN_MAX_NEST returns -1.
  */
 static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
-                         int rec_depth) {
+                         int rec_depth, long open_line) {
   long depth = 1;
 
   if (rec_depth > LCL_SCAN_MAX_NEST) {
-    return -1;
+    return scan_fail(sc, "nesting too deep", open_line);
   }
 
   while (sc->i < sc->len) {
@@ -111,6 +134,7 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
       sc->line++;
     } else if (c == '{' && open_ch != '{') {
       long k = 1;
+      long brace_line = sc->line;
 
       while (sc->i < sc->len && k) {
         char e = sc->s[sc->i++];
@@ -130,21 +154,25 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
       }
 
       if (k) {
-        return -1;
+        return scan_fail(sc, "unmatched '{'", brace_line);
       }
     } else if (c == '(' && open_ch != '(') {
-      if (skip_balanced(sc, '(', ')', rec_depth + 1) != 0) {
+      if (skip_balanced(sc, '(', ')', rec_depth + 1, sc->line) != 0) {
         return -1;
       }
     } else if (c == '[' && open_ch != '[') {
-      if (skip_balanced(sc, '[', ']', rec_depth + 1) != 0) {
+      if (skip_balanced(sc, '[', ']', rec_depth + 1, sc->line) != 0) {
         return -1;
       }
     } else if (c == '"') {
+      long quote_line = sc->line;
+      int closed = 0;
+
       while (sc->i < sc->len) {
         char e = sc->s[sc->i++];
 
         if (e == '"') {
+          closed = 1;
           break;
         }
 
@@ -154,11 +182,14 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
           sc->line++;
         }
       }
+
+      if (!closed) {
+        return scan_fail(sc, "unmatched '\"'", quote_line);
+      }
     }
   }
 
-  /* unmatched */
-  return -1;
+  return scan_fail(sc, unmatched_msg(open_ch), open_line);
 }
 
 /* Refactor:
@@ -248,6 +279,8 @@ void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->len = (long)strlen(src);
   sc->line = 1;
   sc->at_cmd_start = 1;
+  sc->err = NULL;
+  sc->err_line = 0;
 }
 
 void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
@@ -256,10 +289,13 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->len = (long)len;
   sc->line = 1;
   sc->at_cmd_start = 1;
+  sc->err = NULL;
+  sc->err_line = 0;
 }
 
 int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
+  long quote_line = 0;
   long start;
 
   if (sc->i < sc->len && sc->s[sc->i] == '@') {
@@ -269,6 +305,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
   if (sc->i < sc->len && sc->s[sc->i] == '{') {
     long depth = 1;
+    long open_line = sc->line;
     sc->i++;
     start = sc->i;
 
@@ -297,11 +334,11 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     }
 
     if (depth) {
-      return -1;
+      return scan_fail(sc, "unmatched '{'", open_line);
     }
 
     if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start - 1))) {
-      return -1;
+      return scan_fail(sc, "out of memory", sc->line);
     }
 
     w->braced = 1;
@@ -318,14 +355,16 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   /* () list literal - desugars to [list ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '(') {
     long begin;
+    long open_line = sc->line;
     lcl_program *sub;
     char *subsrc;
     size_t content_len;
+    lcl_compile_err suberr;
 
     sc->i++;
     begin = sc->i;
 
-    if (skip_balanced(sc, '(', ')', 0) != 0) {
+    if (skip_balanced(sc, '(', ')', 0, open_line) != 0) {
       return -1;
     }
 
@@ -333,7 +372,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     subsrc = (char *)malloc(5 + content_len + 1);
 
     if (!subsrc) {
-      return -1;
+      return scan_fail(sc, "out of memory", open_line);
     }
 
     memcpy(subsrc, "list ", 5);
@@ -342,16 +381,19 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
     normalize_separators(subsrc + 5, content_len);
 
-    sub = lcl_program_compile(subsrc, NULL);
+    sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
     free(subsrc);
 
     if (!sub) {
-      return -1;
+      /* The sub-source is a normalized copy, so its line numbers do
+       * not map back; attribute the sub's message to the line the
+       * literal opened on. */
+      return scan_fail(sc, suberr.msg, open_line);
     }
 
     if (!lcl_word_add_sub(w, sub)) {
       lcl_program_free(sub);
-      return -1;
+      return scan_fail(sc, "out of memory", open_line);
     }
 
     return 1;
@@ -361,14 +403,16 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   if (sc->i < sc->len && sc->s[sc->i] == '#' && sc->i + 1 < sc->len &&
       sc->s[sc->i + 1] == '{') {
     long begin;
+    long open_line = sc->line;
     lcl_program *sub;
     char *subsrc;
     size_t content_len;
+    lcl_compile_err suberr;
 
     sc->i += 2;
     begin = sc->i;
 
-    if (skip_balanced(sc, '{', '}', 0) != 0) {
+    if (skip_balanced(sc, '{', '}', 0, open_line) != 0) {
       return -1;
     }
 
@@ -376,7 +420,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     subsrc = (char *)malloc(5 + content_len + 1);
 
     if (!subsrc) {
-      return -1;
+      return scan_fail(sc, "out of memory", open_line);
     }
 
     memcpy(subsrc, "dict ", 5);
@@ -385,16 +429,16 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
     normalize_separators(subsrc + 5, content_len);
 
-    sub = lcl_program_compile(subsrc, NULL);
+    sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
     free(subsrc);
 
     if (!sub) {
-      return -1;
+      return scan_fail(sc, suberr.msg, open_line);
     }
 
     if (!lcl_word_add_sub(w, sub)) {
       lcl_program_free(sub);
-      return -1;
+      return scan_fail(sc, "out of memory", open_line);
     }
 
     return 1;
@@ -402,6 +446,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
   if (sc->i < sc->len && sc->s[sc->i] == '"') {
     in_quotes = 1;
+    quote_line = sc->line;
     w->quoted = 1;
     sc->i++;
   }
@@ -423,13 +468,14 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     if (c == '$') {
       if (sc->i > start) {
         if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
-          return -1;
+          return scan_fail(sc, "out of memory", sc->line);
         }
       }
 
       sc->i++;
 
       if (sc->i < sc->len && sc->s[sc->i] == '{') {
+        long open_line = sc->line;
         long j = ++sc->i;
 
         while (j < sc->len && sc->s[j] != '}') {
@@ -440,11 +486,11 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         }
 
         if (j >= sc->len) {
-          return -1;
+          return scan_fail(sc, "unmatched '${'", open_line);
         }
 
         if (j == sc->i) {
-          return -1;
+          return scan_fail(sc, "empty variable name in '${}'", open_line);
         }
 
         {
@@ -452,7 +498,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           char *nm = (char *)malloc(n + 1);
 
           if (!nm) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           memcpy(nm, sc->s + sc->i, n);
@@ -460,7 +506,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
           if (!lcl_word_add_var(w, nm)) {
             free(nm);
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           free(nm);
@@ -497,7 +543,8 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
                 if (j + 2 >= sc->len ||
                     (!isalpha((unsigned char)sc->s[j + 2]) &&
                      sc->s[j + 2] != '_')) {
-                  return -1;
+                  return scan_fail(sc, "expected identifier after '::'",
+                                   sc->line);
                 }
 
                 j += 2;
@@ -517,21 +564,21 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           varname = strndup(sc->s + sc->i, (size_t)(j - sc->i));
 
           if (!varname) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           ok = lcl_word_add_var(w, varname);
           free(varname);
 
           if (!ok) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           sc->i = j;
           start = sc->i;
         } else {
           if (!lcl_word_add_lit(w, "$", 1)) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           start = sc->i;
@@ -544,41 +591,43 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
     if (c == '[') {
       if (sc->i > start) {
         if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
-          return -1;
+          return scan_fail(sc, "out of memory", sc->line);
         }
       }
 
       {
         long begin;
+        long open_line = sc->line;
         lcl_program *sub;
         size_t content_len;
         char *subsrc;
+        lcl_compile_err suberr;
 
         sc->i++;
         begin = sc->i;
 
-        if (skip_balanced(sc, '[', ']', 0) != 0) {
+        if (skip_balanced(sc, '[', ']', 0, open_line) != 0) {
           return -1;
         }
 
         content_len = (size_t)(sc->i - begin - 1);
         subsrc = strndup(sc->s + begin, content_len);
         if (!subsrc) {
-          return -1;
+          return scan_fail(sc, "out of memory", open_line);
         }
 
         normalize_separators(subsrc, content_len);
 
-        sub = lcl_program_compile(subsrc, NULL);
+        sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
         free(subsrc);
 
         if (!sub) {
-          return -1;
+          return scan_fail(sc, suberr.msg, open_line);
         }
 
         if (!lcl_word_add_sub(w, sub)) {
           lcl_program_free(sub);
-          return -1;
+          return scan_fail(sc, "out of memory", open_line);
         }
 
         start = sc->i;
@@ -591,7 +640,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
       if (in_quotes) {
         if (sc->i > start) {
           if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
         }
 
@@ -602,6 +651,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
       } else {
         sc->i++;
         in_quotes = 1;
+        quote_line = sc->line;
         start = sc->i;
         continue;
       }
@@ -614,7 +664,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
         if (sc->i > start) {
           if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
         }
 
@@ -651,7 +701,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
             esc_char = (char)val;
 
             if (!lcl_word_add_lit(w, &esc_char, 1)) {
-              return -1;
+              return scan_fail(sc, "out of memory", sc->line);
             }
 
             sc->i = j;
@@ -680,7 +730,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
           esc_char = (char)(val & 0xFF);
 
           if (!lcl_word_add_lit(w, &esc_char, 1)) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
 
           sc->i = j;
@@ -705,7 +755,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         case '}': esc_char = '}'; break;
         default:
           if (!lcl_word_add_lit(w, sc->s + sc->i, 2)) {
-            return -1;
+            return scan_fail(sc, "out of memory", sc->line);
           }
           sc->i += 2;
           start = sc->i;
@@ -713,7 +763,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
         }
 
         if (!lcl_word_add_lit(w, &esc_char, 1)) {
-          return -1;
+          return scan_fail(sc, "out of memory", sc->line);
         }
 
         sc->i += 2;
@@ -731,12 +781,12 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
 
   if (sc->i > start) {
     if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start))) {
-      return -1;
+      return scan_fail(sc, "out of memory", sc->line);
     }
   }
 
   if (in_quotes) {
-    return -1;
+    return scan_fail(sc, "unmatched '\"'", quote_line);
   }
 
   return (w->np > 0 || w->quoted) ? 1 : 0;
@@ -820,7 +870,7 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
        * bracket — a parse error rather than a silent truncation of
        * the program. */
       if (sc->i < sc->len && sc->s[sc->i] == ']') {
-        return -1;
+        return scan_fail(sc, "unmatched ']'", sc->line);
       }
 
       break;
@@ -828,7 +878,7 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
 
     if (!lcl_command_push_word(cmd, &w)) {
       lcl_word_free_contents(&w);
-      return -1;
+      return scan_fail(sc, "out of memory", sc->line);
     }
 
     got = 1;

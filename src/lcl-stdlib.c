@@ -1406,7 +1406,7 @@ static int get_body_program(lcl_interp *interp, const lcl_word *w,
       return LCL_RC_ERR;
     }
 
-    *prog_out = lcl_program_compile(body_src, tag);
+    *prog_out = lcl_compile_report(interp, body_src, tag);
     lcl_ref_dec(body_v);
 
     if (!*prog_out) {
@@ -1514,7 +1514,7 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
       return LCL_RC_ERR;
     }
 
-    prog = lcl_program_compile(body_src, "<catch>");
+    prog = lcl_compile_report(interp, body_src, "<catch>");
     lcl_ref_dec(body_v);
 
     if (prog) {
@@ -1523,7 +1523,7 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (!prog) {
-    LCL_ERR_MSG(interp, "syntax error in catch script");
+    /* compile error already recorded by lcl_compile_report */
     rc = LCL_RC_ERR;
   } else {
     rc = lcl_eval_program(interp, prog, &result);
@@ -1698,7 +1698,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
       return LCL_RC_ERR;
     }
 
-    body_p = lcl_program_compile(body_src, "<if>");
+    body_p = lcl_compile_report(interp, body_src, "<if>");
   }
   lcl_ref_dec(body_v);
 
@@ -2415,7 +2415,7 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
     return LCL_RC_ERR;
   }
 
-  body_p = lcl_program_compile(body_str, "<lambda>");
+  body_p = lcl_compile_report(interp, body_str, "<lambda>");
   lcl_ref_dec(body_s);
 
   if (!body_p) {
@@ -3456,7 +3456,7 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
         memcpy(subcmd_src, src + start, subcmd_len);
         subcmd_src[subcmd_len] = '\0';
 
-        prog = lcl_program_compile(subcmd_src, "<subst>");
+        prog = lcl_compile_report(interp, subcmd_src, "<subst>");
         free(subcmd_src);
 
         if (!prog) {
@@ -4325,7 +4325,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
       return LCL_RC_ERR;
     }
 
-    prog = lcl_program_compile(script_src, "<eval>");
+    prog = lcl_compile_report(interp, script_src, "<eval>");
     lcl_ref_dec(script_v);
   } else {
     size_t total_len = 0;
@@ -4434,7 +4434,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
 
     free(parts);
 
-    prog = lcl_program_compile(script_str, "<eval>");
+    prog = lcl_compile_report(interp, script_str, "<eval>");
     free(script_str);
   }
 
@@ -4693,7 +4693,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  prog = lcl_program_compile(src, path);
+  prog = lcl_compile_report(interp, src, path);
   free(src);
 
   if (!prog) {
@@ -4882,11 +4882,10 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  prog = lcl_program_compile(src, abs_path);
+  prog = lcl_compile_report(interp, src, abs_path);
   free(src);
 
   if (!prog) {
-    LCL_ERR_MSG(interp, "require: compile error");
     return LCL_RC_ERR;
   }
 
