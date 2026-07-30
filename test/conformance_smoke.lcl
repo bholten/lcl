@@ -4371,5 +4371,39 @@ Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
     }
 }
 
+Test::suite "Issue #67: compile errors carry a message" {
+    Test::case "eval of unmatched bracket names the delimiter" {
+        let r [catch { eval "puts \[" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '['}
+    }
+
+    Test::case "eval of unmatched quote names the delimiter" {
+        let r [catch { eval "puts \"unclosed" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '"'}
+    }
+
+    Test::case "catch traps compile error of its own script" {
+        ;; Braces balance, so the body parses as a word; the inner
+        ;; unmatched [ only surfaces when catch compiles the script.
+        let r [catch {let x [+ 1} res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '['}
+    }
+
+    Test::case "stray close-bracket is reported" {
+        let r [catch { eval "puts \]" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched ']'}
+    }
+
+    Test::case "bad :: tail is reported with a message" {
+        let r [catch { eval "puts \$foo::" } res err]
+        Test::eq $r 1
+        Test::eq $err {expected identifier after '::'}
+    }
+}
+
 Test::run
 

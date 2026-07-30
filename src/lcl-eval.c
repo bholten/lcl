@@ -694,7 +694,7 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
             lcl_ref_dec(macro_result);
             rc = LCL_RC_ERR;
           } else {
-            macro_prog = lcl_program_compile(macro_src, "<macro>");
+            macro_prog = lcl_compile_report(interp, macro_src, "<macro>");
             lcl_ref_dec(macro_result);
 
             if (!macro_prog) {
@@ -721,9 +721,31 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   }
 }
 
+/* Compile `src`, recording a compile failure in the interp's error
+ * state (message + file + line) the same way runtime errors are
+ * recorded. Returns NULL on failure with the error already set. */
+lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
+                                const char *file) {
+  lcl_compile_err cerr;
+  lcl_program *p = lcl_program_compile_ex(src, file, &cerr);
+
+  if (!p) {
+    const char *saved_file = interp->cur_file;
+    int saved_line = interp->cur_line;
+
+    interp->cur_file = file;
+    interp->cur_line = (int)cerr.line;
+    LCL_ERR_MSG(interp, cerr.msg);
+    interp->cur_file = saved_file;
+    interp->cur_line = saved_line;
+  }
+
+  return p;
+}
+
 int lcl_eval_string_file(lcl_interp *interp, const char *src, const char *file,
                          lcl_value **out) {
-  lcl_program *P = lcl_program_compile(src, file ? file : "<string>");
+  lcl_program *P = lcl_compile_report(interp, src, file ? file : "<string>");
   int rc;
 
   if (!P) {
@@ -742,10 +764,20 @@ int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out) {
 
 int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
                         const char *file, lcl_value **out) {
-  lcl_program *P = lcl_program_compile_bytes(src, len, file ? file : "<bytes>");
+  lcl_compile_err cerr;
+  lcl_program *P =
+      lcl_program_compile_bytes_ex(src, len, file ? file : "<bytes>", &cerr);
   int rc;
 
   if (!P) {
+    const char *saved_file = interp->cur_file;
+    int saved_line = interp->cur_line;
+
+    interp->cur_file = file ? file : "<bytes>";
+    interp->cur_line = (int)cerr.line;
+    LCL_ERR_MSG(interp, cerr.msg);
+    interp->cur_file = saved_file;
+    interp->cur_line = saved_line;
     return LCL_RC_ERR;
   }
 

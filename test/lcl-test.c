@@ -1121,6 +1121,74 @@ static int test_issue24_scanner_strndup_oom(void) {
   return 1;
 }
 
+/* ISSUE #67 — compile errors carry a message and line number.
+ * lcl_program_compile_ex must report which delimiter is unmatched and
+ * the line the construct opened on (not the EOF line). */
+static int test_issue67_compile_ex_msg_and_line(void) {
+  static const struct {
+    const char *src;
+    const char *msg;
+    long line;
+  } cases[] = {
+    {"let a 1\nlet b [+ 1\nlet c 3\n", "unmatched '['", 2},
+    {"let a 1\nlet b 2\nputs \"unclosed\nlet c 3\n", "unmatched '\"'", 3},
+    {"let x {\n  foo\n", "unmatched '{'", 1},
+    {"puts ]\n", "unmatched ']'", 1},
+    {"let a 1\nlet l (1 2\n", "unmatched '('", 2},
+    {"let d #{a\n", "unmatched '{'", 1},
+    {"puts ${\n", "unmatched '${'", 1},
+    {"puts ${}\n", "empty variable name in '${}'", 1},
+    {"let x $foo::\n", "expected identifier after '::'", 1},
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    lcl_compile_err err;
+    lcl_program *prog = lcl_program_compile_ex(cases[i].src, "t.lcl", &err);
+
+    ASSERT_TRUE(prog == NULL);
+    ASSERT_TRUE(err.msg != NULL);
+    ASSERT_STREQ(err.msg, cases[i].msg);
+    ASSERT_TRUE(err.line == cases[i].line);
+  }
+
+  /* Success clears the report. */
+  {
+    lcl_compile_err err;
+    lcl_program *prog = lcl_program_compile_ex("+ 1 1\n", "t.lcl", &err);
+
+    ASSERT_TRUE(prog != NULL);
+    ASSERT_TRUE(err.msg == NULL);
+    ASSERT_TRUE(err.line == 0);
+    lcl_program_free(prog);
+  }
+
+  return 1;
+}
+
+/* ISSUE #67 — a compile failure in lcl_eval_string_file lands in the
+ * interp's error state (message + file + line), same as runtime
+ * errors, so the CLI and embedders report real diagnostics. */
+static int test_issue67_eval_string_sets_error_state(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  rc = lcl_eval_string_file(lcl_test_interp, "let a 1\nlet b [+ 1\n",
+                            "i67.lcl", &out);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  ASSERT_TRUE(lcl_test_interp->err_msg != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_msg, "unmatched '['");
+  ASSERT_TRUE(lcl_test_interp->err_file != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_file, "i67.lcl");
+  ASSERT_TRUE(lcl_test_interp->err_line == 2);
+
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -1199,6 +1267,10 @@ int run_test(void) {
 
   /* Regression test for ISSUE #58 (cleared-cell deref via $name) */
   RUN(test_issue58_cleared_cell_returns_error);
+
+  /* Regression tests for ISSUE #67 (compile errors carry msg + line) */
+  RUN(test_issue67_compile_ex_msg_and_line);
+  RUN(test_issue67_eval_string_sets_error_state);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

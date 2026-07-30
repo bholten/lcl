@@ -26,6 +26,19 @@ void lcl_program_free(lcl_program *p);
 lcl_program *lcl_program_compile(const char *src, const char *file);
 lcl_program *lcl_program_compile_bytes(const char *src, size_t len,
                                        const char *file);
+
+/* Compile-error report. `msg` is always a static string (never owned
+ * by the caller); `line` is 1-based within the compiled source. */
+typedef struct {
+  const char *msg;
+  long line;
+} lcl_compile_err;
+
+lcl_program *lcl_program_compile_ex(const char *src, const char *file,
+                                    lcl_compile_err *err);
+lcl_program *lcl_program_compile_bytes_ex(const char *src, size_t len,
+                                          const char *file,
+                                          lcl_compile_err *err);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
 typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
@@ -70,6 +83,10 @@ typedef struct {
   long len;
   long line;
   int at_cmd_start;
+  /* First parse failure: static message + 1-based line. Set once;
+   * later failures during unwinding do not overwrite it. */
+  const char *err;
+  long err_line;
 } lcl_scan;
 
 void lcl_scan_init(lcl_scan *sc, const char *src);

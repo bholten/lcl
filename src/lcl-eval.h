@@ -23,6 +23,12 @@ int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
 lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
                                  lcl_value **out);
 
+/* Compile with lcl_program_compile_ex; on failure, record the compile
+ * error (message + file + line) in the interp's error state and
+ * return NULL. */
+lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
+                                const char *file);
+
 int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
                          lcl_value **out);
 

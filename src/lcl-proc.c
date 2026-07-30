@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "lcl-compile.h"
+#include "lcl-eval.h"
 #include "lcl-lex.h"
 #include "lcl-values.h"
 #include "str-compat.h"
@@ -390,12 +391,11 @@ int lcl_parse_params(lcl_interp *interp, const char *param_str,
       lcl_program *def_prog;
 
       pspec->params[n_req + i].name = opt_names[i];
-      def_prog = lcl_program_compile(opt_defaults[i], "<default>");
+      def_prog = lcl_compile_report(interp, opt_defaults[i], "<default>");
       free(opt_defaults[i]);
       opt_defaults[i] = NULL;
 
       if (!def_prog) {
-        LCL_ERR_MSG(interp, "failed to compile default expression");
         for (; i >= 0; i--) {
           if (pspec->params[n_req + i].def_prog) {
             lcl_program_free(pspec->params[n_req + i].def_prog);
@@ -429,6 +429,7 @@ error:
   free(opt_defaults);
   free(rest);
 
+  free(pspec->params);
   pspec->params = NULL;
   pspec->n_required = 0;
   pspec->n_optional = 0;
