@@ -4371,6 +4371,75 @@ Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
     }
 }
 
+Test::suite "Issue #68: stdlib errors name the proc" {
+    Test::case "arity error names the builtin" {
+        let r [catch { % 5 } res err]
+        Test::eq $r 1
+        Test::eq $err {%: expected 2 arguments, got 1}
+    }
+
+    Test::case "conversion failure states expected vs got" {
+        let r [catch { % 5 abc } res err]
+        Test::eq $r 1
+        Test::eq $err {%: expected integer, got "abc"}
+    }
+
+    Test::case "comparison names itself" {
+        let r [catch { < x y } res err]
+        Test::eq $r 1
+        Test::eq $err {<: expected number, got "x"}
+    }
+
+    Test::case "get reports out-of-range index" {
+        let r [catch { get (1 2 3) 9 } res err]
+        Test::eq $r 1
+        Test::eq $err {get: index 9 out of range}
+    }
+
+    Test::case "get reports missing dict key" {
+        let r [catch { get #{a 1} missing } res err]
+        Test::eq $r 1
+        Test::eq $err {get: key "missing" not found}
+    }
+
+    Test::case "type mismatch names proc and both types" {
+        let r [catch { del (1 2) 0 } res err]
+        Test::eq $r 1
+        Test::eq $err {del: expected dict, got list}
+    }
+
+    Test::case "callable check names the proc" {
+        let r [catch { List::map (1 2) (3) } res err]
+        Test::eq $r 1
+        Test::eq $err {List::map: expected callable, got list}
+    }
+
+    Test::case "set! on unbound name says undefined" {
+        let r [catch { set! definitely_unbound_68 1 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: undefined variable "definitely_unbound_68"}
+    }
+
+    Test::case "set! on immutable binding suggests var" {
+        let immut68 1
+        let r [catch { set! immut68 2 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: expected cell (declare with 'var'), got "1"}
+    }
+
+    Test::case "if arity error names the form" {
+        let r [catch { eval "if 1" } res err]
+        Test::eq $r 1
+        Test::eq $err {if: expected 2 to 4 arguments, got 1}
+    }
+
+    Test::case "special form arity via chk (sort family)" {
+        let r [catch { List::sort_by 5 (1 2) } res err]
+        Test::eq $r 1
+        Test::eq $err {List::sort_by: expected callable, got "5"}
+    }
+}
+
 Test::suite "Issue #67: compile errors carry a message" {
     Test::case "eval of unmatched bracket names the delimiter" {
         let r [catch { eval "puts \[" } res err]

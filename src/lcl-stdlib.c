@@ -116,14 +116,98 @@ lcl_value *lcl_list_new_from_cwords(const char *words);
 
 static int lcl_value_is_true(lcl_value *v);
 
+/* ---------------------------------------------------------------------------
+ * Shared diagnostics (#68): every stdlib failure names the proc and
+ * states expected vs got, matching the user-proc arity format from
+ * #62 ("name: expected X, got Y").
+ * --------------------------------------------------------------------------- */
+
+/* Arity guard. `max` < 0 means "at least min". Returns 1 when argc is
+ * acceptable; otherwise records "name: expected ..., got argc" and
+ * returns 0. */
+static int chk_argc(lcl_interp *interp, const char *name, int argc, int min,
+                    int max) {
+  char msg[160];
+
+  if (argc >= min && (max < 0 || argc <= max)) {
+    return 1;
+  }
+
+  if (max < 0) {
+    snprintf(msg, sizeof(msg), "%.64s: expected at least %d argument%s, got %d",
+             name, min, min == 1 ? "" : "s", argc);
+  } else if (min == max) {
+    snprintf(msg, sizeof(msg), "%.64s: expected %d argument%s, got %d", name,
+             min, min == 1 ? "" : "s", argc);
+  } else {
+    snprintf(msg, sizeof(msg), "%.64s: expected %d to %d arguments, got %d",
+             name, min, max, argc);
+  }
+
+  LCL_ERR_MSG_DUP(interp, msg);
+  return 0;
+}
+
+/* Record "name: expected <expected>, got <actual>" where the actual is
+ * the value's type name, or the (truncated) text of a string that
+ * failed to parse as the expected kind. Always returns LCL_RC_ERR. */
+static int err_expected_got(lcl_interp *interp, const char *name,
+                            const char *expected, lcl_value *got) {
+  char msg[192];
+
+  if (got && got->type == LCL_STRING) {
+    const char *s = lcl_value_to_string(got);
+    snprintf(msg, sizeof(msg), "%.64s: expected %s, got \"%.48s\"", name,
+             expected, s ? s : "");
+  } else {
+    snprintf(msg, sizeof(msg), "%.64s: expected %s, got %s", name, expected,
+             got ? lcl_type_name(got->type) : "no value");
+  }
+
+  LCL_ERR_MSG_DUP(interp, msg);
+  return LCL_RC_ERR;
+}
+
+/* "name: undefined variable \"var\"" — for procs that look names up
+ * in the environment themselves. Always returns LCL_RC_ERR. */
+static int err_undefined(lcl_interp *interp, const char *name,
+                         const char *var) {
+  char msg[160];
+
+  snprintf(msg, sizeof(msg), "%.48s: undefined variable \"%.64s\"", name, var);
+  LCL_ERR_MSG_DUP(interp, msg);
+  return LCL_RC_ERR;
+}
+
+/* Typed argument getters: like lcl_value_to_int/_to_float but record a
+ * proc-naming diagnostic on failure. Return 1 on success, 0 on error. */
+static int arg_int(lcl_interp *interp, const char *name, lcl_value *v,
+                   long *out) {
+  if (lcl_value_to_int(v, out) != LCL_OK) {
+    err_expected_got(interp, name, "integer", v);
+    return 0;
+  }
+
+  return 1;
+}
+
+static int arg_float(lcl_interp *interp, const char *name, lcl_value *v,
+                     double *out) {
+  if (lcl_value_to_float(v, out) != LCL_OK) {
+    err_expected_got(interp, name, "number", v);
+    return 0;
+  }
+
+  return 1;
+}
+
 static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   const char *expr;
   lcl_value *result = NULL;
   (void)out;
 
-  if (argc < 1) {
-    LCL_ERR_MSG(interp, "assert requires an expression");
+  if (!chk_argc(interp, "assert", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -249,8 +333,7 @@ static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int b;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "not requires exactly 1 argument");
+  if (!chk_argc(interp, "not", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -263,8 +346,7 @@ static int c_not(lcl_interp *interp, int argc, lcl_value **argv,
 /* type v - name of v's type tag ("string", "int", "list", ...) */
 static int c_type(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "type: usage: type value");
+  if (!chk_argc(interp, "type", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -278,8 +360,7 @@ static int c_repr(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
   char *s;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "repr: usage: repr value");
+  if (!chk_argc(interp, "repr", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -300,8 +381,7 @@ static int c_string_from(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   const char *s;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "String::from: usage: String::from value");
+  if (!chk_argc(interp, "String::from", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -376,7 +456,7 @@ static int c_add(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < argc; i++) {
       double v;
 
-      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+      if (!arg_float(interp, "+", argv[i], &v)) {
         return LCL_RC_ERR;
       }
 
@@ -393,8 +473,7 @@ static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   int i;
 
-  if (argc < 2) {
-    LCL_ERR_MSG(interp, "- requires at least 2 arguments");
+  if (!chk_argc(interp, "-", argc, 2, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -417,14 +496,14 @@ static int c_sub(lcl_interp *interp, int argc, lcl_value **argv,
   } else {
     double result;
 
-    if (lcl_value_to_float(argv[0], &result) != LCL_OK) {
+    if (!arg_float(interp, "-", argv[0], &result)) {
       return LCL_RC_ERR;
     }
 
     for (i = 1; i < argc; i++) {
       double v;
 
-      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+      if (!arg_float(interp, "-", argv[i], &v)) {
         return LCL_RC_ERR;
       }
 
@@ -462,7 +541,7 @@ static int c_mult(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < argc; i++) {
       double v;
 
-      if (lcl_value_to_float(argv[i], &v) != LCL_OK) {
+      if (!arg_float(interp, "*", argv[i], &v)) {
         return LCL_RC_ERR;
       }
 
@@ -481,16 +560,15 @@ static int c_div(lcl_interp *interp, int argc, lcl_value **argv,
   double numerator;
   double divisor;
 
-  if (argc != 2) {
-    LCL_ERR_MSG(interp, "/ requires exactly 2 arguments");
+  if (!chk_argc(interp, "/", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[0], &numerator) != LCL_OK) {
+  if (!arg_float(interp, "/", argv[0], &numerator)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[1], &divisor) != LCL_OK) {
+  if (!arg_float(interp, "/", argv[1], &divisor)) {
     return LCL_RC_ERR;
   }
 
@@ -512,15 +590,15 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
   long dividend;
   long divisor;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "%", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_int(argv[0], &dividend) != LCL_OK) {
+  if (!arg_int(interp, "%", argv[0], &dividend)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_int(argv[1], &divisor) != LCL_OK) {
+  if (!arg_int(interp, "%", argv[1], &divisor)) {
     return LCL_RC_ERR;
   }
 
@@ -548,12 +626,13 @@ static int c_mod(lcl_interp *interp, int argc, lcl_value **argv,
  * integral, compare as `long` to preserve precision near LONG_MAX;
  * otherwise fall back to double comparison. `op` selects <, <=, >,
  * >=. */
-static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
+static int c_compare(lcl_interp *interp, const char *name, int argc,
+                     lcl_value **argv, int op, lcl_value **out) {
   double left;
   double right;
   long result;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, name, argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -561,8 +640,8 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
     long li;
     long ri;
 
-    if (lcl_value_to_int(argv[0], &li) != LCL_OK ||
-        lcl_value_to_int(argv[1], &ri) != LCL_OK) {
+    if (!arg_int(interp, name, argv[0], &li) ||
+        !arg_int(interp, name, argv[1], &ri)) {
       return LCL_RC_ERR;
     }
 
@@ -571,15 +650,17 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
     case 1: result = (li <= ri); break;
     case 2: result = (li > ri); break;
     case 3: result = (li >= ri); break;
-    default: return LCL_RC_ERR;
+    default:
+      LCL_ERR_MSG(interp, "internal error: bad comparison op");
+      return LCL_RC_ERR;
     }
 
     *out = lcl_int_new(result);
     return LCL_RC_OK;
   }
 
-  if (lcl_value_to_float(argv[0], &left) != LCL_OK ||
-      lcl_value_to_float(argv[1], &right) != LCL_OK) {
+  if (!arg_float(interp, name, argv[0], &left) ||
+      !arg_float(interp, name, argv[1], &right)) {
     return LCL_RC_ERR;
   }
 
@@ -588,7 +669,9 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
   case 1: result = (left <= right); break;
   case 2: result = (left > right); break;
   case 3: result = (left >= right); break;
-  default: return LCL_RC_ERR;
+  default:
+    LCL_ERR_MSG(interp, "internal error: bad comparison op");
+    return LCL_RC_ERR;
   }
 
   *out = lcl_int_new(result);
@@ -597,26 +680,22 @@ static int c_compare(int argc, lcl_value **argv, int op, lcl_value **out) {
 
 static int c_lt(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
-  (void)interp;
-  return c_compare(argc, argv, 0, out);
+  return c_compare(interp, "<", argc, argv, 0, out);
 }
 
 static int c_lte(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  (void)interp;
-  return c_compare(argc, argv, 1, out);
+  return c_compare(interp, "<=", argc, argv, 1, out);
 }
 
 static int c_gt(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
-  (void)interp;
-  return c_compare(argc, argv, 2, out);
+  return c_compare(interp, ">", argc, argv, 2, out);
 }
 
 static int c_gte(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  (void)interp;
-  return c_compare(argc, argv, 3, out);
+  return c_compare(interp, ">=", argc, argv, 3, out);
 }
 
 #define EQ_STACK_MAX 256
@@ -859,7 +938,7 @@ static int c_eq(lcl_interp *interp, int argc, lcl_value **argv,
   struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "==", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -872,7 +951,7 @@ static int c_ne(lcl_interp *interp, int argc, lcl_value **argv,
   struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "!=", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -888,8 +967,7 @@ static int c_assert_eq(lcl_interp *interp, int argc, lcl_value **argv,
   struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)out;
 
-  if (argc < 2) {
-    LCL_ERR_MSG(interp, "assert_eq requires actual and expected values");
+  if (!chk_argc(interp, "assert_eq", argc, 2, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -921,8 +999,7 @@ static int c_assert_neq(lcl_interp *interp, int argc, lcl_value **argv,
   struct eq_cycle_guard guard = {{0}, {0}, 0};
   (void)out;
 
-  if (argc < 2) {
-    LCL_ERR_MSG(interp, "assert_neq requires actual and unexpected values");
+  if (!chk_argc(interp, "assert_neq", argc, 2, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -948,7 +1025,7 @@ static int c_same(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "same?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -961,7 +1038,7 @@ static int c_not_same(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "not-same?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -974,7 +1051,7 @@ static int c_is_cell(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "cell?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -989,7 +1066,7 @@ static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *binding = NULL;
   const char *name;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "binding-cell", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -1003,6 +1080,7 @@ static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_env_get_value(interp, name, &binding) != LCL_OK) {
+    err_undefined(interp, "binding-cell", name);
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
@@ -1010,6 +1088,7 @@ static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_ref_dec(name_v);
 
   if (binding->type != LCL_CELL) {
+    err_expected_got(interp, "binding-cell", "cell binding", binding);
     lcl_ref_dec(binding);
     return LCL_RC_ERR;
   }
@@ -1029,7 +1108,7 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   const char *name2;
   int same;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "same-binding?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -1055,12 +1134,14 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_env_get_value(interp, name1, &binding1) != LCL_OK) {
+    err_undefined(interp, "same-binding?", name1);
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
     return LCL_RC_ERR;
   }
 
   if (lcl_env_get_value(interp, name2, &binding2) != LCL_OK) {
+    err_undefined(interp, "same-binding?", name2);
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
     lcl_ref_dec(binding1);
@@ -1068,6 +1149,8 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (binding1->type != LCL_CELL || binding2->type != LCL_CELL) {
+    err_expected_got(interp, "same-binding?", "cell binding",
+                     binding1->type != LCL_CELL ? binding1 : binding2);
     lcl_ref_dec(name1_v);
     lcl_ref_dec(name2_v);
     lcl_ref_dec(binding1);
@@ -1090,7 +1173,7 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   const char *name;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "let", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -1099,17 +1182,19 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (strstr(name, "::") && interp->def_depth <= interp->def_floor) {
-    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+    LCL_ERR_MSG(interp, "let: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     return LCL_RC_ERR;
   }
 
   if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name, argv[1]) != LCL_OK) {
+      LCL_ERR_MSG(interp, "let: out of memory");
       return LCL_RC_ERR;
     }
   } else {
     if (lcl_env_let(&interp->env, name, argv[1]) != LCL_OK) {
+      LCL_ERR_MSG(interp, "let: out of memory");
       return LCL_RC_ERR;
     }
   }
@@ -1126,8 +1211,7 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
   char buf[128];
   int n;
 
-  if (argc > 1) {
-    LCL_ERR_MSG(interp, "gensym: expected 0 or 1 arguments");
+  if (!chk_argc(interp, "gensym", argc, 0, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -1164,7 +1248,7 @@ static int c_ref(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "ref", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -1178,7 +1262,7 @@ static int c_get(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *val = NULL;
   const char *name;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "getvar", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -1187,11 +1271,12 @@ static int c_get(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
-    return LCL_RC_ERR;
+    return err_undefined(interp, "getvar", name);
   }
 
   if (val->type == LCL_CELL) {
     if (lcl_cell_get(val, out) != LCL_OK) {
+      LCL_ERR_MSG(interp, "getvar: cell has been cleared");
       lcl_ref_dec(val);
       return LCL_RC_ERR;
     }
@@ -1211,7 +1296,7 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *cell = NULL;
   const char *name_str;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "set!", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -1247,6 +1332,15 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_env_set_bang(&interp->env, name_str, val_v) != LCL_OK) {
+    lcl_value *probe = NULL;
+
+    if (lcl_env_get_value(interp, name_str, &probe) != LCL_OK) {
+      err_undefined(interp, "set!", name_str);
+    } else {
+      err_expected_got(interp, "set!", "cell (declare with 'var')", probe);
+      lcl_ref_dec(probe);
+    }
+
     lcl_ref_dec(name_v);
     lcl_ref_dec(val_v);
 
@@ -1266,7 +1360,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
   lcl_value *init_v = NULL;
   const char *name_str;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "var", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -1280,7 +1374,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
   }
 
   if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
-    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+    LCL_ERR_MSG(interp, "var: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -1293,12 +1387,14 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
 
   if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_var(interp, name_str, init_v) != LCL_OK) {
+      LCL_ERR_MSG(interp, "var: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(init_v);
       return LCL_RC_ERR;
     }
   } else {
     if (lcl_env_var(&interp->env, name_str, init_v) != LCL_OK) {
+      LCL_ERR_MSG(interp, "var: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(init_v);
       return LCL_RC_ERR;
@@ -1341,7 +1437,7 @@ static int s_break(lcl_interp *interp, int argc, const lcl_word **args,
   (void)interp;
   (void)args;
 
-  if (argc != 0) {
+  if (!chk_argc(interp, "break", argc, 0, 0)) {
     return LCL_RC_ERR;
   }
 
@@ -1355,7 +1451,7 @@ static int s_continue(lcl_interp *interp, int argc, const lcl_word **args,
   (void)interp;
   (void)args;
 
-  if (argc != 0) {
+  if (!chk_argc(interp, "continue", argc, 0, 0)) {
     return LCL_RC_ERR;
   }
 
@@ -1369,8 +1465,7 @@ int c_error(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out) {
 
   (void)out;
 
-  if (argc < 1) {
-    LCL_ERR_MSG(interp, "error: requires message argument");
+  if (!chk_argc(interp, "error", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -1437,8 +1532,7 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
   char *error_var = NULL;
   int rc;
 
-  if (argc < 1 || argc > 3) {
-    LCL_ERR_MSG(interp, "catch: usage: catch script ?resultVar? ?errorVar?");
+  if (!chk_argc(interp, "catch", argc, 1, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -1640,7 +1734,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   int body_idx;
   int else_body_idx = -1;
 
-  if (argc < 2 || argc > 4) {
+  if (!chk_argc(interp, "if", argc, 2, 4)) {
     return LCL_RC_ERR;
   }
 
@@ -1653,6 +1747,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
 
     if (kw->np != 1 || kw->wp[0].kind != LCL_WP_LIT ||
         strcmp(kw->wp[0].as.lit.s, "else") != 0) {
+      LCL_ERR_MSG(interp, "if: expected 'else' between the two branches");
       return LCL_RC_ERR;
     }
 
@@ -1861,7 +1956,7 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
   int test_is_braced;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "while", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -1966,7 +2061,7 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
   int test_is_braced;
   int rc;
 
-  if (argc != 4) {
+  if (!chk_argc(interp, "for", argc, 4, 4)) {
     return LCL_RC_ERR;
   }
 
@@ -2179,7 +2274,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
   size_t list_len;
   int rc;
 
-  if (argc != 3) {
+  if (!chk_argc(interp, "foreach", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -2212,6 +2307,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_ref_dec(list_v);
 
     if (!parsed) {
+      LCL_ERR_MSG(interp, "foreach: invalid list");
       lcl_ref_dec(varname_v);
 
       return LCL_RC_ERR;
@@ -2234,6 +2330,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_value *elem = NULL;
 
     if (lcl_list_get(list_v, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "foreach: internal error reading list");
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
       free_if_owned(body_p, body_owned);
@@ -2246,6 +2343,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     if (lcl_env_let(&interp->env, varname, elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "foreach: out of memory");
       lcl_ref_dec(elem);
       lcl_ref_dec(varname_v);
       lcl_ref_dec(list_v);
@@ -2433,6 +2531,7 @@ static int make_lambda(lcl_interp *interp, const char *self_name,
   *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p);
 
   if (!*out) {
+    LCL_ERR_MSG(interp, "lambda: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -2659,8 +2758,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *last = NULL;
   int i;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "isolate: expected 1 argument (body)");
+  if (!chk_argc(interp, "isolate", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -2774,8 +2872,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *ns = NULL;
   lcl_value *existing_ns = NULL;
 
-  if (argc < 1 || argc > 2) {
-    LCL_ERR_MSG(interp, "namespace: expected 1 or 2 arguments");
+  if (!chk_argc(interp, "namespace", argc, 1, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -2795,6 +2892,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     ns_name = strdup(name_cstr);
     lcl_ref_dec(name_v);
     if (!ns_name) {
+      LCL_ERR_MSG(interp, "namespace: out of memory");
       return LCL_RC_ERR;
     }
   }
@@ -2810,6 +2908,11 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_def_target_push(interp, interp->env.frame, ns_name) != LCL_OK) {
+    if (interp->def_depth >= LCL_DEF_STACK_MAX) {
+      LCL_ERR_MSG(interp, "namespace: builders nested too deeply");
+    } else {
+      LCL_ERR_MSG(interp, "namespace: out of memory");
+    }
     free_if_owned(prog, prog_owned);
     free(ns_name);
     return LCL_RC_ERR;
@@ -3017,6 +3120,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
 
             if (!next ||
                 !hash_table_put(parent->as.namespace.namespace, part, next)) {
+              LCL_ERR_MSG(interp, "namespace: out of memory");
               if (next) {
                 lcl_ref_dec(next);
               }
@@ -3078,8 +3182,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
   const char *ns_name;
   int i;
 
-  if (argc < 1) {
-    LCL_ERR_MSG(interp, "import: expected namespace argument");
+  if (!chk_argc(interp, "import", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -3125,7 +3228,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
   }
 
   if (ns->type != LCL_NAMESPACE) {
-    LCL_ERR_MSG(interp, "import: argument must be a namespace");
+    err_expected_got(interp, "import", "namespace", ns);
     lcl_ref_dec(ns);
     return LCL_RC_ERR;
   }
@@ -3241,7 +3344,7 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
   size_t result_len = 0;
   size_t result_cap = 0;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "subst", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -3560,6 +3663,10 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 
 err:
+  if (!interp->err_msg) {
+    LCL_ERR_MSG(interp, "subst: out of memory");
+  }
+
   lcl_ref_dec(input_v);
   free(result);
 
@@ -4132,7 +4239,7 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
 
       if (scan_rc < 0) {
         lcl_word_free_contents(&w);
-        LCL_ERR_MSG(interp, "failed to parse unquote expression");
+        LCL_ERR_MSG(interp, "quasiquote: failed to parse unquote expression");
         return 0;
       }
 
@@ -4260,8 +4367,7 @@ static int s_quasiquote(lcl_interp *interp, int argc, const lcl_word **args,
   qq_node *ir = NULL;
   const char *err_msg = NULL;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "quasiquote requires exactly one argument");
+  if (!chk_argc(interp, "quasiquote", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -4307,7 +4413,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_value *last = NULL;
   int saved_tail_position = interp->in_tail_position;
 
-  if (argc < 1) {
+  if (!chk_argc(interp, "eval", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -4335,6 +4441,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
 
     parts = malloc(sizeof(lcl_value *) * (size_t)argc);
     if (!parts) {
+      LCL_ERR_MSG(interp, "eval: out of memory");
       return LCL_RC_ERR;
     }
 
@@ -4392,6 +4499,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
 
     script_str = malloc(total_len);
     if (!script_str) {
+      LCL_ERR_MSG(interp, "eval: out of memory");
       for (i = 0; i < argc; i++) {
         lcl_ref_dec(parts[i]);
       }
@@ -4443,6 +4551,7 @@ static int s_eval(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
+    LCL_ERR_MSG(interp, "eval: max recursion depth exceeded");
     lcl_program_free(prog);
     return LCL_RC_ERR;
   }
@@ -4583,8 +4692,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value **call_argv;
   lcl_value *resolved = NULL;
 
-  if (argc < 1) {
-    LCL_ERR_MSG(interp, "apply requires a callable");
+  if (!chk_argc(interp, "apply", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -4616,7 +4724,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
         LCL_ERR_MSG_DUP(interp, buf);
         free(buf);
       } else {
-        LCL_ERR_MSG(interp, "unknown command");
+        LCL_ERR_MSG(interp, "apply: unknown command");
       }
 
       lcl_ref_dec(resolved);
@@ -4632,7 +4740,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
     int rc;
 
     if (callee->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
-      LCL_ERR_MSG(interp, "cannot apply special form");
+      LCL_ERR_MSG(interp, "apply: cannot apply special form");
       lcl_ref_dec(resolved);
       return LCL_RC_ERR;
     }
@@ -4647,7 +4755,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
     int rc;
 
     if (p->is_macro) {
-      LCL_ERR_MSG(interp, "cannot apply macro");
+      LCL_ERR_MSG(interp, "apply: cannot apply macro");
       lcl_ref_dec(resolved);
       return LCL_RC_ERR;
     }
@@ -4657,7 +4765,7 @@ static int c_apply(lcl_interp *interp, int argc, lcl_value **argv,
     return rc;
   }
 
-  LCL_ERR_MSG(interp, "not callable");
+  err_expected_got(interp, "apply", "callable", callee);
   lcl_ref_dec(resolved);
   return LCL_RC_ERR;
 }
@@ -4673,7 +4781,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
   int i;
   int saved_tail_position = interp->in_tail_position;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "load", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -4689,6 +4797,10 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
   src = read_file(path, NULL);
 
   if (!src) {
+    char msg[192];
+
+    snprintf(msg, sizeof(msg), "load: could not read file \"%.128s\"", path);
+    LCL_ERR_MSG_DUP(interp, msg);
     lcl_ref_dec(path_v);
     return LCL_RC_ERR;
   }
@@ -4704,6 +4816,7 @@ static int s_load(lcl_interp *interp, int argc, const lcl_word **args,
   lcl_ref_dec(path_v);
 
   if (interp->max_depth && interp->depth >= interp->max_depth) {
+    LCL_ERR_MSG(interp, "load: max recursion depth exceeded");
     lcl_program_free(prog);
     return LCL_RC_ERR;
   }
@@ -4836,8 +4949,7 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
   const char *key;
   lcl_value *value;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "require: expected 1 argument (path)");
+  if (!chk_argc(interp, "require", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -5103,6 +5215,7 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
       threaded = (char *)malloc(total);
 
       if (!threaded) {
+        LCL_ERR_MSG(interp, "out of memory");
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
 
@@ -5133,6 +5246,7 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
       threaded = (char *)malloc(total);
 
       if (!threaded) {
+        LCL_ERR_MSG(interp, "out of memory");
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
 
@@ -5163,6 +5277,7 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
       threaded = (char *)malloc(total);
 
       if (!threaded) {
+        LCL_ERR_MSG(interp, "out of memory");
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
 
@@ -5246,6 +5361,7 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
       threaded = (char *)malloc(total);
 
       if (!threaded) {
+        LCL_ERR_MSG(interp, "out of memory");
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
 
@@ -5257,6 +5373,7 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
       threaded = (char *)malloc(total);
 
       if (!threaded) {
+        LCL_ERR_MSG(interp, "out of memory");
         lcl_ref_dec(form_v);
         lcl_ref_dec(current);
 
@@ -5295,8 +5412,7 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   const char *name_str;
   int rc;
 
-  if (argc != 3) {
-    LCL_ERR_MSG(interp, "proc: expected 3 arguments");
+  if (!chk_argc(interp, "proc", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -5310,7 +5426,7 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
-    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+    LCL_ERR_MSG(interp, "proc: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -5325,12 +5441,14 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
+      LCL_ERR_MSG(interp, "proc: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
       return LCL_RC_ERR;
     }
   } else {
     if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
+      LCL_ERR_MSG(interp, "proc: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
       return LCL_RC_ERR;
@@ -5353,8 +5471,7 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
   const char *name_str;
   int rc;
 
-  if (argc != 3) {
-    LCL_ERR_MSG(interp, "macro: expected 3 arguments");
+  if (!chk_argc(interp, "macro", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -5368,7 +5485,7 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
-    LCL_ERR_MSG(interp, "qualified name not allowed here; "
+    LCL_ERR_MSG(interp, "macro: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
@@ -5385,12 +5502,14 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (interp->def_depth > interp->def_floor) {
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
+      LCL_ERR_MSG(interp, "macro: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
       return LCL_RC_ERR;
     }
   } else {
     if (lcl_env_let(&interp->env, name_str, lam) != LCL_OK) {
+      LCL_ERR_MSG(interp, "macro: out of memory");
       lcl_ref_dec(name_v);
       lcl_ref_dec(lam);
       return LCL_RC_ERR;
@@ -5418,8 +5537,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
   int i;
   int rc;
 
-  if (argc < 1) {
-    LCL_ERR_MSG(interp, "macroexpand: expected at least a macro name");
+  if (!chk_argc(interp, "macroexpand", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -5468,6 +5586,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     argv = malloc(sizeof(lcl_value *) * (size_t)nargs);
 
     if (!argv) {
+      LCL_ERR_MSG(interp, "macroexpand: out of memory");
       lcl_ref_dec(callee);
       return LCL_RC_ERR;
     }
@@ -5507,16 +5626,17 @@ static int c_list(lcl_interp *interp, int argc, lcl_value **argv,
                   lcl_value **out) {
   lcl_value *list;
   int i;
-  (void)interp;
 
   list = lcl_list_new();
 
   if (!list) {
+    LCL_ERR_MSG(interp, "list: out of memory");
     return LCL_RC_ERR;
   }
 
   for (i = 0; i < argc; i++) {
     if (lcl_list_push(&list, argv[i]) != LCL_OK) {
+      LCL_ERR_MSG(interp, "list: out of memory");
       lcl_ref_dec(list);
       return LCL_RC_ERR;
     }
@@ -5533,7 +5653,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
   long idx;
   (void)interp;
 
-  if (argc < 1) {
+  if (!chk_argc(interp, "List::index", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
@@ -5547,7 +5667,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc == 2) {
     if (list->type != LCL_LIST) {
-      if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+      if (!arg_int(interp, "List::index", argv[1], &idx)) {
         return LCL_RC_ERR;
       }
 
@@ -5562,7 +5682,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
       return LCL_RC_OK;
     }
 
-    if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+    if (!arg_int(interp, "List::index", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
@@ -5587,7 +5707,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
       lcl_value *next = NULL;
 
       if (current->type != LCL_LIST) {
-        if (lcl_value_to_int(argv[i], &idx) != LCL_OK) {
+        if (!arg_int(interp, "List::index", argv[i], &idx)) {
           lcl_ref_dec(current);
 
           return LCL_RC_ERR;
@@ -5603,7 +5723,7 @@ static int c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
         return LCL_RC_OK;
       }
 
-      if (lcl_value_to_int(argv[i], &idx) != LCL_OK) {
+      if (!arg_int(interp, "List::index", argv[i], &idx)) {
         lcl_ref_dec(current);
 
         return LCL_RC_ERR;
@@ -5636,26 +5756,27 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
   long i;
   (void)interp;
 
-  if (argc < 2 || argc > 3) {
+  if (!chk_argc(interp, "List::range", argc, 2, 3)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_int(argv[0], &start) != LCL_OK) {
+  if (!arg_int(interp, "List::range", argv[0], &start)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_int(argv[1], &end) != LCL_OK) {
+  if (!arg_int(interp, "List::range", argv[1], &end)) {
     return LCL_RC_ERR;
   }
 
   step = 1;
 
   if (argc == 3) {
-    if (lcl_value_to_int(argv[2], &step) != LCL_OK) {
+    if (!arg_int(interp, "List::range", argv[2], &step)) {
       return LCL_RC_ERR;
     }
 
     if (step == 0) {
+      LCL_ERR_MSG(interp, "List::range: step must not be zero");
       return LCL_RC_ERR;
     }
   }
@@ -5663,6 +5784,7 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
   result = lcl_list_new();
 
   if (!result) {
+    LCL_ERR_MSG(interp, "List::range: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -5674,6 +5796,7 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
+        LCL_ERR_MSG(interp, "List::range: out of memory");
         if (num) {
           lcl_ref_dec(num);
         }
@@ -5701,6 +5824,7 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
+        LCL_ERR_MSG(interp, "List::range: out of memory");
         if (num) {
           lcl_ref_dec(num);
         }
@@ -5737,7 +5861,7 @@ static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
   size_t buf_len = 0;
   size_t buf_cap = 0;
 
-  if (argc < 1 || argc > 2) {
+  if (!chk_argc(interp, "String::join", argc, 1, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -5781,6 +5905,7 @@ static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (i > 0 && sep_len > 0) {
       if (!buf_append(&buf, &buf_len, &buf_cap, sep, sep_len)) {
+        LCL_ERR_MSG(interp, "String::join: out of memory");
         lcl_ref_dec(elem);
         free(buf);
 
@@ -5789,6 +5914,7 @@ static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     if (!buf_append(&buf, &buf_len, &buf_cap, elem_str, elem_len)) {
+      LCL_ERR_MSG(interp, "String::join: out of memory");
       lcl_ref_dec(elem);
       free(buf);
 
@@ -5812,7 +5938,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
   const char *split_chars = NULL;
   lcl_value *result;
 
-  if (argc < 1 || argc > 2) {
+  if (!chk_argc(interp, "String::split", argc, 1, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -5829,6 +5955,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
   result = lcl_list_new();
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::split: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -5840,6 +5967,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
       lcl_value *elem = lcl_string_new(c);
 
       if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
+        LCL_ERR_MSG(interp, "String::split: out of memory");
         if (elem) {
           lcl_ref_dec(elem);
         }
@@ -5863,6 +5991,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
         lcl_value *elem;
 
         if (!word) {
+          LCL_ERR_MSG(interp, "String::split: out of memory");
           lcl_ref_dec(result);
           return LCL_RC_ERR;
         }
@@ -5873,6 +6002,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
         free(word);
 
         if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
+          LCL_ERR_MSG(interp, "String::split: out of memory");
           if (elem) {
             lcl_ref_dec(elem);
           }
@@ -5891,6 +6021,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
     {
       lcl_value *elem = lcl_string_new(start);
       if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
+        LCL_ERR_MSG(interp, "String::split: out of memory");
         if (elem) {
           lcl_ref_dec(elem);
         }
@@ -5914,7 +6045,7 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
 /* len x - returns length of list, dict, or string */
 static int c_len(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  if (argc != 1) {
+  if (!chk_argc(interp, "len", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -5938,14 +6069,15 @@ static int c_len(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  default: return LCL_RC_ERR;
+  default:
+    return err_expected_got(interp, "len", "list, dict, or string", argv[0]);
   }
 }
 
 /* empty? x - returns 1 if container is empty */
 static int c_empty(lcl_interp *interp, int argc, lcl_value **argv,
                    lcl_value **out) {
-  if (argc != 1) {
+  if (!chk_argc(interp, "empty?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -5971,14 +6103,16 @@ static int c_empty(lcl_interp *interp, int argc, lcl_value **argv,
 
   case LCL_OPAQUE: *out = lcl_int_new(0); return LCL_RC_OK;
 
-  default: return LCL_RC_ERR;
+  default:
+    return err_expected_got(interp, "empty?", "list, dict, or string",
+                            argv[0]);
   }
 }
 
 /* get x k [default] - get element by key/index */
 static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
-  if (argc < 2 || argc > 3) {
+  if (!chk_argc(interp, "get", argc, 2, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -5986,17 +6120,21 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
   case LCL_LIST: {
     long idx;
 
-    if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+    if (!arg_int(interp, "get", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
     if (lcl_list_get(argv[0], (size_t)idx, out) != LCL_OK) {
+      char msg[96];
+
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
 
         return LCL_RC_OK;
       }
 
+      snprintf(msg, sizeof(msg), "get: index %ld out of range", idx);
+      LCL_ERR_MSG_DUP(interp, msg);
       return LCL_RC_ERR;
     }
 
@@ -6011,12 +6149,16 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     if (lcl_dict_get(argv[0], key, out) != LCL_OK) {
+      char msg[160];
+
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
 
         return LCL_RC_OK;
       }
 
+      snprintf(msg, sizeof(msg), "get: key \"%.96s\" not found", key);
+      LCL_ERR_MSG_DUP(interp, msg);
       return LCL_RC_ERR;
     }
 
@@ -6028,7 +6170,7 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     const char *str;
     char buf[2];
 
-    if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+    if (!arg_int(interp, "get", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
@@ -6037,12 +6179,16 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     if (idx < 0 || (size_t)idx >= strlen(str)) {
+      char msg[96];
+
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
 
         return LCL_RC_OK;
       }
 
+      snprintf(msg, sizeof(msg), "get: index %ld out of range", idx);
+      LCL_ERR_MSG_DUP(interp, msg);
       return LCL_RC_ERR;
     }
 
@@ -6054,14 +6200,15 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  default: return LCL_RC_ERR;
+  default:
+    return err_expected_got(interp, "get", "list, dict, or string", argv[0]);
   }
 }
 
 /* put x k v - return new container with element added/replaced */
 static int c_put(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  if (argc != 3) {
+  if (!chk_argc(interp, "put", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -6070,13 +6217,17 @@ static int c_put(lcl_interp *interp, int argc, lcl_value **argv,
     long idx;
     lcl_value *copy;
 
-    if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+    if (!arg_int(interp, "put", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
     copy = lcl_ref_inc(argv[0]);
 
     if (lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
+      char msg[96];
+
+      snprintf(msg, sizeof(msg), "put: index %ld out of range", idx);
+      LCL_ERR_MSG_DUP(interp, msg);
       lcl_ref_dec(copy);
       return LCL_RC_ERR;
     }
@@ -6097,6 +6248,7 @@ static int c_put(lcl_interp *interp, int argc, lcl_value **argv,
     copy = lcl_ref_inc(argv[0]);
 
     if (lcl_dict_put(&copy, key, argv[2]) != LCL_OK) {
+      LCL_ERR_MSG(interp, "put: out of memory");
       lcl_ref_dec(copy);
       return LCL_RC_ERR;
     }
@@ -6106,14 +6258,14 @@ static int c_put(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  default: return LCL_RC_ERR;
+  default: return err_expected_got(interp, "put", "list or dict", argv[0]);
   }
 }
 
 /* del x k - return new container without element */
 static int c_del(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  if (argc != 2) {
+  if (!chk_argc(interp, "del", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -6136,14 +6288,14 @@ static int c_del(lcl_interp *interp, int argc, lcl_value **argv,
 
   default:
     /* TODO(bjh) del on list not implemented for MVP - could remove by index */
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "del", "dict", argv[0]);
   }
 }
 
 /* has? x k - check if key/index exists */
 static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
-  if (argc != 2) {
+  if (!chk_argc(interp, "has?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -6151,7 +6303,7 @@ static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
   case LCL_LIST: {
     long idx;
 
-    if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+    if (!arg_int(interp, "has?", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
@@ -6178,7 +6330,8 @@ static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  default: return LCL_RC_ERR;
+  default:
+    return err_expected_got(interp, "has?", "list, dict, or string", argv[0]);
   }
 }
 
@@ -6191,7 +6344,7 @@ static int c_is_list(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "list?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6204,7 +6357,7 @@ static int c_is_dict(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "dict?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6217,7 +6370,7 @@ static int c_is_string(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "string?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6230,7 +6383,7 @@ static int c_is_opaque(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "opaque?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6243,7 +6396,7 @@ static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "number?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6276,7 +6429,7 @@ static int c_is_int(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "int?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6289,7 +6442,7 @@ static int c_is_float(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "float?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6302,7 +6455,7 @@ static int c_is_proc(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "proc?", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6322,8 +6475,7 @@ static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
   int min_args;
   int max_args;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "arity requires exactly 1 argument");
+  if (!chk_argc(interp, "arity", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6339,8 +6491,7 @@ static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
     min_args = 0;
     max_args = -1;
   } else {
-    LCL_ERR_MSG(interp, "arity: argument must be a procedure");
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "arity", "proc", func);
   }
 
   result = lcl_list_new();
@@ -6363,8 +6514,7 @@ static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
   long val;
   double fval;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "int requires exactly one argument");
+  if (!chk_argc(interp, "int", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6384,7 +6534,7 @@ static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
   /* String fallback: parse as float, then range-check before casting. */
   if (lcl_value_to_float(argv[0], &fval) == LCL_OK) {
     if (lcl_double_to_long(fval, &val) != LCL_OK) {
-      LCL_ERR_MSG(interp, "value out of range for int");
+      LCL_ERR_MSG(interp, "int: value out of range");
       return LCL_RC_ERR;
     }
 
@@ -6392,8 +6542,7 @@ static int c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
-  LCL_ERR_MSG(interp, "cannot convert to integer");
-  return LCL_RC_ERR;
+  return err_expected_got(interp, "int", "number", argv[0]);
 }
 
 /* float x - convert value to float */
@@ -6401,8 +6550,7 @@ static int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   double val;
 
-  if (argc != 1) {
-    LCL_ERR_MSG(interp, "float requires exactly one argument");
+  if (!chk_argc(interp, "float", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -6417,8 +6565,7 @@ static int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_value_to_float(argv[0], &val) != LCL_OK) {
-    LCL_ERR_MSG(interp, "cannot convert to float");
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "float", "number", argv[0]);
   }
 
   *out = lcl_float_new((double)val);
@@ -6434,19 +6581,19 @@ static int c_to_float(lcl_interp *interp, int argc, lcl_value **argv,
 int c_list_push(lcl_interp *interp, int argc, lcl_value **argv,
                 lcl_value **out) {
   lcl_value *copy;
-  (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::push", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::push", "list", argv[0]);
   }
 
   copy = lcl_ref_inc(argv[0]);
 
   if (lcl_list_push(&copy, argv[1]) != LCL_OK) {
+    LCL_ERR_MSG(interp, "List::push: out of memory");
     lcl_ref_dec(copy);
 
     return LCL_RC_ERR;
@@ -6463,19 +6610,19 @@ int c_list_pop(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *copy;
   size_t len;
   size_t i;
-  (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "List::pop", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::pop", "list", argv[0]);
   }
 
   len = lcl_list_len(argv[0]);
 
   if (len == 0) {
+    LCL_ERR_MSG(interp, "List::pop: list is empty");
     return LCL_RC_ERR;
   }
 
@@ -6485,6 +6632,7 @@ int c_list_pop(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem;
 
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::pop: internal error reading list");
       lcl_ref_dec(copy);
       return LCL_RC_ERR;
     }
@@ -6508,22 +6656,22 @@ static int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc < 2 || argc > 3) {
+  if (!chk_argc(interp, "List::slice", argc, 2, 3)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::slice", "list", argv[0]);
   }
 
   len = lcl_list_len(argv[0]);
 
-  if (lcl_value_to_int(argv[1], &start) != LCL_OK) {
+  if (!arg_int(interp, "List::slice", argv[1], &start)) {
     return LCL_RC_ERR;
   }
 
   if (argc == 3) {
-    if (lcl_value_to_int(argv[2], &end) != LCL_OK) {
+    if (!arg_int(interp, "List::slice", argv[2], &end)) {
       return LCL_RC_ERR;
     }
   } else {
@@ -6556,6 +6704,7 @@ static int c_list_slice(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem;
 
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::slice: internal error reading list");
       lcl_ref_dec(result);
 
       return LCL_RC_ERR;
@@ -6576,7 +6725,7 @@ static int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
   size_t i;
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::concat", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -6590,6 +6739,7 @@ static int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem;
 
     if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::concat: internal error reading list");
       lcl_ref_dec(result);
 
       return LCL_RC_ERR;
@@ -6603,6 +6753,7 @@ static int c_list_concat(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem;
 
     if (lcl_list_get(argv[1], i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::concat: internal error reading list");
       lcl_ref_dec(result);
 
       return LCL_RC_ERR;
@@ -6625,12 +6776,12 @@ static int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
   size_t i;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "List::reverse", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::reverse", "list", argv[0]);
   }
 
   len = lcl_list_len(argv[0]);
@@ -6640,6 +6791,7 @@ static int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem;
 
     if (lcl_list_get(argv[0], i - 1, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::reverse: internal error reading list");
       lcl_ref_dec(result);
 
       return LCL_RC_ERR;
@@ -6669,7 +6821,7 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::map", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -6677,11 +6829,11 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[1];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::map", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::map", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -6693,6 +6845,7 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[1];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::map: internal error reading list");
       lcl_ref_dec(result);
       return LCL_RC_ERR;
     }
@@ -6707,6 +6860,7 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     if (lcl_list_push(&result, mapped) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::map: out of memory");
       lcl_ref_dec(mapped);
       lcl_ref_dec(result);
       return LCL_RC_ERR;
@@ -6729,7 +6883,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::filter", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -6737,11 +6891,11 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[1];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::filter", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::filter", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -6753,6 +6907,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[1];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::filter: internal error reading list");
       lcl_ref_dec(result);
       return LCL_RC_ERR;
     }
@@ -6768,6 +6923,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (lcl_value_is_true(pred_result)) {
       if (lcl_list_push(&result, elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::filter: out of memory");
         lcl_ref_dec(pred_result);
         lcl_ref_dec(elem);
         lcl_ref_dec(result);
@@ -6794,7 +6950,7 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 3) {
+  if (!chk_argc(interp, "List::reduce", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -6803,11 +6959,11 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[2];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::reduce", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::reduce", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -6819,6 +6975,7 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[2];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::reduce: internal error reading list");
       lcl_ref_dec(acc);
       return LCL_RC_ERR;
     }
@@ -7010,6 +7167,7 @@ static int list_sort_common(lcl_interp *interp, lcl_value *list,
   tmp = malloc(len * sizeof(*tmp));
 
   if (!pairs || !tmp) {
+    LCL_ERR_MSG(interp, "out of memory");
     free(pairs);
     free(tmp);
     return LCL_RC_ERR;
@@ -7067,9 +7225,12 @@ static int list_sort_common(lcl_interp *interp, lcl_value *list,
 /* List::sort list - stable sort by the ordinary total ordering */
 static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
-  if (argc != 1 || argv[0]->type != LCL_LIST) {
-    LCL_ERR_MSG(interp, "List::sort: usage: List::sort list");
+  if (!chk_argc(interp, "List::sort", argc, 1, 1)) {
     return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_LIST) {
+    return err_expected_got(interp, "List::sort", "list", argv[0]);
   }
 
   return list_sort_common(interp, argv[0], NULL, cmp_pair_val, NULL, out);
@@ -7080,9 +7241,16 @@ static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
  * are compared with the ordinary total ordering. */
 static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
                           lcl_value **out) {
-  if (argc != 2 || !lcl_is_callable(argv[0]) || argv[1]->type != LCL_LIST) {
-    LCL_ERR_MSG(interp, "List::sort_by: usage: List::sort_by keyfn list");
+  if (!chk_argc(interp, "List::sort_by", argc, 2, 2)) {
     return LCL_RC_ERR;
+  }
+
+  if (!lcl_is_callable(argv[0])) {
+    return err_expected_got(interp, "List::sort_by", "callable", argv[0]);
+  }
+
+  if (argv[1]->type != LCL_LIST) {
+    return err_expected_got(interp, "List::sort_by", "list", argv[1]);
   }
 
   return list_sort_common(interp, argv[1], argv[0], cmp_pair_key, NULL, out);
@@ -7093,9 +7261,16 @@ static int c_list_sort_with(lcl_interp *interp, int argc, lcl_value **argv,
                             lcl_value **out) {
   lcl_user_cmp_ctx ctx;
 
-  if (argc != 2 || !lcl_is_callable(argv[0]) || argv[1]->type != LCL_LIST) {
-    LCL_ERR_MSG(interp, "List::sort_with: usage: List::sort_with cmp list");
+  if (!chk_argc(interp, "List::sort_with", argc, 2, 2)) {
     return LCL_RC_ERR;
+  }
+
+  if (!lcl_is_callable(argv[0])) {
+    return err_expected_got(interp, "List::sort_with", "callable", argv[0]);
+  }
+
+  if (argv[1]->type != LCL_LIST) {
+    return err_expected_got(interp, "List::sort_with", "list", argv[1]);
   }
 
   ctx.interp = interp;
@@ -7113,7 +7288,7 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::find", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7121,11 +7296,11 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[1];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::find", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::find", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -7136,6 +7311,7 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[1];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::find: internal error reading list");
       return LCL_RC_ERR;
     }
 
@@ -7170,7 +7346,7 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::any?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7178,11 +7354,11 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[1];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::any?", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::any?", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -7193,6 +7369,7 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[1];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::any?: internal error reading list");
       return LCL_RC_ERR;
     }
 
@@ -7226,7 +7403,7 @@ static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "List::all?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7234,11 +7411,11 @@ static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[1];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::all?", "list", list);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::all?", "callable", func);
   }
 
   len = lcl_list_len(list);
@@ -7249,6 +7426,7 @@ static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *call_args[1];
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::all?: internal error reading list");
       return LCL_RC_ERR;
     }
 
@@ -7282,14 +7460,14 @@ static int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
   size_t i;
   size_t len;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "List::unique", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   list = argv[0];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::unique", "list", list);
   }
 
   len = lcl_list_len(list);
@@ -7297,6 +7475,7 @@ static int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
   seen = hash_table_new();
 
   if (!seen) {
+    LCL_ERR_MSG(interp, "List::unique: out of memory");
     lcl_ref_dec(result);
     return LCL_RC_ERR;
   }
@@ -7307,6 +7486,7 @@ static int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *dummy;
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::unique: internal error reading list");
       hash_table_free(seen);
       lcl_ref_dec(result);
       return LCL_RC_ERR;
@@ -7346,14 +7526,14 @@ static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "List::flatten", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   list = argv[0];
 
   if (list->type != LCL_LIST) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "List::flatten", "list", list);
   }
 
   len = lcl_list_len(list);
@@ -7363,6 +7543,7 @@ static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
     lcl_value *elem = NULL;
 
     if (lcl_list_get(list, i, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
       lcl_ref_dec(result);
       return LCL_RC_ERR;
     }
@@ -7373,6 +7554,7 @@ static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
       for (j = 0; j < sublen; j++) {
         lcl_value *subelem = NULL;
         if (lcl_list_get(elem, j, &subelem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
           lcl_ref_dec(elem);
           lcl_ref_dec(result);
           return LCL_RC_ERR;
@@ -7405,12 +7587,12 @@ static int c_dict_keys(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "Dict::keys", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::keys", "dict", argv[0]);
   }
 
   result = lcl_list_new();
@@ -7435,12 +7617,12 @@ static int c_dict_values(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "Dict::values", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::values", "dict", argv[0]);
   }
 
   result = lcl_list_new();
@@ -7464,12 +7646,12 @@ static int c_dict_items(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "Dict::items", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::items", "dict", argv[0]);
   }
 
   result = lcl_list_new();
@@ -7504,12 +7686,12 @@ static int c_ns_keys(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "Ns::keys", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_NAMESPACE) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Ns::keys", "namespace", argv[0]);
   }
 
   result = lcl_list_new();
@@ -7529,12 +7711,12 @@ static int c_ns_name(lcl_interp *interp, int argc, lcl_value **argv,
                      lcl_value **out) {
   (void)interp;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "Ns::name", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_NAMESPACE) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Ns::name", "namespace", argv[0]);
   }
 
   *out = lcl_string_new(argv[0]->as.namespace.qname);
@@ -7551,14 +7733,12 @@ static int c_ns_set(lcl_interp *interp, int argc, lcl_value **argv,
                     lcl_value **out) {
   const char *name;
 
-  if (argc != 3) {
-    LCL_ERR_MSG(interp, "Ns::set: expected 3 arguments (ns name value)");
+  if (!chk_argc(interp, "Ns::set", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_NAMESPACE) {
-    LCL_ERR_MSG(interp, "Ns::set: first argument must be a namespace");
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Ns::set", "namespace", argv[0]);
   }
 
   if (lcl_value_to_cstring(interp, argv[1], &name) != LCL_OK) {
@@ -7580,12 +7760,12 @@ static int c_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *found = NULL;
   const char *name;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "Ns::has?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
   if (argv[0]->type != LCL_NAMESPACE) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Ns::has?", "namespace", argv[0]);
   }
 
   if (lcl_value_to_cstring(interp, argv[1], &name) != LCL_OK) {
@@ -7609,11 +7789,17 @@ static int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
   int i;
 
   if (argc % 2 != 0) {
+    char msg[96];
+
+    snprintf(msg, sizeof(msg),
+             "dict: expected an even number of arguments, got %d", argc);
+    LCL_ERR_MSG_DUP(interp, msg);
     return LCL_RC_ERR;
   }
 
   dict = lcl_dict_new();
   if (!dict) {
+    LCL_ERR_MSG(interp, "dict: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -7626,6 +7812,7 @@ static int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     if (lcl_dict_put(&dict, key, argv[i + 1]) != LCL_OK) {
+      LCL_ERR_MSG(interp, "dict: out of memory");
       lcl_ref_dec(dict);
       return LCL_RC_ERR;
     }
@@ -7645,7 +7832,7 @@ static int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   (void)interp;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "Dict::merge", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7677,7 +7864,7 @@ static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *val;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "Dict::map", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7685,11 +7872,11 @@ static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
   dict = argv[1];
 
   if (dict->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::map", "dict", dict);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::map", "callable", func);
   }
 
   result = lcl_dict_new();
@@ -7729,7 +7916,7 @@ static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *val;
   int rc;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "Dict::filter", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7737,11 +7924,11 @@ static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
   dict = argv[1];
 
   if (dict->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::filter", "dict", dict);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::filter", "callable", func);
   }
 
   result = lcl_dict_new();
@@ -7787,7 +7974,7 @@ static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *val;
   int rc;
 
-  if (argc != 3) {
+  if (!chk_argc(interp, "Dict::reduce", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -7796,11 +7983,11 @@ static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
   dict = argv[2];
 
   if (dict->type != LCL_DICT) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::reduce", "dict", dict);
   }
 
   if (!lcl_is_callable(func)) {
-    return LCL_RC_ERR;
+    return err_expected_got(interp, "Dict::reduce", "callable", func);
   }
 
   acc = lcl_ref_inc(init);
@@ -7843,7 +8030,7 @@ static int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
   size_t i;
   size_t len;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "String::upper", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -7854,6 +8041,7 @@ static int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
   result = malloc(len + 1);
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::upper: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -7883,7 +8071,7 @@ static int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
   size_t i;
   size_t len;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "String::lower", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -7894,6 +8082,7 @@ static int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
   result = malloc(len + 1);
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::lower: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -7922,7 +8111,7 @@ static int c_string_find(lcl_interp *interp, int argc, lcl_value **argv,
   const char *needle;
   const char *found;
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "String::find", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7960,7 +8149,7 @@ static int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
   char *dst;
   int count = 0;
 
-  if (argc != 3) {
+  if (!chk_argc(interp, "String::replace", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -8033,6 +8222,7 @@ static int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
   result = malloc(result_len + 1);
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::replace: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -8061,7 +8251,7 @@ static int c_string_length(lcl_interp *interp, int argc, lcl_value **argv,
                            lcl_value **out) {
   const char *src;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "String::length", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -8081,7 +8271,7 @@ static int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   char buf[2];
 
-  if (argc != 2) {
+  if (!chk_argc(interp, "String::index", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -8090,7 +8280,7 @@ static int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
   }
   len = strlen(src);
 
-  if (lcl_value_to_int(argv[1], &idx) != LCL_OK) {
+  if (!arg_int(interp, "String::index", argv[1], &idx)) {
     return LCL_RC_ERR;
   }
 
@@ -8120,7 +8310,7 @@ static int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
   size_t sub_len;
   char *result;
 
-  if (argc != 3) {
+  if (!chk_argc(interp, "String::range", argc, 3, 3)) {
     return LCL_RC_ERR;
   }
 
@@ -8129,8 +8319,8 @@ static int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
   }
   len = strlen(src);
 
-  if (lcl_value_to_int(argv[1], &start) != LCL_OK ||
-      lcl_value_to_int(argv[2], &end) != LCL_OK) {
+  if (!arg_int(interp, "String::range", argv[1], &start) ||
+      !arg_int(interp, "String::range", argv[2], &end)) {
     return LCL_RC_ERR;
   }
 
@@ -8167,6 +8357,7 @@ static int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
   result = malloc(sub_len + 1);
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::range: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -8188,7 +8379,7 @@ static int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   char *result;
 
-  if (argc != 1) {
+  if (!chk_argc(interp, "String::trim", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
@@ -8217,6 +8408,7 @@ static int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
   result = malloc(len + 1);
 
   if (!result) {
+    LCL_ERR_MSG(interp, "String::trim: out of memory");
     return LCL_RC_ERR;
   }
 
