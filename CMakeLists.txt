@@ -25,6 +25,7 @@ option(LCL_BUILD_CLI "Build command-line interpreter" ON)
 option(LCL_BUILD_TESTS "Build test executable" OFF)
 option(LCL_BUILD_EXAMPLES "Build embedding examples under examples/" OFF)
 option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
+option(LCL_ENABLE_CLANG_TIDY "Run clang-tidy alongside compilation" OFF)
 option(LCL_DEBUG_REFC "Enable debug reference counting" OFF)
 option(LCL_STATIC_BINARY "Build fully static CLI binary (requires static libs)" OFF)
 
@@ -92,6 +93,16 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+if(LCL_ENABLE_CLANG_TIDY)
+  find_program(LCL_CLANG_TIDY_EXE clang-tidy)
+  if(NOT LCL_CLANG_TIDY_EXE)
+    message(FATAL_ERROR "LCL_ENABLE_CLANG_TIDY=ON but clang-tidy was not found")
+  endif()
+  # Applies to every target defined after this point; checks come
+  # from the repo-root .clang-tidy.
+  set(CMAKE_C_CLANG_TIDY "${LCL_CLANG_TIDY_EXE}")
+endif()
 
 if(LCL_ENABLE_ASAN)
   # ASan overrides optimization to ensure accurate diagnostics

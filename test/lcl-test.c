@@ -5,8 +5,8 @@
 #include "hash-table.h"
 #include "lcl-compile.h"
 #include "lcl-eval.h"
-#include "lcl-values.h"
 #include "lcl-stdlib.h"
+#include "lcl-values.h"
 #include "lcl-version.h"
 
 /* These three are declared in the public header <lcl.h>, which we
@@ -21,18 +21,19 @@ extern lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
  * OOM injection (linked via -Wl,--wrap=calloc,--wrap=strndup).
  * Set the counter to N to make the (N+1)th call return NULL; subsequent
  * calls work normally. Set to -1 (default) to disable.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 extern void *__real_calloc(size_t nmemb, size_t size);
 extern char *__real_strndup(const char *s, size_t n);
 extern char *__real_strdup(const char *s);
-extern int   __real_lcl_program_push_command(lcl_program *p, lcl_command *src);
-extern int   __real_hash_table_put(hash_table *ht, const char *key,
-                                   lcl_value *value);
+extern int __real_lcl_program_push_command(lcl_program *p, lcl_command *src);
+extern int __real_hash_table_put(hash_table *ht, const char *key,
+                                 lcl_value *value);
 
-static int oom_calloc_fail_at  = -1;  /* -1: disabled */
+static int oom_calloc_fail_at = -1; /* -1: disabled */
 static int oom_strndup_fail_at = -1;
-static int oom_strdup_fail_at  = -1;
+static int oom_strdup_fail_at = -1;
 static int oom_push_command_fail_at = -1;
 static int oom_hash_put_fail_at = -1;
 
@@ -115,7 +116,7 @@ int __wrap_hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
 **/
 
 typedef struct {
-  char  *s;
+  char *s;
   size_t len, cap;
 } SB;
 
@@ -133,19 +134,26 @@ static int sb_reserve(SB *b, size_t need) {
     cap <<= 1u;
   }
 
-  if (cap == b->cap) return 1;
+  if (cap == b->cap) {
+    return 1;
+  }
 
-  p = (char*)realloc(b->s, cap);
+  p = (char *)realloc(b->s, cap);
 
-  if (!p) return 0;
+  if (!p) {
+    return 0;
+  }
 
-  b->s = p; b->cap = cap;
+  b->s = p;
+  b->cap = cap;
 
   return 1;
 }
 
 static int sb_putc(SB *b, int c) {
-  if (!sb_reserve(b, b->len + 2)) return 0;
+  if (!sb_reserve(b, b->len + 2)) {
+    return 0;
+  }
 
   b->s[b->len++] = (char)c;
   b->s[b->len] = '\0';
@@ -156,7 +164,9 @@ static int sb_putc(SB *b, int c) {
 static int sb_puts(SB *b, const char *s) {
   size_t n = strlen(s);
 
-  if (!sb_reserve(b, b->len + n + 1)) return 0;
+  if (!sb_reserve(b, b->len + n + 1)) {
+    return 0;
+  }
 
   memcpy(b->s + b->len, s, n + 1);
   b->len += n;
@@ -165,14 +175,18 @@ static int sb_puts(SB *b, const char *s) {
 }
 
 static void sb_free(SB *b) {
-  free(b->s); b->s = NULL; b->len = b->cap = 0;
+  free(b->s);
+  b->s = NULL;
+  b->len = b->cap = 0;
 }
 
 /** Dump IL **/
 
 static int dump_esc_lit(SB *b, const char *s, size_t n) {
   size_t i;
-  if (!sb_puts(b, "\"")) return 0;
+  if (!sb_puts(b, "\"")) {
+    return 0;
+  }
 
   for (i = 0; i < n; i++) {
     unsigned char c = (unsigned char)s[i];
@@ -189,9 +203,13 @@ static int dump_esc_lit(SB *b, const char *s, size_t n) {
       char tmp[5];
       sprintf(tmp, "\\x%02X", (unsigned)c);
 
-      if (!sb_puts(b, tmp)) return 0;
+      if (!sb_puts(b, tmp)) {
+        return 0;
+      }
     } else {
-      if (!sb_putc(b, c)) return 0;
+      if (!sb_putc(b, c)) {
+        return 0;
+      }
     }
   }
 
@@ -205,36 +223,73 @@ static int dump_word(const lcl_word *w, SB *b, int depth) {
   for (i = 0; i < w->np; i++) {
     const lcl_word_piece *pc = &w->wp[i];
 
-    if (!sb_puts(b, "[")) return 0;
-
-    if (pc->kind == LCL_WP_LIT) {
-      if (!sb_puts(b, "lit:")) return 0;
-      if (!dump_esc_lit(b, pc->as.lit.s, pc->as.lit.n)) return 0;
-    } else if (pc->kind == LCL_WP_VAR) {
-      if (!sb_puts(b, "var:")) return 0;
-      if (!dump_esc_lit(b, pc->as.var.name, strlen(pc->as.var.name))) return 0;
-    } else { /* LCL_WP_SUBCMD */
-      if (!sb_puts(b, "sub:{")) return 0;
-      if (!dump_program_rec(pc->as.sub.program, b, depth + 1)) return 0;
-      if (!sb_puts(b, "}")) return 0;
+    if (!sb_puts(b, "[")) {
+      return 0;
     }
 
-    if (!sb_puts(b, "]")) return 0;
-    if (i+1 < w->np) { if (!sb_puts(b, " ")) return 0; }
+    if (pc->kind == LCL_WP_LIT) {
+      if (!sb_puts(b, "lit:")) {
+        return 0;
+      }
+      if (!dump_esc_lit(b, pc->as.lit.s, pc->as.lit.n)) {
+        return 0;
+      }
+    } else if (pc->kind == LCL_WP_VAR) {
+      if (!sb_puts(b, "var:")) {
+        return 0;
+      }
+      if (!dump_esc_lit(b, pc->as.var.name, strlen(pc->as.var.name))) {
+        return 0;
+      }
+    } else { /* LCL_WP_SUBCMD */
+      if (!sb_puts(b, "sub:{")) {
+        return 0;
+      }
+      if (!dump_program_rec(pc->as.sub.program, b, depth + 1)) {
+        return 0;
+      }
+      if (!sb_puts(b, "}")) {
+        return 0;
+      }
+    }
+
+    if (!sb_puts(b, "]")) {
+      return 0;
+    }
+    if (i + 1 < w->np) {
+      if (!sb_puts(b, " ")) {
+        return 0;
+      }
+    }
   }
   return 1;
 }
 
 static int dump_command(const lcl_command *c, SB *b, int depth) {
   int i;
-  if (!sb_puts(b, "cmd(")) return 0;
-  { char tmp[32]; sprintf(tmp, "line=%d", c->line); if (!sb_puts(b, tmp)) return 0; }
-  if (!sb_puts(b, "):")) return 0;
+  if (!sb_puts(b, "cmd(")) {
+    return 0;
+  }
+  {
+    char tmp[32];
+    sprintf(tmp, "line=%d", c->line);
+    if (!sb_puts(b, tmp)) {
+      return 0;
+    }
+  }
+  if (!sb_puts(b, "):")) {
+    return 0;
+  }
 
   for (i = 0; i < c->argc; i++) {
-    if (!sb_puts(b, " ")) return 0;
-    if (!dump_word(&c->w[i], b, depth)) return 0;
-    if (i+1 < c->argc) { /* optional extra space between words if you want */ }
+    if (!sb_puts(b, " ")) {
+      return 0;
+    }
+    if (!dump_word(&c->w[i], b, depth)) {
+      return 0;
+    }
+    if (i + 1 < c->argc) { /* optional extra space between words if you want */
+    }
   }
   return 1;
 }
@@ -260,7 +315,9 @@ static int dump_program_rec(const lcl_program *P, SB *b, int depth) {
 static int lcl_program_dump(const lcl_program *P, char **out_str) {
   SB b;
   sb_init(&b);
-  if (!P) return 0;
+  if (!P) {
+    return 0;
+  }
 
   if (!dump_program_rec(P, &b, 0)) {
     sb_free(&b);
@@ -273,24 +330,36 @@ static int lcl_program_dump(const lcl_program *P, char **out_str) {
 }
 
 /** Signatures **/
-int  lcl_program_dump(const lcl_program *P, char **out_str);
+int lcl_program_dump(const lcl_program *P, char **out_str);
 lcl_program *lcl_compile(const char *src, const char *file);
 void lcl_program_free(lcl_program *P);
 
-#define ASSERT_TRUE(cond) do { if (!(cond)) { \
-  printf("    assert failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__); \
-  return 0; } } while(0)
+#define ASSERT_TRUE(cond)                                                      \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      printf("    assert failed: %s (%s:%d)\n", #cond, __FILE__, __LINE__);    \
+      return 0;                                                                \
+    }                                                                          \
+  } while (0)
 
-#define ASSERT_STREQ(a,b) do { if (((a)==NULL && (b)!=NULL) || ((a)!=NULL && (b)==NULL) || strcmp((a),(b))!=0) { \
-  printf("    assert failed: strings not equal\n    A: %s\n    B: %s\n", (a)?(a):"(null)", (b)?(b):"(null)"); \
-  return 0; } } while(0)
+#define ASSERT_STREQ(a, b)                                                     \
+  do {                                                                         \
+    if (((a) == NULL && (b) != NULL) || ((a) != NULL && (b) == NULL) ||        \
+        strcmp((a), (b)) != 0) {                                               \
+      printf("    assert failed: strings not equal\n    A: %s\n    B: %s\n",   \
+             (a) ? (a) : "(null)", (b) ? (b) : "(null)");                      \
+      return 0;                                                                \
+    }                                                                          \
+  } while (0)
 
 static int compile_and_dump(const char *src, const char *expect) {
   lcl_program *P = lcl_program_compile(src, "test.lcl");
   char *got = NULL;
   int ok;
 
-  if (!P && expect == NULL) return 1;
+  if (!P && expect == NULL) {
+    return 1;
+  }
 
   ASSERT_TRUE(P != NULL);
   ASSERT_TRUE(lcl_program_dump(P, &got));
@@ -301,52 +370,46 @@ static int compile_and_dump(const char *src, const char *expect) {
     printf("    got:    %s\n", got);
     printf("    expect: %s\n", expect);
   }
-  
+
   free(got);
   lcl_program_free(P);
   return ok;
 }
 
 static int test_simple_words(void) {
-  const char *src =
-    "set x 10 ; puts $x\n";
-  const char *exp =
-    "cmd(line=1): [lit:\"set\"] [lit:\"x\"] [lit:\"10\"] ; "
-    "cmd(line=1): [lit:\"puts\"] [var:\"x\"]";
+  const char *src = "set x 10 ; puts $x\n";
+  const char *exp = "cmd(line=1): [lit:\"set\"] [lit:\"x\"] [lit:\"10\"] ; "
+                    "cmd(line=1): [lit:\"puts\"] [var:\"x\"]";
   return compile_and_dump(src, exp);
 }
 
 static int test_comments(void) {
-  const char *src =
-    ";; leading comment\n"
-    "set a 1  ;; trailing comment on same line\n"
-    "puts $a\n";
-  const char *exp =
-    "cmd(line=2): [lit:\"set\"] [lit:\"a\"] [lit:\"1\"] ; "
-    "cmd(line=3): [lit:\"puts\"] [var:\"a\"]";
+  const char *src = ";; leading comment\n"
+                    "set a 1  ;; trailing comment on same line\n"
+                    "puts $a\n";
+  const char *exp = "cmd(line=2): [lit:\"set\"] [lit:\"a\"] [lit:\"1\"] ; "
+                    "cmd(line=3): [lit:\"puts\"] [var:\"a\"]";
   return compile_and_dump(src, exp);
 }
 
 static int test_braces_literal(void) {
-  const char *src =
-    "set s {a $b [c] \\x41}\n";
+  const char *src = "set s {a $b [c] \\x41}\n";
   const char *exp =
-    "cmd(line=1): [lit:\"set\"] [lit:\"s\"] [lit:\"a $b [c] \\\\x41\"]";
+      "cmd(line=1): [lit:\"set\"] [lit:\"s\"] [lit:\"a $b [c] \\\\x41\"]";
   return compile_and_dump(src, exp);
 }
 
 static int test_quotes_and_subst(void) {
-  const char *src =
-    "set s \"a $b [echo hi]\"\n";
+  const char *src = "set s \"a $b [echo hi]\"\n";
   const char *exp =
-    "cmd(line=1): [lit:\"set\"] [lit:\"s\"] [lit:\"a \"] [var:\"b\"] [lit:\" \"] [sub:{cmd(line=1): [lit:\"echo\"] [lit:\"hi\"]}]";
+      "cmd(line=1): [lit:\"set\"] [lit:\"s\"] [lit:\"a \"] [var:\"b\"] [lit:\" \"] [sub:{cmd(line=1): [lit:\"echo\"] [lit:\"hi\"]}]";
   return compile_and_dump(src, exp);
 }
 
 static int test_nested_subcmd(void) {
   const char *src = "set x [f [g 1] 2]\n";
   const char *exp =
-    "cmd(line=1): [lit:\"set\"] [lit:\"x\"] [sub:{cmd(line=1): [lit:\"f\"] [sub:{cmd(line=1): [lit:\"g\"] [lit:\"1\"]}] [lit:\"2\"]}]";
+      "cmd(line=1): [lit:\"set\"] [lit:\"x\"] [sub:{cmd(line=1): [lit:\"f\"] [sub:{cmd(line=1): [lit:\"g\"] [lit:\"1\"]}] [lit:\"2\"]}]";
   return compile_and_dump(src, exp);
 }
 
@@ -359,8 +422,7 @@ static int test_unmatched_brace_error(void) {
 static int test_brace_backslash_balance(void) {
   /* {foo \} bar} should compile: backslash escapes the } for balancing */
   const char *src = "puts {foo \\} bar}\n";
-  const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [lit:\"foo \\\\} bar\"]";
+  const char *exp = "cmd(line=1): [lit:\"puts\"] [lit:\"foo \\\\} bar\"]";
   return compile_and_dump(src, exp);
 }
 
@@ -368,23 +430,21 @@ static int test_hex_escape_2digits(void) {
   /* \x41 -> 'A' (2 hex digits); \x4 -> literal \x4 (not enough digits) */
   const char *src = "puts \"\\x41\\x4\"\n";
   const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [lit:\"A\"] [lit:\"\\\\x\"] [lit:\"4\"]";
+      "cmd(line=1): [lit:\"puts\"] [lit:\"A\"] [lit:\"\\\\x\"] [lit:\"4\"]";
   return compile_and_dump(src, exp);
 }
 
 static int test_unknown_escape_literal(void) {
   /* \q -> literal \q (unknown escape preserves backslash) */
   const char *src = "puts \"\\q\"\n";
-  const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [lit:\"\\\\q\"]";
+  const char *exp = "cmd(line=1): [lit:\"puts\"] [lit:\"\\\\q\"]";
   return compile_and_dump(src, exp);
 }
 
 static int test_octal_escape(void) {
   /* \101 -> 'A' (octal 101 = 65 = 0x41) */
   const char *src = "puts \"\\101\"\n";
-  const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [lit:\"A\"]";
+  const char *exp = "cmd(line=1): [lit:\"puts\"] [lit:\"A\"]";
   return compile_and_dump(src, exp);
 }
 
@@ -393,8 +453,8 @@ static int test_quoted_close_paren_in_list(void) {
    * (bar ")" baz) desugars to [list bar ")" baz] */
   const char *src = "puts [concat (bar \")\" baz)]\n";
   const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"concat\"] "
-    "[sub:{cmd(line=1): [lit:\"list\"] [lit:\"bar\"] [lit:\")\"] [lit:\"baz\"]}]}]";
+      "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"concat\"] "
+      "[sub:{cmd(line=1): [lit:\"list\"] [lit:\"bar\"] [lit:\")\"] [lit:\"baz\"]}]}]";
   return compile_and_dump(src, exp);
 }
 
@@ -402,8 +462,8 @@ static int test_comment_in_list_literal(void) {
   /* ;; comment inside () should be stripped — "comment" must not appear */
   const char *src = "puts (foo ;; comment\nbar)\n";
   const char *exp =
-    "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"list\"] "
-    "[lit:\"foo\"] [lit:\"bar\"]}]";
+      "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"list\"] "
+      "[lit:\"foo\"] [lit:\"bar\"]}]";
   return compile_and_dump(src, exp);
 }
 
@@ -421,10 +481,12 @@ static int test_comment_in_list_literal(void) {
  *   The test process crashes (SEGV or ASan abort).
  *
  * Fixed behavior: the mutator returns LCL_ERROR with *io unchanged.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 static int test_issue22_dict_put_clone_oom(void) {
-  lcl_value *dict, *original;
+  lcl_value *dict;
+  lcl_value *original;
   lcl_value *val = lcl_string_new("v");
   lcl_result rc;
 
@@ -440,8 +502,8 @@ static int test_issue22_dict_put_clone_oom(void) {
   rc = lcl_dict_put(&dict, "k", val);
 
   ASSERT_TRUE(rc == LCL_ERROR);
-  ASSERT_TRUE(dict != NULL);              /* *io must NOT have been NULL'd */
-  ASSERT_TRUE(dict == original);          /* still the original */
+  ASSERT_TRUE(dict != NULL);     /* *io must NOT have been NULL'd */
+  ASSERT_TRUE(dict == original); /* still the original */
 
   lcl_ref_dec(val);
   lcl_ref_dec(dict);
@@ -450,7 +512,8 @@ static int test_issue22_dict_put_clone_oom(void) {
 }
 
 static int test_issue22_dict_del_clone_oom(void) {
-  lcl_value *dict, *original;
+  lcl_value *dict;
+  lcl_value *original;
   lcl_value *val = lcl_string_new("v");
   lcl_result rc;
 
@@ -474,7 +537,8 @@ static int test_issue22_dict_del_clone_oom(void) {
 }
 
 static int test_issue22_list_push_clone_oom(void) {
-  lcl_value *list, *original;
+  lcl_value *list;
+  lcl_value *original;
   lcl_value *val = lcl_string_new("v");
   lcl_result rc;
 
@@ -497,7 +561,8 @@ static int test_issue22_list_push_clone_oom(void) {
 }
 
 static int test_issue22_list_set_clone_oom(void) {
-  lcl_value *list, *original;
+  lcl_value *list;
+  lcl_value *original;
   lcl_value *initial = lcl_string_new("a");
   lcl_value *replacement = lcl_string_new("b");
   lcl_result rc;
@@ -527,7 +592,8 @@ static int test_issue22_list_set_clone_oom(void) {
  * arguments. Embedders routinely pass NULL (e.g. an `out` from a failed
  * call); sibling functions (e.g. `lcl_list_*`, `lcl_define`, `lcl_get`)
  * already guard. This pins the contract for the remaining functions.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 static int test_issue35_public_api_null_safety(void) {
   long iv = 0;
@@ -565,10 +631,11 @@ static int test_issue35_public_api_null_safety(void) {
  * like `io::getenv` of an unset variable used to pass NULL into this
  * constructor and silently get "" — the new behavior is identical from
  * the caller's perspective but no longer poisons the value.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 static int test_issue15_to_string_null_contract(void) {
   extern lcl_interp *lcl_test_interp;
-  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  extern const char *lcl_interp_error_msg(lcl_interp * interp);
   lcl_value *v;
   const char *out;
   const char *err;
@@ -629,7 +696,8 @@ static int test_issue15_to_string_null_contract(void) {
  * by save+restore around the eval. This test deliberately mimics the
  * pattern: compile a fresh program, eval it, free it, then trigger an
  * error and rely on ASan to catch the UAF if the fix regressed.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 static int test_issue59_eval_program_cur_file_uaf(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_program *prog;
@@ -644,7 +712,9 @@ static int test_issue59_eval_program_cur_file_uaf(void) {
 
   rc = lcl_eval_program(lcl_test_interp, prog, &result);
   ASSERT_TRUE(rc == LCL_RC_OK);
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
 
   /* Post-fix: cur_file must be restored to its pre-eval value (NULL),
    * not still pointing at prog->file. */
@@ -666,7 +736,8 @@ static int test_issue59_eval_program_cur_file_uaf(void) {
  * whitespace, "MAJOR.MINOR.PATCH" shape), and LCL_VERSION_NUMBER must
  * match the macros. Catches CMake `configure_file` drift and accidental
  * hard-codes anywhere in the version pipeline.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 static int test_version_surface(void) {
   const char *vs = lcl_version();
   char expected[32];
@@ -683,8 +754,8 @@ static int test_version_surface(void) {
    * trips. Use strcmp directly rather than ASSERT_STREQ — the macro's
    * NULL guard fires a `-Waddress` warning on `expected`, which the
    * compiler knows cannot decay to NULL (it's a stack array). */
-  n = snprintf(expected, sizeof(expected), "%d.%d.%d",
-               LCL_VERSION_MAJOR, LCL_VERSION_MINOR, LCL_VERSION_PATCH);
+  n = snprintf(expected, sizeof(expected), "%d.%d.%d", LCL_VERSION_MAJOR,
+               LCL_VERSION_MINOR, LCL_VERSION_PATCH);
   ASSERT_TRUE(n > 0 && (size_t)n < sizeof(expected));
   ASSERT_TRUE(strcmp(LCL_VERSION_STRING, expected) == 0);
 
@@ -694,10 +765,9 @@ static int test_version_surface(void) {
   ASSERT_TRUE(LCL_VERSION_PATCH >= 0 && LCL_VERSION_PATCH < 100);
 
   /* LCL_VERSION_NUMBER decomposes correctly. */
-  ASSERT_TRUE(LCL_VERSION_NUMBER ==
-              LCL_VERSION_MAJOR * 10000 +
-              LCL_VERSION_MINOR * 100 +
-              LCL_VERSION_PATCH);
+  ASSERT_TRUE(LCL_VERSION_NUMBER == LCL_VERSION_MAJOR * 10000 +
+                                        LCL_VERSION_MINOR * 100 +
+                                        LCL_VERSION_PATCH);
 
   return 1;
 }
@@ -709,13 +779,14 @@ static int test_version_surface(void) {
  * a confusing failure where downstream `$result_var` lookups error as
  * "unbound name" with no indication of the actual cause. The fix: detect
  * the strdup failure and return LCL_RC_ERR with a clear message.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 static int test_issue33_catch_strdup_oom(void) {
   /* The lcl-test binary uses one global interp set up by main(). Compile
    * a fresh program here and target the specific strdup of the result-var
    * name with `oom_strdup_fail_match`. */
-  extern lcl_interp *lcl_test_interp;  /* set by main */
+  extern lcl_interp *lcl_test_interp; /* set by main */
   lcl_program *prog;
   lcl_value *result = NULL;
   int rc;
@@ -744,12 +815,14 @@ static int test_issue33_catch_strdup_oom(void) {
  * 0xCBF29CE484222325 (14695981039346656037); the buggy code dropped a
  * digit (1469598103934665603). This test computes the hash of "foo"
  * against the standard FNV-1a expected value 0xDCB27518FED9D577.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 static int test_issue27_fnv1a_known_vector(void) {
-  /* Standard FNV-1a 64-bit hashes (https://datatracker.ietf.org/doc/html/draft-eastlake-fnv) */
+  /* Standard FNV-1a 64-bit hashes
+   * (https://datatracker.ietf.org/doc/html/draft-eastlake-fnv) */
   ASSERT_TRUE(lcl_hash_fnv1a("foo") == 0xDCB27518FED9D577ULL);
-  ASSERT_TRUE(lcl_hash_fnv1a("a")   == 0xAF63DC4C8601EC8CULL);
+  ASSERT_TRUE(lcl_hash_fnv1a("a") == 0xAF63DC4C8601EC8CULL);
   return 1;
 }
 
@@ -760,7 +833,8 @@ static int test_issue27_fnv1a_known_vector(void) {
  * Buggy code unconditionally does `used++` regardless of whether the
  * chosen slot was H_EMPTY or H_TOMB, so the second insert produces
  * used == 2 (the tombstone already counted toward used).
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 static int test_issue26_hash_used_tombstone_reuse(void) {
   hash_table *ht = hash_table_new();
@@ -774,12 +848,12 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
   ASSERT_TRUE(ht->len == 1);
 
   ASSERT_TRUE(hash_table_delete(ht, "a"));
-  ASSERT_TRUE(ht->used == 1);  /* tomb still counted */
+  ASSERT_TRUE(ht->used == 1); /* tomb still counted */
   ASSERT_TRUE(ht->len == 0);
 
   /* Reuse the tombstone slot. */
   ASSERT_TRUE(hash_table_put(ht, "a", v));
-  ASSERT_TRUE(ht->used == 1);  /* MUST NOT double-count */
+  ASSERT_TRUE(ht->used == 1); /* MUST NOT double-count */
   ASSERT_TRUE(ht->len == 1);
 
   hash_table_free(ht);
@@ -795,7 +869,8 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
  *
  * Buggy behavior: lcl_word_add_var(NULL) → strlen(NULL) → segfault.
  * Fixed behavior: lcl_program_compile returns NULL cleanly.
- * --------------------------------------------------------------------------- */
+ * ---------------------------------------------------------------------------
+ */
 
 /* ISSUES #47 — Param/upvalue binding ignores OOM. We invoke a lambda
  * whose body references `+`, so `+` becomes an upvalue. The upvalue-bind
@@ -808,7 +883,7 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
  * propagates as LCL_RC_ERR.  */
 static int test_issue47_param_bind_oom(void) {
   extern lcl_interp *lcl_test_interp;
-  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  extern const char *lcl_interp_error_msg(lcl_interp * interp);
   lcl_program *prog;
   lcl_value *result = NULL;
   const char *err;
@@ -833,7 +908,9 @@ static int test_issue47_param_bind_oom(void) {
   ASSERT_TRUE(err != NULL);
   ASSERT_TRUE(strstr(err, "undefined") == NULL);
 
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_program_free(prog);
   lcl_clear_error(lcl_test_interp);
   return 1;
@@ -846,19 +923,19 @@ static int test_issue47_param_bind_oom(void) {
  * overflow. */
 static int test_issue45_skip_balanced_depth_limit(void) {
   enum { DEPTH = 20000 };
-  size_t total = (size_t)DEPTH * 2 * 2;  /* DEPTH "([" + DEPTH "])" */
+  size_t total = (size_t)DEPTH * 2 * 2; /* DEPTH "([" + DEPTH "])" */
   char *src = (char *)malloc(total + 1);
   size_t i;
   lcl_program *prog;
 
   ASSERT_TRUE(src != NULL);
   for (i = 0; i < DEPTH; i++) {
-    src[i * 2]     = '[';
+    src[i * 2] = '[';
     src[i * 2 + 1] = '(';
   }
   for (i = 0; i < DEPTH; i++) {
-    src[DEPTH * 2 + i * 2]     = ')';
-    src[DEPTH * 2 + i * 2 + 1] = ']';
+    src[(size_t)DEPTH * 2 + i * 2] = ')';
+    src[(size_t)DEPTH * 2 + i * 2 + 1] = ']';
   }
   src[total] = '\0';
 
@@ -868,7 +945,9 @@ static int test_issue45_skip_balanced_depth_limit(void) {
    * succeeded). What we MUST NOT see is a crash. */
   ASSERT_TRUE(prog == NULL);
 
-  if (prog) lcl_program_free(prog);
+  if (prog) {
+    lcl_program_free(prog);
+  }
   free(src);
   return 1;
 }
@@ -891,7 +970,7 @@ static int test_issue42_dict_clone_put_oom(void) {
     lcl_value *v2 = lcl_string_new("v2");
     ASSERT_TRUE(lcl_dict_put(&d, "k1", v1) == LCL_OK);
     ASSERT_TRUE(lcl_dict_put(&d, "k2", v2) == LCL_OK);
-    lcl_ref_dec(v1);  /* dict_put didn't take ownership */
+    lcl_ref_dec(v1); /* dict_put didn't take ownership */
     lcl_ref_dec(v2);
   }
 
@@ -905,7 +984,7 @@ static int test_issue42_dict_clone_put_oom(void) {
   {
     lcl_value *v3 = lcl_string_new("v3");
     rc = lcl_dict_put(&d, "k3", v3);
-    lcl_ref_dec(v3);  /* dict_put doesn't take ownership */
+    lcl_ref_dec(v3); /* dict_put doesn't take ownership */
   }
 
   oom_hash_put_fail_at = -1;
@@ -943,7 +1022,10 @@ static int test_issue41_namespace_reentry_oom(void) {
   ASSERT_TRUE(setup != NULL);
   rc = lcl_eval_program(lcl_test_interp, setup, &result);
   ASSERT_TRUE(rc == LCL_RC_OK);
-  if (result) { lcl_ref_dec(result); result = NULL; }
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
   lcl_program_free(setup);
 
   reentry = lcl_program_compile("namespace __i41_ns { let y 2 }", "test.lcl");
@@ -960,7 +1042,9 @@ static int test_issue41_namespace_reentry_oom(void) {
 
   ASSERT_TRUE(rc == LCL_RC_ERR);
 
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_program_free(reentry);
   return 1;
 }
@@ -992,7 +1076,9 @@ static int test_issue40_namespace_max_depth_leak(void) {
 
   ASSERT_TRUE(rc == LCL_RC_ERR);
 
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_program_free(prog);
   return 1;
 }
@@ -1014,8 +1100,8 @@ static int test_issue39_import_cleared_cell(void) {
   ASSERT_TRUE(cell->as.cell.inner == NULL);
 
   /* Bind the broken cell so `import __i39_broken` resolves to it. */
-  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i39_broken", cell)
-              == LCL_OK);
+  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i39_broken", cell) ==
+              LCL_OK);
   lcl_ref_dec(cell);
 
   prog = lcl_program_compile("import __i39_broken", "test.lcl");
@@ -1025,7 +1111,9 @@ static int test_issue39_import_cleared_cell(void) {
   /* Pre-fix: segfault. Post-fix: clean LCL_RC_ERR. */
   ASSERT_TRUE(rc == LCL_RC_ERR);
 
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_program_free(prog);
   return 1;
 }
@@ -1038,7 +1126,7 @@ static int test_issue39_import_cleared_cell(void) {
  * sets a "use of cleared cell" error message before propagating. */
 static int test_issue58_cleared_cell_returns_error(void) {
   extern lcl_interp *lcl_test_interp;
-  extern const char *lcl_interp_error_msg(lcl_interp *interp);
+  extern const char *lcl_interp_error_msg(lcl_interp * interp);
   lcl_value *cell;
   lcl_program *prog;
   lcl_value *result = NULL;
@@ -1049,8 +1137,8 @@ static int test_issue58_cleared_cell_returns_error(void) {
   ASSERT_TRUE(cell != NULL);
   ASSERT_TRUE(cell->as.cell.inner == NULL);
 
-  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i58_broken", cell)
-              == LCL_OK);
+  ASSERT_TRUE(lcl_env_let(&lcl_test_interp->env, "__i58_broken", cell) ==
+              LCL_OK);
   lcl_ref_dec(cell);
 
   /* Single-piece var ref — exercises lcl_eval_word's WP_VAR case. */
@@ -1077,7 +1165,9 @@ static int test_issue58_cleared_cell_returns_error(void) {
   err = lcl_interp_error_msg(lcl_test_interp);
   ASSERT_TRUE(err != NULL && strstr(err, "cleared cell") != NULL);
 
-  if (result) lcl_ref_dec(result);
+  if (result) {
+    lcl_ref_dec(result);
+  }
   lcl_program_free(prog);
   lcl_clear_error(lcl_test_interp);
   return 1;
@@ -1130,15 +1220,15 @@ static int test_issue67_compile_ex_msg_and_line(void) {
     const char *msg;
     long line;
   } cases[] = {
-    {"let a 1\nlet b [+ 1\nlet c 3\n", "unmatched '['", 2},
-    {"let a 1\nlet b 2\nputs \"unclosed\nlet c 3\n", "unmatched '\"'", 3},
-    {"let x {\n  foo\n", "unmatched '{'", 1},
-    {"puts ]\n", "unmatched ']'", 1},
-    {"let a 1\nlet l (1 2\n", "unmatched '('", 2},
-    {"let d #{a\n", "unmatched '{'", 1},
-    {"puts ${\n", "unmatched '${'", 1},
-    {"puts ${}\n", "empty variable name in '${}'", 1},
-    {"let x $foo::\n", "expected identifier after '::'", 1},
+      {"let a 1\nlet b [+ 1\nlet c 3\n",               "unmatched '['",                  2},
+      {"let a 1\nlet b 2\nputs \"unclosed\nlet c 3\n", "unmatched '\"'",                 3},
+      {"let x {\n  foo\n",                             "unmatched '{'",                  1},
+      {"puts ]\n",                                     "unmatched ']'",                  1},
+      {"let a 1\nlet l (1 2\n",                        "unmatched '('",                  2},
+      {"let d #{a\n",                                  "unmatched '{'",                  1},
+      {"puts ${\n",                                    "unmatched '${'",                 1},
+      {"puts ${}\n",                                   "empty variable name in '${}'",   1},
+      {"let x $foo::\n",                               "expected identifier after '::'", 1},
   };
   size_t i;
 
@@ -1174,8 +1264,8 @@ static int test_issue67_eval_string_sets_error_state(void) {
   lcl_value *out = NULL;
   int rc;
 
-  rc = lcl_eval_string_file(lcl_test_interp, "let a 1\nlet b [+ 1\n",
-                            "i67.lcl", &out);
+  rc = lcl_eval_string_file(lcl_test_interp, "let a 1\nlet b [+ 1\n", "i67.lcl",
+                            &out);
 
   ASSERT_TRUE(rc == LCL_RC_ERR);
   ASSERT_TRUE(out == NULL);
@@ -1193,13 +1283,19 @@ int run_test(void) {
   int total = 0;
   int passed = 0;
 
-#define RUN(tfn) do{                                                    \
-    int ok;                                                             \
-    total++;                                                            \
-    printf("TEST %s ...\n", #tfn);                                      \
-    ok = tfn();                                                         \
-    if (ok) { passed++; printf("  ok\n"); } else { printf("  FAIL\n"); } \
-}while(0)
+#define RUN(tfn)                                                               \
+  do {                                                                         \
+    int ok;                                                                    \
+    total++;                                                                   \
+    printf("TEST %s ...\n", #tfn);                                             \
+    ok = tfn();                                                                \
+    if (ok) {                                                                  \
+      passed++;                                                                \
+      printf("  ok\n");                                                        \
+    } else {                                                                   \
+      printf("  FAIL\n");                                                      \
+    }                                                                          \
+  } while (0)
 
   RUN(test_simple_words);
   RUN(test_comments);
