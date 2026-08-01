@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -6,13 +8,13 @@
 
 #define TIME_NS "time"
 
-static inline void dict_put_int(lcl_value **d, const char *key, int val) {
+static void dict_put_int(lcl_value **d, const char *key, int val) {
   lcl_value *v = lcl_int_new(val);
   lcl_dict_put(d, key, v);
   lcl_ref_dec(v);
 }
 
-static inline lcl_value *tm_to_dict(const struct tm *tm) {
+static lcl_value *tm_to_dict(const struct tm *tm) {
   lcl_value *d = lcl_dict_new();
 
   if (!d) {
@@ -32,7 +34,7 @@ static inline lcl_value *tm_to_dict(const struct tm *tm) {
   return d;
 }
 
-static inline int dict_to_tm(lcl_value *d, struct tm *tm) {
+static int dict_to_tm(lcl_value *d, struct tm *tm) {
   lcl_value *v = NULL;
   long val;
 
