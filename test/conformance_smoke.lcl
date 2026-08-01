@@ -857,6 +857,35 @@ Test::suite "Require" {
     Test::case "require: too many args is an error" {
         Test::raises { require foo bar }
     }
+
+    Test::case "./ paths resolve relative to the requiring file" {
+        ;; rel_a requires ./rel_b.lcl, which requires ./sub/rel_c.lcl —
+        ;; each "./" resolves against its own file's directory, and the
+        ;; lifted namespaces cascade up to us.
+        require test/require_fixtures/rel/rel_a.lcl
+        Test::eq $rel_a::tag "a"
+        Test::eq $rel_b::tag "b"
+        Test::eq $rel_c::val 7
+        ;; The chained module was also usable inside rel_b itself.
+        Test::eq [rel_b::c_val] 7
+    }
+
+    Test::case "require cycle is a clear error, not runaway recursion" {
+        Test::raises_with { require test/require_fixtures/cyc_a.lcl } \
+            "dependency cycle"
+    }
+
+    Test::case "self-require is a cycle error" {
+        Test::raises_with { require test/require_fixtures/cyc_self.lcl } \
+            "dependency cycle"
+    }
+
+    Test::case "failed require names the argument and attempted paths" {
+        Test::raises_with { require test/require_fixtures/no_such_mod.lcl } \
+            "no_such_mod.lcl"
+        Test::raises_with { require test/require_fixtures/no_such_mod.lcl } \
+            "tried"
+    }
 }
 
 ;; ============================================================================

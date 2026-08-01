@@ -1,6 +1,13 @@
+/* For mkdtemp (require-contract tests). */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "hash-table.h"
 #include "lcl-compile.h"
@@ -1279,6 +1286,296 @@ static int test_issue67_eval_string_sets_error_state(void) {
   return 1;
 }
 
+/* ---------------------------------------------------------------------------
+ * Require module-loader contract (relative-to-file resolution, search
+ * roots, cycle detection, CWD independence). Fixtures are created in a
+ * mkdtemp directory so the tests are self-contained and can chdir
+ * freely; the previous CWD is always restored before asserting.
+ * ---------------------------------------------------------------------------
+ */
+extern void lcl_add_require_root(lcl_interp *interp, const char *dir);
+extern int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out);
+
+static int req_write_file(const char *dir, const char *name, const char *text) {
+  char path[1024];
+  FILE *f;
+
+  snprintf(path, sizeof(path), "%s/%s", dir, name);
+  f = fopen(path, "w");
+
+  if (!f) {
+    return 0;
+  }
+
+  fputs(text, f);
+  return fclose(f) == 0;
+}
+
+static void req_remove(const char *dir, const char *name) {
+  char path[1024];
+
+  snprintf(path, sizeof(path), "%s/%s", dir, name);
+  remove(path);
+}
+
+/* Evaluate `src` in `in` and return 1 iff it succeeds and the result
+ * stringifies to `expect`. */
+static int req_eval_expect(lcl_interp *in, const char *src,
+                           const char *expect) {
+  lcl_value *out = NULL;
+  int rc = lcl_eval_string_file(in, src, "req-test.lcl", &out);
+  int ok;
+
+  if (rc != LCL_RC_OK || !out) {
+    printf("    eval failed: %s (err: %s)\n", src,
+           in->err_msg ? in->err_msg : "(none)");
+    return 0;
+  }
+
+  ok = strcmp(lcl_value_to_string(out), expect) == 0;
+
+  if (!ok) {
+    printf("    eval %s: got \"%s\", expected \"%s\"\n", src,
+           lcl_value_to_string(out), expect);
+  }
+
+  lcl_ref_dec(out);
+  return ok;
+}
+
+static int test_require_relative_to_file_chdir_independent(void) {
+  char root[] = "/tmp/lcl-req-rel-XXXXXX";
+  char saved_cwd[1024];
+  char sub[1024];
+  char main_path[1024];
+  lcl_interp *in = NULL;
+  lcl_interp *in2 = NULL;
+  lcl_value *out = NULL;
+  int rc;
+  int rc2;
+  int ok_a;
+  int ok_b;
+
+  ASSERT_TRUE(getcwd(saved_cwd, sizeof(saved_cwd)) != NULL);
+  ASSERT_TRUE(mkdtemp(root) != NULL);
+
+  snprintf(sub, sizeof(sub), "%s/lib", root);
+  ASSERT_TRUE(mkdir(sub, 0700) == 0);
+  snprintf(sub, sizeof(sub), "%s/lib/deeper", root);
+  ASSERT_TRUE(mkdir(sub, 0700) == 0);
+  snprintf(sub, sizeof(sub), "%s/elsewhere", root);
+  ASSERT_TRUE(mkdir(sub, 0700) == 0);
+
+  /* main requires ./lib/util, which requires ./deeper/core — the
+   * nested "./" must chain relative to util's own directory. */
+  ASSERT_TRUE(req_write_file(root, "main.lcl", "require ./lib/util.lcl\n"));
+  ASSERT_TRUE(req_write_file(root, "lib/util.lcl",
+                             "require ./deeper/core.lcl\n"
+                             "namespace util { var greeting \"hi\" }\n"));
+  ASSERT_TRUE(req_write_file(root, "lib/deeper/core.lcl",
+                             "namespace core { var v 42 }\n"));
+
+  snprintf(main_path, sizeof(main_path), "%s/main.lcl", root);
+
+  /* Evaluate with the process CWD pointed somewhere unrelated. */
+  ASSERT_TRUE(chdir(sub) == 0);
+
+  in = lcl_interp_new();
+  lcl_register_core(in);
+  rc = lcl_eval_file(in, main_path, &out);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  ok_a = (rc == LCL_RC_OK) && req_eval_expect(in, "$core::v", "42") &&
+         req_eval_expect(in, "$util::greeting", "hi");
+
+  /* Same file from a different CWD in a fresh interp: behavior must
+   * be identical. */
+  ASSERT_TRUE(chdir("/") == 0);
+  in2 = lcl_interp_new();
+  lcl_register_core(in2);
+  rc2 = lcl_eval_file(in2, main_path, &out);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  ok_b = (rc2 == LCL_RC_OK) && req_eval_expect(in2, "$core::v", "42");
+
+  ASSERT_TRUE(chdir(saved_cwd) == 0);
+  lcl_interp_free(in);
+  lcl_interp_free(in2);
+
+  req_remove(root, "main.lcl");
+  req_remove(root, "lib/util.lcl");
+  req_remove(root, "lib/deeper/core.lcl");
+  snprintf(sub, sizeof(sub), "%s/lib/deeper", root);
+  rmdir(sub);
+  snprintf(sub, sizeof(sub), "%s/lib", root);
+  rmdir(sub);
+  snprintf(sub, sizeof(sub), "%s/elsewhere", root);
+  rmdir(sub);
+  rmdir(root);
+
+  ASSERT_TRUE(ok_a);
+  ASSERT_TRUE(ok_b);
+  return 1;
+}
+
+static int test_require_search_roots_order(void) {
+  char root[] = "/tmp/lcl-req-roots-XXXXXX";
+  char saved_cwd[1024];
+  char root_a[1024];
+  char root_b[1024];
+  lcl_interp *in = NULL;
+  lcl_interp *no_roots = NULL;
+  lcl_interp *cwd_fallback = NULL;
+  lcl_value *out = NULL;
+  int ok_order;
+  int ok_fallthrough;
+  int ok_missing;
+  int ok_cwd;
+
+  ASSERT_TRUE(getcwd(saved_cwd, sizeof(saved_cwd)) != NULL);
+  ASSERT_TRUE(mkdtemp(root) != NULL);
+
+  snprintf(root_a, sizeof(root_a), "%s/rootA", root);
+  snprintf(root_b, sizeof(root_b), "%s/rootB", root);
+  ASSERT_TRUE(mkdir(root_a, 0700) == 0);
+  ASSERT_TRUE(mkdir(root_b, 0700) == 0);
+
+  ASSERT_TRUE(req_write_file(root_a, "mod.lcl",
+                             "namespace whichmod { var src \"A\" }\n"));
+  ASSERT_TRUE(req_write_file(root_b, "mod.lcl",
+                             "namespace whichmod { var src \"B\" }\n"));
+  ASSERT_TRUE(req_write_file(root_b, "only_b.lcl",
+                             "namespace onlyb { var src \"B-only\" }\n"));
+
+  /* CWD must be irrelevant when roots are registered. */
+  ASSERT_TRUE(chdir("/") == 0);
+
+  in = lcl_interp_new();
+  lcl_register_core(in);
+  lcl_add_require_root(in, root_a);
+  lcl_add_require_root(in, root_b);
+
+  /* Both roots have mod.lcl: registration order wins (rootA). */
+  ok_order = req_eval_expect(in, "require mod.lcl\n$whichmod::src", "A");
+  /* Only rootB has only_b.lcl: search falls through in order. */
+  ok_fallthrough =
+      req_eval_expect(in, "require only_b.lcl\n$onlyb::src", "B-only");
+
+  /* No roots registered + CWD without the file: clean error naming
+   * the argument. */
+  no_roots = lcl_interp_new();
+  lcl_register_core(no_roots);
+  ok_missing = (lcl_eval_string_file(no_roots, "require mod.lcl",
+                                     "req-test.lcl", &out) == LCL_RC_ERR);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  ok_missing = ok_missing && no_roots->err_msg != NULL &&
+               strstr(no_roots->err_msg, "mod.lcl") != NULL;
+
+  /* No roots registered: bare paths keep resolving against the CWD
+   * (legacy behavior). */
+  ASSERT_TRUE(chdir(root_b) == 0);
+  cwd_fallback = lcl_interp_new();
+  lcl_register_core(cwd_fallback);
+  ok_cwd =
+      req_eval_expect(cwd_fallback, "require mod.lcl\n$whichmod::src", "B");
+
+  ASSERT_TRUE(chdir(saved_cwd) == 0);
+  lcl_interp_free(in);
+  lcl_interp_free(no_roots);
+  lcl_interp_free(cwd_fallback);
+
+  req_remove(root_a, "mod.lcl");
+  req_remove(root_b, "mod.lcl");
+  req_remove(root_b, "only_b.lcl");
+  rmdir(root_a);
+  rmdir(root_b);
+  rmdir(root);
+
+  ASSERT_TRUE(ok_order);
+  ASSERT_TRUE(ok_fallthrough);
+  ASSERT_TRUE(ok_missing);
+  ASSERT_TRUE(ok_cwd);
+  return 1;
+}
+
+static int test_require_cycle_detection(void) {
+  char root[] = "/tmp/lcl-req-cyc-XXXXXX";
+  char path[1024];
+  lcl_interp *in = NULL;
+  lcl_interp *in2 = NULL;
+  lcl_value *out = NULL;
+  int rc;
+  int ok_pair;
+  int ok_self;
+
+  ASSERT_TRUE(mkdtemp(root) != NULL);
+
+  ASSERT_TRUE(req_write_file(root, "cyc_a.lcl",
+                             "require ./cyc_b.lcl\n"
+                             "namespace cyca { var x 1 }\n"));
+  ASSERT_TRUE(req_write_file(root, "cyc_b.lcl",
+                             "require ./cyc_a.lcl\n"
+                             "namespace cycb { var x 2 }\n"));
+  ASSERT_TRUE(req_write_file(root, "self.lcl", "require ./self.lcl\n"));
+
+  in = lcl_interp_new();
+  lcl_register_core(in);
+  snprintf(path, sizeof(path), "%s/cyc_a.lcl", root);
+  rc = lcl_eval_file(in, path, &out);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  ok_pair = (rc == LCL_RC_ERR) && in->err_msg != NULL &&
+            strstr(in->err_msg, "dependency cycle") != NULL &&
+            strstr(in->err_msg, "cyc_a.lcl") != NULL &&
+            strstr(in->err_msg, "cyc_b.lcl") != NULL;
+
+  if (!ok_pair) {
+    printf("    cycle err: %s\n", in->err_msg ? in->err_msg : "(none)");
+  }
+
+  in2 = lcl_interp_new();
+  lcl_register_core(in2);
+  snprintf(path, sizeof(path), "%s/self.lcl", root);
+  rc = lcl_eval_file(in2, path, &out);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  ok_self = (rc == LCL_RC_ERR) && in2->err_msg != NULL &&
+            strstr(in2->err_msg, "dependency cycle") != NULL;
+
+  lcl_interp_free(in);
+  lcl_interp_free(in2);
+
+  req_remove(root, "cyc_a.lcl");
+  req_remove(root, "cyc_b.lcl");
+  req_remove(root, "self.lcl");
+  rmdir(root);
+
+  ASSERT_TRUE(ok_pair);
+  ASSERT_TRUE(ok_self);
+  return 1;
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -1367,6 +1664,11 @@ int run_test(void) {
   /* Regression tests for ISSUE #67 (compile errors carry msg + line) */
   RUN(test_issue67_compile_ex_msg_and_line);
   RUN(test_issue67_eval_string_sets_error_state);
+
+  /* Require module-loader contract (ISSUE #73) */
+  RUN(test_require_relative_to_file_chdir_independent);
+  RUN(test_require_search_roots_order);
+  RUN(test_require_cycle_detection);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

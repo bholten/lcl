@@ -125,6 +125,19 @@ struct lcl_interp {
   int in_subcmd;
   unsigned long gensym_counter;
   lcl_value *require_cache;
+  /* Registered module search roots for bare `require` paths, in
+   * registration order (lcl_add_require_root). Each entry is an
+   * owned strdup'd directory path. */
+  char **require_roots;
+  size_t require_roots_len;
+  size_t require_roots_cap;
+  /* Stack of canonical paths of files currently being evaluated by
+   * `require` (pushed on cache miss before evaluation, popped on
+   * every exit path). Used for cycle detection; entries are owned
+   * strdup'd strings. */
+  char **require_stack;
+  size_t require_stack_len;
+  size_t require_stack_cap;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \
