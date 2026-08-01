@@ -1,0 +1,6 @@
+;; Fixture: two-file require cycle (with cyc_a.lcl).
+require ./cyc_a.lcl
+
+namespace cycb {
+    var x 2
+}

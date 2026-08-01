@@ -94,6 +94,22 @@ void lcl_interp_set_user_data(lcl_interp *interp, void *data);
  */
 void *lcl_interp_get_user_data(lcl_interp *interp);
 
+/*
+ * Register a directory as a module search root for `require`.
+ *
+ * A bare `require` path argument (one that does not begin with "/",
+ * "./", or "../") is looked up under each registered root, in
+ * registration order; the first root containing the file wins. If no
+ * roots are registered, bare paths resolve relative to the process
+ * working directory (legacy behavior).
+ *
+ * `dir` is copied; the caller keeps ownership of the argument. Paths
+ * beginning with "./" or "../" always resolve relative to the file
+ * that contains the `require`, and absolute paths are used as-is —
+ * neither consults the search roots.
+ */
+void lcl_add_require_root(lcl_interp *interp, const char *dir);
+
 /* ============================================================================
  * Evaluation
  * ============================================================================
@@ -152,9 +168,9 @@ int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
  * Descriptor for an embedded LCL library (e.g., from xxd -i output).
  */
 typedef struct {
-  const char *name;              /* Library name for error messages */
-  const unsigned char *data;     /* xxd -i output (library source) */
-  size_t len;                    /* Length of data in bytes */
+  const char *name;          /* Library name for error messages */
+  const unsigned char *data; /* xxd -i output (library source) */
+  size_t len;                /* Length of data in bytes */
 } lcl_embedded_lib;
 
 /*

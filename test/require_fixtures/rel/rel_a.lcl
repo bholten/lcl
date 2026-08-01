@@ -1,0 +1,7 @@
+;; Fixture: relative-to-file resolution. The "./" below must resolve
+;; against THIS file's directory, not the process CWD.
+require ./rel_b.lcl
+
+namespace rel_a {
+    var tag "a"
+}

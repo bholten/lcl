@@ -3,6 +3,7 @@
 
 #include "lcl-compile.h"
 #include "lcl-values.h"
+#include "str-compat.h"
 
 #define MAX_DEPTH 1024
 
@@ -37,6 +38,12 @@ lcl_interp *lcl_interp_new(void) {
   interp->pending_tail.argc = 0;
   interp->pending_tail.valid = 0;
   interp->in_tail_position = 0;
+  interp->require_roots = NULL;
+  interp->require_roots_len = 0;
+  interp->require_roots_cap = 0;
+  interp->require_stack = NULL;
+  interp->require_stack_len = 0;
+  interp->require_stack_cap = 0;
 
   return interp;
 }
@@ -73,6 +80,22 @@ void lcl_interp_free(lcl_interp *interp) {
   lcl_ref_dec(interp->env.global_ns);
   lcl_ref_dec(interp->require_cache);
 
+  {
+    size_t i;
+
+    for (i = 0; i < interp->require_roots_len; i++) {
+      free(interp->require_roots[i]);
+    }
+
+    free(interp->require_roots);
+
+    for (i = 0; i < interp->require_stack_len; i++) {
+      free(interp->require_stack[i]);
+    }
+
+    free(interp->require_stack);
+  }
+
   free(interp);
 }
 
@@ -84,4 +107,34 @@ void lcl_interp_set_user_data(lcl_interp *interp, void *data) {
 
 void *lcl_interp_get_user_data(lcl_interp *interp) {
   return interp ? interp->user_data : NULL;
+}
+
+void lcl_add_require_root(lcl_interp *interp, const char *dir) {
+  char *copy;
+
+  if (!interp || !dir) {
+    return;
+  }
+
+  copy = strdup(dir);
+
+  if (!copy) {
+    return;
+  }
+
+  if (interp->require_roots_len == interp->require_roots_cap) {
+    size_t cap = interp->require_roots_cap ? interp->require_roots_cap * 2 : 4;
+    char **grown =
+        (char **)realloc(interp->require_roots, cap * sizeof(*grown));
+
+    if (!grown) {
+      free(copy);
+      return;
+    }
+
+    interp->require_roots = grown;
+    interp->require_roots_cap = cap;
+  }
+
+  interp->require_roots[interp->require_roots_len++] = copy;
 }
