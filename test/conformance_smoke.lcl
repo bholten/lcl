@@ -4503,5 +4503,103 @@ Test::suite "Issue #67: compile errors carry a message" {
     }
 }
 
+Test::suite "unknown bare identifier at head errors (no self-quote)" {
+    Test::case "unknown bare id as one-word command errors" {
+        let r [catch { i74_no_such_cmd } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_cmd}
+    }
+
+    Test::case "eval of a one-word unknown string errors" {
+        let r [catch { eval "i74_no_such_cmd" } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_cmd}
+    }
+
+    Test::case "qualified unknown errors for unresolvable root" {
+        let r [catch { i74_nosuch_ns::member } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_nosuch_ns::member}
+    }
+
+    Test::case "qualified unknown errors for missing member (symmetry)" {
+        namespace i74_cfg { let x 1 }
+        let r [catch { i74_cfg::nope } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_cfg::nope}
+    }
+
+    Test::case "typo'd zero-arg command in proc tail errors" {
+        proc i74_oops {} { i74_no_such_zero_arg }
+        let r [catch { i74_oops } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_zero_arg}
+    }
+
+    Test::case "quoted one-word program is a value form" {
+        let r ["red"]
+        Test::eq $r red
+        Test::eq [type ["red"]] string
+    }
+
+    Test::case "quoted value branch" {
+        let c [if 1 { "red" } else { "blue" }]
+        Test::eq $c red
+    }
+
+    Test::case "double-braced value branch" {
+        let c [if 0 {{red}} else {{blue}}]
+        Test::eq $c blue
+    }
+
+    Test::case "quoted proc tail returns the string" {
+        proc i74_color {} { "red" }
+        Test::eq [i74_color] red
+    }
+
+    Test::case "numeric one-word programs are value forms" {
+        Test::eq [42] 42
+        Test::eq [-3] -3
+        Test::eq [3.14] 3.14
+        Test::eq [1e5] 1e5
+        Test::eq [if 1 { 42 }] 42
+    }
+
+    Test::case "out-of-range digit string is still shape-numeric" {
+        Test::eq [99999999999999999999] 99999999999999999999
+    }
+
+    Test::case "non-decimal forms are identifiers, not numbers" {
+        let r [catch { eval "0x10" } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: 0x10}
+    }
+
+    Test::case "while with numeric literal test still loops" {
+        var i74_i 0
+        while {1} {
+            set! i74_i [+ $i74_i 1]
+            if [== $i74_i 3] { break }
+        }
+        Test::eq $i74_i 3
+    }
+
+    Test::case "known bare id still dispatches" {
+        proc i74_get {} { return "called" }
+        Test::eq [i74_get] called
+    }
+
+    Test::case "bare id bound to a non-callable value yields the value" {
+        let i74_bound 99
+        Test::eq [i74_bound] 99
+    }
+
+    Test::case "argument-position bare words are untouched" {
+        let w hello
+        Test::eq $w hello
+        Test::eq [type $w] string
+    }
+}
+
 Test::run
 
