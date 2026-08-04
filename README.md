@@ -472,6 +472,12 @@ puts [{hello world}]     ;; -> "hello world"
 proc GET {} { return "called" }
 puts [GET]               ;; -> "called"
 
+;; ...and an unknown bare identifier is an ERROR, never a silent
+;; fallback to its own text. Bare words meant as data must be value
+;; forms — quoted or braced:
+let c [if $cond { "red" } else { "blue" }]   ;; ok
+;; let c [if $cond { red } else { blue }]    ;; error if `red` is not a command
+
 ;; Explicit dispatch via apply:
 puts [apply $c]          ;; -> 42 (call the closure stored in $c)
 puts [apply "GET"]       ;; -> "called" (call by name)

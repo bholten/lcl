@@ -450,6 +450,59 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
   return lcl_eval_word_to_str(interp, w, out);
 }
 
+/* A literal with decimal numeric shape — [+-]?digits[.digits][(e|E)
+ * [+-]?digits], or leading-dot floats like ".5" */
+static int lit_is_numeric(const char *s, size_t n) {
+  size_t i = 0;
+  int digits = 0;
+
+  if (n == 0 || strlen(s) != n) {
+    return 0;
+  }
+
+  if (s[i] == '+' || s[i] == '-') {
+    i++;
+  }
+
+  while (i < n && s[i] >= '0' && s[i] <= '9') {
+    i++;
+    digits = 1;
+  }
+
+  if (i < n && s[i] == '.') {
+    i++;
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+      digits = 1;
+    }
+  }
+
+  if (!digits) {
+    return 0;
+  }
+
+  if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+    int exp_digits = 0;
+    i++;
+
+    if (i < n && (s[i] == '+' || s[i] == '-')) {
+      i++;
+    }
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+      exp_digits = 1;
+    }
+
+    if (!exp_digits) {
+      return 0;
+    }
+  }
+
+  return i == n;
+}
+
 int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
                         lcl_value **out) {
   lcl_value *callee = NULL;
@@ -469,16 +522,18 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   /* Parse-time dispatch rule:
    *
    *   An argc==1 command dispatches ONLY when its sole word is a bare
-   *   identifier (single-piece LCL_WP_LIT with braced=0).  Every
-   *   other one-word form yields the word's value without attempting
-   *   a command lookup:
+   *   identifier: a single-piece LCL_WP_LIT with braced=0, quoted=0,
+   *   and non-numeric shape.  Every other one-word form yields the
+   *   word's value without attempting a command lookup:
    *
    *     [$x]      -> value of $x
    *     [expr]    -> result of evaluating expr
    *     [{lit}]   -> the literal bytes "lit"
    *     ["$a $b"] -> the concatenated string
+   *     ["red"]   -> the string "red"
    *     [42]      -> 42 (well, "42" pre-coercion)
    *
+   *   A bare identifier always dispatches; unknown -> error (#74).
    *   This replaces the previous runtime check that dispatched
    *   stringy values whose form happened to match a registered
    *   command, and closes the class of bugs where a value like "GET"
@@ -489,7 +544,8 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
   if (cmd->argc == 1) {
     int is_bare_identifier =
         (cmd->w[0].np == 1 && cmd->w[0].wp[0].kind == LCL_WP_LIT &&
-         !cmd->w[0].braced);
+         !cmd->w[0].braced && !cmd->w[0].quoted &&
+         !lit_is_numeric(cmd->w[0].wp[0].as.lit.s, cmd->w[0].wp[0].as.lit.n));
 
     if (!is_bare_identifier) {
       /* SUBCMD-only words preserve in_subcmd=0 and tail position so
@@ -530,11 +586,6 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     }
 
     if (lcl_env_get_command(interp, cmd_name, &callee) != LCL_OK) {
-      if (cmd->argc == 1) {
-        *out = name;
-        return LCL_RC_OK;
-      }
-
       {
         const size_t cmd_name_len = strlen(cmd_name);
         const size_t prefix_len = 17;
