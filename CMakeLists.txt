@@ -39,6 +39,7 @@ option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
 option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
+option(LCL_BUILD_RAYLIB "Build Lcl with the Raylib extension library" OFF)
 
 # Lcl libraries
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
@@ -349,6 +350,22 @@ if(LCL_BUILD_EXPECT)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_EXPECT)
     target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
     target_link_libraries(lcl-cli PRIVATE lcl_expect)
+  endif()
+endif()
+
+if(LCL_BUILD_RAYLIB)
+  add_subdirectory(packages/lcl-raylib)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_RAYLIB)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_RAYLIB)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_RAYLIB)
+    target_link_libraries(lcl-cli PRIVATE lcl_raylib)
   endif()
 endif()
 

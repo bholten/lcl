@@ -36,6 +36,10 @@
 #include <lcl-math.h>
 #endif
 
+#ifdef LCL_HAVE_RAYLIB
+#include <lcl-raylib.h>
+#endif
+
 #ifdef LCL_HAVE_EXPECT
 #include "expect-data.h"
 #include <lcl-expect.h>
@@ -152,6 +156,10 @@ static lcl_interp *create_interp(void) {
 
 #ifdef LCL_HAVE_MATH
   lcl_register_math(interp);
+#endif
+
+#ifdef LCL_HAVE_RAYLIB
+  lcl_register_raylib(interp);
 #endif
 
 #ifdef LCL_HAVE_EXPECT
