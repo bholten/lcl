@@ -17,6 +17,13 @@ cmake --build build
 
 ## Usage
 
+> **Always brace-quote patterns** (`{^[0-9]+$}`, never `"^[0-9]+$"`).
+> Inside double quotes, Lcl runs `[...]` through command substitution,
+> so a quoted pattern's character classes are silently executed as
+> commands and the pattern is mangled — it typically just stops
+> matching. Braces are Lcl's literal string syntax; every example
+> below uses them. (See "Quoting" in the main README.)
+
 ```tcl
 ;; One-shot match
 if [regex::match {^[0-9]+$} $input] {

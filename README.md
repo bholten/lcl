@@ -658,6 +658,31 @@ let lst (a b c)        ;; same as [list a b c]
 let d #{a 1 b 2}       ;; same as [dict a 1 b 2]
 ```
 
+**Data belongs in braces.** This is the deliberate division of labor:
+`{...}` is a true literal, `"..."` is a substitution template, and
+`[subst {...}]` turns a literal into a template explicitly when that
+is what you mean. The practical consequence — and a classic trap for
+anyone arriving from languages where double quotes are the default
+string syntax — is that any string whose *content* legitimately
+contains `[`, `$`, or `\` must be brace-quoted, or substitution will
+silently rewrite it:
+
+```tcl
+;; Regex character classes are command substitutions inside quotes:
+regex::find "([a-z]+):([0-9]+)" $text   ;; WRONG: [a-z]+ etc. run as
+                                        ;; commands; pattern mangled,
+                                        ;; typically matching nothing
+regex::find {([a-z]+):([0-9]+)} $text   ;; RIGHT: braced literal
+
+;; Same for shell snippets, code fragments, printf-style templates:
+let cmd {awk '{print $1}' data.txt}     ;; $1 stays literal
+```
+
+Rule of thumb: quote (`"..."`) only when you *want* interpolation;
+brace everything else. This also applies inside dict literals —
+`#{pattern {[0-9]+}}` — where a quoted value substitutes exactly as
+it would anywhere else.
+
 ### Comments
 
 ```tcl
