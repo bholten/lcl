@@ -139,11 +139,14 @@ These operations work across multiple types:
 puts [len (1 2 3)]             ;; 3
 puts [len #{a 1 b 2}]          ;; 2
 puts [len "hello"]             ;; 5
+puts [len $ns]                 ;; number of namespace bindings
 
 ;; get - access by index/key
 puts [get $list 0]             ;; first element
 puts [get $dict key]           ;; value for key
 puts [get "hello" 1]           ;; "e"
+puts [get $ns name]            ;; namespace binding
+puts [get $ns name fallback]   ;; default when key/binding is absent
 
 ;; put - functional update (returns new value)
 let lst2 [put $lst 0 replaced]
@@ -152,9 +155,11 @@ let d2 [put $d newkey value]
 ;; del - functional delete
 let d3 [del $d key]
 
-;; has? - check existence
-puts [has? $lst value]         ;; 1 if value in list
+;; has? - membership test
+puts [has? $lst value]         ;; 1 if value in list (deep equality)
 puts [has? $d key]             ;; 1 if key exists
+puts [has? "hello" "ell"]      ;; 1 if substring present
+puts [has? $ns name]           ;; 1 if namespace binding exists
 
 ;; empty? - check if empty
 puts [empty? ()]               ;; 1

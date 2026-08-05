@@ -6401,8 +6401,13 @@ static int c_len(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
+  case LCL_NAMESPACE:
+    *out = lcl_int_new((long)argv[0]->as.namespace.namespace->len);
+    return LCL_RC_OK;
+
   default:
-    return err_expected_got(interp, "len", "list, dict, or string", argv[0]);
+    return err_expected_got(interp, "len", "list, dict, string, or namespace",
+                            argv[0]);
   }
 }
 
@@ -6531,8 +6536,47 @@ static int c_generic_get(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
+  case LCL_NAMESPACE: {
+    const char *name;
+    lcl_value *val;
+
+    if (lcl_value_to_cstring(interp, argv[1], &name) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_ns_get(argv[0], name, &val) != LCL_OK) {
+      char msg[160];
+
+      if (argc == 3) {
+        *out = lcl_ref_inc(argv[2]);
+
+        return LCL_RC_OK;
+      }
+
+      snprintf(msg, sizeof(msg), "get: binding \"%.96s\" not found", name);
+      LCL_ERR_MSG_DUP(interp, msg);
+      return LCL_RC_ERR;
+    }
+
+    /* var bindings are cells; deref so `get $ns n` matches `$ns::n` */
+    if (val->type == LCL_CELL) {
+      if (lcl_cell_get(val, out) != LCL_OK) {
+        LCL_ERR_MSG(interp, "get: cell has been cleared");
+        lcl_ref_dec(val);
+        return LCL_RC_ERR;
+      }
+
+      lcl_ref_dec(val);
+    } else {
+      *out = val;
+    }
+
+    return LCL_RC_OK;
+  }
+
   default:
-    return err_expected_got(interp, "get", "list, dict, or string", argv[0]);
+    return err_expected_got(interp, "get", "list, dict, string, or namespace",
+                            argv[0]);
   }
 }
 
@@ -6623,7 +6667,11 @@ static int c_del(lcl_interp *interp, int argc, lcl_value **argv,
   }
 }
 
-/* has? x k - check if key/index exists */
+static int c_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out);
+
+/* has? x k - membership test: list element, dict key, substring, or
+ * namespace binding */
 static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
                  lcl_value **out) {
   if (!chk_argc(interp, "has?", argc, 2, 2)) {
@@ -6632,13 +6680,38 @@ static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
 
   switch (argv[0]->type) {
   case LCL_LIST: {
-    long idx;
+    struct eq_cycle_guard guard = {{0}, {0}, 0};
+    size_t i;
+    size_t n = lcl_list_len(argv[0]);
+    int found = 0;
 
-    if (!arg_int(interp, "has?", argv[1], &idx)) {
+    for (i = 0; i < n && !found; i++) {
+      lcl_value *elem;
+
+      if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+        LCL_ERR_MSG(interp, "has?: failed to read list element");
+        return LCL_RC_ERR;
+      }
+
+      found = lcl_value_equal_deep(elem, argv[1], &guard);
+      lcl_ref_dec(elem);
+    }
+
+    *out = lcl_int_new(found ? 1 : 0);
+
+    return LCL_RC_OK;
+  }
+
+  case LCL_STRING: {
+    const char *haystack;
+    const char *needle;
+
+    if (lcl_value_to_cstring(interp, argv[0], &haystack) != LCL_OK ||
+        lcl_value_to_cstring(interp, argv[1], &needle) != LCL_OK) {
       return LCL_RC_ERR;
     }
 
-    *out = lcl_int_new(idx >= 0 && (size_t)idx < lcl_list_len(argv[0]) ? 1 : 0);
+    *out = lcl_int_new(strstr(haystack, needle) != NULL ? 1 : 0);
 
     return LCL_RC_OK;
   }
@@ -6661,8 +6734,11 @@ static int c_has(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
+  case LCL_NAMESPACE: return c_ns_has(interp, argc, argv, out);
+
   default:
-    return err_expected_got(interp, "has?", "list, dict, or string", argv[0]);
+    return err_expected_got(interp, "has?", "list, dict, string, or namespace",
+                            argv[0]);
   }
 }
 
@@ -8111,6 +8187,56 @@ static int c_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* Ns::del ns name - remove a binding from a namespace
+ *
+ * Mutates the namespace's hash table in place, so all references to
+ * the namespace value observe the removal. Cells captured elsewhere
+ * (closures, imports) keep their own references and stay usable.
+ * Returns 1 if the binding was removed, 0 if it was absent. */
+static int c_ns_del(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
+  const char *name;
+
+  if (!chk_argc(interp, "Ns::del", argc, 2, 2)) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    return err_expected_got(interp, "Ns::del", "namespace", argv[0]);
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &name) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new(
+      hash_table_delete(argv[0]->as.namespace.namespace, name) ? 1 : 0);
+
+  return LCL_RC_OK;
+}
+
+/* Ns::clear ns - remove all bindings from a namespace
+ *
+ * Empties the namespace's hash table in place; the value's identity
+ * is preserved, so all live references see the emptied namespace
+ * immediately. Cells captured elsewhere keep their own references. */
+static int c_ns_clear(lcl_interp *interp, int argc, lcl_value **argv,
+                      lcl_value **out) {
+  if (!chk_argc(interp, "Ns::clear", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  if (argv[0]->type != LCL_NAMESPACE) {
+    return err_expected_got(interp, "Ns::clear", "namespace", argv[0]);
+  }
+
+  hash_table_clear(argv[0]->as.namespace.namespace);
+
+  *out = lcl_string_new("");
+
+  return LCL_RC_OK;
+}
+
 /* dict (constructor) - create dict from key-value pairs */
 static int c_dict_create_proc(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
@@ -8913,4 +9039,6 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_ns_def(ns_ns, "name", lcl_c_proc_new("Ns::name", c_ns_name));
   lcl_ns_def(ns_ns, "has?", lcl_c_proc_new("Ns::has?", c_ns_has));
   lcl_ns_def(ns_ns, "set", lcl_c_proc_new("Ns::set", c_ns_set));
+  lcl_ns_def(ns_ns, "del", lcl_c_proc_new("Ns::del", c_ns_del));
+  lcl_ns_def(ns_ns, "clear", lcl_c_proc_new("Ns::clear", c_ns_clear));
 }

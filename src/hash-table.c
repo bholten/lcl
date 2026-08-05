@@ -153,6 +153,33 @@ void hash_table_free(hash_table *ht) {
   free(ht);
 }
 
+void hash_table_clear(hash_table *ht) {
+  size_t i;
+
+  if (!ht) {
+    return;
+  }
+
+  for (i = 0; i < ht->cap; i++) {
+    hash_entry *e = &ht->slots[i];
+
+    if (e->state == H_FULL) {
+      lcl_ref_dec(e->value);
+      free(e->key);
+    } else if (e->state == H_TOMB) {
+      free(e->key);
+    }
+
+    e->key = NULL;
+    e->value = NULL;
+    e->hash = 0;
+    e->state = H_EMPTY;
+  }
+
+  ht->len = 0;
+  ht->used = 0;
+}
+
 int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
   lcl_u64 hk;
   size_t first_tomb;
