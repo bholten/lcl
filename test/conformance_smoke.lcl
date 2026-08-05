@@ -237,6 +237,26 @@ Test::suite "Namespaces" {
         Test::eq [List::sort [Ns::keys $math3]] (test val)
         Test::eq [Ns::name $math3] math3
         Test::eq [Ns::has? $math3 test] 1
+        ;; generic has? dispatches to Ns::has? for namespaces
+        Test::true [has? $math3 val]
+        Test::false [has? $math3 missing]
+    }
+
+    Test::case "generic len and get on namespaces" {
+        namespace math4 {
+            let val 42
+            var ctr 7
+        }
+        Test::eq [len $math4] 2
+        Test::eq [get $math4 val] 42
+        ;; var bindings are cells — get derefs like $math4::ctr does
+        Test::eq [get $math4 ctr] 7
+        Test::eq [get $math4 missing "fallback"] "fallback"
+        Test::raises { get $math4 missing }
+        Ns::del $math4 val
+        Test::eq [len $math4] 1
+        Ns::clear $math4
+        Test::eq [len $math4] 0
     }
 }
 
@@ -771,6 +791,60 @@ Test::suite "Ns::set" {
     }
 }
 
+Test::suite "Ns::del and Ns::clear" {
+    Test::case "del removes a binding and reports 1" {
+        namespace nsdel_ns1 { let X 1; let Y 2 }
+        Test::eq [Ns::del $nsdel_ns1 X] 1
+        Test::eq [Ns::has? $nsdel_ns1 X] 0
+        Test::eq $nsdel_ns1::Y 2
+        Test::raises { puts $nsdel_ns1::X }
+    }
+
+    Test::case "del of absent binding reports 0" {
+        namespace nsdel_ns2 { let X 1 }
+        Test::eq [Ns::del $nsdel_ns2 missing] 0
+        Test::eq [Ns::del $nsdel_ns2 X] 1
+        Test::eq [Ns::del $nsdel_ns2 X] 0
+    }
+
+    Test::case "clear empties the namespace" {
+        namespace nsclr_ns1 { let a 1; var b 2; proc f {} { 3 } }
+        Test::eq [len [Ns::keys $nsclr_ns1]] 3
+        Ns::clear $nsclr_ns1
+        Test::eq [len [Ns::keys $nsclr_ns1]] 0
+        Test::eq [Ns::has? $nsclr_ns1 f] 0
+        Test::raises { nsclr_ns1::f }
+    }
+
+    Test::case "clear preserves namespace identity for re-entry" {
+        namespace nsclr_ns2 { let old 1 }
+        let nsclr_alias $nsclr_ns2
+        Ns::clear $nsclr_ns2
+        namespace nsclr_ns2 { let fresh 9 }
+        Test::eq $nsclr_ns2::fresh 9
+        ;; alias references the same value, so it sees clear + repopulate
+        Test::eq [Ns::has? $nsclr_alias old] 0
+        Test::eq $nsclr_alias::fresh 9
+    }
+
+    Test::case "imported cells survive clear" {
+        namespace nsclr_ctr { var nsclr_cell 5 }
+        import nsclr_ctr nsclr_cell
+        Ns::clear $nsclr_ctr
+        Test::eq $nsclr_cell 5
+        set! nsclr_cell 6
+        Test::eq $nsclr_cell 6
+    }
+
+    Test::case "errors on non-namespace or wrong arity" {
+        Test::raises { Ns::clear "not a ns" }
+        Test::raises { Ns::del "not a ns" x }
+        Test::raises { Ns::clear }
+        namespace nsdel_ns3 {}
+        Test::raises { Ns::del $nsdel_ns3 }
+    }
+}
+
 ;; ============================================================================
 ;; Require
 ;; ============================================================================
@@ -1273,6 +1347,25 @@ Test::suite "List Operations" {
         Test::eq [get $mylist 4] e
     }
 
+    Test::case "has? on lists is membership, not index bounds" {
+        let hs_list [list a b c]
+        Test::true [has? $hs_list b]
+        Test::false [has? $hs_list z]
+        ;; index-shaped needles are still just members (or not)
+        Test::false [has? $hs_list 0]
+        Test::false [has? $hs_list ()]
+    }
+
+    Test::case "has? uses deep equality with numeric coercion" {
+        let hs_nums [list [+ 1 1] 3]
+        Test::true [has? $hs_nums 2]
+        Test::true [has? $hs_nums "2"]
+        Test::false [has? $hs_nums 4]
+        let hs_nested [list (1 2) (3 4)]
+        Test::true [has? $hs_nested (1 2)]
+        Test::false [has? $hs_nested (2 1)]
+    }
+
     Test::case "List::slice" {
         let mylist [list a b c d e]
         let slice [List::slice $mylist 1 4]
@@ -1398,6 +1491,14 @@ Test::suite "Dict Operations" {
         let d [dict a 1 b 2]
         Test::true [has? $d a]
         Test::false [has? $d missing]
+    }
+
+    Test::case "has? on strings is substring containment" {
+        Test::true [has? "hello world" "lo wo"]
+        Test::true [has? "hello" "hello"]
+        Test::true [has? "hello" ""]
+        Test::false [has? "hello" "xyz"]
+        Test::false [has? "" "x"]
     }
 
     Test::case "Dict::keys" {
