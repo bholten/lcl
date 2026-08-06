@@ -16,7 +16,7 @@ However, Tcl's scoping rules are... awkward. Whenever I've worked with Tcl, I of
 
 Hence, Lcl.
 
-The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C++ projects, not as a complete replacement for -- or even any compatability with -- Tcl. This constrains the design and scope of the project: I'm not particularly interested in making a full language with an independent runtime. I'm focused on making embedding into C/C++ projects easy and fun; a way to use a Tcl-like extentions language with more Scheme-like semantics. 
+The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C++ projects, not as a complete replacement for -- or even any compatability with -- Tcl. This constrains the design and scope of the project: I'm not particularly interested in making a full language with an independent runtime. I'm focused on making embedding into C/C++ projects easy and fun; a way to use a Tcl-like extentions language with more Scheme-like semantics.
 
 ## Key Differences from Tcl
 
@@ -84,20 +84,23 @@ puts "counter = $counter"
 proc greet {name} {
     return "Hello, $name!"
 }
+
 puts [greet "World"]
 
 ;; Closures capture their environment
 proc make_counter {start} {
     var n $start
+
     return [lambda {} {
         set! n [+ $n 1]
         $n
     }]
 }
+
 let c [make_counter 10]
 puts [apply $c]  ;; 11
 puts [apply $c]  ;; 12
-;; Note: [$c] does NOT call the closure — it returns the closure value.
+;; Note: [$c] does NOT call the closure -- it returns the closure value.
 ;; `apply` is the explicit way to invoke a callable held in a variable.
 ;; See the "Dispatch and apply" section below for the design rationale.
 ```
@@ -228,22 +231,23 @@ if [< $x 0] {
 ;; cond - multi-branch conditional (like Scheme/Lisp)
 ;; Evaluates conditions in order, runs first truthy branch
 ;; Use 'else' for default case, errors if no match without else
-let result [cond \
-             [< $x 0] {negative} \
-             [== $x 0] {zero} \
+let result [cond
+             [< $x 0] {negative}
+             [== $x 0] {zero}
              else {positive}]
 
 ;; case - value dispatch (like switch/match)
 ;; Compares value against keys, runs matching expression
 ;; Keys are evaluated, so $variables work
-let msg [case $op \
-         {add} [+ $a $b] \
-         {sub} [- $a $b] \
-         {mul} [* $a $b] \
+let msg [case $op
+         {add} [+ $a $b]
+         {sub} [- $a $b]
+         {mul} [* $a $b]
          else {unknown op}]
 
 ;; while
 var i 5
+
 while {$i} {
     puts $i
     set! i [- $i 1]
@@ -300,10 +304,12 @@ Lcl namespaces work **very differently from Tcl**. In Lcl, namespaces are **firs
 ;; Define a namespace - all definitions use UNQUALIFIED names inside the block
 namespace math {
     let pi 3.14159
+
     proc double {x} { + $x $x }
 
     ;; Mutable state works too
     var counter 0
+
     proc increment {} {
         set! counter [+ $counter 1]
         $counter
@@ -324,60 +330,69 @@ puts [math::increment]      ;; 2
 ```tcl
 ;; Named namespace
 namespace foo {
-  proc bar {} { ... }
+    proc bar {} { ... }
 }
 
 ;; This desugars to:
 let foo [namespace {
-  proc bar {} { ... }
+    proc bar {} { ... }
 }]
 ```
 
 2. **No qualified definitions outside `namespace`** - You cannot write `proc math::double {x} {...}` at the top level. This is a hard error:
-   ```tcl
-   ;; ERROR: qualified name not allowed here
-   proc math::double {x} { + $x $x }
-   ```
+```tcl
+;; ERROR: qualified name not allowed here
+proc math::double {x} { + $x $x }
+```
 
 Why? Lcl has lexical scoping, and qualified defintions outside of `namespace` bring up all kinds of unsound lexical scope issues.
 
 3. **Re-entering a namespace extends it** - Calling `namespace` on an existing namespace gives access to its bindings and allows adding new ones:
-   ```tcl
-   namespace utils { let x 1 }
-   namespace utils { let y 2 }    ;; Can access $x here
-   puts "$utils::x $utils::y"          ;; 1 2
-   ```
+```tcl
+namespace utils { let x 1 }
+namespace utils { let y 2 }    ;; Can access $x here
+
+puts "$utils::x $utils::y"          ;; 1 2
+```
 
 4. **Nested namespaces are compositional** - Nested `namespace` creates bindings in the parent:
-   ```tcl
-   namespace outer {
-       let x 1
-       namespace inner {
-           let y 2
-           proc greet {} { return "hello" }
-       }
-   }
-   puts $outer::inner::y              ;; 2
-   puts [outer::inner::greet]         ;; hello
-   ```
+```tcl
+namespace outer {
+    let x 1
+
+    namespace inner {
+        let y 2
+
+        proc greet {} { return "hello" }
+    }
+}
+
+puts $outer::inner::y              ;; 2
+puts [outer::inner::greet]         ;; hello
+```
 
 5. **Nested paths as shorthand** - You can create deep namespace hierarchies directly:
-   ```tcl
-   namespace a::b::c { let deep 42 }
-   puts $a::b::c::deep                ;; 42
-   ```
+```tcl
+namespace a::b::c { let deep 42 }
+
+puts $a::b::c::deep                ;; 42
+```
 
 6. **Closures capture namespace variables** - Procs defined in a namespace capture cells for `set!`:
-   ```tcl
-   namespace counter {
-       var n 0
-       proc inc {} { set! n [+ $n 1]; $n }
-       proc dec {} { set! n [- $n 1]; $n }
-   }
-   puts [counter::inc]    ;; 1
-   puts [counter::inc]    ;; 2
-   puts [counter::dec]    ;; 1
-   ```
+
+```tcl
+namespace counter {
+    var n 0
+
+    proc inc {} { set! n [+ $n 1]; $n }
+
+    proc dec {} { set! n [- $n 1]; $n }
+}
+
+puts [counter::inc]    ;; 1
+puts [counter::inc]    ;; 2
+puts [counter::dec]    ;; 1
+```
 
 ### Import
 
@@ -386,11 +401,13 @@ The `import` command copies bindings from a namespace into the current scope, al
 ```tcl
 namespace math {
     let pi 3.14159
+
     proc square {x} { * $x $x }
 }
 
 ;; Import all bindings
 import math
+
 puts $pi              ;; 3.14159
 puts [square 5]       ;; 25
 
@@ -400,7 +417,9 @@ namespace utils {
     let b 2
     let c 3
 }
+
 import utils a c      ;; Only import a and c
+
 puts $a               ;; 1
 puts $c               ;; 3
 ```
@@ -408,42 +427,52 @@ puts $c               ;; 3
 **Key behaviors:**
 
 1. **Shared mutation** - Imported cells (mutable bindings) share state with the original:
-   ```tcl
-   namespace counter {
-       var n 0
-       proc incr {} { set! n [+ $n 1] }
-   }
-   import counter n incr
-   incr
-   puts $n             ;; 1
-   puts $counter::n    ;; 1 (same cell)
-   ```
+```tcl
+namespace counter {
+    var n 0
+
+    proc incr {} { set! n [+ $n 1] }
+}
+
+import counter n incr
+
+incr
+puts $n             ;; 1
+puts $counter::n    ;; 1 (same cell)
+```
 
 2. **Conflict detection** - Import errors if a name already exists in the current scope:
-   ```tcl
-   let x 1
-   namespace ns { let x 99 }
-   import ns x         ;; ERROR: 'x' already exists in current scope
-   ```
+```tcl
+let x 1
+
+namespace ns { let x 99 }
+
+import ns x         ;; ERROR: 'x' already exists in current scope
+```
 
 3. **Works with nested namespaces** - Use qualified paths:
-   ```tcl
-   namespace outer {
-       namespace inner { let deep 42 }
-   }
-   import outer::inner deep
-   puts $deep          ;; 42
-   ```
+```tcl
+namespace outer {
+    namespace inner { let deep 42 }
+}
+
+import outer::inner deep
+
+puts $deep          ;; 42
+```
 
 4. **Works inside namespace builders** - Import bindings while defining a namespace:
-   ```tcl
-   namespace helpers { proc helper {} { 42 } }
-   namespace app {
-       import helpers helper
-       proc run {} { helper }
-   }
-   puts [app::run]     ;; 42
-   ```
+```tcl
+namespace helpers { proc helper {} { 42 } }
+
+namespace app {
+    import helpers helper
+
+    proc run {} { helper }
+}
+
+puts [app::run]     ;; 42
+```
 
 ### Dispatch and `apply`
 
@@ -453,17 +482,17 @@ section before being surprised by the behavior.
 
 **The rule:** A one-word command (a subcommand `[word]` or a
 standalone statement) **dispatches** only when its sole word is a
-**bare identifier** — a name like `foo` with no `$`, no `[...]`, no
-braces, no quotes, no special syntax. Every other form — `$var`,
+**bare identifier** -- a name like `foo` with no `$`, no `[...]`, no
+braces, no quotes, no special syntax. Every other form -- `$var`,
 `[expr]`, `{lit}`, `(list)`, `#{dict}`, literal numbers, multi-piece
-concatenation — is a **value form**, and yields its value when used as
+concatenation -- is a **value form**, and yields its value when used as
 a one-word command. No command lookup is attempted.
 
 To dispatch a value-form (e.g. a closure held in a variable, or a
 command name stored as a string), use `apply`.
 
 ```tcl
-;; Value forms — these never dispatch:
+;; Value forms -- these never dispatch:
 let val "GET"
 puts [$val]              ;; -> "GET" (variable substitution, NOT a call to GET)
 
@@ -473,13 +502,13 @@ puts [proc? [$c]]        ;; -> 1 (the closure value, not a call)
 puts [42]                ;; -> 42
 puts [{hello world}]     ;; -> "hello world"
 
-;; Bare identifiers — these dispatch:
+;; Bare identifiers -- these dispatch:
 proc GET {} { return "called" }
 puts [GET]               ;; -> "called"
 
 ;; ...and an unknown bare identifier is an ERROR, never a silent
 ;; fallback to its own text. Bare words meant as data must be value
-;; forms — quoted or braced:
+;; forms -- quoted or braced:
 let c [if $cond { "red" } else { "blue" }]   ;; ok
 ;; let c [if $cond { red } else { blue }]    ;; error if `red` is not a command
 
@@ -499,8 +528,8 @@ puts [apply ${sum3} @$args]  ;; -> 60
 Tcl's one-word dispatch rule is *runtime-decided*: at the head of a
 one-word program, Tcl evaluates the word, then looks the result up as
 a command. If the value's string form happens to match a registered
-command, Tcl dispatches. This is convenient — `eval $cmd` works for
-stored command names — but it leaks. Anywhere a value's string form
+command, Tcl dispatches. This is convenient -- `eval $cmd` works for
+stored command names -- but it leaks. Anywhere a value's string form
 might coincide with a proc name (cached values, macro template
 substitutions, anaphoric conditions), Tcl will silently dispatch
 instead of returning the value. The same source line can mean two
@@ -510,25 +539,25 @@ Lcl makes the dispatch decision at **parse time**. The shape of the
 source determines whether a one-word command dispatches; the data
 flowing through it doesn't. A `$var` is always a variable lookup,
 never a call. An `[expr]` always yields whatever `expr` returned. The
-Tcl idiom of dispatching a stored name survives via `eval $cmd` —
+Tcl idiom of dispatching a stored name survives via `eval $cmd` --
 `eval` compiles `$cmd`'s value as source, and a one-word source like
 `GET` is a bare identifier that dispatches. Use `apply` when you want
 value-dispatch instead.
 
-**`apply` vs `eval`** — these are complementary, not overlapping:
+**`apply` vs `eval`** -- these are complementary, not overlapping:
 
 - `eval str` is *source-evaluation*: compile `str` as Lcl source and run it.
 - `apply value args…` is *value-dispatch*: take a callable value and call it.
 
 `apply` resolves:
-- `PROC` (non-macro) — call directly with the args.
-- `CPROC` normal — call directly.
-- `CPROC` special — error ("cannot apply special form"; specials want raw
+- `PROC` (non-macro) -- call directly with the args.
+- `CPROC` normal -- call directly.
+- `CPROC` special -- error ("cannot apply special form"; specials want raw
   unevaluated words, which `apply` doesn't carry).
-- `PROC` with `is_macro=1` — error ("cannot apply macro"; use
+- `PROC` with `is_macro=1` -- error ("cannot apply macro"; use
   `macroexpand` + `eval` for programmatic macro use).
-- `STRING` — look up as a command name and recurse.
-- Anything else — error ("not callable").
+- `STRING` -- look up as a command name and recurse.
+- Anything else -- error ("not callable").
 
 **Tcl-to-Lcl migration cheat sheet:**
 
@@ -557,7 +586,7 @@ puts [subst {x is $x, sum is [+ 1 2]}]
 ## Operators
 
 ```tcl
-;; Arithmetic — integer-preserving when the result is exact,
+;; Arithmetic -- integer-preserving when the result is exact,
 ;; otherwise float.
 puts [+ 1 2 3]         ;; 6
 puts [- 10 3]          ;; 7
@@ -612,7 +641,7 @@ puts [eval $code]  ;; 6
 ;; Building a macro
 ;; Note: wrap params and body in literal braces so the expansion
 ;; produces a well-formed `proc` call. Quasiquote's unquote inlines
-;; values directly — it doesn't re-quote them.
+;; values directly -- it doesn't re-quote them.
 proc defun {name params body} {
     quasiquote {
         proc ,$name {,@$params} {,$body}
@@ -621,6 +650,17 @@ proc defun {name params body} {
 
 eval [defun greet {who} { puts "Hello, $who!" }]
 greet "World"  ;; Hello, World!
+
+;; Note: macro form is essentially but identical, but will eval
+;; at the call-site. Hence, this is equivalent:
+macro defn {name params body} {
+    quasiquote {
+        proc ,$name {,@$params} {,$body}
+    }
+}
+
+defn greet2 {who} { puts "Hello2, $who!" } ;; no eval needed!
+greet2 "world" ;; Hello2, world!
 ```
 
 ### Nested Quasiquote (Macro-Writing-Macros)
@@ -631,21 +671,21 @@ For writing macros that generate other macros, use `,,` (double comma):
 ;; At depth 2, ,,$var evaluates NOW and produces ,<value> in output
 ;; Single ,$var is preserved for later evaluation
 
-proc make-adder-macro {name amount} {
+macro make-adder-macro {name amount} {
     quasiquote {
         proc ,$name {x} {
-            quasiquote {
+            eval [quasiquote {
                 + ,$x ,,$amount
-            }
+            }]
         }
     }
 }
 
 ;; Generate an add10 macro
-eval [make-adder-macro add10 10]
+make-adder-macro add10 10
 
-;; Use it - produces code: + 5 10
-puts [eval [add10 5]]  ;; 15
+;; Use it -- produces code: + 5 10
+puts [add10 5] ;; 15
 ```
 
 ## Syntax Reference
@@ -672,9 +712,9 @@ let d #{a 1 b 2}       ;; same as [dict a 1 b 2]
 **Data belongs in braces.** This is the deliberate division of labor:
 `{...}` is a true literal, `"..."` is a substitution template, and
 `[subst {...}]` turns a literal into a template explicitly when that
-is what you mean. The practical consequence — and a classic trap for
+is what you mean. The practical consequence -- and a classic trap for
 anyone arriving from languages where double quotes are the default
-string syntax — is that any string whose *content* legitimately
+string syntax -- is that any string whose *content* legitimately
 contains `[`, `$`, or `\` must be brace-quoted, or substitution will
 silently rewrite it:
 
@@ -690,8 +730,8 @@ let cmd {awk '{print $1}' data.txt}     ;; $1 stays literal
 ```
 
 Rule of thumb: quote (`"..."`) only when you *want* interpolation;
-brace everything else. This also applies inside dict literals —
-`#{pattern {[0-9]+}}` — where a quoted value substitutes exactly as
+brace everything else. This also applies inside dict literals --
+`#{pattern {[0-9]+}}` -- where a quoted value substitutes exactly as
 it would anywhere else.
 
 ### Comments
@@ -785,9 +825,9 @@ int main(void) {
 }
 ```
 
-For a fuller tour — registering a C function as a Lcl command,
+For a fuller tour -- registering a C function as a Lcl command,
 defining a Lcl variable from C, extracting the result, and
-surfacing error location — see [`examples/embed_example.c`](examples/embed_example.c).
+surfacing error location -- see [`examples/embed_example.c`](examples/embed_example.c).
 Build it from the project's CMake with:
 
 ```bash
@@ -811,12 +851,12 @@ Or link directly: `gcc myapp.c -o myapp -llcl`.
 
 ### Mutual Recursion
 
-Lcl uses **reference counting** for memory management (no garbage collector). This is a deliberate design choice for embeddability—GC adds complexity, unpredictable pauses, and makes integration with host applications harder.
+Lcl uses **reference counting** for memory management (no garbage collector). This is a deliberate design choice for embeddability--GC adds complexity, unpredictable pauses, and makes integration with host applications harder.
 
 Sequential `proc` definitions support mutual recursion without issues:
 
 ```tcl
-;; This works — no reference cycle:
+;; This works -- no reference cycle:
 proc even? {n} { if [== $n 0] {1} else {odd? [- $n 1]} }
 proc odd? {n} { if [== $n 0] {0} else {even? [- $n 1]} }
 puts [odd? 13]   ;; 1
@@ -834,7 +874,7 @@ puts [odd? 2000]   ;; ERROR: maximum recursion depth exceeded
 Additionally, reference counting cannot handle reference cycles. When two **mutable cells** each hold a procedure that captures the other cell, they form a cycle that can never be freed:
 
 ```tcl
-;; This is REJECTED — would create a reference cycle:
+;; This is REJECTED -- would create a reference cycle:
 var is_even_fn {}
 var is_odd_fn {}
 set! is_even_fn [lambda {n} { [$is_odd_fn [- $n 1]] }]
@@ -854,17 +894,8 @@ Lcl is **pre-alpha** software. While the core language is functional, expect:
 - Bugs and edge cases
 - Limited documentation
 
-Contributions and feedback are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+Contributions and feedback are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
 for how to build, test, and submit a PR.
-
-## Versioning
-
-Lcl follows [Semantic Versioning](https://semver.org/) with a pre-1.0
-carve-out: PATCH bumps are non-breaking, MINOR bumps within 0.x may
-include breaking changes. See [VERSIONING.md](VERSIONING.md) for the
-full policy. Query the version at runtime with `lcl --version` or
-`lcl_version()`; at compile time with `LCL_VERSION_NUMBER` from
-`<lcl-version.h>`.
 
 ## License
 
