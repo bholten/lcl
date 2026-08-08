@@ -325,6 +325,103 @@ static int c_captures(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* regex::search pattern|regex string ?from? -> offset pairs for the
+ * first match at or after byte offset `from` (default 0): element 0
+ * is the whole match, 1..n the capture groups, each a (start end)
+ * pair of absolute byte offsets into string (end exclusive).
+ * Unmatched groups are (-1 -1). Empty list when nothing matches.
+ * Iteration contract: resume with from = end when end > start,
+ * from = start + 1 on a zero-width match. */
+static int c_search(lcl_interp *interp, int argc, lcl_value **argv,
+                    lcl_value **out) {
+  regex_t scratch;
+  regex_t *re = NULL;
+  int owned = 0;
+  const char *str = NULL;
+  regmatch_t *m = NULL;
+  size_t nmatch;
+  long from = 0;
+  size_t len;
+  lcl_value *result;
+
+  if (argc < 2) {
+    lcl_set_error(interp, "regex::search requires pattern and string");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, argv[1], &str) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (argc > 2) {
+    if (lcl_value_to_int(argv[2], &from) != LCL_OK) {
+      lcl_set_error(interp, "regex::search: from must be an integer");
+      return LCL_RC_ERR;
+    }
+
+    if (from < 0) {
+      lcl_set_error(interp, "regex::search: from must be >= 0");
+      return LCL_RC_ERR;
+    }
+  }
+
+  if (get_regex(interp, argv[0], &re, &scratch, &owned) != 0) {
+    return LCL_RC_ERR;
+  }
+
+  nmatch = re->re_nsub + 1;
+  m = malloc(nmatch * sizeof(*m));
+
+  if (!m) {
+    if (owned) {
+      regfree(&scratch);
+    }
+
+    lcl_set_error(interp, "out of memory");
+    return LCL_RC_ERR;
+  }
+
+  len = strlen(str);
+  result = lcl_list_new();
+
+  if ((size_t)from <= len &&
+      regexec(re, str + from, nmatch, m, from > 0 ? REG_NOTBOL : 0) == 0) {
+    size_t i;
+
+    for (i = 0; i < nmatch; i++) {
+      lcl_value *pair = lcl_list_new();
+      lcl_value *v;
+      long so = (long)m[i].rm_so;
+      long eo = (long)m[i].rm_eo;
+
+      if (so != -1) {
+        so += from;
+        eo += from;
+      }
+
+      v = lcl_int_new(so);
+      lcl_list_push(&pair, v);
+      lcl_ref_dec(v);
+      v = lcl_int_new(eo);
+      lcl_list_push(&pair, v);
+      lcl_ref_dec(v);
+
+      lcl_list_push(&result, pair);
+      lcl_ref_dec(pair);
+    }
+  }
+
+  free(m);
+
+  if (owned) {
+    regfree(&scratch);
+  }
+
+  *out = result;
+
+  return LCL_RC_OK;
+}
+
 /* regex::find_all pattern|regex string -> list of every
  * (non-overlapping) whole-match text, left to right */
 static int c_find_all(lcl_interp *interp, int argc, lcl_value **argv,
@@ -607,6 +704,7 @@ void lcl_register_regex(lcl_interp *interp) {
   lcl_ns_def(regex_ns, "find", lcl_c_proc_new("regex::find", c_find));
   lcl_ns_def(regex_ns, "captures",
              lcl_c_proc_new("regex::captures", c_captures));
+  lcl_ns_def(regex_ns, "search", lcl_c_proc_new("regex::search", c_search));
   lcl_ns_def(regex_ns, "find_all",
              lcl_c_proc_new("regex::find_all", c_find_all));
   lcl_ns_def(regex_ns, "replace", lcl_c_proc_new("regex::replace", c_replace));

@@ -50,6 +50,26 @@ let rules (
 
 ;; Replace with group references
 regex::replace {(bug)-([0-9]+)} {\2 (\1)} "bug-42"   ;; -> "42 (bug)"
+
+;; Offsets instead of texts: search returns (start end) pairs —
+;; whole match first, then each group. No text is copied.
+regex::search {(issue|bug)-([0-9]+)} "see issue-42"
+;; -> ((4 12) (4 9) (10 12)); unmatched groups are (-1 -1); () when no match
+
+;; Iterate all matches by resuming with ?from? — offsets stay
+;; absolute, so no tail-slicing is needed. Progress rule: continue
+;; from `end`, or from `start + 1` when the match was zero-width.
+let re [regex::compile {[0-9]+}]
+var pos 0
+while {[<= $pos [len $text]]} {
+    let m [regex::search $re $text $pos]
+    if [== [len $m] 0] { break }
+    let span [get $m 0]
+    puts "match at $span"
+    let so [get $span 0]
+    let eo [get $span 1]
+    if [> $eo $so] { set! pos $eo } else { set! pos [+ $so 1] }
+}
 ```
 
 ## API Reference
@@ -62,6 +82,7 @@ All patterns use POSIX extended regular expressions (`REG_EXTENDED`). Every comm
 | `regex::match $pattern $string` | 1/0 — does the pattern match anywhere in the string |
 | `regex::find $pattern $string` | `(start end)` byte offsets of the first match (end exclusive), or `()` |
 | `regex::captures $pattern $string` | First match's texts: whole match then each group (unmatched optional groups are empty strings); `()` when no match |
+| `regex::search $pattern $string ?from?` | Offset pairs for the first match at or after byte `from` (default 0): whole match then each group as `(start end)`, end exclusive, offsets absolute; unmatched groups are `(-1 -1)`; `()` when no match |
 | `regex::find_all $pattern $string` | Every non-overlapping whole-match text, left to right |
 | `regex::replace $pattern $repl $string` | Replace every match; `\0`…`\9` in the replacement expand to group texts, `\\` is a literal backslash |
 | `regex::split $pattern $string` | Substrings between matches (leading/trailing matches contribute empty fields; empty matches are skipped) |
