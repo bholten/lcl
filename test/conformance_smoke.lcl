@@ -4702,5 +4702,104 @@ Test::suite "unknown bare identifier at head errors (no self-quote)" {
     }
 }
 
+;; ============================================================================
+;; Lex::commands (reader reflection)
+;; ============================================================================
+
+Test::suite "Lex::commands" {
+    Test::case "bare words lex to literal word records" {
+        let r [Lex::commands {ls -lsa}]
+        Test::eq [len $r] 1
+        let ws [get [get $r 0] words]
+        Test::eq [len $ws] 2
+        Test::eq [get [get $ws 0] text] {ls}
+        Test::eq [get [get $ws 0] dynamic] 0
+        Test::eq [get [get $ws 1] text] {-lsa}
+    }
+
+    Test::case "braced word decodes verbatim and is never dynamic" {
+        let ws [get [get [Lex::commands {grep {a $x [b] c}}] 0] words]
+        Test::eq [get [get $ws 1] text] {a $x [b] c}
+        Test::eq [get [get $ws 1] braced] 1
+        Test::eq [get [get $ws 1] dynamic] 0
+    }
+
+    Test::case "quoted word decodes escapes without substituting" {
+        let ws [get [get [Lex::commands {echo "a\tb"}] 0] words]
+        Test::eq [get [get $ws 1] text] "a\tb"
+        Test::eq [get [get $ws 1] quoted] 1
+        Test::eq [get [get $ws 1] dynamic] 0
+    }
+
+    Test::case "var reference makes a word dynamic with pieces" {
+        let ws [get [get [Lex::commands {echo $foo}] 0] words]
+        let w [get $ws 1]
+        Test::eq [get $w dynamic] 1
+        Test::eq [get $w text] {}
+        let p [get [get $w pieces] 0]
+        Test::eq [get $p kind] {var}
+        Test::eq [get $p name] {foo}
+    }
+
+    Test::case "subcommand makes a word dynamic" {
+        let ws [get [get [Lex::commands {echo [pwd]}] 0] words]
+        Test::eq [get [get $ws 1] dynamic] 1
+        Test::eq [get [get [get [get $ws 1] pieces] 0] kind] {sub}
+    }
+
+    Test::case "mixed word reports its pieces in order" {
+        let ws [get [get [Lex::commands {echo pre$x}] 0] words]
+        let ps [get [get $ws 1] pieces]
+        Test::eq [len $ps] 2
+        Test::eq [get [get $ps 0] kind] {lit}
+        Test::eq [get [get $ps 0] text] {pre}
+        Test::eq [get [get $ps 1] kind] {var}
+    }
+
+    Test::case "list and dict literals lex as dynamic (subcommands)" {
+        let ws [get [get [Lex::commands "f () #\{a 1\}"] 0] words]
+        Test::eq [get [get $ws 1] dynamic] 1
+        Test::eq [get [get $ws 2] dynamic] 1
+    }
+
+    Test::case "expand flag is reported" {
+        let ws [get [get [Lex::commands {f @$args}] 0] words]
+        Test::eq [get [get $ws 1] expand] 1
+    }
+
+    Test::case "statements split on newline and semicolon with lines" {
+        let r [Lex::commands "puts a\nputs b; puts c"]
+        Test::eq [len $r] 3
+        Test::eq [get [get $r 0] line] 1
+        Test::eq [get [get $r 2] line] 2
+    }
+
+    Test::case "statement-level continuation joins statements" {
+        let r [Lex::commands "puts a \\\nb"]
+        Test::eq [len $r] 1
+        Test::eq [len [get [get $r 0] words]] 3
+    }
+
+    Test::case "comment-only and empty input lex to no statements" {
+        Test::eq [len [Lex::commands {;; nothing}]] 0
+        Test::eq [len [Lex::commands {}]] 0
+    }
+
+    Test::case "nothing is evaluated by lexing" {
+        var lexed_se 0
+        let r [Lex::commands {set! lexed_se [+ $lexed_se 1]}]
+        Test::eq $lexed_se 0
+        Test::eq [len $r] 1
+    }
+
+    Test::case "malformed input errors with the compiler's message" {
+        var e {}
+        var m {}
+        let rc [catch { Lex::commands "echo \"open" } e m]
+        Test::eq $rc 1
+        Test::assert [>= [String::find $m {unmatched}] 0]
+    }
+}
+
 Test::run
 
