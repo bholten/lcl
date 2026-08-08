@@ -847,6 +847,37 @@ target_link_libraries(myapp PRIVATE lcl::lcl)
 
 Or link directly: `gcc myapp.c -o myapp -llcl`.
 
+## Packages
+
+Core Lcl is strict C89 with no dependencies beyond a hosted C
+library, and aims for absolute maximum portability. The optional
+extension libraries under `packages/` are allowed to break both
+rules: a package may require a system library (OpenSSL, libcurl) or
+bind to a platform (POSIX `fork`, pseudo-terminals). Every package is
+off by default (`-DLCL_BUILD_<NAME>=ON` to opt in), and each one
+declares exactly what it needs in the Requirements section of its own
+README.
+
+Packages are thin, honest bindings: a package exposes what its
+underlying library actually does, under a namespace named for what it
+is. `regex::` is POSIX extended regex and says so — it will not
+silently become something else. If, say, we made a new regular
+expressions package based on PCRE2, it would be in `pcre2::`
+package. Lcl is not trying to ship a batteries-included standard
+library — the core stays small, and dependencies stay visible.
+
+| Package | Namespace | Depends on |
+|---------|-----------|------------|
+| lcl-io | `io::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`) |
+| lcl-math | `math::` | libm |
+| lcl-time | `time::` | ISO C `<time.h>`; POSIX for monotonic clock / sleep |
+| lcl-json | `json::` | cJSON (C99) |
+| lcl-regex | `regex::` | POSIX `regex.h` |
+| lcl-process | `process::` | POSIX (`fork`/`exec`, pipes, PTYs) |
+| lcl-expect | `expect::` | lcl-process, POSIX PTYs |
+| lcl-crypto | `crypto::` | OpenSSL |
+| lcl-curl | `curl::` | libcurl |
+
 ## Known Limitations
 
 ### Mutual Recursion
