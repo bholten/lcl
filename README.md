@@ -206,6 +206,29 @@ puts [String::split "a,b,c" ","]   ;; list: a b c
 puts [String::join $lst "-"]       ;; a-b-c-d-e
 ```
 
+### Reader Reflection (Lex)
+
+`Lex::commands` reads text with the language's own reader without
+evaluating any of it, and returns the lexical structure: a list of
+`#{line N words (...)}` records, one per statement.  Each word record
+carries `text` (the decoded literal value: escapes processed,
+quotes/braces stripped), `dynamic` (1 when evaluation would compute
+part of the word -- a `$var` or `[subcommand]` piece, including `()`
+and `#{}` literals), and the `quoted`/`braced`/`expand` flags.
+Dynamic words have `text ""` plus a `pieces` list
+(`#{kind lit text ...}` / `#{kind var name ...}` / `#{kind sub}`)
+describing why.  Malformed input errors with the compiler's message.
+This exists so embedders can classify interactive text -- lcl call,
+external command, shell handoff -- against the real grammar instead
+of a lookalike parser.
+
+```tcl
+let r [Lex::commands {ls -lsa}]
+let head [get [get [get $r 0] words] 0]
+puts [get $head text]      ;; ls
+puts [get $head dynamic]   ;; 0
+```
+
 ### Control Flow
 
 ```tcl
@@ -849,22 +872,21 @@ Or link directly: `gcc myapp.c -o myapp -llcl`.
 
 ## Packages
 
-Core Lcl is strict C89 with no dependencies beyond a hosted C
-library, and aims for absolute maximum portability. The optional
-extension libraries under `packages/` are allowed to break both
-rules: a package may require a system library (OpenSSL, libcurl) or
-bind to a platform (POSIX `fork`, pseudo-terminals). Every package is
-off by default (`-DLCL_BUILD_<NAME>=ON` to opt in), and each one
-declares exactly what it needs in the Requirements section of its own
-README.
+Core Lcl is strict C89 with no dependencies beyond a hosted C library,
+and aims for absolute maximum portability. The optional extension
+libraries under `packages/` are allowed to break both rules. A package
+may require a system library (OpenSSL, libcurl) or bind to a platform
+(POSIX `fork`, pseudo-terminals). Every package is off by default
+(`-DLCL_BUILD_<NAME>=ON` to opt in), and each one declares exactly
+what it needs in the Requirements section of its own README.
 
-Packages are thin, honest bindings: a package exposes what its
-underlying library actually does, under a namespace named for what it
-is. `regex::` is POSIX extended regex and says so — it will not
-silently become something else. If, say, we made a new regular
-expressions package based on PCRE2, it would be in `pcre2::`
-package. Lcl is not trying to ship a batteries-included standard
-library — the core stays small, and dependencies stay visible.
+Packages are thin bindings: a package exposes what its underlying
+library actually does, under a namespace named for what it is. The
+regex package provides `regex::` and is POSIX extended `regex.h` and
+nothing else. If, say, we made a new regular expressions package based
+on PCRE2, it would be in `pcre2::` package. Lcl is not trying to ship
+a batteries-included standard library or an engine-agnostic regex
+framework.
 
 | Package | Namespace | Depends on |
 |---------|-----------|------------|
