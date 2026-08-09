@@ -293,7 +293,7 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->err_line = 0;
 }
 
-int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
+static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
   long quote_line = 0;
   long start;
@@ -790,6 +790,19 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   }
 
   return (w->np > 0 || w->quoted) ? 1 : 0;
+}
+
+/* On entry sc->i sits on the word's first byte (any @ prefix
+ * included); on success it sits one past the last. Stamping the span
+ * here covers every exit path of the piece scanner. */
+int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
+  int rc;
+
+  w->src_start = sc->i;
+  rc = scan_word_pieces(sc, w);
+  w->src_end = sc->i;
+
+  return rc;
 }
 
 int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {

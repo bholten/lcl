@@ -69,6 +69,11 @@ struct lcl_word {
   unsigned braced : 1;
   unsigned expand : 1;
   lcl_program *compiled;
+  /* Byte span of the word in the scanned source, half-open
+   * [src_start, src_end), including any @ / quotes / braces. Stamped
+   * by lcl_scan_word; both 0 for words not built by the scanner. */
+  long src_start;
+  long src_end;
 };
 
 void lcl_word_free_contents(lcl_word *w);
