@@ -214,7 +214,13 @@ evaluating any of it, and returns the lexical structure: a list of
 carries `text` (the decoded literal value: escapes processed,
 quotes/braces stripped), `dynamic` (1 when evaluation would compute
 part of the word -- a `$var` or `[subcommand]` piece, including `()`
-and `#{}` literals), and the `quoted`/`braced`/`expand` flags.
+and `#{}` literals), the `quoted`/`braced`/`expand` flags, and
+`span` -- the word's half-open `(start end)` byte range in the input.
+Spans let tooling recover any word's original bytes verbatim
+(quoting, escapes, and `@` intact) with `String::range`, instead of
+re-quoting decoded text; quoting style is semantic in lcl (`while`
+dispatches on braced-ness, bare identifiers on quoting/shape), so
+slicing is the safe way to re-emit source.
 Dynamic words have `text ""` plus a `pieces` list
 (`#{kind lit text ...}` / `#{kind var name ...}` / `#{kind sub}`)
 describing why.  Malformed input errors with the compiler's message.
@@ -227,6 +233,8 @@ let r [Lex::commands {ls -lsa}]
 let head [get [get [get $r 0] words] 0]
 puts [get $head text]      ;; ls
 puts [get $head dynamic]   ;; 0
+puts [get $head span]      ;; 0 2
+puts [String::range {ls -lsa} @[get $head span]]  ;; ls
 ```
 
 ### Control Flow

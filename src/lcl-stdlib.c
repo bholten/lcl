@@ -8889,7 +8889,10 @@ static int c_string_trim(lcl_interp *interp, int argc, lcl_value **argv,
  * escapes already decoded and quotes/braces already stripped.
  * Dynamic words get `text` "" plus a `pieces` list describing the
  * structure, so callers can explain WHY a word is dynamic without
- * re-lexing.  Returns NULL on out-of-memory. */
+ * re-lexing.  Every record carries `span`, the word's half-open
+ * (start end) byte range in the scanned text, so callers can slice
+ * the original bytes -- quoting, escapes, and @ intact -- instead of
+ * re-quoting decoded text.  Returns NULL on out-of-memory. */
 static lcl_value *lex_word_record(const lcl_word *w) {
   lcl_value *rec;
   lcl_value *v;
@@ -8955,6 +8958,26 @@ static lcl_value *lex_word_record(const lcl_word *w) {
   v = lcl_int_new(w->expand ? 1 : 0);
   lcl_dict_put(&rec, "expand", v);
   lcl_ref_dec(v);
+
+  {
+    lcl_value *span = lcl_list_new();
+
+    if (!span) {
+      lcl_ref_dec(rec);
+      return NULL;
+    }
+
+    v = lcl_int_new(w->src_start);
+    lcl_list_push(&span, v);
+    lcl_ref_dec(v);
+
+    v = lcl_int_new(w->src_end);
+    lcl_list_push(&span, v);
+    lcl_ref_dec(v);
+
+    lcl_dict_put(&rec, "span", span);
+    lcl_ref_dec(span);
+  }
 
   if (dynamic) {
     lcl_value *pieces = lcl_list_new();

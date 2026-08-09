@@ -4799,6 +4799,40 @@ Test::suite "Lex::commands" {
         Test::eq $rc 1
         Test::assert [>= [String::find $m {unmatched}] 0]
     }
+
+    Test::case "word records carry half-open byte spans" {
+        let ws [get [get [Lex::commands {ls -lsa}] 0] words]
+        Test::eq [get [get $ws 0] span] (0 2)
+        Test::eq [get [get $ws 1] span] (3 7)
+    }
+
+    Test::case "spans slice original bytes with quoting intact" {
+        let src {grep {a $x [b] c} "q\tw" @$args}
+        let ws [get [get [Lex::commands $src] 0] words]
+        proc wsrc {src w} {
+            let sp [get $w span]
+            String::range $src [get $sp 0] [get $sp 1]
+        }
+        Test::eq [wsrc $src [get $ws 1]] {{a $x [b] c}}
+        Test::eq [wsrc $src [get $ws 2]] {"q\tw"}
+        Test::eq [wsrc $src [get $ws 3]] {@$args}
+    }
+
+    Test::case "spans are absolute offsets across lines and comments" {
+        let src "puts a\n;; note\nputs zz"
+        let w [get [get [get [Lex::commands $src] 1] words] 1]
+        Test::eq [String::range $src @[get $w span]] {zz}
+    }
+
+    Test::case "span slices rejoin commands without comments or padding" {
+        let src "puts   {a  b}  ;; trailing"
+        let ws [get [get [Lex::commands $src] 0] words]
+        var parts ()
+        foreach w $ws {
+            set! parts [List::push $parts [String::range $src @[get $w span]]]
+        }
+        Test::eq [String::join $parts " "] {puts {a  b}}
+    }
 }
 
 Test::run
