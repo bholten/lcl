@@ -237,6 +237,51 @@ puts [get $head span]      ;; 0 2
 puts [String::range {ls -lsa} @[get $head span]]  ;; ls
 ```
 
+### Documentation (Doc)
+
+The optional `Doc` library (`lib/doc`, `-DLCL_BUILD_DOC_LIB=ON`) is
+documentation tooling written in pure Lcl on top of `Lex::commands`:
+it extracts doc comments with the language's own reader, so nothing
+that merely *looks* like a doc comment inside braced data ever leaks
+into the docs.
+
+A doc comment is a run of `;;;` lines. A run immediately above a
+`proc`, `macro`, `namespace`, `let`, or `var` documents that
+definition; a run separated by a blank line is module documentation.
+Names starting with `_` are private and skipped. There are no
+`@param`-style tags -- signatures come from the source's own word
+records. The first line is the summary, the rest is markdown, and an
+optional `Examples:` section is executable:
+
+```tcl
+;;; Squares a number.
+;;;
+;;; Examples:
+;;; >> M::sq 7
+;;; 49
+;;; >> M::sq many
+;;; !! expected number
+proc sq {x} { * $x $x }
+```
+
+Each `>>` line is a command; the line after it is the expected `repr`
+of its result (so string results are written quoted: `"hi"`, not
+`hi` -- examples stay honest about list-vs-string). `!!` expects an
+error containing the given text; no expectation just checks the
+command runs. Examples within one doc block share a scope, so a
+`>> let x ...` line can feed later lines.
+
+```tcl
+let m [Doc::extract $src]           ;; source text -> doc model
+puts [Doc::markdown $m "mymod"]     ;; doc model -> markdown
+Doc::report [Doc::doctest $m]       ;; run all Examples, print failures
+```
+
+`Doc::extract_file` / `Doc::markdown_file` / `Doc::doctest_file` are
+file-reading variants (they need the `lcl-io` package). `Doc.lcl`
+documents itself with its own format, and its test suite runs its own
+doctests.
+
 ### Control Flow
 
 ```tcl

@@ -1,0 +1,569 @@
+;;; Doc -- documentation tooling for Lcl.
+;;;
+;;; Extracts `;;;` doc comments from source text using the language's
+;;; own reader (`Lex::commands` word spans), renders markdown, and runs
+;;; the doctests embedded in `Examples:` sections.
+;;;
+;;; A run of `;;;` lines immediately above a `proc`, `macro`,
+;;; `namespace`, `let`, or `var` command documents that definition; a
+;;; run with a blank line (or any other command) between it and the
+;;; next definition is module documentation. `;;;` lines inside braced
+;;; data are ignored: a line only counts when it is not covered by any
+;;; word span, so doc comments inside string blobs never leak into the
+;;; docs. Namespace bodies are recursed into by slicing the body span.
+;;;
+;;; Doc text convention: first line is a one-line summary, then
+;;; markdown prose, then an optional `Examples:` section:
+;;;
+;;;   ;;; Add two numbers, slowly.
+;;;   ;;;
+;;;   ;;; Examples:
+;;;   ;;; >> + 1 2
+;;;   ;;; 3
+;;;   ;;; >> + 1 (2 3)
+;;;   ;;; !! expected number
+;;;
+;;; Each `>>` line is a command; the following non-blank line is the
+;;; expected `repr` of its result (`!!` expects an error whose message
+;;; contains the given text; no expectation just checks it runs).
+;;; Comparing against `repr` is deliberate: it keeps examples honest
+;;; about list-vs-string.
+
+namespace Doc {
+    proc _streq {a b} {
+        and [== [String::length $a] [String::length $b]] [== [String::find $a $b] 0]
+    }
+
+    proc _starts {s p} {
+        _streq [String::range $s 0 [String::length $p]] $p
+    }
+
+    proc _lines {text} {
+        var out ()
+        var off 0
+        var n 1
+        foreach ln [String::split $text "\n"] {
+            set! out [List::push $out #{n $n start $off text $ln}]
+            set! off [+ $off [String::length $ln] 1]
+            set! n [+ $n 1]
+        }
+        $out
+    }
+
+    proc _spans {cmds} {
+        var out ()
+        foreach c $cmds {
+            foreach w [get $c words] {
+                set! out [List::push $out [get $w span]]
+            }
+        }
+        $out
+    }
+
+    proc _covered {spans off} {
+        List::any? [lambda {sp} { and [<= [get $sp 0] $off] [< $off [get $sp 1]] }] $spans
+    }
+
+    proc _line_of {lines off} {
+        var n 1
+        foreach L $lines {
+            if [<= [get $L start] $off] {
+                set! n [get $L n]
+            }
+        }
+
+        $n
+    }
+
+    proc _doc_text {ln} {
+        let t [String::trim $ln]
+        var c [String::range $t 3 [String::length $t]]
+
+        if [_starts $c " "] {
+            set! c [String::range $c 1 [String::length $c]]
+        }
+
+        $c
+    }
+
+    proc _doc_runs {lines spans} {
+        var runs ()
+        var open 0
+        var first 0
+        var last 0
+        var text {}
+
+        foreach L $lines {
+            let ln [get $L text]
+            let t [String::trim $ln]
+            var hit 0
+
+            if [_starts $t ";;;"] {
+                let moff [+ [get $L start] [String::find $ln ";;;"]]
+                if [not [_covered $spans $moff]] {
+                    set! hit 1
+                }
+            }
+
+            if $hit {
+                if $open {
+                    set! text "$text\n[_doc_text $ln]"
+                } else {
+                    set! open 1
+                    set! first [get $L n]
+                    set! text [_doc_text $ln]
+                }
+                set! last [get $L n]
+            } else {
+                if $open {
+                    set! runs [List::push $runs #{first $first last $last text $text}]
+                    set! open 0
+                }
+            }
+        }
+
+        if $open {
+            set! runs [List::push $runs #{first $first last $last text $text}]
+        }
+
+        $runs
+    }
+
+    proc _head_kind {c} {
+        let ws [get $c words]
+
+        if [< [len $ws] 3] { return {} }
+
+        let w0 [get $ws 0]
+
+        if [get $w0 dynamic] { return {} }
+        if [get $w0 quoted] { return {} }
+        if [get [get $ws 1] dynamic] { return {} }
+
+        let h [get $w0 text]
+
+        if [and [or [== $h "proc"] [== $h "macro"]] [>= [len $ws] 4]] {
+            return $h
+        }
+
+        if [== $h "namespace"] {
+            return $h
+        }
+
+        if [or [== $h "let"] [== $h "var"]] {
+            return $h
+        }
+
+        return {}
+    }
+
+    proc _add_ns {entries name line doc sub} {
+        var found -1
+        var i 0
+
+        foreach e $entries {
+            if [and [== [get $e kind] "namespace"] [== [get $e name] $name]] {
+                set! found $i
+            }
+
+            set! i [+ $i 1]
+        }
+
+        if [< $found 0] {
+            return [List::push $entries #{kind "namespace" name $name line $line doc $doc entries $sub}]
+        }
+
+        let old [get $entries $found]
+        var d [get $old doc]
+
+        if [!= $doc {}] {
+            if [!= $d {}] {
+                set! d "$d\n\n$doc"
+            } else {
+                set! d $doc
+            }
+        }
+
+        let merged #{kind "namespace" name $name line [get $old line] doc $d entries [List::concat [get $old entries] $sub]}
+
+        put $entries $found $merged
+    }
+
+    ;;; Extract the doc model from source text.
+    ;;;
+    ;;; Returns `#{doc <module doc> entries (<entry> ...)}`. Entries are
+    ;;; `#{kind proc|macro name N params P line L doc D}`,
+    ;;; `#{kind let|var name N line L doc D}` (only when documented), or
+    ;;; `#{kind namespace name N line L doc D entries (...)}` with the
+    ;;; body extracted recursively. Names starting with `_` are private
+    ;;; and skipped. `base` offsets reported line numbers (used by the
+    ;;; recursion; callers can ignore it).
+    ;;;
+    ;;; Examples:
+    ;;; >> let m [Doc::extract ";;; doubles\nproc dbl {x} { + \$x \$x }"]
+    ;;; >> get [get [get $m entries] 0] name
+    ;;; "dbl"
+    ;;; >> get [get [get $m entries] 0] doc
+    ;;; "doubles"
+    proc extract {text (base 1)} {
+        let cmds [Lex::commands $text]
+        let lines [_lines $text]
+        let spans [_spans $cmds]
+        let runs [_doc_runs $lines $spans]
+        var used [List::map [lambda {r} { 0 }] $runs]
+        var entries ()
+
+        foreach c $cmds {
+            let kind [_head_kind $c]
+
+            if [!= $kind {}] {
+                let ws [get $c words]
+                let cl [get $c line]
+                var doc {}
+                var ri 0
+
+                foreach r $runs {
+                    if [== [get $r last] [- $cl 1]] {
+                        set! doc [get $r text]
+                        set! used [put $used $ri 1]
+                    }
+
+                    set! ri [+ $ri 1]
+                }
+
+                let name [get [get $ws 1] text]
+                let gline [+ $base $cl -1]
+
+                if [not [_starts $name "_"]] {
+                    if [== $kind "namespace"] {
+                        let bw [get $ws [- [len $ws] 1]]
+                        var sub ()
+
+                        if [not [get $bw dynamic]] {
+                            let sp [get $bw span]
+                            var s [get $sp 0]
+                            var e [get $sp 1]
+
+                            if [get $bw braced] {
+                                set! s [+ $s 1]
+                                set! e [- $e 1]
+                            }
+
+                            let child [extract [String::range $text $s $e] [+ $base [_line_of $lines $s] -1]]
+                            set! sub [get $child entries]
+                            let subdoc [get $child doc]
+
+                            if [!= $subdoc {}] {
+                                if [!= $doc {}] { set! doc "$doc\n\n$subdoc" } else { set! doc $subdoc }
+                            }
+                        }
+                        set! entries [_add_ns $entries $name $gline $doc $sub]
+                    } else {
+                        if [or [== $kind "proc"] [== $kind "macro"]] {
+                            let params [get [get $ws 2] text]
+                            set! entries [List::push $entries #{kind $kind name $name params $params line $gline doc $doc}]
+                        } else {
+                            if [!= $doc {}] {
+                                set! entries [List::push $entries #{kind $kind name $name line $gline doc $doc}]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        var mdoc {}
+        var ri 0
+
+        foreach r $runs {
+            if [not [get $used $ri]] {
+                if [== $mdoc {}] { set! mdoc [get $r text] } else { set! mdoc "$mdoc\n\n[get $r text]" }
+            }
+
+            set! ri [+ $ri 1]
+        }
+
+        #{doc $mdoc entries $entries}
+    }
+
+    ;;; Extract the doc model from a file (needs the io package).
+    proc extract_file {path} {
+        extract [io::read_file $path]
+    }
+
+    ;; ---- doc text parsing -----------------------------------------
+
+    ;;; Parse one doc string into its parts.
+    ;;;
+    ;;; Returns `#{summary S body B examples (...) example_lines (...)}`.
+    ;;; `body` is the prose before `Examples:` (summary included);
+    ;;; each example is `#{cmd C kind none|value|error expect E}`.
+    ;;;
+    ;;; Examples:
+    ;;; >> get [Doc::parse "sums\n\nExamples:\n>> + 1 2\n3"] summary
+    ;;; "sums"
+    ;;; >> len [get [Doc::parse "sums\n\nExamples:\n>> + 1 2\n3"] examples]
+    ;;; 1
+    proc parse {doc} {
+        var body_lines ()
+        var ex_lines ()
+        var in_ex 0
+
+        foreach ln [String::split $doc "\n"] {
+            if $in_ex {
+                set! ex_lines [List::push $ex_lines $ln]
+            } else {
+                if [== [String::trim $ln] "Examples:"] {
+                    set! in_ex 1
+                } else {
+                    set! body_lines [List::push $body_lines $ln]
+                }
+            }
+        }
+
+        var summary {}
+
+        foreach ln $body_lines {
+            if [and [== $summary {}] [!= [String::trim $ln] {}]] {
+                set! summary [String::trim $ln]
+            }
+        }
+
+        var examples ()
+        var cur {}
+
+        foreach ln $ex_lines {
+            let t [String::trim $ln]
+
+            if [_starts $t ">>"] {
+                if [!= $cur {}] {
+                    set! examples [List::push $examples $cur]
+                }
+
+                set! cur #{cmd [String::trim [String::range $t 2 [String::length $t]]] kind "none" expect {}}
+            } else {
+                if [and [!= $t {}] [!= $cur {}]] {
+                    if [_starts $t "!!"] {
+                        set! cur [put $cur kind "error"]
+                        set! cur [put $cur expect [String::trim [String::range $t 2 [String::length $t]]]]
+                    } else {
+                        if [== [get $cur kind] "value"] {
+                            set! cur [put $cur expect "[get $cur expect]\n$t"]
+                        } else {
+                            set! cur [put $cur kind "value"]
+                            set! cur [put $cur expect $t]
+                        }
+                    }
+                }
+            }
+        }
+
+        if [!= $cur {}] {
+            set! examples [List::push $examples $cur]
+        }
+
+        #{summary $summary body [String::join $body_lines "\n"] examples $examples example_lines $ex_lines}
+    }
+
+    ;; ---- markdown generation --------------------------------------
+
+    ;; Render one doc string: prose, then examples as a fenced block.
+    proc _md_doc {doc} {
+        let p [parse $doc]
+        var out {}
+        let body [String::trim [get $p body]]
+
+        if [!= $body {}] {
+            set! out "$body\n\n"
+        }
+
+        var ex {}
+
+        foreach ln [get $p example_lines] {
+            set! ex "$ex$ln\n"
+        }
+
+        set! ex [String::trim $ex]
+
+        if [!= $ex {}] {
+            set! out "$out**Examples:**\n\n```tcl\n$ex\n```\n\n"
+        }
+
+        $out
+    }
+
+    proc _md_entries {prefix entries} {
+        var out {}
+        ;; "$q::" would parse as a qualified variable name; keep the
+        ;; separator in its own piece.
+        let sep {::}
+
+        foreach e $entries {
+            let q "$prefix[get $e name]"
+            let k [get $e kind]
+
+            if [== $k "namespace"] {
+                set! out "$out## namespace `$q`\n\n[_md_doc [get $e doc]][_md_entries "$q$sep" [get $e entries]]"
+            } else {
+                if [or [== $k "proc"] [== $k "macro"]] {
+                    var sig $q
+                    let params [String::trim [get $e params]]
+
+                    if [!= $params {}] {
+                        set! sig "$q $params"
+                    }
+
+                    set! out "$out### $k `$sig`\n\n[_md_doc [get $e doc]]"
+                } else {
+                    set! out "$out### $k `$q`\n\n[_md_doc [get $e doc]]"
+                }
+            }
+        }
+
+        $out
+    }
+
+    ;;; Render a doc model to markdown.
+    ;;;
+    ;;; Module doc first, then `## namespace` sections with `###`
+    ;;; entries; proc signatures come from the source's own word
+    ;;; records. An optional title becomes a leading `#` heading.
+    proc markdown {model (title {})} {
+        var out {}
+
+        if [!= $title {}] {
+            set! out "# $title\n\n"
+        }
+
+        if [!= [String::trim [get $model doc]] {}] {
+            set! out "$out[_md_doc [get $model doc]]"
+        }
+
+        "$out[_md_entries {} [get $model entries]]"
+    }
+
+    ;;; Extract a file and render it to markdown (needs the io package).
+    ;;; The title defaults to the path.
+    proc markdown_file {path (title {})} {
+        var t $title
+        if [== $t {}] { set! t $path }
+        markdown [extract_file $path] $t
+    }
+
+    ;; ---- doctests -------------------------------------------------
+
+    proc _dt_merge {a b} {
+        #{pass [+ [get $a pass] [get $b pass]] fail [+ [get $a fail] [get $b fail]] failures [List::concat [get $a failures] [get $b failures]]}
+    }
+
+    ;; Run the examples of one doc string. All examples in a single doc
+    ;; block share one scope, so `>> let x 1` then `>> + $x 1` works.
+    proc _dt_doc {_dtname _dtdoc} {
+        var _dtpass 0
+        var _dtfail 0
+        var _dtfails ()
+        var _dtres {}
+        var _dterr {}
+
+        foreach _dtex [get [parse $_dtdoc] examples] {
+            let _dtcmd [get $_dtex cmd]
+            let _dtrc [catch {eval $_dtcmd} _dtres _dterr]
+            let _dtkind [get $_dtex kind]
+            let _dtwant [get $_dtex expect]
+            var _dtok 0
+            var _dtgot {}
+
+            if [== $_dtkind "error"] {
+                if [== $_dtrc 1] {
+                    if [or [== $_dtwant {}] [>= [String::find $_dterr $_dtwant] 0]] { set! _dtok 1 }
+                    set! _dtgot "(error) $_dterr"
+                } else {
+                    set! _dtgot "(no error) [repr $_dtres]"
+                }
+            } else {
+                if [== $_dtrc 0] {
+                    set! _dtgot [repr $_dtres]
+
+                    if [== $_dtkind "none"] {
+                        set! _dtok 1
+                    } else {
+                        if [_streq $_dtgot $_dtwant] { set! _dtok 1 }
+                    }
+                } else {
+                    set! _dtgot "(error) $_dterr"
+                }
+            }
+
+            if $_dtok {
+                set! _dtpass [+ $_dtpass 1]
+            } else {
+                var _dtshow $_dtwant
+
+                if [== $_dtkind "error"] {
+                    set! _dtshow "!! $_dtwant"
+                }
+
+                if [== $_dtkind "none"] {
+                    set! _dtshow "(no error)"
+                }
+
+                set! _dtfails [List::push $_dtfails #{name $_dtname cmd $_dtcmd expect $_dtshow got $_dtgot}]
+                set! _dtfail [+ $_dtfail 1]
+            }
+        }
+
+        #{pass $_dtpass fail $_dtfail failures $_dtfails}
+    }
+
+    proc _dt_entries {prefix entries} {
+        var acc #{pass 0 fail 0 failures ()}
+        let sep {::}
+
+        foreach e $entries {
+            let q "$prefix[get $e name]"
+
+            if [!= [get $e doc] {}] {
+                set! acc [_dt_merge $acc [_dt_doc $q [get $e doc]]]
+            }
+
+            if [== [get $e kind] "namespace"] {
+                set! acc [_dt_merge $acc [_dt_entries "$q$sep" [get $e entries]]]
+            }
+        }
+
+        $acc
+    }
+
+    ;;; Run every doctest in a doc model.
+    ;;;
+    ;;; Examples run in the doctest's own scope; namespaces referenced
+    ;;; in examples must already be loaded (e.g. `require` the module
+    ;;; under test first). Returns
+    ;;; `#{pass N fail N failures (#{name cmd expect got} ...)}`.
+    proc doctest {model} {
+        var acc #{pass 0 fail 0 failures ()}
+
+        if [!= [get $model doc] {}] {
+            set! acc [_dt_merge $acc [_dt_doc "(module)" [get $model doc]]]
+        }
+
+        _dt_merge $acc [_dt_entries {} [get $model entries]]
+    }
+
+    ;;; Extract a file and run its doctests (needs the io package).
+    proc doctest_file {path} {
+        doctest [extract_file $path]
+    }
+
+    ;;; Print doctest results; returns the number of failures.
+    proc report {res} {
+        foreach f [get $res failures] {
+            puts "FAIL [get $f name]: >> [get $f cmd]"
+            puts "  expected: [get $f expect]"
+            puts "  got:      [get $f got]"
+        }
+
+        puts "doctest: [get $res pass] passed, [get $res fail] failed"
+        get $res fail
+    }
+}

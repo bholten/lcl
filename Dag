@@ -26,7 +26,8 @@ project lcl {
 
     let ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
                   -DLCL_BUILD_SH_LIB=ON
-                  -DLCL_BUILD_CURL_DSL_LIB=ON)
+                  -DLCL_BUILD_CURL_DSL_LIB=ON
+                  -DLCL_BUILD_DOC_LIB=ON)
 
     let DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON
                     -DLCL_BUILD_TESTS=ON

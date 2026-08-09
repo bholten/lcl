@@ -1,0 +1,27 @@
+;; Doc library
+;;
+;; Documentation tooling: extracts ;;; doc comments via Lex::commands,
+;; renders markdown, and runs Examples: doctests.
+;; Does not require any dependencies besides Lcl-core
+;; (extract_file/markdown_file/doctest_file need the lcl-io package).
+
+project Doc {
+    let SOURCE src/Doc.lcl
+    let BUILD  build/doc.h
+
+    task pre_reqs {
+        outputs build/
+        run {
+          mkdir -p build/
+        }
+    }
+
+    task build {
+        inputs  ${Doc::SOURCE}
+        outputs ${Doc::BUILD}
+        depends_on Doc::pre_reqs
+        run {
+            xxd -i ${Doc::SOURCE} >> ${Doc::BUILD}
+        }
+    }
+}

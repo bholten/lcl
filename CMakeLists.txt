@@ -44,6 +44,7 @@ option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
+option(LCL_BUILD_DOC_LIB "Build Lcl with the Doc library" OFF)
 
 # True when Lcl is the top-level CMake project (i.e. the user invoked
 # cmake on this directory directly, not as a subproject). Package
@@ -398,6 +399,21 @@ if(LCL_BUILD_CURL_DSL_LIB)
   endif()
 endif()
 
+if(LCL_BUILD_DOC_LIB)
+  lcl_embed_file(
+    INPUT  lib/doc/src/Doc.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/doc-lib-data.h
+    SYMBOL lib_doc_src_Doc_lcl
+    TARGET generate_doc_lib_data
+  )
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_doc_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_DOC_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
 if(LCL_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
@@ -446,6 +462,15 @@ if(LCL_BUILD_TESTS)
               "${CMAKE_CURRENT_SOURCE_DIR}/test/anaphoric_macros.lcl"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
+
+    if(LCL_BUILD_DOC_LIB)
+      add_test(
+        NAME doc-lib
+        COMMAND $<TARGET_FILE:lcl-cli>
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/doc_test.lcl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      )
+    endif()
   endif()
 endif()
 
