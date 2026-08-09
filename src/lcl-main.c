@@ -68,6 +68,14 @@ static const lcl_embedded_lib curl_dsl_lib = {
     sizeof(lib_curl_dsl_src_curl_dsl_lcl)};
 #endif
 
+#ifdef LCL_HAVE_DOC_LIB
+#include "doc-lib-data.h"
+
+static const lcl_embedded_lib doc_lib = {"lib/doc/src/Doc.lcl",
+                                         lib_doc_src_Doc_lcl,
+                                         sizeof(lib_doc_src_Doc_lcl)};
+#endif
+
 static char *read_stdin(void) {
   size_t capacity = 4096;
   size_t len = 0;
@@ -170,6 +178,12 @@ static lcl_interp *create_interp(void) {
 #ifdef LCL_HAVE_CURL_DSL_LIB
   if (lcl_register_embedded_lib(interp, &curl_dsl_lib) != 0) {
     fprintf(stderr, "Warning: Failed to load curl-dsl library\n");
+  }
+#endif
+
+#ifdef LCL_HAVE_DOC_LIB
+  if (lcl_register_embedded_lib(interp, &doc_lib) != 0) {
+    fprintf(stderr, "Warning: Failed to load doc library\n");
   }
 #endif
 

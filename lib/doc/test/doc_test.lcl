@@ -1,0 +1,300 @@
+;; Tests for Doc.lcl
+
+load lib/doc/src/Doc.lcl
+
+Test::suite "Doc::extract" {
+    Test::case "attaches a ;;; run to the next definition" {
+        let src {;;; Doubles a number.
+;;; Second line.
+proc dbl {x} { + $x $x }}
+        let m [Doc::extract $src]
+        let e [get [get $m entries] 0]
+        Test::eq [get $e kind] "proc"
+        Test::eq [get $e name] "dbl"
+        Test::eq [get $e params] "x"
+        Test::eq [get $e line] 3
+        Test::eq [get $e doc] "Doubles a number.\nSecond line."
+    }
+
+    Test::case "blank line detaches: run becomes module doc" {
+        let src {;;; Module prose.
+
+proc f {} { 0 }}
+        let m [Doc::extract $src]
+        Test::eq [get $m doc] "Module prose."
+        Test::eq [get [get [get $m entries] 0] doc] ""
+    }
+
+    Test::case "run above a non-definition command is module doc" {
+        let src {;;; Stray note.
+puts hi}
+        Test::eq [get [Doc::extract $src] doc] "Stray note."
+    }
+
+    Test::case "separate unattached runs join with a blank line" {
+        let src {;;; One.
+
+;;; Two.
+
+let x 1}
+        Test::eq [get [Doc::extract $src] doc] "One.\n\nTwo."
+    }
+
+    Test::case "leading whitespace before ;;; is allowed" {
+        let src {    ;;; Indented doc.
+    proc f {} { 0 }}
+        Test::eq [get [get [get [Doc::extract $src] entries] 0] doc] "Indented doc."
+    }
+
+    Test::case ";;; inside braced data is not a doc comment" {
+        let src {let blob {
+;;; not a doc
+}
+proc f {} { 0 }}
+        let m [Doc::extract $src]
+        Test::eq [get $m doc] ""
+        Test::eq [get [get [get $m entries] 0] doc] ""
+    }
+
+    Test::case "underscore names are private and skipped" {
+        let src {;;; Hidden.
+proc _helper {} { 0 }
+;;; Shown.
+proc f {} { 0 }}
+        let m [Doc::extract $src]
+        Test::eq [len [get $m entries]] 1
+        Test::eq [get [get [get $m entries] 0] name] "f"
+        ;; the private doc attached; it must not fall back into module doc
+        Test::eq [get $m doc] ""
+    }
+
+    Test::case "undocumented let/var are skipped, documented kept" {
+        let src {let plain 1
+;;; The answer.
+let answer 42
+;;; Mutable counter.
+var n 0}
+        let m [Doc::extract $src]
+        Test::eq [len [get $m entries]] 2
+        Test::eq [get [get [get $m entries] 0] kind] "let"
+        Test::eq [get [get [get $m entries] 1] kind] "var"
+    }
+
+    Test::case "undocumented procs and macros are kept" {
+        let src {proc f {} { 0 }
+macro m {x} { $x }}
+        let m [Doc::extract $src]
+        Test::eq [len [get $m entries]] 2
+        Test::eq [get [get [get $m entries] 1] kind] "macro"
+    }
+
+    Test::case "recurses into namespace bodies with absolute lines" {
+        let src {;;; NS doc.
+namespace M {
+    ;;; Inner doc.
+    proc sq {x} { * $x $x }
+}}
+        let e [get [get [Doc::extract $src] entries] 0]
+        Test::eq [get $e kind] "namespace"
+        Test::eq [get $e name] "M"
+        Test::eq [get $e doc] "NS doc."
+        let s [get [get $e entries] 0]
+        Test::eq [get $s name] "sq"
+        Test::eq [get $s doc] "Inner doc."
+        Test::eq [get $s line] 4
+    }
+
+    Test::case "unattached runs inside a body extend the namespace doc" {
+        let src {;;; Outer.
+namespace M {
+    ;;; Intro prose.
+
+    proc f {} { 0 }
+}}
+        let e [get [get [Doc::extract $src] entries] 0]
+        Test::eq [get $e doc] "Outer.\n\nIntro prose."
+    }
+
+    Test::case "nested namespaces nest in the model" {
+        let src {namespace outer {
+    namespace inner {
+        ;;; Deep.
+        let y 1
+    }
+}}
+        let outer [get [get [Doc::extract $src] entries] 0]
+        let inner [get [get $outer entries] 0]
+        Test::eq [get $inner kind] "namespace"
+        Test::eq [get $inner name] "inner"
+        Test::eq [get [get [get $inner entries] 0] doc] "Deep."
+    }
+
+    Test::case "re-entered namespace merges into one entry" {
+        let src {;;; First doc.
+namespace M {
+    proc a {} { 0 }
+}
+;;; Second doc.
+namespace M {
+    proc b {} { 0 }
+}}
+        let m [Doc::extract $src]
+        Test::eq [len [get $m entries]] 1
+        let e [get [get $m entries] 0]
+        Test::eq [get $e doc] "First doc.\n\nSecond doc."
+        Test::eq [len [get $e entries]] 2
+    }
+
+    Test::case "dynamic heads and names are not definitions" {
+        let src {;;; Not attached to anything documentable.
+$f x 1
+proc $name {} { 0 }}
+        Test::eq [len [get [Doc::extract $src] entries]] 0
+    }
+
+    Test::case "empty and comment-only sources" {
+        Test::eq [len [get [Doc::extract {}] entries]] 0
+        Test::eq [get [Doc::extract {;; plain comment}] doc] ""
+    }
+}
+
+Test::suite "Doc::parse" {
+    Test::case "summary, body, and example kinds" {
+        let p [Doc::parse "Sums numbers.\nMore prose.\n\nExamples:\n>> + 1 2\n3\n>> puts hi\n>> + 1 ()\n!! expected"]
+        Test::eq [get $p summary] "Sums numbers."
+        Test::eq [get $p body] "Sums numbers.\nMore prose.\n"
+        let ex [get $p examples]
+        Test::eq [len $ex] 3
+        Test::eq [get [get $ex 0] kind] "value"
+        Test::eq [get [get $ex 0] cmd] "+ 1 2"
+        Test::eq [get [get $ex 0] expect] "3"
+        Test::eq [get [get $ex 1] kind] "none"
+        Test::eq [get [get $ex 2] kind] "error"
+        Test::eq [get [get $ex 2] expect] "expected"
+    }
+
+    Test::case "no Examples section" {
+        let p [Doc::parse "Just prose."]
+        Test::eq [len [get $p examples]] 0
+        Test::eq [get $p body] "Just prose."
+    }
+}
+
+Test::suite "Doc::markdown" {
+    Test::case "renders title, sections, signatures, examples" {
+        let src {;;; Module prose here.
+
+;;; Squares.
+;;;
+;;; Examples:
+;;; >> M::sq 2
+;;; 4
+namespace M {
+    ;;; Squares.
+    proc sq {x} { * $x $x }
+}}
+        let md [Doc::markdown [Doc::extract $src] "mod.lcl"]
+        Test::assert [>= [String::find $md "# mod.lcl"] 0]
+        Test::assert [>= [String::find $md "Module prose here."] 0]
+        Test::assert [>= [String::find $md "## namespace `M`"] 0]
+        Test::assert [>= [String::find $md "### proc `M::sq x`"] 0]
+        Test::assert [>= [String::find $md "**Examples:**"] 0]
+        Test::assert [>= [String::find $md ">> M::sq 2"] 0]
+    }
+
+    Test::case "no title heading when title omitted" {
+        let md [Doc::markdown [Doc::extract {proc f {} { 0 }}]]
+        Test::neq [String::range $md 0 2] "# "
+        Test::assert [== [String::find $md "### proc `f`"] 0]
+    }
+}
+
+Test::suite "Doc::doctest" {
+    Test::case "passes values, errors, and bare-run examples" {
+        let src {;;; Doubles.
+;;;
+;;; Examples:
+;;; >> dbl_dt 21
+;;; 42
+;;; >> dbl_dt x
+;;; !! number
+;;; >> dbl_dt 1
+proc dbl_dt {x} { int [+ $x $x] }}
+        eval $src
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 3
+        Test::eq [get $r fail] 0
+    }
+
+    Test::case "examples in one doc block share a scope" {
+        let src {;;; Examples:
+;;; >> let dt_four [+ 2 2]
+;;; >> + $dt_four 1
+;;; 5
+proc dt_f {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r fail] 0
+    }
+
+    Test::case "failures carry qualified name, cmd, expect, got" {
+        let src {namespace DTM {
+    ;;; Examples:
+    ;;; >> + 2 2
+    ;;; 5
+    proc g {} { 0 }
+}}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r fail] 1
+        let f [get [get $r failures] 0]
+        Test::eq [get $f name] "DTM::g"
+        Test::eq [get $f cmd] "+ 2 2"
+        Test::eq [get $f expect] "5"
+        Test::eq [get $f got] "4"
+    }
+
+    Test::case "string results compare against their repr" {
+        let src {;;; Examples:
+;;; >> String::upper "hi"
+;;; "HI"
+proc dt_h {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r fail] 0
+    }
+
+    Test::case "expected error that does not happen fails" {
+        let src {;;; Examples:
+;;; >> + 1 1
+;;; !! boom
+proc dt_i {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r fail] 1
+    }
+
+    Test::case "module doc examples run too" {
+        let src {;;; Module.
+;;;
+;;; Examples:
+;;; >> + 1 1
+;;; 2
+
+let dt_unrelated 1}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 1
+        Test::eq [get $r fail] 0
+    }
+}
+
+Test::suite "Doc self-hosting" {
+    Test::case "Doc.lcl's own doctests pass" {
+        ;; extract_file needs the io package
+        var src {}
+        if [catch {set! src [io::read_file "lib/doc/src/Doc.lcl"]}] {
+            Test::skip "io package not built"
+        }
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::assert [> [get $r pass] 0]
+        Test::eq [get $r fail] 0
+    }
+}
+
+Test::run
