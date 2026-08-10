@@ -1,13 +1,3 @@
-;; Build examples:
-;; # Release build (dynamically linked, optimized)
-;; cmake -DCMAKE_BUILD_TYPE=Release ..
-;;
-;; # Release + fully static binary
-;; cmake -DCMAKE_BUILD_TYPE=Release -DLCL_BUILD_STATIC=ON -DLCL_STATIC_BINARY=ON ..
-;;
-;; # Debug build with sanitizers (existing behavior)
-;; cmake -DCMAKE_BUILD_TYPE=Debug -DLCL_ENABLE_ASAN=ON ..
-
 project lcl {
     config {
         description "The Lcl programming language"
@@ -45,6 +35,13 @@ project lcl {
             cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::DEBUG_OPTS} && \
             cmake --build build
         }]
+    }
+
+    command emcc {
+        run {
+            emcmake cmake -B build && \
+            cmake --build build
+        }
     }
 
     command release {
