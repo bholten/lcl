@@ -1,36 +1,36 @@
-;; sh.lcl - Shell scripting sugar layer
-;;
-;; Provides convenient shell scripting functions built on process::*
-;;
-;; REQUIRES: lcl-process package (provides process:: namespace)
-;;
-;; Usage:
-;;   load lib/sh.lcl
-;;
-;;   ;; Simple command execution (returns stdout, trimmed)
-;;   let files [sh::run (ls -la)]
-;;
-;;   ;; Get output as list of lines
-;;   let items [sh::lines (ls)]
-;;
-;;   ;; Check if command succeeds
-;;   if [sh::ok? (which git)] {
-;;       puts "git is installed"
-;;   }
-;;
-;;   ;; Run with options
-;;   sh::run (./script.sh) #{env #{DEBUG 1} cwd /tmp}
-;;
-;;   ;; Pipe commands (using shell)
-;;   sh::pipe "ls -la | grep foo | wc -l"
+;;; sh.lcl - Shell scripting sugar layer
+;;;
+;;; Provides convenient shell scripting functions built on process::*
+;;;
+;;; REQUIRES: lcl-process package (provides process:: namespace)
+;;;
+;;; Usage:
+;;;   load lib/sh.lcl
+;;;
+;;;   ;; Simple command execution (returns stdout, trimmed)
+;;;   let files [sh::run (ls -la)]
+;;;
+;;;   ;; Get output as list of lines
+;;;   let items [sh::lines (ls)]
+;;;
+;;;   ;; Check if command succeeds
+;;;   if [sh::ok? (which git)] {
+;;;       puts "git is installed"
+;;;   }
+;;;
+;;;   ;; Run with options
+;;;   sh::run (./script.sh) #{env #{DEBUG 1} cwd /tmp}
+;;;
+;;;   ;; Pipe commands (using shell)
+;;;   sh::pipe "ls -la | grep foo | wc -l"
 
 namespace sh {
-    ;; sh::run cmd ?opts? - run command and return stdout (trimmed)
-    ;; Options:
-    ;;   throw - 1 (default) to throw on error, 0 to return empty string
-    ;;   stdin - string to send to stdin
-    ;;   env   - dict of environment variables
-    ;;   cwd   - working directory
+    ;;; sh::run cmd ?opts? - run command and return stdout (trimmed)
+    ;;; Options:
+    ;;;   throw - 1 (default) to throw on error, 0 to return empty string
+    ;;;   stdin - string to send to stdin
+    ;;;   env   - dict of environment variables
+    ;;;   cwd   - working directory
     proc run {cmd (opts #{})} {
         let do_throw [get $opts throw 1]
         let r [process::run $cmd $opts]
@@ -49,13 +49,13 @@ namespace sh {
         String::trim [get $r stdout]
     }
 
-    ;; sh::run! cmd ?opts? - run command, return full result dict
-    ;; Does not throw on error
+    ;;; run command, return full result dict
+    ;;; Does not throw on error
     proc run! {cmd (opts #{})} {
         process::run $cmd $opts
     }
 
-    ;; sh::lines cmd - run command and return stdout as list of lines
+    ;;; run command and return stdout as list of lines
     proc lines {cmd} {
         let output [sh::run $cmd #{throw 0}]
         if [empty? $output] {
@@ -64,20 +64,20 @@ namespace sh {
         String::split $output "\n"
     }
 
-    ;; sh::ok? cmd - check if command succeeds (exit 0)
+    ;;; check if command succeeds (exit 0)
     proc ok? {cmd} {
         let r [process::run $cmd]
         == [get $r status] 0
     }
 
-    ;; sh::status cmd - get exit status of command
+    ;;; get exit status of command
     proc status {cmd} {
         let r [process::run $cmd]
         get $r status
     }
 
-    ;; sh::pipe cmdline - run shell pipeline
-    ;; cmdline is a string that will be passed to /bin/sh -c
+    ;;; run shell pipeline
+    ;;; cmdline is a string that will be passed to /bin/sh -c
     proc pipe {cmdline} {
         let r [process::run (sh -c $cmdline)]
         let status [get $r status]
@@ -92,24 +92,24 @@ namespace sh {
         String::trim [get $r stdout]
     }
 
-    ;; sh::pipe! cmdline - run shell pipeline, return full result
+    ;;; run shell pipeline, return full result
     proc pipe! {cmdline} {
         process::run (sh -c $cmdline)
     }
     
-    ;; sh::capture cmd - capture both stdout and stderr
-    ;; Returns #{stdout "..." stderr "..." status N}
+    ;;; capture both stdout and stderr
+    ;;; Returns #{stdout "..." stderr "..." status N}
     proc capture {cmd} {
         process::run $cmd
     }
     
-    ;; sh::silent cmd - run command, discard output, return status
+    ;;; srun command, discard output, return status
     proc silent {cmd} {
         let r [process::run $cmd]
         get $r status
     }
     
-    ;; sh::which name - find path to executable (or empty string if not found)
+    ;;; find path to executable (or empty string if not found)
     proc which {name} {
         let r [process::run (which $name)]
         if [== [get $r status] 0] {
@@ -119,65 +119,73 @@ namespace sh {
         }
     }
     
-    ;; sh::exists? name - check if executable exists in PATH
+    ;;; check if executable exists in PATH
     proc exists? {name} {
         sh::ok? (which $name)
     }
     
-    ;; sh::read path - read file contents
+    ;;; read file contents
     proc read {path} {
         let r [process::run (cat $path)]
+
         if [!= [get $r status] 0] {
             error "sh::read: cannot read file $path"
         }
+
         get $r stdout
     }
 
-    ;; sh::write path content - write content to file
+    ;;; write content to file
     proc write {path content} {
         let r [process::run (tee $path) #{stdin $content}]
+
         if [!= [get $r status] 0] {
             error "sh::write: cannot write to file $path"
         }
+
         ""
     }
 
-    ;; sh::append path content - append content to file
+    ;;; append content to file
     proc append {path content} {
         let r [process::run (tee -a $path) #{stdin $content}]
+
         if [!= [get $r status] 0] {
             error "sh::append: cannot append to file $path"
         }
+
         ""
     }
  
-    ;; sh::glob pattern - expand glob pattern
+    ;;; expand glob pattern
     proc glob {pattern} {
         let r [process::run (sh -c "ls -d $pattern 2>/dev/null || true")]
         let output [String::trim [get $r stdout]]
+
         if [empty? $output] {
             return [list]
         }
+
         String::split $output "\n"
     }
     
-    ;; sh::pwd - get current working directory
+    ;;; get current working directory
     proc pwd {} {
         String::trim [sh::run (pwd)]
     }
     
-    ;; sh::hostname - get hostname
+    ;;; get hostname
     proc hostname {} {
         String::trim [sh::run (hostname)]
     }
 
-    ;; sh::whoami - get current user
+    ;;; get current user
     proc whoami {} {
         String::trim [sh::run (whoami)]
     }
 
-    ;; sh::date ?fmt? - get current date/time
-    ;; If fmt is empty or not provided, returns default date format
+    ;;; get current date/time
+    ;;; If fmt is empty or not provided, returns default date format
     proc date {(fmt {})} {
         if [empty? $fmt] {
             String::trim [sh::run (date)]
@@ -186,87 +194,95 @@ namespace sh {
         }
     }
     
-    ;; sh::sleep seconds - sleep for specified seconds
+    ;;; sleep for specified seconds
     proc sleep {seconds} {
         sh::silent (sleep $seconds)
         ""
     }
 
-    ;; sh::mkdir path - create directory (with parents)
+    ;;; create directory (with parents)
     proc mkdir {path} {
         let r [process::run (mkdir -p $path)]
+
         if [!= [get $r status] 0] {
             error "sh::mkdir: cannot create directory $path"
         }
+
         ""
     }
     
-    ;; sh::rm path - remove file or directory
+    ;;; remove file or directory
     proc rm {path} {
         let r [process::run (rm -rf $path)]
+
         if [!= [get $r status] 0] {
             error "sh::rm: cannot remove $path"
         }
+
         ""
     }
     
-    ;; sh::cp src dst - copy file or directory
+    ;;; copy file or directory
     proc cp {src dst} {
         let r [process::run (cp -r $src $dst)]
+
         if [!= [get $r status] 0] {
             error "sh::cp: cannot copy $src to $dst"
         }
+
         ""
     }
     
-    ;; sh::mv src dst - move/rename file or directory
+    ;;; move/rename file or directory
     proc mv {src dst} {
         let r [process::run (mv $src $dst)]
+
         if [!= [get $r status] 0] {
             error "sh::mv: cannot move $src to $dst"
         }
+
         ""
     }
 
-    ;; sh::file? path - check if path is a regular file
+    ;;; check if path is a regular file
     proc file? {path} {
         sh::ok? (test -f $path)
     }
 
-    ;; sh::dir? path - check if path is a directory
+    ;;; check if path is a directory
     proc dir? {path} {
         sh::ok? (test -d $path)
     }
 
-    ;; sh::readable? path - check if path is readable
+    ;;; check if path is readable
     proc readable? {path} {
         sh::ok? (test -r $path)
     }
 
-    ;; sh::writable? path - check if path is writable
+    ;;; check if path is writable
     proc writable? {path} {
         sh::ok? (test -w $path)
     }
 
-    ;; sh::runutable? path - check if path is executable
+    ;;; check if path is executable
     proc executable? {path} {
         sh::ok? (test -x $path)
     }
 
-    ;; sh::env vars cmd - run command with environment variables
-    ;; Convenience wrapper that builds opts dict
+    ;;; run command with environment variables
+    ;;; Convenience wrapper that builds opts dict
     proc env {vars cmd} {
         sh::run $cmd #{env $vars}
     }
 
-    ;; sh::in dir cmd - run command in specified directory
-    ;; Convenience wrapper that builds opts dict
+    ;;; run command in specified directory
+    ;;; Convenience wrapper that builds opts dict
     proc in {dir cmd} {
         sh::run $cmd #{cwd $dir}
     }
 
-    ;; sh::stdin input cmd - run command with stdin input
-    ;; Convenience wrapper that builds opts dict
+    ;;; run command with stdin input
+    ;;; Convenience wrapper that builds opts dict
     proc stdin {input cmd} {
         sh::run $cmd #{stdin $input}
     }    
