@@ -1,30 +1,29 @@
-;; Test Framework for LCL
-;;
-;; A simple but capable test framework written in pure LCL.
-;;
-;; Usage:
-;;   load lib/Test.lcl
-;;
-;;   Test::suite "My Feature" {
-;;       Test::before {
-;;           ;; Setup code runs before each test
-;;       }
-;;
-;;       Test::case "should do something" {
-;;           let result [my_func 1 2]
-;;           Test::eq $result 3
-;;       }
-;;
-;;       Test::case "should fail on bad input" {
-;;           Test::raises {
-;;               my_func "bad" "input"
-;;           }
-;;       }
-;;   }
-;;
-;;   Test::run  ;;; Run all suites and print results
+;;; Test Framework for LCL
+;;;
+;;; A simple but capable test framework written in pure LCL.
+;;;
+;;; Usage:
+;;;   load lib/Test.lcl
+;;;
+;;;   Test::suite "My Feature" {
+;;;       Test::before {
+;;;           ;; Setup code runs before each test
+;;;       }
+;;;
+;;;       Test::case "should do something" {
+;;;           let result [my_func 1 2]
+;;;           Test::eq $result 3
+;;;       }
+;;;
+;;;       Test::case "should fail on bad input" {
+;;;           Test::raises {
+;;;               my_func "bad" "input"
+;;;           }
+;;;       }
+;;;   }
+;;;
+;;;   Test::run  ;;; Run all suites and print results
 
-;; Create namespace with internal state and all procs
 namespace Test {
     var _suites [list]
     var _current_name {}
@@ -32,7 +31,7 @@ namespace Test {
     var _current_before {}
     var _current_after {}
 
-    ;; Register a test suite
+    ;;; Register a test suite
     proc suite {name body} {
         set! _current_name $name
         set! _current_cases ()
@@ -50,23 +49,23 @@ namespace Test {
         set! _current_name {}
     }
 
-    ;; Register a test case within the current suite
+    ;;; Register a test case within the current suite
     proc case {name body} {
         let case_data #{name $name body $body}
         set! _current_cases [List::push $_current_cases $case_data]
     }
 
-    ;; Set up code to run before each test in the current suite
+    ;;l Set up code to run before each test in the current suite
     proc before {body} {
         set! _current_before $body
     }
 
-    ;; Set up code to run after each test in the current suite
+    ;;; Set up code to run after each test in the current suite
     proc after {body} {
         set! _current_after $body
     }
 
-    ;; Assertion: two values are equal (with optional message)
+    ;;; Assertion: two values are equal (with optional message)
     proc eq {actual expected (msg {})} {
         if [!= $actual $expected] {
             if [empty? $msg] {
@@ -77,7 +76,7 @@ namespace Test {
         }
     }
 
-    ;; Assertion: two values are not equal (with optional message)
+    ;;; Assertion: two values are not equal (with optional message)
     proc neq {actual unexpected (msg {})} {
         if [== $actual $unexpected] {
             if [empty? $msg] {
@@ -88,7 +87,7 @@ namespace Test {
         }
     }
 
-    ;; Assertion: condition is true (with optional message)
+    ;;; Assertion: condition is true (with optional message)
     proc assert {cond (msg {})} {
         if [not $cond] {
             if [empty? $msg] {
@@ -99,7 +98,7 @@ namespace Test {
         }
     }
 
-    ;; Alias for assert
+    ;;; Alias for assert
     proc true {cond (msg {})} {
         if [not $cond] {
             if [empty? $msg] {
@@ -110,7 +109,7 @@ namespace Test {
         }
     }
 
-    ;; Assertion: condition is false (with optional message)
+    ;;; Assertion: condition is false (with optional message)
     proc false {cond (msg {})} {
         if $cond {
             if [empty? $msg] {
@@ -121,7 +120,7 @@ namespace Test {
         }
     }
 
-    ;; Assertion: value is empty (empty string or empty list)
+    ;;; Assertion: value is empty (empty string or empty list)
     proc empty {val} {
         if [not [empty? $val]] {
             error "expected empty value, got '$val'"
@@ -135,21 +134,21 @@ namespace Test {
         }
     }
 
-    ;; Assertion: value is opaque
+    ;;; Assertion: value is opaque
     proc opaque {val} {
         if [not [opaque? $val]] {
             error "expected opaque value"
         }
     }
 
-    ;; Assertion: value is not opaque
+    ;;; Assertion: value is not opaque
     proc not_opaque {val} {
         if [opaque? $val] {
             error "expected non-opaque value"
         }
     }
 
-    ;; Assertion: code raises an error
+    ;;; Assertion: code raises an error
     proc raises {body} {
         if [catch { eval $body } _result _err] {
             return 1
@@ -158,7 +157,7 @@ namespace Test {
         }
     }
 
-    ;; Assertion: code raises an error containing specific text
+    ;;; Assertion: code raises an error containing specific text
     proc raises_with {body expected_text} {
         if [catch { eval $body } _result _err] {
             if [== [String::find $_err $expected_text] -1] {
@@ -170,35 +169,35 @@ namespace Test {
         }
     }
 
-    ;; Assertion: value is greater than expected
+    ;;; Assertion: value is greater than expected
     proc gt {actual expected} {
         if [not [> $actual $expected]] {
             error "expected $actual > $expected"
         }
     }
 
-    ;; Assertion: value is less than expected
+    ;;; Assertion: value is less than expected
     proc lt {actual expected} {
         if [not [< $actual $expected]] {
             error "expected $actual < $expected"
         }
     }
 
-    ;; Assertion: value is greater than or equal to expected
+    ;;; Assertion: value is greater than or equal to expected
     proc gte {actual expected} {
         if [not [>= $actual $expected]] {
             error "expected $actual >= $expected"
         }
     }
 
-    ;; Assertion: value is less than or equal to expected
+    ;;; Assertion: value is less than or equal to expected
     proc lte {actual expected} {
         if [not [<= $actual $expected]] {
             error "expected $actual <= $expected"
         }
     }
 
-    ;; Assertion: list contains element
+    ;;; Assertion: list contains element
     proc contains {lst elem} {
         var found 0
         foreach item $lst {
@@ -212,14 +211,14 @@ namespace Test {
         }
     }
 
-    ;; Assertion: string contains substring
+    ;;; Assertion: string contains substring
     proc str_contains {haystack needle} {
         if [== [String::find $haystack $needle] -1] {
             error "string '$haystack' does not contain '$needle'"
         }
     }
 
-    ;; Assertion: list has expected length
+    ;;; Assertion: list has expected length
     proc len_eq {lst expected} {
         let actual [len $lst]
         if [!= $actual $expected] {
@@ -227,12 +226,12 @@ namespace Test {
         }
     }
 
-    ;; Skip the current test with a reason
+    ;;; Skip the current test with a reason
     proc skip {reason} {
         error "SKIP:$reason"
     }
 
-    ;; Run all registered test suites
+    ;;; Run all registered test suites
     proc run {} {
         var passed 0
         var failed 0
@@ -323,7 +322,7 @@ namespace Test {
         return 0
     }
 
-    ;; Clear all registered suites (useful for testing the framework itself)
+    ;;; Clear all registered suites (useful for testing the framework itself)
     proc reset {} {
         set! _suites [list]
         set! _current_name {}
