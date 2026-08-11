@@ -32,7 +32,8 @@ The intent for Lcl is therefore focused on DSL embeddings and scripting for C/C+
 | Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
 | Quoting    | `expr` command for expressions   | Expressions are just commands                                  |
 | Dispatch   | `[$x]` runtime-dispatches if `$x` names a command | `[$x]` returns the value of `$x`; `[apply $x]` dispatches (see below) |
-| Philosophy | "Everything is a string"         | "Everything is a string... inside a closure"                   |
+| Numbers    | Strings; `expr` interprets       | `42` compiles to an int, `"42"` stays a string (see below)     |
+| Philosophy | "Everything is a string"         | "Everything *has* a string... inside a closure"                |
 
 Lcl uses a more unified API, does not use the ensemble pattern for dictionaries, and does not use the prefix-convention for list operations.
 
@@ -114,9 +115,19 @@ puts [apply $c]  ;; 12
 let s "hello world"
 let empty ""           ;; empty string (same as {})
 
-;; Numbers (integers and floats)
-let n 42
-let f 3.14
+;; Numbers (integers and floats) -- bare numeric literals are typed
+;; at compile time; quoting or bracing means "this is text"
+let n 42               ;; int
+let f 3.14             ;; float
+puts [type $n]         ;; int
+puts [type "42"]       ;; string
+puts [type 007]        ;; string (non-canonical spelling -- see
+                       ;; Numeric Literals under Syntax Reference)
+
+;; Numeric contexts accept numeric *text* -- textual data entering
+;; the numeric domain -- without changing the value's own type:
+puts [+ 1 "007"]       ;; 8
+puts [type "007"]      ;; still string
 
 ;; Lists - constructor or literal syntax
 let lst [list a b c d e]
@@ -178,6 +189,12 @@ puts [string? "hi"]    ;; 1
 puts [number? 42]      ;; 1
 puts [proc? $greet]    ;; 1
 puts [cell? [ref 0]]   ;; 1
+
+;; number? asks "numerically interpretable?" (value or numeric text);
+;; int?/float? inspect the tag itself
+puts [number? "007"]   ;; 1
+puts [int? 42]         ;; 1  (typed literal)
+puts [int? "42"]       ;; 0  (string tag)
 ```
 
 ### Namespaced Functions
@@ -809,6 +826,45 @@ Rule of thumb: quote (`"..."`) only when you *want* interpolation;
 brace everything else. This also applies inside dict literals --
 `#{pattern {[0-9]+}}` -- where a quoted value substitutes exactly as
 it would anywhere else.
+
+### Numeric Literals
+
+A bare, unquoted word matching the numeric-literal grammar is compiled
+directly to an int or float:
+
+```
+integer := 0 | -?[1-9][0-9]*                     ("-0" excluded)
+float   := -?intpart '.' [0-9]+ exp? | -?intpart exp
+exp     := [eE][+-]?[0-9]+
+```
+
+```tcl
+42        ;; int
+-3        ;; int
+3.14      ;; float
+1.50      ;; float (numeric spelling; prints as 1.5)
+1e3       ;; float
+
+"42"      ;; string -- quoting means "this is text"
+{42}      ;; string
+007       ;; string -- non-canonical spellings are never normalized
++5        ;; string
+.5        ;; string
+```
+
+The grammar is deliberately strict about *spelling*: `007` might be a
+ZIP fragment, so Lcl refuses to guess. Runtime *data* is another
+matter -- numeric contexts accept any string that fully parses as a
+number, leading zeros and all (`+ 1 "007"` is `8`), without retagging
+the original value.
+
+A literal that matches the grammar but overflows the numeric range is
+a compile error, never a silent string:
+
+```tcl
+let x 99999999999999999999     ;; error: integer literal out of range
+let x {99999999999999999999}   ;; fine: a 20-char string, explicitly
+```
 
 ### Comments
 

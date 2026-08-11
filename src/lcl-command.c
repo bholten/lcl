@@ -1,6 +1,7 @@
 #include <memory.h>
 
 #include "lcl-lex.h"
+#include "lcl-values.h"
 
 void lcl_command_free(lcl_command *cmd) {
   int i;
@@ -20,6 +21,7 @@ void lcl_command_free(lcl_command *cmd) {
     }
 
     lcl_program_free(w->compiled);
+    lcl_ref_dec(w->typed);
     free(w->wp);
   }
 

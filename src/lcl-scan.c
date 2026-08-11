@@ -1,8 +1,11 @@
 #include <ctype.h>
+#include <errno.h>
+#include <math.h>
 #include <memory.h>
 #include <string.h>
 
 #include "lcl-lex.h"
+#include "lcl-values.h"
 #include "str-compat.h"
 
 static void skip_cmd_ws_and_comments(lcl_scan *sc) {
@@ -533,13 +536,13 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
              */
             if (ch == ':') {
               if (j + 1 < sc->len && sc->s[j + 1] == ':') {
-                /* Bugfix #48: require an identifier char (alpha or `_`)
+                /* Bugfix: require an identifier char (alpha or `_`)
                  * to start the segment after `::`. Without this,
                  * `$foo::` silently resolves to `foo` (env_get_value
                  * splits on `::`, then the trailing empty segment is
-                 * skipped), and `$foo::1bad` is accepted by the scanner
-                 * only to fail with a generic "undefined variable" at
-                 * runtime. Reject both at parse time. */
+                 * skipped), and `$foo::1bad` is accepted by the
+                 * scanner only to fail with a generic "undefined
+                 * variable" at runtime. Reject both at parse time. */
                 if (j + 2 >= sc->len ||
                     (!isalpha((unsigned char)sc->s[j + 2]) &&
                      sc->s[j + 2] != '_')) {
@@ -792,6 +795,65 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   return (w->np > 0 || w->quoted) ? 1 : 0;
 }
 
+static int scan_type_numeric_word(lcl_scan *sc, lcl_word *w) {
+  const char *s;
+  size_t n;
+  long start;
+
+  if (w->np != 1 || w->quoted || w->braced ||
+      w->wp[0].kind != LCL_WP_LIT) {
+    return 1;
+  }
+
+  s = w->wp[0].as.lit.s;
+  n = w->wp[0].as.lit.n;
+  start = w->src_start + (w->expand ? 1 : 0);
+
+  if (w->src_end - start != (long)n || memcmp(sc->s + start, s, n) != 0) {
+    return 1;
+  }
+
+  switch (lcl_num_literal_classify(s, n)) {
+  case LCL_NUM_INT: {
+    char *endptr;
+    long v;
+
+    errno = 0;
+    v = strtol(s, &endptr, 10);
+
+    if (errno == ERANGE) {
+      return scan_fail(sc, "integer literal out of range", sc->line);
+    }
+
+    w->typed = lcl_int_new(v);
+    break;
+  }
+  case LCL_NUM_FLOAT: {
+    double d = 0.0;
+
+    errno = 0;
+
+    if (lcl_parse_double_c(s, &d) != n) {
+      return 1;
+    }
+
+    if (errno == ERANGE && (d == HUGE_VAL || d == -HUGE_VAL)) {
+      return scan_fail(sc, "float literal out of range", sc->line);
+    }
+
+    w->typed = lcl_float_new(d);
+    break;
+  }
+  case LCL_NUM_NONE: return 1;
+  }
+
+  if (!w->typed) {
+    return scan_fail(sc, "out of memory", sc->line);
+  }
+
+  return 1;
+}
+
 /* On entry sc->i sits on the word's first byte (any @ prefix
  * included); on success it sits one past the last. Stamping the span
  * here covers every exit path of the piece scanner. */
@@ -887,6 +949,11 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
       }
 
       break;
+    }
+
+    if (scan_type_numeric_word(sc, &w) < 0) {
+      lcl_word_free_contents(&w);
+      return -1;
     }
 
     if (!lcl_command_push_word(cmd, &w)) {

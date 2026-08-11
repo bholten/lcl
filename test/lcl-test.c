@@ -475,7 +475,7 @@ static int test_comment_in_list_literal(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #22 — COW clone failure causes NULL deref in dict/list mutation.
+ *  #22 — COW clone failure causes NULL deref in dict/list mutation.
  *
  * Reproduction:
  *   1. Build a container with refc > 1 (shared).
@@ -595,7 +595,7 @@ static int test_issue22_list_set_clone_oom(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #35 — Public API functions inconsistently NULL-deref on NULL value
+ *  #35 — Public API functions inconsistently NULL-deref on NULL value
  * arguments. Embedders routinely pass NULL (e.g. an `out` from a failed
  * call); sibling functions (e.g. `lcl_list_*`, `lcl_define`, `lcl_get`)
  * already guard. This pins the contract for the remaining functions.
@@ -624,22 +624,216 @@ static int test_issue35_public_api_null_safety(void) {
   return 1;
 }
 
+static int test_issue75_literal_grammar(void) {
+  static const struct {
+    const char *s;
+    lcl_num_class want;
+  } cases[] = {
+      {"42", LCL_NUM_INT},     {"0", LCL_NUM_INT},
+      {"-3", LCL_NUM_INT},     {"3.14", LCL_NUM_FLOAT},
+      {"1.50", LCL_NUM_FLOAT}, {"0.1", LCL_NUM_FLOAT},
+      {"-0.0", LCL_NUM_FLOAT}, {"1e3", LCL_NUM_FLOAT},
+      {"1E+3", LCL_NUM_FLOAT}, {"0e0", LCL_NUM_FLOAT},
+      {"1.5e-3", LCL_NUM_FLOAT},
+      /* outside the grammar — remain strings */
+      {"007", LCL_NUM_NONE},   {"042", LCL_NUM_NONE},
+      {"+5", LCL_NUM_NONE},    {"-0", LCL_NUM_NONE},
+      {".5", LCL_NUM_NONE},    {"5.", LCL_NUM_NONE},
+      {"1e", LCL_NUM_NONE},    {"1e+", LCL_NUM_NONE},
+      {"1.2.3", LCL_NUM_NONE}, {"0x10", LCL_NUM_NONE},
+      {"nan", LCL_NUM_NONE},   {"inf", LCL_NUM_NONE},
+      {"-", LCL_NUM_NONE},     {"", LCL_NUM_NONE},
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    if (lcl_num_literal_classify(cases[i].s, strlen(cases[i].s)) !=
+        cases[i].want) {
+      printf("    classify mismatch: \"%s\"\n", cases[i].s);
+      return 0;
+    }
+  }
+
+  /* Embedded NUL never classifies. */
+  ASSERT_TRUE(lcl_num_literal_classify("4\0002", 3) == LCL_NUM_NONE);
+
+  return 1;
+}
+
+static int test_issue75_literal_typing(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  rc = lcl_eval_string(lcl_test_interp, "42", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
+  ASSERT_TRUE(out->type == LCL_INT && out->as.i == 42);
+  lcl_ref_dec(out);
+  out = NULL;
+
+  rc = lcl_eval_string(lcl_test_interp, "1.5", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
+  ASSERT_TRUE(out->type == LCL_FLOAT && out->as.f == 1.5);
+  lcl_ref_dec(out);
+  out = NULL;
+
+  /* Quoted, braced, and non-grammar spellings stay strings. */
+  rc = lcl_eval_string(lcl_test_interp, "\"42\"", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
+  ASSERT_TRUE(out->type == LCL_STRING);
+  lcl_ref_dec(out);
+  out = NULL;
+
+  rc = lcl_eval_string(lcl_test_interp, "{42}", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
+  ASSERT_TRUE(out->type == LCL_STRING);
+  lcl_ref_dec(out);
+  out = NULL;
+
+  rc = lcl_eval_string(lcl_test_interp, "007", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
+  ASSERT_TRUE(out->type == LCL_STRING);
+  ASSERT_STREQ(lcl_value_to_string(out), "007");
+  lcl_ref_dec(out);
+  out = NULL;
+
+  /* Out-of-range integer literal is a compile error, never a string. */
+  rc = lcl_eval_string(lcl_test_interp, "let x 99999999999999999999", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  ASSERT_TRUE(lcl_test_interp->err_msg != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_msg, "integer literal out of range");
+  lcl_clear_error(lcl_test_interp);
+
+  return 1;
+}
+
+static int test_issue75_numeric_text(void) {
+  static const struct {
+    const char *s;
+    lcl_num_class want;
+  } cases[] = {
+      {"42", LCL_NUM_INT},      {"007", LCL_NUM_INT},
+      {"+5", LCL_NUM_INT},      {"-0", LCL_NUM_INT},
+      {".5", LCL_NUM_FLOAT},    {"5.", LCL_NUM_FLOAT},
+      {"1e3", LCL_NUM_FLOAT},   {"1e999", LCL_NUM_FLOAT},
+      {" 42", LCL_NUM_NONE},    {"42 ", LCL_NUM_NONE},
+      {"0x10", LCL_NUM_NONE},   {"nan", LCL_NUM_NONE},
+      {"inf", LCL_NUM_NONE},    {"3.14abc", LCL_NUM_NONE},
+      {"", LCL_NUM_NONE},       {"-", LCL_NUM_NONE},
+  };
+  size_t i;
+  long iv;
+  double fv;
+  const char *sv;
+  lcl_value *v;
+
+  for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    if (lcl_num_text_classify(cases[i].s, strlen(cases[i].s)) !=
+        cases[i].want) {
+      printf("    text classify mismatch: \"%s\"\n", cases[i].s);
+      return 0;
+    }
+  }
+
+  /* to_int / to_float follow the grammar, then range-check. */
+  v = lcl_string_new("007");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &iv) == LCL_OK && iv == 7);
+  lcl_ref_dec(v);
+
+  v = lcl_string_new(" 42");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &iv) == LCL_ERROR);
+  ASSERT_TRUE(lcl_value_to_float(v, &fv) == LCL_ERROR);
+  lcl_ref_dec(v);
+
+  v = lcl_string_new("3.14abc");
+  ASSERT_TRUE(v && lcl_value_to_float(v, &fv) == LCL_ERROR);
+  lcl_ref_dec(v);
+
+  v = lcl_string_new("1e999");
+  ASSERT_TRUE(v && lcl_value_to_float(v, &fv) == LCL_ERROR);
+  lcl_ref_dec(v);
+
+  v = lcl_string_new(".5");
+  ASSERT_TRUE(v && lcl_value_to_float(v, &fv) == LCL_OK && fv == 0.5);
+  lcl_ref_dec(v);
+
+  /* NaN→long guard, now only reachable from C (scripts can no longer
+   * materialize NaN via `float "nan"`). */
+  {
+    volatile double zero = 0.0;
+    v = lcl_float_new(zero / zero);
+    ASSERT_TRUE(v && lcl_value_to_int(v, &iv) == LCL_ERROR);
+    lcl_ref_dec(v);
+  }
+
+  /* Domain-strict getter: STRING tag only, no rendering. */
+  v = lcl_string_new("hi");
+  ASSERT_TRUE(v && lcl_value_get_string(v, &sv) == LCL_OK);
+  ASSERT_STREQ(sv, "hi");
+  lcl_ref_dec(v);
+
+  v = lcl_int_new(42);
+  ASSERT_TRUE(v && lcl_value_get_string(v, &sv) == LCL_ERROR);
+  ASSERT_TRUE(lcl_value_to_string(v) != NULL); /* renderer stays total */
+  lcl_ref_dec(v);
+
+  return 1;
+}
+
 /* ---------------------------------------------------------------------------
- * `lcl_value_to_string` returning "" was indistinguishable from
- * an OOM during reify or a NULL input. The fix tightens the contract:
- * NULL input or stringification OOM return NULL; genuine empty strings
- * still return "". `lcl_value_to_cstring` is the error-surfacing helper:
- * it converts a NULL return into an interp "out of memory" error.
- *
- * Companion hardening to `lcl_string_new`: `str == NULL` is treated as
- * the empty string. A STRING value's `str_repr` is its content, with no
- * lazy-reify path to recover it; allowing `str_repr == NULL` for a
- * STRING would make every downstream stringify look like an OOM. Callers
- * like `io::getenv` of an unset variable used to pass NULL into this
- * constructor and silently get "" — the new behavior is identical from
- * the caller's perspective but no longer poisons the value.
+ *  #75 step 1: floats print via round-trip-safe compact formatting —
+ * the shortest of %.15g/%.16g/%.17g whose parse is bit-identical wins.
+ * Raw %.17g rendered 0.1 as "0.10000000000000001".
  * ---------------------------------------------------------------------------
  */
+
+static int test_issue75_float_compact_formatting(void) {
+  static const struct {
+    double in;
+    const char *want;
+  } cases[] = {
+      {0.1, "0.1"},
+      {1.5, "1.5"},
+      {100.0, "100"},
+      {1e20, "1e+20"},
+      {3.141592653589793, "3.141592653589793"},
+      /* 0.1 + 0.2 needs all 17 digits; compaction must not round away. */
+      {0.30000000000000004, "0.30000000000000004"},
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    lcl_value *v = lcl_float_new(cases[i].in);
+
+    ASSERT_TRUE(v != NULL);
+    ASSERT_STREQ(lcl_value_to_string(v), cases[i].want);
+    lcl_ref_dec(v);
+  }
+
+  /* Signed zero survives — the round-trip check compares bits, not ==. */
+  {
+    lcl_value *v = lcl_float_new(-0.0);
+
+    ASSERT_TRUE(v != NULL);
+    ASSERT_STREQ(lcl_value_to_string(v), "-0");
+    lcl_ref_dec(v);
+  }
+
+  /* Whatever precision wins, the rendering must parse back exactly. */
+  {
+    lcl_value *v = lcl_float_new(2.2250738585072014e-308);
+    double back;
+
+    ASSERT_TRUE(v != NULL);
+    ASSERT_TRUE(lcl_parse_double_c(lcl_value_to_string(v), &back) > 0);
+    ASSERT_TRUE(memcmp(&back, &v->as.f, sizeof(double)) == 0);
+    lcl_ref_dec(v);
+  }
+
+  return 1;
+}
+
 static int test_issue15_to_string_null_contract(void) {
   extern lcl_interp *lcl_test_interp;
   extern const char *lcl_interp_error_msg(lcl_interp * interp);
@@ -697,7 +891,7 @@ static int test_issue15_to_string_null_contract(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #59 — `lcl_eval_program` borrowed `pr->file` into `interp->cur_file`
+ *  #59 — `lcl_eval_program` borrowed `pr->file` into `interp->cur_file`
  * without restoring on exit. When the caller then freed the program, any
  * later `LCL_ERR_MSG` (which strdups `cur_file`) read freed memory. Fixed
  * by save+restore around the eval. This test deliberately mimics the
@@ -780,7 +974,7 @@ static int test_version_surface(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #33 — `c_catch` doesn't NULL-check `strdup` of its result/error
+ *  #33 — `c_catch` doesn't NULL-check `strdup` of its result/error
  * var-name arguments. On OOM, the strdup of `result_var` returns NULL and
  * the function silently completes without binding the user's variable —
  * a confusing failure where downstream `$result_var` lookups error as
@@ -817,7 +1011,7 @@ static int test_issue33_catch_strdup_oom(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #27 — FNV-1a uses a corrupted offset basis and a not-portably-wide
+ *  #27 — FNV-1a uses a corrupted offset basis and a not-portably-wide
  * integer type. The canonical 64-bit FNV-1a offset basis is
  * 0xCBF29CE484222325 (14695981039346656037); the buggy code dropped a
  * digit (1469598103934665603). This test computes the hash of "foo"
@@ -834,7 +1028,7 @@ static int test_issue27_fnv1a_known_vector(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #26 — hash_table_put over-increments `used` on tombstone reuse.
+ *  #26 — hash_table_put over-increments `used` on tombstone reuse.
  *
  * Insert→delete→insert of the same key should leave used == len == 1.
  * Buggy code unconditionally does `used++` regardless of whether the
@@ -869,7 +1063,7 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * Issue #24 — Scanner $name branch dereferences NULL strndup result.
+ * Scanner $name branch dereferences NULL strndup result.
  *
  * Reproduction: compile a script containing `$name` (the non-`::`-suffix
  * branch in lcl-scan.c) with strndup forced to return NULL.
@@ -879,7 +1073,7 @@ static int test_issue26_hash_used_tombstone_reuse(void) {
  * ---------------------------------------------------------------------------
  */
 
-/* ISSUES #47 — Param/upvalue binding ignores OOM. We invoke a lambda
+/* Param/upvalue binding ignores OOM. We invoke a lambda
  * whose body references `+`, so `+` becomes an upvalue. The upvalue-bind
  * loop in lcl_call_user_proc runs BEFORE the param-bind loop, so the
  * first hash_table_put after we set the counter is the upval bind for
@@ -923,7 +1117,7 @@ static int test_issue47_param_bind_oom(void) {
   return 1;
 }
 
-/* ISSUE #45 — `skip_balanced` recurses on alternating `(`/`[`. A
+/*  #45 — `skip_balanced` recurses on alternating `(`/`[`. A
  * crafted `[([([(... )])])]` of depth N exhausts the C stack. We build
  * the worst case at depth 300 and expect `lcl_program_compile` to
  * return NULL cleanly (parse error). Pre-fix: ASan SEGV from stack
@@ -959,7 +1153,7 @@ static int test_issue45_skip_balanced_depth_limit(void) {
   return 1;
 }
 
-/* ISSUE #42 — `lcl_dict_clone_shallow` ignores `hash_table_put` return.
+/*  #42 — `lcl_dict_clone_shallow` ignores `hash_table_put` return.
  * On OOM the clone is silently truncated. We force the first put inside
  * the clone iteration to fail, trigger COW on a shared dict, and verify:
  * (a) lcl_dict_put returns LCL_ERROR, (b) the caller's dict pointer is
@@ -1011,7 +1205,7 @@ static int test_issue42_dict_clone_put_oom(void) {
   return 1;
 }
 
-/* ISSUE #41 — `s_namespace`'s re-entry pre-population loop does not
+/*  #41 — `s_namespace`'s re-entry pre-population loop does not
  * check the return of `hash_table_put` / `lcl_dict_put`. On OOM the
  * overlay and exports drift apart and we proceed into the body with a
  * silently-inconsistent builder. Setup creates `__i41_ns` with one
@@ -1056,7 +1250,7 @@ static int test_issue41_namespace_reentry_oom(void) {
   return 1;
 }
 
-/* ISSUE #40 — `s_namespace` discards the +1 ref returned by
+/*  #40 — `s_namespace` discards the +1 ref returned by
  * `lcl_def_target_pop` on the max-recursion-depth error branch, leaking
  * the exports dict it owned. We trigger the branch by setting
  * `max_depth = depth + 1` so the first `namespace` nested call hits the
@@ -1090,7 +1284,7 @@ static int test_issue40_namespace_max_depth_leak(void) {
   return 1;
 }
 
-/* ISSUE #39 — s_import dereferences `as.cell.inner` without NULL-check.
+/*  #39 — s_import dereferences `as.cell.inner` without NULL-check.
  * lcl_frame_clear / lcl_frame_free's cycle-breaker NULLs cell.inner for
  * lambda-captured cells; if `import` is then called on such a cell, the
  * type-check (line ~2608) segfaults on NULL. We simulate the cleared-cell
@@ -1125,7 +1319,7 @@ static int test_issue39_import_cleared_cell(void) {
   return 1;
 }
 
-/* ISSUE #58 — `lcl_eval_word` returned LCL_RC_OK with `*out == NULL` when
+/*  #58 — `lcl_eval_word` returned LCL_RC_OK with `*out == NULL` when
  * `$name` resolved to a cell whose `inner` was NULLed by the cycle-breaker.
  * That violated the "OK ⇒ non-NULL out" contract every caller relied on, and
  * silently propagated NULL through `$cleared` references. The fix is
@@ -1180,7 +1374,7 @@ static int test_issue58_cleared_cell_returns_error(void) {
   return 1;
 }
 
-/* ISSUE #37 — lcl_program_push_command failure leaks the local `cmd`'s
+/*  #37 — lcl_program_push_command failure leaks the local `cmd`'s
  * words and pieces. We inject a forced failure on the 2nd push so the 1st
  * command lands in `p->cmd` (freed by lcl_program_free) and the 2nd is
  * dropped from the failure path. Pre-fix, LSan reports a leak from the
@@ -1218,7 +1412,7 @@ static int test_issue24_scanner_strndup_oom(void) {
   return 1;
 }
 
-/* ISSUE #67 — compile errors carry a message and line number.
+/*  #67 — compile errors carry a message and line number.
  * lcl_program_compile_ex must report which delimiter is unmatched and
  * the line the construct opened on (not the EOF line). */
 static int test_issue67_compile_ex_msg_and_line(void) {
@@ -1263,7 +1457,7 @@ static int test_issue67_compile_ex_msg_and_line(void) {
   return 1;
 }
 
-/* ISSUE #67 — a compile failure in lcl_eval_string_file lands in the
+/*  #67 — a compile failure in lcl_eval_string_file lands in the
  * interp's error state (message + file + line), same as runtime
  * errors, so the CLI and embedders report real diagnostics. */
 static int test_issue67_eval_string_sets_error_state(void) {
@@ -1606,66 +1800,32 @@ int run_test(void) {
   RUN(test_octal_escape);
   RUN(test_quoted_close_paren_in_list);
   RUN(test_comment_in_list_literal);
-
-  /* Regression tests for ISSUE #22 (COW clone NULL deref) */
   RUN(test_issue22_dict_put_clone_oom);
   RUN(test_issue22_dict_del_clone_oom);
   RUN(test_issue22_list_push_clone_oom);
   RUN(test_issue22_list_set_clone_oom);
-
-  /* Regression test for ISSUE #24 (scanner strndup NULL deref) */
   RUN(test_issue24_scanner_strndup_oom);
-
-  /* Regression test for ISSUE #26 (hash used overcounts on tomb reuse) */
   RUN(test_issue26_hash_used_tombstone_reuse);
-
-  /* Regression test for ISSUE #27 (FNV-1a constants / type width) */
   RUN(test_issue27_fnv1a_known_vector);
-
-  /* Regression test for ISSUE #33 (c_catch strdup NULL not handled) */
   RUN(test_issue33_catch_strdup_oom);
-
-  /* Regression test for ISSUE #35 (public API NULL safety) */
   RUN(test_issue35_public_api_null_safety);
-
-  /* Regression test for ISSUE #15 (to-string NULL-on-OOM contract) */
   RUN(test_issue15_to_string_null_contract);
-
-  /* Regression test for ISSUE #59 (lcl_eval_program cur_file UAF) */
+  RUN(test_issue75_float_compact_formatting);
+  RUN(test_issue75_literal_grammar);
+  RUN(test_issue75_literal_typing);
+  RUN(test_issue75_numeric_text);
   RUN(test_issue59_eval_program_cur_file_uaf);
-
-  /* Version surface: macros + lcl_version() agree with PROJECT_VERSION */
   RUN(test_version_surface);
-
-  /* Regression test for ISSUE #37 (push_command failure leaks cmd) */
   RUN(test_issue37_push_command_leak);
-
-  /* Regression test for ISSUE #39 (import NULL-derefs cleared cell) */
   RUN(test_issue39_import_cleared_cell);
-
-  /* Regression test for ISSUE #40 (namespace max-depth leak) */
   RUN(test_issue40_namespace_max_depth_leak);
-
-  /* Regression test for ISSUE #41 (namespace re-entry OOM) */
   RUN(test_issue41_namespace_reentry_oom);
-
-  /* Regression test for ISSUE #42 (dict clone swallows put OOM) */
   RUN(test_issue42_dict_clone_put_oom);
-
-  /* Regression test for ISSUE #45 (skip_balanced stack overflow) */
   RUN(test_issue45_skip_balanced_depth_limit);
-
-  /* Regression test for ISSUE #47 (param bind ignores OOM) */
   RUN(test_issue47_param_bind_oom);
-
-  /* Regression test for ISSUE #58 (cleared-cell deref via $name) */
   RUN(test_issue58_cleared_cell_returns_error);
-
-  /* Regression tests for ISSUE #67 (compile errors carry msg + line) */
   RUN(test_issue67_compile_ex_msg_and_line);
   RUN(test_issue67_eval_string_sets_error_state);
-
-  /* Require module-loader contract (ISSUE #73) */
   RUN(test_require_relative_to_file_chdir_independent);
   RUN(test_require_search_roots_order);
   RUN(test_require_cycle_detection);

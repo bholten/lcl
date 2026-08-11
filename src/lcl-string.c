@@ -12,11 +12,11 @@ lcl_value *lcl_string_new(const char *str) {
   /* A STRING value's `str_repr` is its content; unlike lazy-reify
    * types (INT/FLOAT/LIST/DICT), there is no second source of truth
    * to reify from. So `str_repr == NULL` on a STRING is a poison
-   * state — anyone stringifying it post-#15 sees a NULL return and
-   * raises "out of memory". Treat `str == NULL` as the empty string
-   * at construction time; callers like `io::getenv` of an unset
-   * variable used to silently get "" out of this path and we want to
-   * preserve that behavior. */
+   * state — anyone stringifying it sees a NULL return and raises "out
+   * of memory". Treat `str == NULL` as the empty string at
+   * construction time; callers like `io::getenv` of an unset variable
+   * used to silently get "" out of this path and we want to preserve
+   * that behavior. */
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
   size_t n;
 
@@ -59,17 +59,40 @@ static void lcl_reify_str_int(lcl_value *value) {
 }
 
 static void lcl_reify_str_float(lcl_value *value) {
+  /* Round-trip-safe compact formatting: emit the shortest of
+   * %.15g / %.16g / %.17g whose parse is bit-identical to the value.
+   * The bitwise compare (not ==) keeps -0.0's sign and makes NaN fall
+   * through to the %.17g rendering, which is used verbatim. */
   char buf[32];
   size_t len;
-  int m = snprintf(buf, sizeof(buf), "%.17g", value->as.f);
-  if (m < 0 || (size_t)m >= sizeof(buf)) {
-    return;
+  int prec;
+
+  for (prec = 15; prec <= 17; prec++) {
+    double back;
+    size_t off;
+    int m = snprintf(buf, sizeof(buf), "%.*g", prec, value->as.f);
+
+    if (m < 0 || (size_t)m >= sizeof(buf)) {
+      return;
+    }
+
+    /* Bugfix: `%g` honors LC_NUMERIC, which would break round-trip
+     * parsing on non-'.' locales (spec §10 determinism). Force ASCII
+     * '.'. */
+    lcl_normalize_decimal_to_c(buf);
+
+    if (prec == 17) {
+      break;
+    }
+
+    off = lcl_parse_double_c(buf, &back);
+
+    if (off > 0 && buf[off] == '\0' &&
+        memcmp(&back, &value->as.f, sizeof(double)) == 0) {
+      break;
+    }
   }
 
-  /* Bugfix: `%g` honors LC_NUMERIC, which would break round-trip
-   * parsing on non-'.' locales (spec §10 determinism). Force ASCII
-   * '.'. */
-  lcl_normalize_decimal_to_c(buf);
   len = strlen(buf);
   value->str_repr = (char *)malloc(len + 1);
 
@@ -385,6 +408,15 @@ const char *lcl_value_to_string(lcl_value *value) {
   }
 
   return value->str_repr;
+}
+
+lcl_result lcl_value_get_string(lcl_value *value, const char **out) {
+  if (!value || !out || value->type != LCL_STRING || !value->str_repr) {
+    return LCL_ERROR;
+  }
+
+  *out = value->str_repr;
+  return LCL_OK;
 }
 
 lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
