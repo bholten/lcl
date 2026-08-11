@@ -2761,6 +2761,65 @@ Test::suite "List:: Namespace" {
         Test::eq [get $flat 0] 1
         Test::eq [get $flat 4] 5
     }
+
+    Test::case "List::flatten recurses to any depth" {
+        let nested [list a [list b [list c [list d e]]] f]
+        let flat [List::flatten $nested]
+        Test::eq [len $flat] 6
+        Test::eq [get $flat 0] a
+        Test::eq [get $flat 3] d
+        Test::eq [get $flat 5] f
+
+        ;; empty sublists vanish at every depth
+        Test::eq [len [List::flatten [list [list] [list 1 [list]] 2]]] 2
+
+        ;; flattening an empty list
+        Test::eq [len [List::flatten [list]]] 0
+    }
+
+    Test::case "List::flatten optional depth" {
+        let nested [list a [list b [list c [list d]]]]
+
+        ;; depth 0: unchanged
+        let d0 [List::flatten $nested 0]
+        Test::eq [len $d0] 2
+        Test::eq [type [get $d0 1]] list
+
+        ;; depth 1: one level unwrapped
+        let d1 [List::flatten $nested 1]
+        Test::eq [len $d1] 3
+        Test::eq [get $d1 1] b
+        Test::eq [type [get $d1 2]] list
+
+        ;; depth 2
+        let d2 [List::flatten $nested 2]
+        Test::eq [len $d2] 4
+        Test::eq [get $d2 2] c
+        Test::eq [type [get $d2 3]] list
+
+        ;; depth beyond actual nesting: same as full
+        Test::eq [len [List::flatten $nested 99]] 4
+
+        ;; negative depth: unlimited (same as omitted)
+        let dn [List::flatten $nested -1]
+        Test::eq [len $dn] 4
+        Test::eq [get $dn 3] d
+
+        ;; non-integer depth errors
+        Test::eq [catch { List::flatten $nested bogus }] 1
+    }
+
+    Test::case "List::flatten deep nesting does not overflow" {
+        var deep [list 42]
+        var i 0
+        while {[< $i 10000]} {
+            set! deep [list $deep]
+            set! i [+ $i 1]
+        }
+        let flat [List::flatten $deep]
+        Test::eq [len $flat] 1
+        Test::eq [get $flat 0] 42
+    }
 }
 
 ;; ============================================================================

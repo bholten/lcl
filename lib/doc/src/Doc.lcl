@@ -26,6 +26,10 @@
 ;;; Each `>>` line is a command; the following non-blank line is the
 ;;; expected `repr` of its result (`!!` expects an error whose message
 ;;; contains the given text; no expectation just checks it runs).
+;;; Consecutive `>>` lines join into one multi-line command while the
+;;; accumulated text fails to parse (an open `{`, `"`, or `[`); a
+;;; line that parses complete closes the command, so single-line
+;;; examples behave as before. A bare `>>` is a visual separator.
 ;;; Comparing against `repr` is deliberate: it keeps examples honest
 ;;; about list-vs-string.
 
@@ -304,6 +308,11 @@ namespace Doc {
     ;;; "sums"
     ;;; >> len [get [Doc::parse "sums\n\nExamples:\n>> + 1 2\n3"] examples]
     ;;; 1
+    ;;; >> let d "x\n\nExamples:\n>> proc add {a b} {\n>>   + \$a \$b\n>> }\n>> add 1 2\n3"
+    ;;; >> len [get [Doc::parse $d] examples]
+    ;;; 2
+    ;;; >> get [get [get [Doc::parse $d] examples] 1] expect
+    ;;; "3"
     proc parse {doc} {
         var body_lines ()
         var ex_lines ()
@@ -336,11 +345,20 @@ namespace Doc {
             let t [String::trim $ln]
 
             if [_starts $t ">>"] {
-                if [!= $cur {}] {
-                    set! examples [List::push $examples $cur]
-                }
+                let rest [String::trim [String::range $t 2 [String::length $t]]]
 
-                set! cur #{cmd [String::trim [String::range $t 2 [String::length $t]]] kind "none" expect {}}
+                if [and [!= $cur {}] [== [get $cur kind] "none"] [catch {Lex::commands [get $cur cmd]}]] {
+                    ;; the accumulated command doesn't parse yet (an
+                    ;; open brace, quote, or bracket): this >> line
+                    ;; continues it
+                    set! cur [put $cur cmd "[get $cur cmd]\n$rest"]
+                } else {
+                    if [and [!= $cur {}] [!= [get $cur cmd] {}]] {
+                        set! examples [List::push $examples $cur]
+                    }
+
+                    set! cur #{cmd $rest kind "none" expect {}}
+                }
             } else {
                 if [and [!= $t {}] [!= $cur {}]] {
                     if [_starts $t "!!"] {
@@ -358,7 +376,7 @@ namespace Doc {
             }
         }
 
-        if [!= $cur {}] {
+        if [and [!= $cur {}] [!= [get $cur cmd] {}]] {
             set! examples [List::push $examples $cur]
         }
 

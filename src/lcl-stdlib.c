@@ -7922,16 +7922,21 @@ static int c_list_unique(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* List::flatten list - flatten nested lists one level */
+struct flatten_frame {
+  lcl_value *list; /* owned (+1) */
+  size_t idx;
+};
+
 static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
                           lcl_value **out) {
   lcl_value *list;
   lcl_value *result;
-  size_t i;
-  size_t len;
-  (void)interp;
+  struct flatten_frame *stack;
+  size_t depth;
+  size_t cap;
+  long limit = -1;
 
-  if (!chk_argc(interp, "List::flatten", argc, 1, 1)) {
+  if (!chk_argc(interp, "List::flatten", argc, 1, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -7941,41 +7946,80 @@ static int c_list_flatten(lcl_interp *interp, int argc, lcl_value **argv,
     return err_expected_got(interp, "List::flatten", "list", list);
   }
 
-  len = lcl_list_len(list);
-  result = lcl_list_new();
-
-  for (i = 0; i < len; i++) {
-    lcl_value *elem = NULL;
-
-    if (lcl_list_get(list, i, &elem) != LCL_OK) {
-      LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
-      lcl_ref_dec(result);
-      return LCL_RC_ERR;
-    }
-
-    if (elem->type == LCL_LIST) {
-      size_t j;
-      size_t sublen = lcl_list_len(elem);
-      for (j = 0; j < sublen; j++) {
-        lcl_value *subelem = NULL;
-        if (lcl_list_get(elem, j, &subelem) != LCL_OK) {
-          LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
-          lcl_ref_dec(elem);
-          lcl_ref_dec(result);
-          return LCL_RC_ERR;
-        }
-        lcl_list_push(&result, subelem);
-        lcl_ref_dec(subelem);
-      }
-    } else {
-      lcl_list_push(&result, elem);
-    }
-
-    lcl_ref_dec(elem);
+  if (argc == 2 && !arg_int(interp, "List::flatten", argv[1], &limit)) {
+    return LCL_RC_ERR;
   }
 
+  cap = 8;
+  stack = (struct flatten_frame *)malloc(cap * sizeof(*stack));
+
+  if (!stack) {
+    LCL_ERR_MSG(interp, "out of memory");
+    return LCL_RC_ERR;
+  }
+
+  result = lcl_list_new();
+  lcl_ref_inc(list);
+  stack[0].list = list;
+  stack[0].idx = 0;
+  depth = 1;
+
+  while (depth > 0) {
+    struct flatten_frame *top = &stack[depth - 1];
+    lcl_value *elem = NULL;
+
+    if (top->idx >= lcl_list_len(top->list)) {
+      lcl_ref_dec(top->list);
+      depth--;
+      continue;
+    }
+
+    if (lcl_list_get(top->list, top->idx, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "List::flatten: internal error reading list");
+      goto fail;
+    }
+
+    top->idx++;
+
+    if (elem->type == LCL_LIST && (limit < 0 || depth <= (size_t)limit)) {
+      if (depth == cap) {
+        struct flatten_frame *grown;
+        cap *= 2;
+        grown = (struct flatten_frame *)realloc(stack, cap * sizeof(*stack));
+
+        if (!grown) {
+          LCL_ERR_MSG(interp, "out of memory");
+          lcl_ref_dec(elem);
+          goto fail;
+        }
+
+        stack = grown;
+      }
+
+      stack[depth].list = elem;
+      stack[depth].idx = 0;
+      depth++;
+    } else {
+      lcl_list_push(&result, elem);
+      lcl_ref_dec(elem);
+    }
+  }
+
+  free(stack);
   *out = result;
+
   return LCL_RC_OK;
+
+fail:
+  while (depth > 0) {
+    lcl_ref_dec(stack[depth - 1].list);
+    depth--;
+  }
+
+  free(stack);
+  lcl_ref_dec(result);
+
+  return LCL_RC_ERR;
 }
 
 /* ============================================================================
