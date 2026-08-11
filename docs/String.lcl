@@ -1,0 +1,117 @@
+;;; Byte-oriented string operations.
+;;;
+;;; All functions treat strings as byte sequences; indices are
+;;; 0-based byte offsets. String operands must actually *be* strings:
+;;; passing a number, list, or other value is an error, because
+;;; string operators never render their arguments implicitly. Use
+;;; `String::from` to render a value explicitly — it (and `join`'s
+;;; list elements, which exist to be rendered) are the deliberate
+;;; exceptions that accept any value.
+;;;
+;;; Examples:
+;;; >> String::upper [String::from 3.14]
+;;; "3.14"
+;;; >> catch { String::upper 3.14 }
+;;; 1
+namespace String {
+    ;;; Return the canonical string form of any value.
+    ;;;
+    ;;; The explicit counterpart to interpolation's type-preserving
+    ;;; rule: a list and its canonical string print identically but
+    ;;; are different values; this converts for real.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::from (1 2 3)
+    ;;; "1 2 3"
+    ;;; >> type [String::from 42]
+    ;;; "string"
+    proc from {v} {}
+
+    ;;; Return `s` uppercased (ASCII).
+    ;;;
+    ;;; Examples:
+    ;;; >> String::upper "abc"
+    ;;; "ABC"
+    proc upper {s} {}
+
+    ;;; Return `s` lowercased (ASCII).
+    ;;;
+    ;;; Examples:
+    ;;; >> String::lower "ABC"
+    ;;; "abc"
+    proc lower {s} {}
+
+    ;;; Return the byte index of the first occurrence of `sub` in
+    ;;; `s`, or -1 if absent.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::find "banana" "na"
+    ;;; 2
+    ;;; >> String::find "banana" "zz"
+    ;;; -1
+    proc find {s sub} {}
+
+    ;;; Return `s` with every occurrence of `old` replaced by `new`.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::replace "banana" "na" "NA"
+    ;;; "baNANA"
+    proc replace {s old new} {}
+
+    ;;; Split `s` into a list of strings.
+    ;;;
+    ;;; `chars` is a *set* of separator bytes: `s` is split at every
+    ;;; byte that appears in `chars`, and empty fields between
+    ;;; adjacent separators are kept. With no `chars`, every byte
+    ;;; becomes its own element.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::split "a,b;c" ",;"
+    ;;; ("a" "b" "c")
+    ;;; >> String::split "a,b,,c" ","
+    ;;; ("a" "b" "" "c")
+    ;;; >> String::split "abc"
+    ;;; ("a" "b" "c")
+    proc split {s (chars {})} {}
+
+    ;;; Join the elements of `list` into one string, separated by
+    ;;; `sep` (default: a single space).
+    ;;;
+    ;;; Examples:
+    ;;; >> String::join (a b c)
+    ;;; "a b c"
+    ;;; >> String::join (a b c) ", "
+    ;;; "a, b, c"
+    proc join {list (sep " ")} {}
+
+    ;;; Return the length of `s` in bytes.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::length "abc"
+    ;;; 3
+    ;;; >> String::length ""
+    ;;; 0
+    proc length {s} {}
+
+    ;;; Return the byte at index `i` as a one-character string.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::index "banana" 1
+    ;;; "a"
+    proc index {s i} {}
+
+    ;;; Return the substring of `s` from byte `start` (inclusive) to
+    ;;; byte `end` (exclusive).
+    ;;;
+    ;;; Examples:
+    ;;; >> String::range "banana" 1 4
+    ;;; "ana"
+    proc range {s start end} {}
+
+    ;;; Return `s` with leading and trailing whitespace removed.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::trim "  hi  "
+    ;;; "hi"
+    proc trim {s} {}
+}

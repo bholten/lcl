@@ -1,0 +1,194 @@
+;;; Basic list container for Lcl.
+;;;
+;;; Implemented as a resizable array.
+namespace List {
+
+    ;;; Constructs a list from arguments.
+    ;;;
+    ;;; Alias for other constructors.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::new "a" "b" "c"
+    ;;; ("a" "b" "c")
+    ;;; >> let foo [List::new "a" "b" "c"]
+    ;;; >> == $foo ("a" "b" "c")
+    ;;; 1
+    proc new {value} {}
+
+
+    ;;; Return a list with the pushed value appended to it.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::push ("a" "b" "c") "d"
+    ;;; ("a" "b" "c" "d")
+    proc push {lst values} {}
+
+    ;;; Pop a value off a list. Does not mutate the original list
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> let foo ("a" "b" "c")
+    ;;; >>List::pop $foo
+    ;;; ("a" "b")
+    ;;; >> == $foo ("a" "b" "c")
+    ;;; 1
+    proc pop {lst} {}
+
+    ;;; Returns a half-open slice [start, end) from a list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::slice ("a" "b" "c" "d" "e") 1 4
+    ;;; ("b" "c" "d")
+    ;;; >> List::slice ("a" "b" "c" "d" "e") 0 3
+    ;;; ("a" "b" "c")
+    proc slice {lst start end} {}
+
+    ;;; Concatenates two lists together. Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;; >> List::concat ("a" "b") ("c" "d")
+    ;;; ("a" "b" "c" "d")
+    proc concat {lst other} {}
+
+    ;;; Reverses a list. Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::reverse ("a" "b" "c")
+    ;;; ("c" "b" "a")
+    proc reverse {lst} {}
+
+    ;;; Returns an item from a list at the index. Offset is 0-indexed. Does not mutate the list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::index ("a" "b" "c") 0
+    ;;; "a"
+    ;;; >> List::index ("a" "b" "c") 2
+    ;;; "c"
+    proc index {lst offset} {}
+
+    ;;; Returns a list of sequential numbers from [start, end).
+    ;;;
+    ;;; Supports an optional step.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::range 1 5
+    ;;; (1 2 3 4)
+    ;;; >> List::range 5 0 -1
+    ;;; (5 4 3 2 1)
+    ;;; >> List::range 0 10 3
+    ;;; (0 3 6 9)
+    proc range {start end step} {}
+
+    ;;; Applies a function over a list, taking each element of the list as an argument. Returns a new list.
+    ;;;
+    ;;; Examples
+    ;;;
+    ;;; >> List::map [lambda {x} {* x 2}] (1 2 3)
+    ;;; (2 4 6)
+    proc map {fn lst} {}
+
+    ;;; Applies a function over a list. The results are taken as truthy and a new list is returned where the elements have passed the function.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::filter [lambda {x} {== [% $x 2] 0}] (1 2 3 4 5 6)
+    ;;; (2 4 6)
+    proc filter {fn lst} {}
+
+    ;;; Applies a function of a list with some accumulator and initializer.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::reduce 0 [lambda {acc x} {+ $acc $x}] (1 2 3 4 5)
+    ;;; 15
+    proc reduce {init fn lst} {}
+
+    ;;; Sorts a list. Sorts words lexicalgraphically and numbers numerically.
+    ;;;
+    ;;; Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::sort (banana apple cherry)
+    ;;; ("apple" "banana" "cherry")
+    ;;; >> List::sort [List::range 5 1 -1]
+    ;;; (2 3 4 5)
+    proc sort {lst} {}
+
+    ;;; Sorts by a function that determines order. Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> let rows ((bob 30) (amy 25) (cal 28))
+    ;;; >> List::sort_by [lambda {row} {get $row 1}] $rows
+    ;;; (("amy" 25) ("cal" 28) ("bob" 30))
+    proc sort_by {fn lst} {}
+
+    ;;; Sorts by a two-valued function that determines order. Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::sort_with [lambda {a b} {- $a $b}] (1 10 2 20 3)
+    ;;; (1 2 3 10 20)
+    proc sort_with {fn lst} {}
+
+    ;;; Find the first element of a list given some search function.
+    ;;;
+    ;;; Returns a copy.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::find [lambda {x} {> $x 8}] (1 5 10 15 20)
+    ;;; 10
+    proc find {fn lst} {}
+
+    ;;; Returns truthy based on whether any of the elements of a list satisfy some function.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::any? [lambda {x} {> $x 4}] (1 2 3 4 5)
+    ;;; 1
+    ;;; >> List::any? [lambda {x} {> $x 100}] (1 2 3 4)
+    ;;; 0
+    proc any? {fn lst} {}
+
+    ;;; Returns truthy based on whether or not all of the elements satisfy some function.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::all? [lambda {x} {> $x 0}] (1 2 3)
+    ;;; 1
+    ;;; >> List::all? [lambda {x} {< $x 0}] (1 2 3)
+    ;;; 0
+    proc all? {fn lst} {}
+
+    ;;; Returns the unique elements of the list, removing duplicates. Returns a new list.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::unique (1 2 3 1 3 4)
+    ;;; (1 2 3 4)
+    proc unique {lst} {}
+
+    ;;; Flattens nested sub-lists, recursing to any depth. Empty
+    ;;; sub-lists disappear; non-list elements are kept in order.
+    ;;;
+    ;;; The optional `depth` bounds how many levels are flattened:
+    ;;; `0` returns the list unchanged, `N` unwraps at most `N`
+    ;;; levels, and a negative value (or omitting it) flattens fully.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> List::flatten ((a b) (c (d e (f g))))
+    ;;; ("a" "b" "c" "d" "e" "f" "g")
+    ;;;
+    ;;; >> List::flatten ((a b) (c (d e (f g)))) 1
+    ;;; ("a" "b" "c" ("d" "e" ("f" "g")))
+    proc flatten {lst (depth -1)} {}
+}

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 typedef struct lcl_word lcl_word;
+struct lcl_value;
 
 typedef struct {
   lcl_word *w;
@@ -69,6 +70,14 @@ struct lcl_word {
   unsigned braced : 1;
   unsigned expand : 1;
   lcl_program *compiled;
+  /* Non-NULL iff the word is an unbraced, unquoted, single-piece
+   * literal matching the numeric-literal grammar (#75 rule 1): the
+   * INT/FLOAT value it denotes, built once at scan time and owned by
+   * the word (+1 ref, released with the word). The LIT piece keeps
+   * the source bytes for spans/dumps; evaluation returns this value
+   * instead. NULL for every other word, including all words not
+   * built by the scanner. */
+  struct lcl_value *typed;
   /* Byte span of the word in the scanned source, half-open
    * [src_start, src_end), including any @ / quotes / braces. Stamped
    * by lcl_scan_word; both 0 for words not built by the scanner. */

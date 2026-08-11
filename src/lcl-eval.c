@@ -400,6 +400,13 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
 }
 
 int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
+  /* #75 rule 1: numeric literals were typed at scan time; the word
+   * denotes that value directly. */
+  if (w && w->typed) {
+    *out = lcl_ref_inc(w->typed);
+    return LCL_RC_OK;
+  }
+
   if (w && w->np == 1) {
     lcl_word_piece *wp = &w->wp[0];
 
@@ -450,57 +457,8 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
   return lcl_eval_word_to_str(interp, w, out);
 }
 
-/* A literal with decimal numeric shape — [+-]?digits[.digits][(e|E)
- * [+-]?digits], or leading-dot floats like ".5" */
 static int lit_is_numeric(const char *s, size_t n) {
-  size_t i = 0;
-  int digits = 0;
-
-  if (n == 0 || strlen(s) != n) {
-    return 0;
-  }
-
-  if (s[i] == '+' || s[i] == '-') {
-    i++;
-  }
-
-  while (i < n && s[i] >= '0' && s[i] <= '9') {
-    i++;
-    digits = 1;
-  }
-
-  if (i < n && s[i] == '.') {
-    i++;
-
-    while (i < n && s[i] >= '0' && s[i] <= '9') {
-      i++;
-      digits = 1;
-    }
-  }
-
-  if (!digits) {
-    return 0;
-  }
-
-  if (i < n && (s[i] == 'e' || s[i] == 'E')) {
-    int exp_digits = 0;
-    i++;
-
-    if (i < n && (s[i] == '+' || s[i] == '-')) {
-      i++;
-    }
-
-    while (i < n && s[i] >= '0' && s[i] <= '9') {
-      i++;
-      exp_digits = 1;
-    }
-
-    if (!exp_digits) {
-      return 0;
-    }
-  }
-
-  return i == n;
+  return lcl_num_text_classify(s, n) != LCL_NUM_NONE;
 }
 
 int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
@@ -519,28 +477,6 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return LCL_RC_OK;
   }
 
-  /* Parse-time dispatch rule:
-   *
-   *   An argc==1 command dispatches ONLY when its sole word is a bare
-   *   identifier: a single-piece LCL_WP_LIT with braced=0, quoted=0,
-   *   and non-numeric shape.  Every other one-word form yields the
-   *   word's value without attempting a command lookup:
-   *
-   *     [$x]      -> value of $x
-   *     [expr]    -> result of evaluating expr
-   *     [{lit}]   -> the literal bytes "lit"
-   *     ["$a $b"] -> the concatenated string
-   *     ["red"]   -> the string "red"
-   *     [42]      -> 42 (well, "42" pre-coercion)
-   *
-   *   A bare identifier always dispatches; unknown -> error (#74).
-   *   This replaces the previous runtime check that dispatched
-   *   stringy values whose form happened to match a registered
-   *   command, and closes the class of bugs where a value like "GET"
-   *   silently became a zero-arg call to `proc GET`.
-   *
-   *   `[apply $x]` and `[apply [expr]]` remain the explicit ways to
-   *   dispatch a value as a call. See `apply` in lcl-stdlib.c. */
   if (cmd->argc == 1) {
     int is_bare_identifier =
         (cmd->w[0].np == 1 && cmd->w[0].wp[0].kind == LCL_WP_LIT &&
@@ -548,17 +484,10 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
          !lit_is_numeric(cmd->w[0].wp[0].as.lit.s, cmd->w[0].wp[0].as.lit.n));
 
     if (!is_bare_identifier) {
-      /* SUBCMD-only words preserve in_subcmd=0 and tail position so
-       * the inner program's command head can expand macros and its
-       * tail call can TCO. Inline lcl_eval_program rather than
-       * routing through lcl_eval_word (which sets in_subcmd=1). */
       if (cmd->w[0].np == 1 && cmd->w[0].wp[0].kind == LCL_WP_SUBCMD) {
         return lcl_eval_program(interp, cmd->w[0].wp[0].as.sub.program, out);
       }
 
-      /* VAR, braced LIT, or multi-piece concatenation. Clear tail
-       * position before evaluation — these forms don't pass tail
-       * position through (no inner program). */
       interp->in_tail_position = 0;
       rc = lcl_eval_word(interp, &cmd->w[0], out);
       interp->in_tail_position = saved_tail_position;
@@ -643,6 +572,9 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
       }
 
       if (lcl_env_get_command(interp, name_str, &callee) != LCL_OK) {
+        /* Message parity with the STRING-head path above: a typed
+         * numeric head (`42 foo`) resolves through here now. */
+        LCL_ERR_MSG(interp, "unknown command");
         lcl_ref_dec(name);
         return LCL_RC_ERR;
       }

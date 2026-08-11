@@ -316,6 +316,12 @@ lcl_value *lcl_ns_new(const char *name);
 /*
  * Get the string representation of any value.
  *
+ * This is the RENDERER: it is total, and intended for output-shaped
+ * contexts (printing, diagnostics, concatenation, dict keys). Host
+ * commands whose operand must already BE a string should use
+ * lcl_value_get_string() instead, so numbers/lists/procs are not
+ * silently rendered where text was required.
+ *
  * Returns a borrowed pointer owned by the value; do not free it.
  *
  * Returns NULL if `value` is NULL, or if stringification required an
@@ -324,6 +330,16 @@ lcl_value *lcl_ns_new(const char *name);
  * NULL into an interpreter error.
  */
 const char *lcl_value_to_string(lcl_value *value);
+
+/*
+ * Domain-strict string getter: succeeds only when `value` is an
+ * actual string (LCL_STRING tag). On success returns LCL_OK and
+ * writes the borrowed content pointer to *out. Returns LCL_ERROR for
+ * NULL input or any other type — no rendering is performed. The
+ * counterpart of lcl_value_to_int/_to_float for the string domain;
+ * scripts render explicitly with String::from.
+ */
+lcl_result lcl_value_get_string(lcl_value *value, const char **out);
 
 /*
  * Convert a value to a borrowed C string, raising an interpreter

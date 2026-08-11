@@ -2051,9 +2051,13 @@ Test::suite "Type inspection and conversion" {
         Test::eq [type $List] namespace
     }
 
-    Test::case "literals are strings until coerced" {
-        Test::eq [type 42] string
+    Test::case "bare numeric literals are typed at compile time" {
+        Test::eq [type 42] int
+        Test::eq [type 3.14] float
         Test::eq [type [int 42]] int
+        ;; quoting/bracing is the explicit "this is text" spelling
+        Test::eq [type "42"] string
+        Test::eq [type {42}] string
     }
 
     Test::case "repr distinguishes list from string" {
@@ -3655,10 +3659,10 @@ Test::suite "Parameter Validation Errors" {
 }
 
 ;; ============================================================================
-;; Regression Tests (from ISSUES.md audit)
+;; Regression Tests (from  audit)
 ;; ============================================================================
 
-Test::suite "Issue #6: Modulo by zero" {
+Test::suite " #6: Modulo by zero" {
     Test::case "modulo by zero returns error, not crash" {
         let errored [catch { % 5 0 }]
         Test::eq $errored 1
@@ -3669,7 +3673,7 @@ Test::suite "Issue #6: Modulo by zero" {
     }
 }
 
-Test::suite "Issue #7: Float precision" {
+Test::suite " #7: Float precision" {
     Test::case "float conversion preserves double precision" {
         ;; pi to 15 decimal places -- should not be truncated to 32-bit float
         let pi_str "3.141592653589793"
@@ -3680,12 +3684,159 @@ Test::suite "Issue #7: Float precision" {
     }
 }
 
+Test::suite " #75 step 1: Compact float formatting" {
+    ;; These assertions wrap the value in a concat ("<...>") to force
+    ;; the rendered string; a bare Test::eq would coerce both sides
+    ;; numerically and pass even with the old %.17g formatting.
+    Test::case "0.1 prints compactly" {
+        Test::eq "<[/ 1.0 10]>" "<0.1>"
+    }
+
+    Test::case "17-digit values keep every digit" {
+        Test::eq "<[+ 0.1 0.2]>" "<0.30000000000000004>"
+    }
+
+    Test::case "float arithmetic result prints compactly" {
+        Test::eq "<[* 1.5 3]>" "<4.5>"
+    }
+
+    Test::case "compact rendering parses back to the same value" {
+        ;; Note: [float "[/ 1.0 10]"] would NOT test the string path --
+        ;; a single-piece quoted word forwards the float unchanged
+        ;; (single-piece rule). String::from forces the rendered form.
+        Test::eq [float [String::from [/ 1.0 10]]] [/ 1.0 10]
+    }
+}
+
+Test::suite " #75 step 2: Typed numeric literals" {
+    Test::case "grammar-canonical spellings are typed" {
+        Test::eq [type 42] int
+        Test::eq [type -3] int
+        Test::eq [type 0] int
+        Test::eq [type 3.14] float
+        Test::eq [type 1.50] float
+        Test::eq [type 0.1] float
+        Test::eq [type 1e3] float
+        Test::eq [type 1.5e-3] float
+        Test::eq [type -0.5] float
+    }
+
+    Test::case "non-canonical spellings stay strings" {
+        ;; numeric SHAPE (never dispatches, #74) but outside the
+        ;; numeric GRAMMAR (#75 rule 5) -- string value forms
+        Test::eq [type 007] string
+        Test::eq [type +5] string
+        Test::eq [type -0] string
+        Test::eq [type .5] string
+        Test::eq [type 5.] string
+    }
+
+    Test::case "typed literals print their source spelling" {
+        Test::eq "<42>" "<42>"
+        Test::eq "<[- 0 3]>" "<-3>"
+        ;; non-canonical float spellings normalize when typed
+        Test::eq "<[+ 1.50 0]>" "<1.5>"
+    }
+
+    Test::case "list literal elements are typed" {
+        Test::eq [type [get (1 2 3) 0]] int
+        Test::eq [repr (1 2.5 x)] {(1 2.5 "x")}
+    }
+
+    Test::case "dict literal values are typed" {
+        Test::eq [type [get #{a 1} a]] int
+        ;; typed key collapses to its canonical string for hashing
+        Test::eq [get #{1 one} "1"] one
+    }
+
+    Test::case "escaped digits are not typed" {
+        ;; \x32 is '2': the bytes are "42" but the source spelling is
+        ;; not the literal 42, so the word stays a string
+        Test::eq [type 4\x32] string
+    }
+
+    Test::case "typed literals still work in string contexts" {
+        ;; stringification is total; concat and String::from see the
+        ;; canonical string. (Note: ops whose domain never included
+        ;; numbers -- len, has? -- now error on typed literals exactly
+        ;; as they always did on [int 42]; classification of string
+        ;; contexts is the step-4 audit.)
+        Test::eq [String::from 3.14] "3.14"
+        Test::eq "n=[+ 40 2]" "n=42"
+    }
+
+    Test::case "int predicates see typed literals" {
+        Test::true [int? 42]
+        Test::true [float? 2.5]
+        Test::true [number? 42]
+        Test::assert [not [int? "42"]]
+    }
+}
+
+Test::suite " #75 step 4: Numeric text & string domains" {
+    Test::case "numeric text is liberal about data spellings" {
+        ;; data has no spelling intent: leading zeros, +, and bare
+        ;; dots convert in numeric contexts even though the same
+        ;; spellings are not numeric literals
+        Test::eq [+ 1 "007"] 8
+        Test::eq [+ 1 "+5"] 6
+        Test::eq [+ 0 ".5"] 0.5
+        Test::eq [< "007" 8] 1
+    }
+
+    Test::case "libc extras are not numeric text" {
+        ;; the language grammar decides acceptance, not strtol/strtod:
+        ;; whitespace skip, hex, and partial parses are all out
+        Test::eq [catch { + 1 " 42" }] 1
+        Test::eq [catch { + 1 "0x10" }] 1
+        Test::eq [catch { + 1 "3.14abc" }] 1
+        Test::eq [number? " 42"] 0
+        Test::eq [number? "0x10"] 0
+        Test::eq [number? "007"] 1
+    }
+
+    Test::case "truthiness follows the grammar" {
+        ;; " 0" is not numeric text, so it is an ordinary non-empty
+        ;; (truthy) string; "0"/"-0" remain falsy; "0.0" remains
+        ;; truthy (integer-shaped text only, as ever)
+        Test::eq [if " 0" { "t" } else { "f" }] t
+        Test::eq [if "-0" { "t" } else { "f" }] f
+        Test::eq [if "0.0" { "t" } else { "f" }] t
+    }
+
+    Test::case "equality falls back to bytewise for non-numeric text" {
+        Test::eq [== "0x10" 16] 0
+        Test::eq [== "007" 7] 1
+    }
+
+    Test::case "string operators require strings" {
+        let r [catch { String::upper 42 } res err]
+        Test::eq $r 1
+        Test::eq $err {String::upper: expected string (use String::from to render), got int}
+        Test::eq [String::upper [String::from 42]] 42
+        Test::eq [catch { String::length (a b) }] 1
+        Test::eq [catch { String::find 3.14 "." }] 1
+    }
+
+    Test::case "String::from and interpolation remain total renderers" {
+        Test::eq [String::from (1 2)] "1 2"
+        Test::eq "v=[+ 1 2]" "v=3"
+    }
+
+    Test::case "float overflow text errors instead of inf" {
+        ;; grammar-accepted (number? true) but range-rejected on
+        ;; conversion -- loud, never inf
+        Test::eq [number? "1e999"] 1
+        Test::eq [catch { + 0 "1e999" }] 1
+    }
+}
+
 ;; Define strings with unbalanced braces at top level (the brace scanner
 ;; inside { } doesn't process escapes, so \} would break brace balancing)
 let _i14_rbrace "a\}b"
 let _i14_lbrace "a\{b"
 
-Test::suite "Issue #14: List brace escaping" {
+Test::suite " #14: List brace escaping" {
     Test::case "list element with spaces round-trips" {
         ;; Elements with spaces require bracing in stringified lists
         let mylist [list "hello world" "foo bar"]
@@ -3766,7 +3917,7 @@ Test::suite "Issue #14: List brace escaping" {
     }
 }
 
-Test::suite "Issue #16: Arithmetic type preservation" {
+Test::suite " #16: Arithmetic type preservation" {
     Test::case "integer addition returns int" {
         Test::assert [int? [+ 1 2]]
     }
@@ -4151,7 +4302,7 @@ Test::suite "Macros" {
     }
 }
 
-Test::suite "Issue #23: integer conversion overflow safety" {
+Test::suite " #23: integer conversion overflow safety" {
     Test::case "int rejects out-of-range float (positive)" {
         ;; (long)1e20 is UB on every common platform — should error,
         ;; not silently clamp to LONG_MIN/garbage.
@@ -4170,13 +4321,14 @@ Test::suite "Issue #23: integer conversion overflow safety" {
         Test::eq $errored 1
     }
 
-    Test::case "int rejects NaN" {
-        ;; NaN→long is UB. strtod (via the `float` conversion) accepts "nan"
-        ;; on glibc/musl, so we materialize NaN that way to avoid relying
-        ;; on a particular arithmetic-error policy here.
-        let nan [float "nan"]
-        let errored [catch { int $nan }]
-        Test::eq $errored 1
+    Test::case "float rejects nan/inf text" {
+        ;; The numeric-text grammar excludes nan/inf/hex, so strtod's
+        ;; acceptance of them (glibc/musl) can no longer leak in. The
+        ;; NaN→long UB guard this case used to reach through `float
+        ;; "nan"` is now pinned at the C level (lcl-test.c, #75 step 4).
+        Test::eq [catch { float "nan" }] 1
+        Test::eq [catch { float "inf" }] 1
+        Test::eq [catch { float "0x10" }] 1
     }
 
     Test::case "int still accepts in-range values" {
@@ -4186,7 +4338,7 @@ Test::suite "Issue #23: integer conversion overflow safety" {
     }
 }
 
-Test::suite "Issue #36: integer arithmetic overflow detection" {
+Test::suite " #36: integer arithmetic overflow detection" {
     ;; Signed integer overflow is C UB and triggers UBSan; we detect it
     ;; explicitly and return LCL_RC_ERR so scripts can `catch` it.
 
@@ -4239,7 +4391,7 @@ Test::suite "Issue #36: integer arithmetic overflow detection" {
     }
 }
 
-Test::suite "Issue #34: single-pass list/dict stringification" {
+Test::suite " #34: single-pass list/dict stringification" {
     ;; The previous two-pass implementation computed each element's size
     ;; via lcl_value_to_string(elem) then re-called it to write — between
     ;; calls a partial-OOM could shift an element from "" (fallback) to
@@ -4250,12 +4402,12 @@ Test::suite "Issue #34: single-pass list/dict stringification" {
 
     Test::case "empty list stringifies" {
         Test::eq [len [list]] 0
-        Test::eq [String::length [list]] 0
+        Test::eq [String::length [String::from [list]]] 0
     }
 
     Test::case "empty dict stringifies" {
         Test::eq [len [dict]] 0
-        Test::eq [String::length [dict]] 0
+        Test::eq [String::length [String::from [dict]]] 0
     }
 
     Test::case "nested list with mixed styles round-trips" {
@@ -4279,7 +4431,7 @@ Test::suite "Issue #34: single-pass list/dict stringification" {
     }
 }
 
-Test::suite "Issue #32: dispatch handles SPECIAL CPROCs safely" {
+Test::suite " #32: dispatch handles SPECIAL CPROCs safely" {
     ;; Originally a regression test for a buggy single-subcmd dispatch path:
     ;; `[get_if]` (where get_if returned $if) routed through fn.proc instead
     ;; of fn.spec — undefined behavior.
@@ -4295,7 +4447,7 @@ Test::suite "Issue #32: dispatch handles SPECIAL CPROCs safely" {
     }
 }
 
-Test::suite "Issue #31: cycle detection sees through containers" {
+Test::suite " #31: cycle detection sees through containers" {
     ;; The spec rejects mutual recursion at proc-def time because refcounting
     ;; cannot collect cycles. Before this fix, cycle_check_value only
     ;; recursed through LCL_PROC, so a proc hidden inside a list/dict/cell
@@ -4344,7 +4496,7 @@ Test::suite "Issue #31: cycle detection sees through containers" {
     }
 }
 
-Test::suite "Issue #30: String::replace handles edge cases without overflow" {
+Test::suite " #30: String::replace handles edge cases without overflow" {
     ;; The actual size_t overflow requires ~2^64 bytes of input — not
     ;; reachable in a normal test. These cases exercise the same arithmetic
     ;; (count*(new_len-old_len)) on small inputs to lock in correctness
@@ -4371,7 +4523,7 @@ Test::suite "Issue #30: String::replace handles edge cases without overflow" {
     }
 }
 
-Test::suite "Issue #29: integer comparison precision" {
+Test::suite " #29: integer comparison precision" {
     ;; LONG_MAX-1 (9223372036854775806) and LONG_MAX (9223372036854775807) both
     ;; round to 2^63 when converted to double, so all four comparisons would
     ;; produce wrong results when args were integers cast via double.
@@ -4398,7 +4550,7 @@ Test::suite "Issue #29: integer comparison precision" {
     }
 }
 
-Test::suite "Issue #28: stray ] is a parse error, not silent truncation" {
+Test::suite " #28: stray ] is a parse error, not silent truncation" {
     Test::case "stray ] at top level errors" {
         ;; Before fix: silently compiles only `list a` and ignores the rest.
         ;; After fix: compile error, eval propagates LCL_RC_ERR.
@@ -4412,7 +4564,7 @@ Test::suite "Issue #28: stray ] is a parse error, not silent truncation" {
     }
 }
 
-Test::suite "Issue #25: eval does not propagate tail position to inner commands" {
+Test::suite " #25: eval does not propagate tail position to inner commands" {
     Test::case "self-recursive call inside eval body does not escape eval" {
         ;; If `eval` doesn't reset in_tail_position per command, the
         ;; recursive `recur` call below is detected as a tail call
@@ -4434,12 +4586,14 @@ Test::suite "Issue #25: eval does not propagate tail position to inner commands"
     }
 }
 
-Test::suite "Issue #46: float stringification is locale-independent" {
+Test::suite " #46: float stringification is locale-independent" {
     Test::case "stringified float contains ASCII '.' as decimal separator" {
         ;; Force a real FLOAT via arithmetic (not just a literal string),
-        ;; then interpolate to trigger lcl_reify_str_float.
+        ;; then render explicitly to trigger lcl_reify_str_float.
+        ;; (Note "$f" would NOT render -- a single-piece quoted word
+        ;; forwards the float unchanged per the single-piece rule.)
         let f [+ 1.0 2.14]
-        let s "$f"
+        let s [String::from $f]
         ;; On any locale (de_DE etc. included), the serialized form must
         ;; contain ASCII '.', never ',' — spec §10 determinism.
         Test::assert [>= [String::find $s "."] 0]
@@ -4456,7 +4610,7 @@ Test::suite "Issue #46: float stringification is locale-independent" {
     }
 }
 
-Test::suite "Issue #38: if validates the else keyword" {
+Test::suite " #38: if validates the else keyword" {
     Test::case "4-arg if with bogus keyword errors when cond is false" {
         ;; Pre-fix: silently accepts and runs the 4th-arg branch.
         ;; Post-fix: errors structurally before evaluating any branch.
@@ -4487,7 +4641,7 @@ Test::suite "Issue #38: if validates the else keyword" {
     }
 }
 
-Test::suite "Issue #50: gensym prefix length and counter" {
+Test::suite " #50: gensym prefix length and counter" {
     Test::case "default gensym produces _GN names" {
         let a [gensym]
         let b [gensym]
@@ -4526,7 +4680,7 @@ Test::suite "Issue #50: gensym prefix length and counter" {
     }
 }
 
-Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
+Test::suite " #48: scanner rejects bad :: tails in variable refs" {
     Test::case "trailing :: is a parse error" {
         ;; Pre-fix: scanner accepted "$foo::", env_get_value split
         ;; "foo::" into segment "foo" + empty rest, and silently
@@ -4560,7 +4714,7 @@ Test::suite "Issue #48: scanner rejects bad :: tails in variable refs" {
     }
 }
 
-Test::suite "Issue #68: stdlib errors name the proc" {
+Test::suite " #68: stdlib errors name the proc" {
     Test::case "arity error names the builtin" {
         let r [catch { % 5 } res err]
         Test::eq $r 1
@@ -4610,10 +4764,17 @@ Test::suite "Issue #68: stdlib errors name the proc" {
     }
 
     Test::case "set! on immutable binding suggests var" {
-        let immut68 1
+        let immut68 "1"
         let r [catch { set! immut68 2 } res err]
         Test::eq $r 1
         Test::eq $err {set!: expected cell (declare with 'var'), got "1"}
+    }
+
+    Test::case "set! diagnostic names typed int binding" {
+        let immut75 1
+        let r [catch { set! immut75 2 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: expected cell (declare with 'var'), got int}
     }
 
     Test::case "if arity error names the form" {
@@ -4623,13 +4784,13 @@ Test::suite "Issue #68: stdlib errors name the proc" {
     }
 
     Test::case "special form arity via chk (sort family)" {
-        let r [catch { List::sort_by 5 (1 2) } res err]
+        let r [catch { List::sort_by "5" (1 2) } res err]
         Test::eq $r 1
         Test::eq $err {List::sort_by: expected callable, got "5"}
     }
 }
 
-Test::suite "Issue #67: compile errors carry a message" {
+Test::suite "compile errors carry a message" {
     Test::case "eval of unmatched bracket names the delimiter" {
         let r [catch { eval "puts \[" } res err]
         Test::eq $r 1
@@ -4725,8 +4886,14 @@ Test::suite "unknown bare identifier at head errors (no self-quote)" {
         Test::eq [if 1 { 42 }] 42
     }
 
-    Test::case "out-of-range digit string is still shape-numeric" {
-        Test::eq [99999999999999999999] 99999999999999999999
+    Test::case "out-of-range integer literal is a compile error" {
+        ;; matching the numeric grammar but overflowing commits
+        ;; loudly (never degrades to "the text itself"). Braces/quotes
+        ;; remain the spelling for huge digit strings as data.
+        let r [catch { eval "99999999999999999999" } res err]
+        Test::eq $r 1
+        Test::eq $err {integer literal out of range}
+        Test::eq [len {99999999999999999999}] 20
     }
 
     Test::case "non-decimal forms are identifiers, not numbers" {

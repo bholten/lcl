@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "lcl-lex.h"
+#include "lcl-values.h"
 #include "str-compat.h"
 
 /** TODO this needs to be better **/
@@ -56,6 +57,7 @@ void lcl_word_free_contents(lcl_word *w) {
     }
   }
   lcl_program_free(w->compiled);
+  lcl_ref_dec(w->typed);
   free(w->wp);
 }
 

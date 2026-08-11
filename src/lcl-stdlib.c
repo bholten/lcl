@@ -173,7 +173,7 @@ static int err_expected_got(lcl_interp *interp, const char *name,
   return LCL_RC_ERR;
 }
 
-/* "name: undefined variable \"var\"" — for procs that look names up
+/* "name: undefined variable \"var\"" -- for procs that look names up
  * in the environment themselves. Always returns LCL_RC_ERR. */
 static int err_undefined(lcl_interp *interp, const char *name,
                          const char *var) {
@@ -204,6 +204,16 @@ static int arg_float(lcl_interp *interp, const char *name, lcl_value *v,
   }
 
   return 1;
+}
+
+static int arg_str(lcl_interp *interp, const char *name, lcl_value *v,
+                   const char **out) {
+  if (!v || v->type != LCL_STRING) {
+    err_expected_got(interp, name, "string (use String::from to render)", v);
+    return 0;
+  }
+
+  return lcl_value_to_cstring(interp, v, out) == LCL_OK;
 }
 
 static int c_assert(lcl_interp *interp, int argc, lcl_value **argv,
@@ -273,8 +283,8 @@ static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
 
 /* and / or - short-circuit logical special forms (spec §8).
  *
- * Operands are evaluated left to right through lcl_eval_word — the
- * same per-word machinery ordinary argument evaluation uses — but
+ * Operands are evaluated left to right through lcl_eval_word -- the
+ * same per-word machinery ordinary argument evaluation uses -- but
  * conditionally: evaluation stops at the deciding operand, so later
  * operands can rely on guards (`and [in-bounds ...] [index ...]`).
  *
@@ -283,7 +293,7 @@ static int c_puts(lcl_interp *interp, int argc, lcl_value **argv,
  * final operand). Identities: [and] -> 1, [or] -> 0.
  *
  * `@` spread is rejected up front: spread operands are already
- * evaluated, so laziness buys nothing — List::all?/List::any? cover
+ * evaluated, so laziness buys nothing -- List::all?/List::any? cover
  * evaluated collections. */
 static int and_or_impl(lcl_interp *interp, int argc, const lcl_word **args,
                        lcl_value **out, int stop_when_truthy, long identity,
@@ -827,36 +837,10 @@ static int dict_equal_deep(lcl_value *a, lcl_value *b,
   return 1;
 }
 
-/* check if a value can be interpreted as a number and get its double value */
+/* check if a value can be interpreted as a number and get its double
+ * value -- numeric value or numeric text */
 static int value_to_double(lcl_value *v, double *out) {
-  if (v->type == LCL_INT) {
-    *out = (double)v->as.i;
-    return 1;
-  }
-
-  if (v->type == LCL_FLOAT) {
-    *out = (double)v->as.f;
-    return 1;
-  }
-
-  if (v->type == LCL_STRING) {
-    const char *s = lcl_value_to_string(v);
-    size_t end;
-    double d;
-
-    if (!s || *s == '\0') {
-      return 0;
-    }
-
-    end = lcl_parse_double_c(s, &d);
-
-    if (end > 0 && s[end] == '\0') {
-      *out = d;
-      return 1;
-    }
-  }
-
-  return 0;
+  return lcl_value_to_float(v, out) == LCL_OK;
 }
 
 /* Main deep equality function */
@@ -1227,7 +1211,7 @@ static int c_gensym(lcl_interp *interp, int argc, lcl_value **argv,
      * truncate. Truncation would produce non-unique names (e.g. two
      * different long prefixes that share their first ~100 chars would
      * collide), defeating gensym's contract. Cap conservatively at 96
-     * bytes — leaves room for a 20-digit `unsigned long` plus the
+     * bytes -- leaves room for a 20-digit `unsigned long` plus the
      * NUL. */
     if (strlen(prefix) > 96) {
       LCL_ERR_MSG(interp, "gensym: prefix too long (max 96 bytes)");
@@ -1706,10 +1690,16 @@ static int lcl_value_is_true(lcl_value *v) {
     return 0; /* empty string is false */
   }
 
-  n = strtol(s, &endptr, 10);
+  /* Falsy iff the string is integer-shaped numeric text equal to 0
+   * ("0", "-0", "+0"). The grammar gate (not raw strtol) keeps libc's
+   * whitespace skip out of truthiness: " 0" is truthy. Float-shaped
+   * text ("0.0") stays truthy, as ever. */
+  if (lcl_num_text_classify(s, strlen(s)) == LCL_NUM_INT) {
+    n = strtol(s, &endptr, 10);
 
-  if (*endptr == '\0') {
-    return n != 0;
+    if (*endptr == '\0') {
+      return n != 0;
+    }
   }
 
   return 1;
@@ -2639,7 +2629,7 @@ static lcl_frame *find_global_frame(lcl_frame *f) {
  * chain, it's created and bound in the *global* frame, not the
  * current frame. This makes qualified-path declarations like
  * `namespace foo::bar { ... }` survive an enclosing namespace builder
- * — previously the root landed in the builder's overlay and was
+ * -- previously the root landed in the builder's overlay and was
  * discarded when the overlay popped, orphaning the sub-namespace.
  *
  * Returns the final namespace with +1 refcount, or NULL on error. */
@@ -2778,7 +2768,7 @@ static int s_isolate(lcl_interp *interp, int argc, const lcl_word **args,
    * stay self-contained for writes but transparent for self-reference
    * reads); isolate is the full-barrier form.
    *
-   * The def_stack itself stays intact — previously this used
+   * The def_stack itself stays intact -- previously this used
    * `def_depth = 0`, which made a nested namespace's push overwrite
    * the enclosing namespace's def_stack slot, corrupting its exports.
    */
@@ -4234,7 +4224,7 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
       /* The unquote text is a single syntactic word ($var, [...],
        * {...}, (...), #{...}, or a bare word). Evaluate it as a word
        * so a variable substitution like ,$var yields the variable's
-       * value — not a one-word program that would dispatch that value
+       * value -- not a one-word program that would dispatch that value
        * as a zero-arg command if its string form happened to name a
        * proc or built-in. */
       memset(&w, 0, sizeof(w));
@@ -5396,7 +5386,7 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
 
   /* Collect namespaces from the overlay's locals. Procs defined
    * inside namespaces in the file still close over the overlay frame,
-   * so we cannot free the overlay outright — its refcount will drop
+   * so we cannot free the overlay outright -- its refcount will drop
    * when nothing references it. */
   cached_dict = lcl_dict_new();
 
@@ -6140,7 +6130,7 @@ static int c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
 
       lcl_ref_dec(num);
 
-      /* Bugfix: stop on overflow rather than wrapping around — the
+      /* Bugfix: stop on overflow rather than wrapping around -- the
        * wrap would produce a value < end again, looping forever. */
       if (!safe_add_long(i, step, &next)) {
         break;
@@ -6200,7 +6190,7 @@ static int c_join(lcl_interp *interp, int argc, lcl_value **argv,
   list = argv[0];
 
   if (argc == 2) {
-    if (lcl_value_to_cstring(interp, argv[1], &sep) != LCL_OK) {
+    if (!arg_str(interp, "String::join", argv[1], &sep)) {
       return LCL_RC_ERR;
     }
   }
@@ -6274,12 +6264,12 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &str) != LCL_OK) {
+  if (!arg_str(interp, "String::split", argv[0], &str)) {
     return LCL_RC_ERR;
   }
 
   if (argc == 2) {
-    if (lcl_value_to_cstring(interp, argv[1], &split_chars) != LCL_OK) {
+    if (!arg_str(interp, "String::split", argv[1], &split_chars)) {
       return LCL_RC_ERR;
     }
   }
@@ -6807,24 +6797,16 @@ static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
+  /* "Numerically interpretable": a numeric value, or numeric text per
+   * the shared grammar -- the pre-flight predicate for the numeric
+   * contexts, so the two can't drift. */
   if (argv[0]->type == LCL_INT || argv[0]->type == LCL_FLOAT) {
     *out = lcl_int_new(1);
   } else if (argv[0]->type == LCL_STRING) {
     const char *s = lcl_value_to_string(argv[0]);
-    if (!s) {
-      *out = lcl_int_new(0);
-    } else {
-      char *end;
-      (void)strtol(s, &end, 10);
 
-      if (end != s && *end == '\0') {
-        *out = lcl_int_new(1);
-      } else {
-        double d;
-        size_t fend = lcl_parse_double_c(s, &d);
-        *out = lcl_int_new(fend > 0 && s[fend] == '\0' ? 1 : 0);
-      }
-    }
+    *out = lcl_int_new(
+        s && lcl_num_text_classify(s, strlen(s)) != LCL_NUM_NONE ? 1 : 0);
   } else {
     *out = lcl_int_new(0);
   }
@@ -8533,7 +8515,7 @@ static int c_string_upper(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::upper", argv[0], &src)) {
     return LCL_RC_ERR;
   }
   len = strlen(src);
@@ -8574,7 +8556,7 @@ static int c_string_lower(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::lower", argv[0], &src)) {
     return LCL_RC_ERR;
   }
   len = strlen(src);
@@ -8614,11 +8596,11 @@ static int c_string_find(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &haystack) != LCL_OK) {
+  if (!arg_str(interp, "String::find", argv[0], &haystack)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[1], &needle) != LCL_OK) {
+  if (!arg_str(interp, "String::find", argv[1], &needle)) {
     return LCL_RC_ERR;
   }
 
@@ -8652,15 +8634,15 @@ static int c_string_replace(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::replace", argv[0], &src)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[1], &old_str) != LCL_OK) {
+  if (!arg_str(interp, "String::replace", argv[1], &old_str)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[2], &new_str) != LCL_OK) {
+  if (!arg_str(interp, "String::replace", argv[2], &new_str)) {
     return LCL_RC_ERR;
   }
 
@@ -8754,7 +8736,7 @@ static int c_string_length(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::length", argv[0], &src)) {
     return LCL_RC_ERR;
   }
   *out = lcl_int_new((long)strlen(src));
@@ -8774,7 +8756,7 @@ static int c_string_index(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::index", argv[0], &src)) {
     return LCL_RC_ERR;
   }
   len = strlen(src);
@@ -8813,7 +8795,7 @@ static int c_string_range(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &src) != LCL_OK) {
+  if (!arg_str(interp, "String::range", argv[0], &src)) {
     return LCL_RC_ERR;
   }
   len = strlen(src);

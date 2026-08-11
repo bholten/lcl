@@ -66,6 +66,7 @@ void lcl_ref_dec(lcl_value *value);
 
 lcl_value *lcl_string_new(const char *str);
 const char *lcl_value_to_string(lcl_value *value);
+lcl_result lcl_value_get_string(lcl_value *value, const char **out);
 lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
                                 const char **out);
 
@@ -80,6 +81,11 @@ lcl_result lcl_value_to_float(lcl_value *value, double *out);
 lcl_result lcl_double_to_long(double f, long *out);
 void lcl_normalize_decimal_to_c(char *buf);
 size_t lcl_parse_double_c(const char *s, double *out);
+
+typedef enum { LCL_NUM_NONE, LCL_NUM_INT, LCL_NUM_FLOAT } lcl_num_class;
+
+lcl_num_class lcl_num_literal_classify(const char *s, size_t n);
+lcl_num_class lcl_num_text_classify(const char *s, size_t n);
 
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);

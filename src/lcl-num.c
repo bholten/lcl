@@ -119,6 +119,142 @@ size_t lcl_parse_double_c(const char *s, double *out) {
   return (size_t)(endptr - s);
 }
 
+lcl_num_class lcl_num_literal_classify(const char *s, size_t n) {
+  size_t i = 0;
+  int has_frac = 0;
+  int has_exp = 0;
+
+  if (!s || n == 0 || strlen(s) != n) {
+    return LCL_NUM_NONE;
+  }
+
+  if (s[i] == '-') {
+    i++;
+  }
+
+  if (i >= n || s[i] < '0' || s[i] > '9') {
+    return LCL_NUM_NONE;
+  }
+
+  if (s[i] == '0') {
+    i++;
+
+    if (i < n && s[i] >= '0' && s[i] <= '9') {
+      return LCL_NUM_NONE;
+    }
+  } else {
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+    }
+  }
+
+  if (i == n) {
+    if (n == 2 && s[0] == '-' && s[1] == '0') {
+      return LCL_NUM_NONE;
+    }
+
+    return LCL_NUM_INT;
+  }
+
+  if (s[i] == '.') {
+    i++;
+
+    if (i >= n || s[i] < '0' || s[i] > '9') {
+      return LCL_NUM_NONE;
+    }
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+    }
+
+    has_frac = 1;
+  }
+
+  if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+    i++;
+
+    if (i < n && (s[i] == '+' || s[i] == '-')) {
+      i++;
+    }
+
+    if (i >= n || s[i] < '0' || s[i] > '9') {
+      return LCL_NUM_NONE;
+    }
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+    }
+
+    has_exp = 1;
+  }
+
+  if (i != n || (!has_frac && !has_exp)) {
+    return LCL_NUM_NONE;
+  }
+
+  return LCL_NUM_FLOAT;
+}
+
+lcl_num_class lcl_num_text_classify(const char *s, size_t n) {
+  size_t i = 0;
+  int digits = 0;
+  int has_frac = 0;
+  int has_exp = 0;
+
+  if (!s || n == 0 || strlen(s) != n) {
+    return LCL_NUM_NONE;
+  }
+
+  if (s[i] == '+' || s[i] == '-') {
+    i++;
+  }
+
+  while (i < n && s[i] >= '0' && s[i] <= '9') {
+    i++;
+    digits = 1;
+  }
+
+  if (i < n && s[i] == '.') {
+    i++;
+    has_frac = 1;
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+      digits = 1;
+    }
+  }
+
+  if (!digits) {
+    return LCL_NUM_NONE;
+  }
+
+  if (i < n && (s[i] == 'e' || s[i] == 'E')) {
+    int exp_digits = 0;
+    i++;
+
+    if (i < n && (s[i] == '+' || s[i] == '-')) {
+      i++;
+    }
+
+    while (i < n && s[i] >= '0' && s[i] <= '9') {
+      i++;
+      exp_digits = 1;
+    }
+
+    if (!exp_digits) {
+      return LCL_NUM_NONE;
+    }
+
+    has_exp = 1;
+  }
+
+  if (i != n) {
+    return LCL_NUM_NONE;
+  }
+
+  return (has_frac || has_exp) ? LCL_NUM_FLOAT : LCL_NUM_INT;
+}
+
 lcl_value *lcl_int_new(const long n) {
   lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
 
@@ -193,10 +329,14 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
       break;
     }
 
+    if (lcl_num_text_classify(str, strlen(str)) != LCL_NUM_INT) {
+      break;
+    }
+
     errno = 0;
     val = strtol(str, &endptr, 10);
 
-    if (endptr != str && *endptr == '\0' && errno != ERANGE) {
+    if (*endptr == '\0' && errno != ERANGE) {
       *out = val;
 
       return LCL_OK;
@@ -223,22 +363,32 @@ lcl_result lcl_value_to_float(lcl_value *value, double *out) {
 
   case LCL_STRING: {
     const char *str = lcl_value_to_string(value);
+    size_t len;
     double val;
 
     if (!str) {
       break;
     }
 
-    /* Bugfix: lcl_parse_double_c is locale-independent — strings
-     * serialized by lcl_reify_str_float always use ASCII '.',
-     * regardless of the runtime locale. */
-    if (lcl_parse_double_c(str, &val) > 0) {
-      *out = val;
+    len = strlen(str);
 
-      return LCL_OK;
+    if (lcl_num_text_classify(str, len) == LCL_NUM_NONE) {
+      break;
     }
 
-    break;
+    errno = 0;
+
+    if (lcl_parse_double_c(str, &val) != len) {
+      break;
+    }
+
+    if (errno == ERANGE && (val == HUGE_VAL || val == -HUGE_VAL)) {
+      break;
+    }
+
+    *out = val;
+
+    return LCL_OK;
   }
 
   default: break;
