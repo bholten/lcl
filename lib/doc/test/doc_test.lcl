@@ -178,6 +178,36 @@ Test::suite "Doc::parse" {
         Test::eq [len [get $p examples]] 0
         Test::eq [get $p body] "Just prose."
     }
+
+    Test::case ">> lines join while the command is incomplete" {
+        let d {x
+
+Examples:
+>> proc dt_p {a b} {
+>>   + $a $b
+>> }
+>> dt_p 1 2
+3}
+        let ex [get [Doc::parse $d] examples]
+        Test::eq [len $ex] 2
+        Test::eq [get [get $ex 0] cmd] "proc dt_p {a b} {\n+ \$a \$b\n}"
+        Test::eq [get [get $ex 0] kind] "none"
+        Test::eq [get [get $ex 1] cmd] "dt_p 1 2"
+        Test::eq [get [get $ex 1] expect] "3"
+    }
+
+    Test::case "complete >> lines never join" {
+        let ex [get [Doc::parse "x\n\nExamples:\n>> puts hi\n>> puts yo"] examples]
+        Test::eq [len $ex] 2
+        Test::eq [get [get $ex 0] cmd] "puts hi"
+        Test::eq [get [get $ex 1] cmd] "puts yo"
+    }
+
+    Test::case "bare >> separators produce no empty examples" {
+        let ex [get [Doc::parse "x\n\nExamples:\n>> + 1 2\n3\n>>\n>> + 2 3\n5"] examples]
+        Test::eq [len $ex] 2
+        Test::eq [get [get $ex 1] cmd] "+ 2 3"
+    }
 }
 
 Test::suite "Doc::markdown" {
@@ -280,6 +310,20 @@ proc dt_i {} { 0 }}
 let dt_unrelated 1}
         let r [Doc::doctest [Doc::extract $src]]
         Test::eq [get $r pass] 1
+        Test::eq [get $r fail] 0
+    }
+
+    Test::case "multi-line example defines and calls a proc" {
+        let src {;;; Examples:
+;;; >> proc dt_add {a b} {
+;;; >>   + $a $b
+;;; >> }
+;;; >>
+;;; >> dt_add 4 5
+;;; 9
+proc dt_k {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 2
         Test::eq [get $r fail] 0
     }
 }
