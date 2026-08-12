@@ -89,25 +89,25 @@ namespace List {
     ;;;
     ;;; Examples
     ;;;
-    ;;; >> List::map [lambda {x} {* x 2}] (1 2 3)
+    ;;; >> List::map (1 2 3) [lambda {x} {* x 2}]
     ;;; (2 4 6)
-    proc map {fn lst} {}
+    proc map {lst fn} {}
 
-    ;;; Applies a function over a list. The results are taken as truthy and a new list is returned where the elements have passed the function.
+    ;;; Applies a predicate function over a list. The results are taken as truthy and a new list is returned where the elements have passed the function.
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::filter [lambda {x} {== [% $x 2] 0}] (1 2 3 4 5 6)
+    ;;; >> List::filter (1 2 3 4 5 6) [lambda {x} {== [% $x 2] 0}]
     ;;; (2 4 6)
-    proc filter {fn lst} {}
+    proc filter {lst pred} {}
 
     ;;; Applies a function of a list with some accumulator and initializer.
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::reduce 0 [lambda {acc x} {+ $acc $x}] (1 2 3 4 5)
+    ;;; >> List::reduce (1 2 3 4 5) 0 [lambda {acc x} {+ $acc $x}]
     ;;; 15
-    proc reduce {init fn lst} {}
+    proc reduce {lst init fn} {}
 
     ;;; Sorts a list. Sorts words lexicalgraphically and numbers numerically.
     ;;;
@@ -126,17 +126,17 @@ namespace List {
     ;;; Examples:
     ;;;
     ;;; >> let rows ((bob 30) (amy 25) (cal 28))
-    ;;; >> List::sort_by [lambda {row} {get $row 1}] $rows
+    ;;; >> List::sort_by $rows [lambda {row} {get $row 1}]
     ;;; (("amy" 25) ("cal" 28) ("bob" 30))
-    proc sort_by {fn lst} {}
+    proc sort_by {lst fn} {}
 
     ;;; Sorts by a two-valued function that determines order. Returns a new list.
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::sort_with [lambda {a b} {- $a $b}] (1 10 2 20 3)
+    ;;; >> List::sort_with (1 10 2 20 3) [lambda {a b} {- $a $b}]
     ;;; (1 2 3 10 20)
-    proc sort_with {fn lst} {}
+    proc sort_with {lst fn} {}
 
     ;;; Find the first element of a list given some search function.
     ;;;
@@ -144,29 +144,29 @@ namespace List {
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::find [lambda {x} {> $x 8}] (1 5 10 15 20)
+    ;;; >> List::find (1 5 10 15 20) [lambda {x} {> $x 8}]
     ;;; 10
-    proc find {fn lst} {}
+    proc find {lst fn} {}
 
     ;;; Returns truthy based on whether any of the elements of a list satisfy some function.
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::any? [lambda {x} {> $x 4}] (1 2 3 4 5)
+    ;;; >> List::any? (1 2 3 4 5) [lambda {x} {> $x 4}]
     ;;; 1
-    ;;; >> List::any? [lambda {x} {> $x 100}] (1 2 3 4)
+    ;;; >> List::any? (1 2 3 4) [lambda {x} {> $x 100}]
     ;;; 0
-    proc any? {fn lst} {}
+    proc any? {lst pred} {}
 
     ;;; Returns truthy based on whether or not all of the elements satisfy some function.
     ;;;
     ;;; Examples:
     ;;;
-    ;;; >> List::all? [lambda {x} {> $x 0}] (1 2 3)
+    ;;; >> List::all? (1 2 3) [lambda {x} {> $x 0}]
     ;;; 1
-    ;;; >> List::all? [lambda {x} {< $x 0}] (1 2 3)
+    ;;; >> List::all? (1 2 3) [lambda {x} {< $x 0}]
     ;;; 0
-    proc all? {fn lst} {}
+    proc all? {lst fn} {}
 
     ;;; Returns the unique elements of the list, removing duplicates. Returns a new list.
     ;;;
