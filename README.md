@@ -930,12 +930,12 @@ line2"
 
   | Function              | Description                                                           |
   |-----------------------|-----------------------------------------------------------------------|
-  | List::map f l         | Apply f to each element, return new list                              |
-  | List::filter f l      | Keep elements where f returns true                                    |
-  | List::reduce init f l | Fold list with f(acc, elem)                                           |
-  | Dict::map f d         | Apply f(key, value) to each entry, return new dict with mapped values |
-  | Dict::filter f d      | Keep entries where f(key, value) returns true                         |
-  | Dict::reduce init f d | Fold dict with f(acc, key, value)                                     |
+  | List::map l f         | Apply f to each element, return new list                              |
+  | List::filter l f      | Keep elements where f returns true                                    |
+  | List::reduce l init f | Fold list with f(acc, elem)                                           |
+  | Dict::map f f         | Apply f(key, value) to each entry, return new dict with mapped values |
+  | Dict::filter f f      | Keep entries where f(key, value) returns true                         |
+  | Dict::reduce f init f | Fold dict with f(acc, key, value)                                     |
 
 ## Embedding
 

@@ -2604,37 +2604,37 @@ Test::suite "Threading Operators" {
 Test::suite "Functional Primitives" {
     Test::case "List::map" {
         let lst [list 1 2 3 4 5]
-        let doubled [List::map [lambda {x} {* $x 2}] $lst]
+        let doubled [List::map $lst [lambda {x} {* $x 2}]]
         Test::eq $doubled [list 2 4 6 8 10]
     }
 
     Test::case "List::filter" {
         let lst [list 1 2 3 4 5]
-        let evens [List::filter [lambda {x} {== [% $x 2] 0}] $lst]
+        let evens [List::filter $lst [lambda {x} {== [% $x 2] 0}]]
         Test::eq $evens [list 2 4]
     }
 
     Test::case "List::reduce" {
         let lst [list 1 2 3 4 5]
-        let sum [List::reduce 0 [lambda {acc x} {+ $acc $x}] $lst]
+        let sum [List::reduce $lst 0 [lambda {acc x} {+ $acc $x}]]
         Test::eq $sum 15
     }
 
     Test::case "Dict::map" {
         let d [dict a 1 b 2 c 3]
-        let mapped [Dict::map [lambda {k v} {* $v 10}] $d]
+        let mapped [Dict::map $d [lambda {k v} {* $v 10}]]
         Test::eq [len [Dict::keys $mapped]] 3
     }
 
     Test::case "Dict::filter" {
         let d [dict a 1 b 2 c 3]
-        let filtered [Dict::filter [lambda {k v} {> $v 1}] $d]
+        let filtered [Dict::filter $d [lambda {k v} {> $v 1}]]
         Test::eq [len [Dict::keys $filtered]] 2
     }
 
     Test::case "Dict::reduce" {
         let d [dict a 1 b 2 c 3]
-        let sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] $d]
+        let sum [Dict::reduce $d 0 [lambda {acc k v} {+ $acc $v}]]
         Test::eq $sum 6
     }
 }
@@ -2700,13 +2700,13 @@ Test::suite "List:: Namespace" {
     Test::case "List::sort_with takes a comparator" {
         let nums [list 10 2 5 1 20]
         let cmp [lambda {a b} { if [< $a $b] { return -1 }; if [> $a $b] { return 1 }; return 0 }]
-        let sorted [List::sort_with $cmp $nums]
+        let sorted [List::sort_with $nums $cmp]
         Test::eq $sorted [list 1 2 5 10 20]
     }
 
     Test::case "List::sort_with descending" {
         let cmp [lambda {a b} { if [> $a $b] { return -1 }; if [< $a $b] { return 1 }; return 0 }]
-        Test::eq [List::sort_with $cmp (3 1 2)] (3 2 1)
+        Test::eq [List::sort_with (3 1 2) $cmp] (3 2 1)
     }
 
     Test::case "List::sort_with comparator error propagates" {
@@ -2717,23 +2717,23 @@ Test::suite "List:: Namespace" {
 
     Test::case "List::sort_by takes a key function" {
         let rows [list (bob 30) (amy 25) (cal 28)]
-        let by_age [List::sort_by [lambda {r} {get $r 1}] $rows]
+        let by_age [List::sort_by $rows [lambda {r} {get $r 1}]]
         Test::eq $by_age [list (amy 25) (cal 28) (bob 30)]
     }
 
     Test::case "List::sort_by calls keyfn once per element" {
         var key_calls 0
         proc count_key {x} { set! key_calls [+ $key_calls 1]; return $x }
-        let sorted [List::sort_by $count_key (4 2 3 1 5)]
+        let sorted [List::sort_by (4 2 3 1 5) $count_key]
         Test::eq $sorted (1 2 3 4 5)
         Test::eq $key_calls 5
     }
 
     Test::case "sorts are stable (layered ordering)" {
         let rows [list (bob 2) (amy 1) (ann 1)]
-        let by_name [List::sort_by [lambda {r} {get $r 0}] $rows]
+        let by_name [List::sort_by $rows [lambda {r} {get $r 0}]]
         ;; amy ann bob; then a stable sort on priority keeps amy before ann
-        let by_prio [List::sort_by [lambda {r} {get $r 1}] $by_name]
+        let by_prio [List::sort_by $by_name [lambda {r} {get $r 1}]]
         Test::eq $by_prio [list (amy 1) (ann 1) (bob 2)]
     }
 
@@ -2744,22 +2744,22 @@ Test::suite "List:: Namespace" {
 
     Test::case "List::find" {
         let lst [list 1 5 10 15 20]
-        Test::eq [List::find [lambda {x} {> $x 8}] $lst] 10
-        Test::empty [List::find [lambda {x} {> $x 100}] $lst]
+        Test::eq [List::find $lst [lambda {x} {> $x 8}]] 10
+        Test::empty [List::find $lst [lambda {x} {> $x 100}]]
     }
 
     Test::case "List::any?" {
         let lst [list 1 2 3 4 5]
-        Test::true [List::any? [lambda {x} {> $x 4}] $lst]
-        Test::false [List::any? [lambda {x} {> $x 100}] $lst]
-        Test::false [List::any? [lambda {x} {== $x 1}] [list]]
+        Test::true [List::any? $lst [lambda {x} {> $x 4}]]
+        Test::false [List::any? $lst [lambda {x} {> $x 100}]]
+        Test::false [List::any? () [lambda {x} {== $x 1}]]
     }
 
     Test::case "List::all?" {
         let lst [list 1 2 3 4 5]
-        Test::true [List::all? [lambda {x} {> $x 0}] $lst]
-        Test::false [List::all? [lambda {x} {> $x 3}] $lst]
-        Test::true [List::all? [lambda {x} {== $x impossible}] [list]]
+        Test::true [List::all? $lst [lambda {x} {> $x 0}]]
+        Test::false [List::all? $lst [lambda {x} {> $x 3}]]
+        Test::true [List::all? () [lambda {x} {== $x impossible}]]
     }
 
     Test::case "List::unique" {
@@ -2876,21 +2876,21 @@ Test::suite "Dict:: Namespace" {
     }
 
     Test::case "Dict::map" {
-        let mapped [Dict::map [lambda {k v} {* $v 2}] [dict a 1 b 2 c 3]]
+        let mapped [Dict::map [dict a 1 b 2 c 3] [lambda {k v} {* $v 2}]]
         Test::eq [get $mapped a] 2
         Test::eq [get $mapped b] 4
         Test::eq [get $mapped c] 6
     }
 
     Test::case "Dict::filter" {
-        let filtered [Dict::filter [lambda {k v} {> $v 1}] [dict a 1 b 2 c 3]]
+        let filtered [Dict::filter [dict a 1 b 2 c 3] [lambda {k v} {> $v 1}]]
         Test::eq [len [Dict::keys $filtered]] 2
         Test::false [has? $filtered a]
         Test::true [has? $filtered b]
     }
 
     Test::case "Dict::reduce" {
-        let sum [Dict::reduce 0 [lambda {acc k v} {+ $acc $v}] [dict a 1 b 2 c 3]]
+        let sum [Dict::reduce [dict a 1 b 2 c 3] 0 [lambda {acc k v} {+ $acc $v}]]
         Test::eq $sum 6
     }
 }
@@ -3058,7 +3058,7 @@ Test::suite "Type Conversion" {
 
     Test::case "numeric sort ascending" {
         let nums [list 1 10 2 20 3]
-        let sorted [List::sort_with [lambda {a b} { - [int $a] [int $b] }] $nums]
+        let sorted [List::sort_with $nums [lambda {a b} { - [int $a] [int $b] }]]
         Test::eq [get $sorted 0] 1
         Test::eq [get $sorted 1] 2
         Test::eq [get $sorted 2] 3
@@ -3068,7 +3068,7 @@ Test::suite "Type Conversion" {
 
     Test::case "numeric sort descending" {
         let nums [list 1 10 2 20 3]
-        let sorted [List::sort_with [lambda {a b} { - [int $b] [int $a] }] $nums]
+        let sorted [List::sort_with $nums [lambda {a b} { - [int $b] [int $a] }]]
         Test::eq [get $sorted 0] 20
         Test::eq [get $sorted 1] 10
         Test::eq [get $sorted 2] 3
@@ -4728,7 +4728,7 @@ Test::suite " #48: scanner rejects bad :: tails in variable refs" {
     }
 }
 
-Test::suite " #68: stdlib errors name the proc" {
+Test::suite " stdlib errors name the proc" {
     Test::case "arity error names the builtin" {
         let r [catch { % 5 } res err]
         Test::eq $r 1
@@ -4798,7 +4798,7 @@ Test::suite " #68: stdlib errors name the proc" {
     }
 
     Test::case "special form arity via chk (sort family)" {
-        let r [catch { List::sort_by "5" (1 2) } res err]
+        let r [catch { List::sort_by (1 2) "5" } res err]
         Test::eq $r 1
         Test::eq $err {List::sort_by: expected callable, got "5"}
     }

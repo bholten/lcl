@@ -7225,7 +7225,7 @@ static int c_list_reverse(lcl_interp *interp, int argc, lcl_value **argv,
  * ============================================================================
  */
 
-/* List::map f list - apply f to each element, return new list */
+/* List::map list f - apply f to each element, return new list */
 static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   lcl_value *func;
@@ -7239,8 +7239,8 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  list = argv[1];
+  list = argv[0];
+  func = argv[1];
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::map", "list", list);
@@ -7287,7 +7287,7 @@ static int c_list_map(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* List::filter f list - keep elements where f returns true */
+/* List::filter list f - keep elements where f returns true */
 static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   lcl_value *func;
@@ -7301,8 +7301,9 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  list = argv[1];
+  list = argv[0];
+  func = argv[1];
+
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::filter", "list", list);
@@ -7353,7 +7354,7 @@ static int c_list_filter(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* List::reduce init f list - fold list with f(acc, elem) */
+/* List::reduce list init f - fold list with f(acc, elem) */
 static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   lcl_value *init;
@@ -7368,9 +7369,9 @@ static int c_list_reduce(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  init = argv[0];
-  func = argv[1];
-  list = argv[2];
+  list = argv[0];
+  init = argv[1];
+  func = argv[2];
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::reduce", "list", list);
@@ -7648,7 +7649,7 @@ static int c_list_sort(lcl_interp *interp, int argc, lcl_value **argv,
   return list_sort_common(interp, argv[0], NULL, cmp_pair_val, NULL, out);
 }
 
-/* List::sort_by f list - stable sort by key function f(elem) -> key.
+/* List::sort_by list f - stable sort by key function f(elem) -> key.
  * f runs exactly once per element (decorate-sort-undecorate); keys
  * are compared with the ordinary total ordering. */
 static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
@@ -7657,18 +7658,18 @@ static int c_list_sort_by(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (!lcl_is_callable(argv[0])) {
-    return err_expected_got(interp, "List::sort_by", "callable", argv[0]);
+  if (!lcl_is_callable(argv[1])) {
+    return err_expected_got(interp, "List::sort_by", "callable", argv[1]);
   }
 
-  if (argv[1]->type != LCL_LIST) {
-    return err_expected_got(interp, "List::sort_by", "list", argv[1]);
+  if (argv[0]->type != LCL_LIST) {
+    return err_expected_got(interp, "List::sort_by", "list", argv[0]);
   }
 
-  return list_sort_common(interp, argv[1], argv[0], cmp_pair_key, NULL, out);
+  return list_sort_common(interp, argv[0], argv[1], cmp_pair_key, NULL, out);
 }
 
-/* List::sort_with f list - stable sort with comparator f(a, b) -> int */
+/* List::sort_with list f - stable sort with comparator f(a, b) -> int */
 static int c_list_sort_with(lcl_interp *interp, int argc, lcl_value **argv,
                             lcl_value **out) {
   lcl_user_cmp_ctx ctx;
@@ -7677,21 +7678,21 @@ static int c_list_sort_with(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (!lcl_is_callable(argv[0])) {
+  if (!lcl_is_callable(argv[1])) {
     return err_expected_got(interp, "List::sort_with", "callable", argv[0]);
   }
 
-  if (argv[1]->type != LCL_LIST) {
+  if (argv[0]->type != LCL_LIST) {
     return err_expected_got(interp, "List::sort_with", "list", argv[1]);
   }
 
   ctx.interp = interp;
-  ctx.func = argv[0];
+  ctx.func = argv[1];
 
-  return list_sort_common(interp, argv[1], NULL, cmp_pair_user, &ctx, out);
+  return list_sort_common(interp, argv[0], NULL, cmp_pair_user, &ctx, out);
 }
 
-/* List::find pred list - find first element where pred returns true */
+/* List::find list pred - find first element where pred returns true */
 static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
                        lcl_value **out) {
   lcl_value *func;
@@ -7704,8 +7705,8 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  list = argv[1];
+  list = argv[0];
+  func = argv[1];
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::find", "list", list);
@@ -7746,10 +7747,11 @@ static int c_list_find(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = lcl_string_new("");
+
   return LCL_RC_OK;
 }
 
-/* List::any pred list - return 1 if any element satisfies pred */
+/* List::any list pred - return 1 if any element satisfies pred */
 static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   lcl_value *func;
@@ -7762,8 +7764,8 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  list = argv[1];
+  list = argv[0];
+  func = argv[1];
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::any?", "list", list);
@@ -7803,10 +7805,11 @@ static int c_list_any(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   *out = lcl_int_new(0);
+
   return LCL_RC_OK;
 }
 
-/* List::all pred list - return 1 if all elements satisfy pred */
+/* List::all list pred - return 1 if all elements satisfy pred */
 static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
   lcl_value *func;
@@ -7819,8 +7822,8 @@ static int c_list_all(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  list = argv[1];
+  list = argv[0];
+  func = argv[1];
 
   if (list->type != LCL_LIST) {
     return err_expected_got(interp, "List::all?", "list", list);
@@ -8358,7 +8361,7 @@ static int c_dict_merge(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* Dict::map f d - apply f to each key-value pair, f receives key and value,
+/* Dict::map d f - apply f to each key-value pair, f receives key and value,
  * returns new value */
 static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
@@ -8374,8 +8377,8 @@ static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  dict = argv[1];
+  dict = argv[0];
+  func = argv[1];
 
   if (dict->type != LCL_DICT) {
     return err_expected_got(interp, "Dict::map", "dict", dict);
@@ -8411,7 +8414,7 @@ static int c_dict_map(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* Dict::filter f d - keep entries where f(key, value) returns true */
+/* Dict::filter d f - keep entries where f(key, value) returns true */
 static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   lcl_value *func;
@@ -8426,8 +8429,8 @@ static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  func = argv[0];
-  dict = argv[1];
+  dict = argv[0];
+  func = argv[1];
 
   if (dict->type != LCL_DICT) {
     return err_expected_got(interp, "Dict::filter", "dict", dict);
@@ -8468,7 +8471,7 @@ static int c_dict_filter(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* Dict::reduce init f d - fold dict with f(acc, key, value) */
+/* Dict::reduce d init f - fold dict with f(acc, key, value) */
 static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
                          lcl_value **out) {
   lcl_value *init;
@@ -8484,9 +8487,9 @@ static int c_dict_reduce(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  init = argv[0];
-  func = argv[1];
-  dict = argv[2];
+  dict = argv[0];
+  init = argv[1];
+  func = argv[2];
 
   if (dict->type != LCL_DICT) {
     return err_expected_got(interp, "Dict::reduce", "dict", dict);

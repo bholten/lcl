@@ -46,16 +46,19 @@ namespace Doc {
         var out ()
         var off 0
         var n 1
+
         foreach ln [String::split $text "\n"] {
             set! out [List::push $out #{n $n start $off text $ln}]
             set! off [+ $off [String::length $ln] 1]
             set! n [+ $n 1]
         }
+
         $out
     }
 
     proc _spans {cmds} {
         var out ()
+
         foreach c $cmds {
             foreach w [get $c words] {
                 set! out [List::push $out [get $w span]]
@@ -65,11 +68,14 @@ namespace Doc {
     }
 
     proc _covered {spans off} {
-        List::any? [lambda {sp} { and [<= [get $sp 0] $off] [< $off [get $sp 1]] }] $spans
+        List::any? $spans [lambda {sp} {
+            and [<= [get $sp 0] $off] [< $off [get $sp 1]]
+        }]
     }
 
     proc _line_of {lines off} {
         var n 1
+
         foreach L $lines {
             if [<= [get $L start] $off] {
                 set! n [get $L n]
@@ -214,7 +220,7 @@ namespace Doc {
         let lines [_lines $text]
         let spans [_spans $cmds]
         let runs [_doc_runs $lines $spans]
-        var used [List::map [lambda {r} { 0 }] $runs]
+        var used [List::map $runs [lambda {r} { 0 }]]
         var entries ()
 
         foreach c $cmds {
