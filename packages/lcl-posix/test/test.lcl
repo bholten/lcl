@@ -1,0 +1,149 @@
+;; posix:: Package Tests
+;; Run with an LCL interpreter that has the posix extension loaded.
+;; File fixtures are created/removed via io:: (lcl-io), so the
+;; interpreter needs both packages — the default dev build has both.
+;;
+;; Test framework (Test::suite, Test::case, etc.) is embedded when built
+;; with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
+
+;; ============================================================================
+;; Working Directory
+;; ============================================================================
+
+Test::suite "Working Directory" {
+    Test::case "getcwd returns non-empty" {
+        let cwd [posix::getcwd]
+        Test::gt [String::length $cwd] 0
+    }
+
+    Test::case "chdir and getcwd round-trip" {
+        let original [posix::getcwd]
+        posix::chdir /tmp
+        Test::eq [posix::getcwd] /tmp
+        posix::chdir $original
+        Test::eq [posix::getcwd] $original
+    }
+}
+
+;; ============================================================================
+;; Directory Operations
+;; ============================================================================
+
+Test::suite "Directory Operations" {
+    Test::before {
+        ;; Clean up from any previous failed runs
+        let test_dir "/tmp/lcl_posix_test_dir"
+        if [posix::exists? $test_dir] {
+            posix::rmdir $test_dir
+        }
+    }
+
+    Test::case "mkdir creates directory" {
+        let test_dir "/tmp/lcl_posix_test_dir"
+        posix::mkdir $test_dir
+        Test::true [posix::exists? $test_dir]
+        Test::true [posix::dir? $test_dir]
+        posix::rmdir $test_dir
+    }
+
+    Test::case "rmdir removes directory" {
+        let test_dir "/tmp/lcl_posix_test_dir"
+        posix::mkdir $test_dir
+        posix::rmdir $test_dir
+        Test::false [posix::exists? $test_dir]
+    }
+}
+
+;; ============================================================================
+;; File Information
+;; ============================================================================
+
+Test::suite "File Information" {
+    Test::case "file_size matches content length" {
+        let test_file "/tmp/lcl_posix_size_test.txt"
+        let content "Test content here"
+        io::write_file $test_file $content
+        Test::eq [posix::file_size $test_file] [String::length $content]
+        io::remove $test_file
+    }
+
+    Test::case "file_mtime returns positive timestamp" {
+        let test_file "/tmp/lcl_posix_mtime_test.txt"
+        io::write_file $test_file "test"
+        Test::gt [posix::file_mtime $test_file] 0
+        io::remove $test_file
+    }
+}
+
+;; ============================================================================
+;; Directory Listing
+;; ============================================================================
+
+Test::suite "Directory Listing (posix::readdir)" {
+    Test::case "readdir returns file list" {
+        let test_dir "/tmp/lcl_posix_readdir_test"
+        posix::mkdir $test_dir
+        io::write_file "$test_dir/file1.txt" "one"
+        io::write_file "$test_dir/file2.txt" "two"
+        io::write_file "$test_dir/file3.txt" "three"
+
+        let files [posix::readdir $test_dir]
+        Test::eq [len $files] 3
+
+        ;; Clean up
+        io::remove "$test_dir/file1.txt"
+        io::remove "$test_dir/file2.txt"
+        io::remove "$test_dir/file3.txt"
+        posix::rmdir $test_dir
+    }
+}
+
+;; ============================================================================
+;; File/Directory Predicates
+;; ============================================================================
+
+Test::suite "File Predicates" {
+    Test::case "non-existent path" {
+        Test::false [posix::exists? "/tmp/nonexistent_lcl_test_xyz"]
+        Test::false [posix::file? "/tmp/nonexistent_lcl_test_xyz"]
+        Test::false [posix::dir? "/tmp/nonexistent_lcl_test_xyz"]
+    }
+
+    Test::case "/tmp is a directory" {
+        Test::true [posix::exists? /tmp]
+        Test::true [posix::dir? /tmp]
+        Test::false [posix::file? /tmp]
+    }
+
+    Test::case "regular file is file? not dir?" {
+        let test_file "/tmp/lcl_posix_pred_test.txt"
+        io::write_file $test_file "predicate test"
+        Test::true [posix::exists? $test_file]
+        Test::true [posix::file? $test_file]
+        Test::false [posix::dir? $test_file]
+        io::remove $test_file
+    }
+}
+
+;; ============================================================================
+;; Glob
+;; ============================================================================
+
+Test::suite "Glob (posix::glob)" {
+    Test::case "glob finds matching files" {
+        io::write_file "/tmp/lcl_glob_test1.txt" "1"
+        io::write_file "/tmp/lcl_glob_test2.txt" "2"
+
+        let files [posix::glob "/tmp/lcl_glob_test*.txt"]
+        Test::gte [len $files] 2
+
+        io::remove "/tmp/lcl_glob_test1.txt"
+        io::remove "/tmp/lcl_glob_test2.txt"
+    }
+}
+
+;; ============================================================================
+;; Run Tests
+;; ============================================================================
+
+Test::run

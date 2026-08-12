@@ -1,6 +1,6 @@
-/* Exercises a simple-package install: lcl::lcl_io + lcl_register_io(). */
+/* Exercises a simple-package install: lcl::lcl_posix + lcl_register_posix(). */
 #include <lcl.h>
-#include <lcl-io.h>
+#include <lcl-posix.h>
 #include <stdio.h>
 
 int main(void) {
@@ -10,16 +10,16 @@ int main(void) {
 
     if (!interp) return 1;
     lcl_register_core(interp);
-    lcl_register_io(interp);
+    lcl_register_posix(interp);
 
-    if (lcl_eval_string(interp, "io::getenv PATH", &result) != LCL_OK ||
+    if (lcl_eval_string(interp, "posix::getcwd", &result) != LCL_OK ||
         lcl_value_to_cstring(interp, result, &as_str) != LCL_OK) {
-        fprintf(stderr, "io::getenv failed\n");
+        fprintf(stderr, "posix::getcwd failed\n");
         lcl_ref_dec(result);
         lcl_interp_free(interp);
         return 1;
     }
-    printf("ok: io::getenv PATH = %s\n", as_str);
+    printf("ok: posix::getcwd = %s\n", as_str);
     lcl_ref_dec(result);
     lcl_interp_free(interp);
     return 0;

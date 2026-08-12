@@ -6,6 +6,7 @@ project lcl {
     let ALL_PKGS (-DLCL_BUILD_TESTS=ON
                   -DLCL_BUILD_CURL=ON
                   -DLCL_BUILD_IO=ON
+                  -DLCL_BUILD_POSIX=ON
                   -DLCL_BUILD_JSON=ON
                   -DLCL_BUILD_CRYPTO=ON
                   -DLCL_BUILD_REGEX=ON

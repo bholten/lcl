@@ -32,6 +32,7 @@ option(LCL_STATIC_BINARY "Build fully static CLI binary (requires static libs)" 
 # Optional packages
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
 option(LCL_BUILD_IO "Build Lcl IO extension library" OFF)
+option(LCL_BUILD_POSIX "Build Lcl POSIX bindings" OFF)
 option(LCL_BUILD_JSON "Build Lcl with JSON library" OFF)
 option(LCL_BUILD_CRYPTO "Build Lcl with OpenSSL crypto bindings" OFF)
 option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
@@ -69,6 +70,7 @@ set(LCL_SOURCES
   src/lcl-ns.c
   src/lcl-num.c
   src/lcl-opaque.c
+  src/lcl-path.c
   src/lcl-proc.c
   src/lcl-program.c
   src/lcl-program-push.c
@@ -224,6 +226,22 @@ if(LCL_BUILD_IO)
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_IO)
     target_link_libraries(lcl-cli PRIVATE lcl_io)
+  endif()
+endif()
+
+if(LCL_BUILD_POSIX)
+  add_subdirectory(packages/lcl-posix)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_POSIX)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_POSIX)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_POSIX)
+    target_link_libraries(lcl-cli PRIVATE lcl_posix)
   endif()
 endif()
 

@@ -87,6 +87,11 @@ typedef struct {
 
 #define LCL_DEF_STACK_MAX 16
 
+typedef struct {
+  char *key;
+  char *path;
+} lcl_require_entry;
+
 struct lcl_interp {
   lcl_env env;
   lcl_value *last;
@@ -131,13 +136,19 @@ struct lcl_interp {
   char **require_roots;
   size_t require_roots_len;
   size_t require_roots_cap;
-  /* Stack of canonical paths of files currently being evaluated by
-   * `require` (pushed on cache miss before evaluation, popped on
-   * every exit path). Used for cycle detection; entries are owned
-   * strdup'd strings. */
-  char **require_stack;
+  /* Stack of modules currently being evaluated by `require` (pushed
+   * on cache miss before evaluation, popped on every exit path).
+   * `key` is the module-identity key (compared for cycle detection);
+   * `path` is the lexical path (shown in diagnostics). Both owned. */
+  lcl_require_entry *require_stack;
   size_t require_stack_len;
   size_t require_stack_cap;
+  /* Module-identity hook (lcl_set_module_key_fn): derives the require
+   * cache/cycle key from the resolved lexical path. NULL = the
+   * lexical path is the key. Must never influence resolution or
+   * cur_file — identity only. */
+  char *(*module_key_fn)(const char *lexical_path, void *userdata);
+  void *module_key_ud;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

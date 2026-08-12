@@ -110,6 +110,35 @@ void *lcl_interp_get_user_data(lcl_interp *interp);
  */
 void lcl_add_require_root(lcl_interp *interp, const char *dir);
 
+/*
+ * Install a module-identity hook for `require`.
+ *
+ * Lcl module paths are lexical names: `require` resolves its argument
+ * to a cleaned lexical path ('/'-separated; '.', '..', and repeated
+ * separators normalized by string rules alone, symlinks not
+ * consulted) and by default uses that path as the module's identity —
+ * the key for the require cache and for dependency-cycle detection.
+ * Two lexical spellings that reach the same file through symlinks are
+ * therefore two modules.
+ *
+ * A host that wants stronger identity (e.g. physical-file
+ * deduplication via realpath on POSIX) installs a key function. It
+ * receives the resolved lexical path and returns a malloc'd key,
+ * which the core takes ownership of and frees; returning NULL falls
+ * back to the lexical path. The hook affects identity ONLY: file
+ * opening, nested relative-require resolution, and diagnostics always
+ * use the lexical path. Note the trade: deduplicating by physical
+ * identity makes which lexical spelling evaluates (and thus the base
+ * for the module's own relative requires) dependent on load order.
+ *
+ * Pass fn = NULL to restore the default. Installing a hook does not
+ * invalidate cache entries keyed under a previous identity scheme;
+ * install before evaluating scripts.
+ */
+typedef char *(*lcl_module_key_fn)(const char *lexical_path, void *userdata);
+void lcl_set_module_key_fn(lcl_interp *interp, lcl_module_key_fn fn,
+                           void *userdata);
+
 /* ============================================================================
  * Evaluation
  * ============================================================================

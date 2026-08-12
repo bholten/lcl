@@ -6,6 +6,7 @@
 ;; Required files evaluate in an overlay whose parent is the global
 ;; frame, so a globally-scoped cell is visible for set!.
 var require_se_counter 0
+var require_lex_counter 0
 
 ;; ============================================================================
 ;; Immutability & Substitution
@@ -895,6 +896,19 @@ Test::suite "Require" {
         Test::eq $require_se_counter 1
         ;; Namespace is still bound after cache-served requires.
         Test::eq [selib::nop] 0
+    }
+
+    Test::case "module identity is the cleaned lexical path" {
+        ;; Lcl module paths are lexical names: ".",
+        ;; "..", and repeated separators are normalized by string
+        ;; rules, so these spellings are all ONE module — the body
+        ;; must run exactly once across the three requires.
+        set! require_lex_counter 0
+        require test/require_fixtures/lexical_id_lib.lcl
+        require test/require_fixtures/./lexical_id_lib.lcl
+        require test/require_fixtures/../require_fixtures//lexical_id_lib.lcl
+        Test::eq $require_lex_counter 1
+        Test::eq [lexlib::nop] 0
     }
 
     Test::case "missing file errors cleanly" {

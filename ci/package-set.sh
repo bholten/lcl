@@ -19,6 +19,7 @@ print_flags_linux_full() {
     print_flags_core
     cat <<'EOF'
 -DLCL_BUILD_IO=ON
+-DLCL_BUILD_POSIX=ON
 -DLCL_BUILD_PROCESS=ON
 -DLCL_BUILD_REGEX=ON
 -DLCL_BUILD_TIME=ON

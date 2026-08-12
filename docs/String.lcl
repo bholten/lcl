@@ -4,7 +4,7 @@
 ;;; 0-based byte offsets. String operands must actually *be* strings:
 ;;; passing a number, list, or other value is an error, because
 ;;; string operators never render their arguments implicitly. Use
-;;; `String::from` to render a value explicitly — it (and `join`'s
+;;; `String::from` to render a value explicitly -- it (and `join`'s
 ;;; list elements, which exist to be rendered) are the deliberate
 ;;; exceptions that accept any value.
 ;;;
