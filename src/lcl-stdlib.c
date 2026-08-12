@@ -1,7 +1,3 @@
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE 600
-#endif
-
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -9,6 +5,7 @@
 
 #include "lcl-compile.h"
 #include "lcl-eval.h"
+#include "lcl-path.h"
 #include "lcl-values.h"
 
 #include "lcl-stdlib.h"
@@ -4943,62 +4940,43 @@ static int require_str_append(char **buf, size_t *len, size_t *cap,
 
 /* require_current_dir
  *
- * Directory of the file currently being evaluated (interp->cur_file),
- * as a malloc'd string. Returns "." for a bare filename (which is
- * CWD-relative anyway), and NULL when evaluation is not file-backed
- * (cur_file unset or the "<bytes>" placeholder from string eval). */
+ * Lexical directory of the file currently being evaluated
+ * (interp->cur_file), as a malloc'd string. Returns "." for a bare
+ * filename (which is CWD-relative anyway), and NULL when evaluation
+ * is not file-backed (cur_file unset or the "<bytes>" placeholder
+ * from string eval). */
 static char *require_current_dir(const lcl_interp *interp) {
   const char *file = interp->cur_file;
-  const char *slash;
 
   if (!file || strcmp(file, "<bytes>") == 0) {
     return NULL;
   }
 
-  slash = strrchr(file, '/');
-
-  if (!slash) {
-    return strdup(".");
-  }
-
-  if (slash == file) {
-    return strdup("/");
-  }
-
-  return strndup(file, (size_t)(slash - file));
-}
-
-/* require_path_join: "<dir>/<rel>" in a fresh malloc'd buffer. */
-static char *require_path_join(const char *dir, const char *rel) {
-  size_t dlen = strlen(dir);
-  const char *sep = (dlen > 0 && dir[dlen - 1] != '/') ? "/" : "";
-  size_t total = dlen + strlen(sep) + strlen(rel) + 1;
-  char *joined = (char *)malloc(total);
-
-  if (!joined) {
-    return NULL;
-  }
-
-  snprintf(joined, total, "%s%s%s", dir, sep, rel);
-  return joined;
+  return lcl_path_dirname(file);
 }
 
 /* require_resolve
  *
- * Resolve the `require` argument to a canonical (realpath) absolute
- * path per the module-loader contract:
- *   - absolute paths are used as-is;
- *   - "./" and "../" paths resolve against the directory of the file
+ * Resolve the `require` argument to a cleaned lexical path per the
+ * module-loader contract:
+ *   - rooted paths ("/...") are used as-is;
+ *   - "./" and "../" paths join to the lexical directory of the file
  *     whose evaluation triggered the require (interp->cur_file),
- *     falling back to the process CWD when evaluation is not
- *     file-backed (REPL, eval of a string);
+ *     falling back to the argument itself (host-CWD-relative) when
+ *     evaluation is not file-backed (REPL, eval of a string);
  *   - bare paths are searched under the registered require roots in
  *     registration order (lcl_add_require_root); with no roots
  *     registered they resolve against the CWD (legacy behavior).
  *
- * On success returns a malloc'd canonical path. On failure returns
- * NULL with an interp error naming the argument and every candidate
- * path attempted. */
+ * Resolution is lexical (lcl-path.h): candidates are normalized by
+ * string rules alone and probed with fopen. The filesystem is never
+ * asked to canonicalize — symlinks are not resolved, and the result
+ * stays relative when its inputs are relative; what a relative name
+ * means is host state, per the contract in lcl.h.
+ *
+ * On success returns the malloc'd lexical path of the first openable
+ * candidate. On failure returns NULL with an interp error naming the
+ * argument and every candidate path attempted. */
 static char *require_resolve(lcl_interp *interp, const char *arg) {
   char **candidates = NULL;
   size_t ncand = 0;
@@ -5020,7 +4998,7 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
     ncand = 1;
 
     if (candidates) {
-      candidates[0] = base ? require_path_join(base, arg) : strdup(arg);
+      candidates[0] = base ? lcl_path_join(base, arg) : lcl_path_clean(arg);
     }
 
     free(base);
@@ -5030,18 +5008,18 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
 
     if (candidates) {
       for (i = 0; i < ncand; i++) {
-        candidates[i] = require_path_join(interp->require_roots[i], arg);
+        candidates[i] = lcl_path_join(interp->require_roots[i], arg);
       }
     }
   } else {
-    /* Absolute path, or a bare path with no search roots registered:
+    /* Rooted path, or a bare path with no search roots registered:
      * use the argument as-is (bare stays CWD-relative for
      * compatibility). */
     candidates = (char **)malloc(sizeof(*candidates));
     ncand = 1;
 
     if (candidates) {
-      candidates[0] = strdup(arg);
+      candidates[0] = lcl_path_clean(arg);
     }
   }
 
@@ -5050,6 +5028,8 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
     return NULL;
   }
 
+  /* Existence is not a question separate from opening: probe each
+   * cleaned candidate with fopen and keep the first that opens. */
   for (i = 0; i < ncand; i++) {
     if (!candidates[i]) {
       oom = 1;
@@ -5057,7 +5037,13 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
     }
 
     if (!resolved) {
-      resolved = realpath(candidates[i], NULL);
+      FILE *probe = fopen(candidates[i], "rb");
+
+      if (probe) {
+        fclose(probe);
+        resolved = candidates[i];
+        candidates[i] = NULL;
+      }
     }
   }
 
@@ -5098,14 +5084,13 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
   return resolved;
 }
 
-/* require_stack_contains: is `abs_path` currently being evaluated by
- * an in-progress require? */
-static int require_stack_contains(const lcl_interp *interp,
-                                  const char *abs_path) {
+/* require_stack_contains: is the module identified by `key` currently
+ * being evaluated by an in-progress require? */
+static int require_stack_contains(const lcl_interp *interp, const char *key) {
   size_t i;
 
   for (i = 0; i < interp->require_stack_len; i++) {
-    if (strcmp(interp->require_stack[i], abs_path) == 0) {
+    if (strcmp(interp->require_stack[i].key, key) == 0) {
       return 1;
     }
   }
@@ -5113,22 +5098,28 @@ static int require_stack_contains(const lcl_interp *interp,
   return 0;
 }
 
-/* require_stack_push: record `abs_path` as in-progress. Returns 1 on
- * success, 0 on OOM. */
-static int require_stack_push(lcl_interp *interp, const char *abs_path) {
-  char *copy = strdup(abs_path);
+/* require_stack_push: record a module as in-progress. `key` is the
+ * identity compared by require_stack_contains; `path` is the lexical
+ * path shown in cycle diagnostics. Returns 1 on success, 0 on OOM. */
+static int require_stack_push(lcl_interp *interp, const char *key,
+                              const char *path) {
+  char *key_copy = strdup(key);
+  char *path_copy = strdup(path);
 
-  if (!copy) {
+  if (!key_copy || !path_copy) {
+    free(key_copy);
+    free(path_copy);
     return 0;
   }
 
   if (interp->require_stack_len == interp->require_stack_cap) {
     size_t cap = interp->require_stack_cap ? interp->require_stack_cap * 2 : 8;
-    char **grown =
-        (char **)realloc(interp->require_stack, cap * sizeof(*grown));
+    lcl_require_entry *grown = (lcl_require_entry *)realloc(
+        interp->require_stack, cap * sizeof(*grown));
 
     if (!grown) {
-      free(copy);
+      free(key_copy);
+      free(path_copy);
       return 0;
     }
 
@@ -5136,22 +5127,27 @@ static int require_stack_push(lcl_interp *interp, const char *abs_path) {
     interp->require_stack_cap = cap;
   }
 
-  interp->require_stack[interp->require_stack_len++] = copy;
+  interp->require_stack[interp->require_stack_len].key = key_copy;
+  interp->require_stack[interp->require_stack_len].path = path_copy;
+  interp->require_stack_len++;
   return 1;
 }
 
 static void require_stack_pop(lcl_interp *interp) {
   if (interp->require_stack_len > 0) {
     interp->require_stack_len--;
-    free(interp->require_stack[interp->require_stack_len]);
-    interp->require_stack[interp->require_stack_len] = NULL;
+    free(interp->require_stack[interp->require_stack_len].key);
+    free(interp->require_stack[interp->require_stack_len].path);
+    interp->require_stack[interp->require_stack_len].key = NULL;
+    interp->require_stack[interp->require_stack_len].path = NULL;
   }
 }
 
 /* require_cycle_error: build "require: dependency cycle: a -> b -> a"
  * from the in-progress stack, starting at the first occurrence of
- * `abs_path`. */
-static void require_cycle_error(lcl_interp *interp, const char *abs_path) {
+ * `key`. The chain is printed with lexical paths. */
+static void require_cycle_error(lcl_interp *interp, const char *key,
+                                const char *path) {
   char *msg = NULL;
   size_t len = 0;
   size_t cap = 0;
@@ -5160,7 +5156,7 @@ static void require_cycle_error(lcl_interp *interp, const char *abs_path) {
   int ok;
 
   for (i = 0; i < interp->require_stack_len; i++) {
-    if (strcmp(interp->require_stack[i], abs_path) == 0) {
+    if (strcmp(interp->require_stack[i].key, key) == 0) {
       start = i;
       break;
     }
@@ -5169,11 +5165,11 @@ static void require_cycle_error(lcl_interp *interp, const char *abs_path) {
   ok = require_str_append(&msg, &len, &cap, "require: dependency cycle: ");
 
   for (i = start; ok && i < interp->require_stack_len; i++) {
-    ok = require_str_append(&msg, &len, &cap, interp->require_stack[i]);
+    ok = require_str_append(&msg, &len, &cap, interp->require_stack[i].path);
     ok = ok && require_str_append(&msg, &len, &cap, " -> ");
   }
 
-  ok = ok && require_str_append(&msg, &len, &cap, abs_path);
+  ok = ok && require_str_append(&msg, &len, &cap, path);
 
   if (ok) {
     LCL_ERR_MSG_DUP(interp, msg);
@@ -5191,12 +5187,15 @@ static void require_cycle_error(lcl_interp *interp, const char *abs_path) {
  * discarded. Subsequent calls with the same resolved absolute path are
  * served from cache without re-evaluating the file.
  *
- * Path resolution (see require_resolve): "/abs" as-is, "./" and "../"
- * relative to the requiring file, bare names via the registered
- * search roots (or CWD when none are registered). The resolved path
- * is canonicalized with realpath for the cache key. A file that
- * requires (directly or transitively) a file already being evaluated
- * by require is a dependency-cycle error.
+ * Path resolution (see require_resolve): "/rooted" as-is, "./" and
+ * "../" relative to the requiring file's lexical directory, bare
+ * names via the registered search roots (or CWD when none are
+ * registered). The cleaned lexical path is the module's identity —
+ * the cache and cycle key — unless the host installed a stronger
+ * identity via lcl_set_module_key_fn (the key never affects
+ * resolution or diagnostics, only identity). A file that requires
+ * (directly or transitively) a module already being evaluated by
+ * require is a dependency-cycle error.
  *
  * Differs from `load` in that:
  *   - `load` evaluates inline at the call site (textual include);
@@ -5210,7 +5209,8 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
                      lcl_value **out) {
   lcl_value *path_v = NULL;
   const char *path;
-  char *abs_path = NULL;
+  char *mod_path = NULL;
+  char *mod_key = NULL;
   lcl_value *cached_dict = NULL;
   char *src = NULL;
   lcl_program *prog = NULL;
@@ -5240,20 +5240,35 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  abs_path = require_resolve(interp, path);
+  mod_path = require_resolve(interp, path);
   lcl_ref_dec(path_v);
 
-  if (!abs_path) {
+  if (!mod_path) {
+    return LCL_RC_ERR;
+  }
+
+  if (interp->module_key_fn) {
+    mod_key = interp->module_key_fn(mod_path, interp->module_key_ud);
+  }
+
+  if (!mod_key) {
+    mod_key = strdup(mod_path);
+  }
+
+  if (!mod_key) {
+    free(mod_path);
+    LCL_ERR_MSG(interp, "require: out of memory");
     return LCL_RC_ERR;
   }
 
   /* Cache lookup. A hit means we already lifted this module's
    * namespaces once; just re-lift them at the new call site. */
   if (interp->require_cache &&
-      lcl_dict_get(interp->require_cache, abs_path, &cached_dict) == LCL_OK) {
+      lcl_dict_get(interp->require_cache, mod_key, &cached_dict) == LCL_OK) {
     lcl_result lift_rc = lift_namespaces_to_caller(interp, cached_dict);
     lcl_ref_dec(cached_dict);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
 
     if (lift_rc != LCL_OK) {
       LCL_ERR_MSG(interp, "require: failed to bind cached namespace");
@@ -5264,33 +5279,36 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_OK;
   }
 
-  /* Cycle guard: a cache miss on a file that is already mid-require
+  /* Cycle guard: a cache miss on a module that is already mid-require
    * means the dependency graph loops back on itself. Without this the
    * recursion would only stop at the interpreter depth limit. */
-  if (require_stack_contains(interp, abs_path)) {
-    require_cycle_error(interp, abs_path);
-    free(abs_path);
+  if (require_stack_contains(interp, mod_key)) {
+    require_cycle_error(interp, mod_key, mod_path);
+    free(mod_path);
+    free(mod_key);
     return LCL_RC_ERR;
   }
 
   /* Cache miss: read, compile, evaluate in an isolated overlay frame. */
-  src = read_file(abs_path, NULL);
+  src = read_file(mod_path, NULL);
 
   if (!src) {
     char msg[192];
 
     snprintf(msg, sizeof(msg), "require: could not read file \"%.128s\"",
-             abs_path);
+             mod_path);
     LCL_ERR_MSG_DUP(interp, msg);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     return LCL_RC_ERR;
   }
 
-  prog = lcl_compile_report(interp, src, abs_path);
+  prog = lcl_compile_report(interp, src, mod_path);
   free(src);
 
   if (!prog) {
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     return LCL_RC_ERR;
   }
 
@@ -5299,7 +5317,8 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
 
   if (!overlay) {
     lcl_program_free(prog);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     LCL_ERR_MSG(interp, "require: out of memory");
     return LCL_RC_ERR;
   }
@@ -5307,15 +5326,17 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
   if (interp->max_depth && interp->depth >= interp->max_depth) {
     lcl_frame_ref_dec(overlay);
     lcl_program_free(prog);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     LCL_ERR_MSG(interp, "require: max recursion depth exceeded");
     return LCL_RC_ERR;
   }
 
-  if (!require_stack_push(interp, abs_path)) {
+  if (!require_stack_push(interp, mod_key, mod_path)) {
     lcl_frame_ref_dec(overlay);
     lcl_program_free(prog);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     LCL_ERR_MSG(interp, "require: out of memory");
     return LCL_RC_ERR;
   }
@@ -5380,7 +5401,8 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_frame_clear(overlay);
     lcl_frame_ref_dec(overlay);
     lcl_program_free(prog);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     return rc;
   }
 
@@ -5394,7 +5416,8 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_frame_clear(overlay);
     lcl_frame_ref_dec(overlay);
     lcl_program_free(prog);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     LCL_ERR_MSG(interp, "require: out of memory creating cache entry");
     return LCL_RC_ERR;
   }
@@ -5407,7 +5430,8 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
         lcl_frame_clear(overlay);
         lcl_frame_ref_dec(overlay);
         lcl_program_free(prog);
-        free(abs_path);
+        free(mod_path);
+        free(mod_key);
         LCL_ERR_MSG(interp, "require: out of memory caching namespace");
         return LCL_RC_ERR;
       }
@@ -5427,21 +5451,25 @@ static int s_require(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (!interp->require_cache) {
       lcl_ref_dec(cached_dict);
-      free(abs_path);
+      free(mod_path);
+      free(mod_key);
       LCL_ERR_MSG(interp, "require: out of memory creating cache");
       return LCL_RC_ERR;
     }
   }
 
-  if (lcl_dict_put(&interp->require_cache, abs_path, cached_dict) != LCL_OK) {
+  if (lcl_dict_put(&interp->require_cache, mod_key, cached_dict) != LCL_OK) {
     lcl_ref_dec(cached_dict);
-    free(abs_path);
+    free(mod_path);
+    free(mod_key);
     LCL_ERR_MSG(interp, "require: failed to cache require result");
     return LCL_RC_ERR;
   }
 
-  free(abs_path);
-  abs_path = NULL;
+  free(mod_path);
+  free(mod_key);
+  mod_path = NULL;
+  mod_key = NULL;
 
   /* Lift the just-collected namespaces into the caller. */
   if (lift_namespaces_to_caller(interp, cached_dict) != LCL_OK) {
@@ -6797,9 +6825,6 @@ static int c_is_number(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  /* "Numerically interpretable": a numeric value, or numeric text per
-   * the shared grammar -- the pre-flight predicate for the numeric
-   * contexts, so the two can't drift. */
   if (argv[0]->type == LCL_INT || argv[0]->type == LCL_FLOAT) {
     *out = lcl_int_new(1);
   } else if (argv[0]->type == LCL_STRING) {

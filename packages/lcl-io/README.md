@@ -1,12 +1,15 @@
 # lcl-io
 
-File system and I/O operations for LCL.
+File I/O for LCL, bound to the ANSI C standard library and nothing else.
 
 ## Requirements
 
 - LCL core engine
-- POSIX system headers: `dirent.h`, `sys/stat.h`, `glob.h`
-- **Portability:** POSIX (Linux, macOS, BSD). Not portable to Windows as-is due to use of `dirent.h`, `sys/stat.h` mode bits, and `glob.h`.
+- A hosted ANSI C89 library (`stdio.h`, `getenv`)
+- **Portability:** everywhere core Lcl builds, including Windows.
+  POSIX filesystem operations (directory listing, glob, stat
+  predicates, working-directory control) live in the separate
+  `lcl-posix` package.
 
 ## Build
 
@@ -33,12 +36,6 @@ while 1 {
     puts $line
 }
 io::close_file $f
-
-# Directory listing
-let files [io::readdir "."]
-foreach f $files {
-    puts $f
-}
 ```
 
 ## API Reference
@@ -71,33 +68,12 @@ foreach f $files {
 | `io::stdout` | Get stdout file handle |
 | `io::stderr` | Get stderr file handle |
 
-### Directory Operations
-
-| Function | Description |
-|----------|-------------|
-| `io::mkdir $path ?mode?` | Create directory (default mode: 0755) |
-| `io::rmdir $path` | Remove empty directory |
-| `io::readdir $path` | List directory contents |
-| `io::getcwd` | Get current working directory |
-| `io::chdir $path` | Change working directory |
-
 ### File Operations
 
 | Function | Description |
 |----------|-------------|
 | `io::remove $path` | Delete file |
 | `io::rename $old $new` | Rename/move file or directory |
-| `io::glob $pattern` | Match files by glob pattern |
-
-### File Information
-
-| Function | Description |
-|----------|-------------|
-| `io::exists? $path` | Check if path exists (returns 0/1) |
-| `io::file? $path` | Check if path is a regular file |
-| `io::dir? $path` | Check if path is a directory |
-| `io::file_size $path` | Get file size in bytes |
-| `io::file_mtime $path` | Get modification time (Unix timestamp) |
 
 ### Environment
 

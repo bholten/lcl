@@ -102,6 +102,7 @@ jobs:
             -DLCL_BUILD_STATIC=ON \
             -DLCL_BUILD_CLI=ON \
             -DLCL_BUILD_IO=ON \
+            -DLCL_BUILD_POSIX=ON \
             -DLCL_BUILD_MATH=ON \
             -DLCL_BUILD_TIME=ON \
             -DLCL_BUILD_REGEX=ON \
@@ -129,4 +130,5 @@ jobs:
         run: |
           "$RUNNER_TEMP/lcl-consumer-build/verify-core"
           "$RUNNER_TEMP/lcl-consumer-build/verify-io"
+          "$RUNNER_TEMP/lcl-consumer-build/verify-posix"
           "$RUNNER_TEMP/lcl-consumer-build/verify-crypto"

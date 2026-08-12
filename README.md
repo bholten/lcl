@@ -999,7 +999,8 @@ framework.
 
 | Package | Namespace | Depends on |
 |---------|-----------|------------|
-| lcl-io | `io::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`) |
+| lcl-io | `io::` | ANSI C (`stdio.h`, `getenv`) — portable everywhere core builds |
+| lcl-posix | `posix::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`, `unistd.h`) |
 | lcl-math | `math::` | libm |
 | lcl-time | `time::` | ISO C `<time.h>`; POSIX for monotonic clock / sleep |
 | lcl-json | `json::` | cJSON (C99) |

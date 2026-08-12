@@ -12,6 +12,10 @@
 #include <lcl-io.h>
 #endif
 
+#ifdef LCL_HAVE_POSIX
+#include <lcl-posix.h>
+#endif
+
 #ifdef LCL_HAVE_JSON
 #include <lcl-json.h>
 #endif
@@ -130,6 +134,10 @@ static lcl_interp *create_interp(void) {
 
 #ifdef LCL_HAVE_IO
   lcl_register_io(interp);
+#endif
+
+#ifdef LCL_HAVE_POSIX
+  lcl_register_posix(interp);
 #endif
 
 #ifdef LCL_HAVE_JSON

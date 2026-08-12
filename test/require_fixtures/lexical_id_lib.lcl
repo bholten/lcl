@@ -1,0 +1,9 @@
+;; Fixture: bumps a global counter so tests can observe how many times
+;; the body ran. Used to verify that module identity is the *cleaned
+;; lexical path*: different spellings ("./", "..", "//") of the same
+;; lexical name must map to one cache entry (body runs once).
+set! require_lex_counter [+ $require_lex_counter 1]
+
+namespace lexlib {
+    proc nop {} { 0 }
+}

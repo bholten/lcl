@@ -12,6 +12,7 @@
 #include "hash-table.h"
 #include "lcl-compile.h"
 #include "lcl-eval.h"
+#include "lcl-path.h"
 #include "lcl-stdlib.h"
 #include "lcl-values.h"
 #include "lcl-version.h"
@@ -1770,6 +1771,210 @@ static int test_require_cycle_detection(void) {
   return 1;
 }
 
+/* ---------------------------------------------------------------------------
+ * Lexical module paths. lcl_path_clean/join/dirname
+ * are pure string operations: the tables below are the pinned
+ * language semantics, exercised with no filesystem at all.
+ * ---------------------------------------------------------------------------
+ */
+
+static int path_clean_case(const char *in, const char *expect) {
+  char *got = lcl_path_clean(in);
+  int ok = got != NULL && strcmp(got, expect) == 0;
+
+  if (!ok) {
+    printf("    clean(\"%s\"): got \"%s\", expected \"%s\"\n", in,
+           got ? got : "(null)", expect);
+  }
+
+  free(got);
+  return ok;
+}
+
+static int test_path_clean_table(void) {
+  /* Empty and dot */
+  ASSERT_TRUE(path_clean_case("", "."));
+  ASSERT_TRUE(path_clean_case(".", "."));
+  ASSERT_TRUE(path_clean_case("./", "."));
+  ASSERT_TRUE(path_clean_case("./.", "."));
+
+  /* Already clean */
+  ASSERT_TRUE(path_clean_case("a", "a"));
+  ASSERT_TRUE(path_clean_case("a/b/c", "a/b/c"));
+  ASSERT_TRUE(path_clean_case("/a/b", "/a/b"));
+
+  /* "." components */
+  ASSERT_TRUE(path_clean_case("a/.", "a"));
+  ASSERT_TRUE(path_clean_case("./a", "a"));
+  ASSERT_TRUE(path_clean_case("a/./b", "a/b"));
+
+  /* Repeated and trailing separators */
+  ASSERT_TRUE(path_clean_case("a//b", "a/b"));
+  ASSERT_TRUE(path_clean_case("//a///b////c", "/a/b/c"));
+  ASSERT_TRUE(path_clean_case("a/b/", "a/b"));
+  ASSERT_TRUE(path_clean_case("/", "/"));
+  ASSERT_TRUE(path_clean_case("///", "/"));
+
+  /* ".." cancels the previous component */
+  ASSERT_TRUE(path_clean_case("a/b/..", "a"));
+  ASSERT_TRUE(path_clean_case("a/..", "."));
+  ASSERT_TRUE(path_clean_case("a/../b", "b"));
+  ASSERT_TRUE(path_clean_case("a/b/../../c", "c"));
+
+  /* Relative paths keep excess ".." */
+  ASSERT_TRUE(path_clean_case("..", ".."));
+  ASSERT_TRUE(path_clean_case("../..", "../.."));
+  ASSERT_TRUE(path_clean_case("a/../../b", "../b"));
+  ASSERT_TRUE(path_clean_case("../a", "../a"));
+  ASSERT_TRUE(path_clean_case("../a/../..", "../.."));
+
+  /* ".." cannot climb above a lexical root */
+  ASSERT_TRUE(path_clean_case("/..", "/"));
+  ASSERT_TRUE(path_clean_case("/a/..", "/"));
+  ASSERT_TRUE(path_clean_case("/../../a", "/a"));
+
+  /* Dots that are not "." or ".." are ordinary components */
+  ASSERT_TRUE(path_clean_case("a/...", "a/..."));
+  ASSERT_TRUE(path_clean_case(".foo", ".foo"));
+  ASSERT_TRUE(path_clean_case("..bar", "..bar"));
+  ASSERT_TRUE(path_clean_case("a/.b/..", "a"));
+
+  return 1;
+}
+
+static int path_join_case(const char *base, const char *rel,
+                          const char *expect) {
+  char *got = lcl_path_join(base, rel);
+  int ok = got != NULL && strcmp(got, expect) == 0;
+
+  if (!ok) {
+    printf("    join(\"%s\", \"%s\"): got \"%s\", expected \"%s\"\n", base,
+           rel, got ? got : "(null)", expect);
+  }
+
+  free(got);
+  return ok;
+}
+
+static int path_dirname_case(const char *in, const char *expect) {
+  char *got = lcl_path_dirname(in);
+  int ok = got != NULL && strcmp(got, expect) == 0;
+
+  if (!ok) {
+    printf("    dirname(\"%s\"): got \"%s\", expected \"%s\"\n", in,
+           got ? got : "(null)", expect);
+  }
+
+  free(got);
+  return ok;
+}
+
+static int test_path_join_and_dirname(void) {
+  ASSERT_TRUE(path_join_case("/a/b", "c.lcl", "/a/b/c.lcl"));
+  ASSERT_TRUE(path_join_case("/a/b", "./c.lcl", "/a/b/c.lcl"));
+  ASSERT_TRUE(path_join_case("/a/b", "../c.lcl", "/a/c.lcl"));
+  ASSERT_TRUE(path_join_case(".", "./lib/x.lcl", "lib/x.lcl"));
+  ASSERT_TRUE(path_join_case("lib", "../x.lcl", "x.lcl"));
+  ASSERT_TRUE(path_join_case("lib/", "x.lcl", "lib/x.lcl"));
+
+  /* A rooted rel ignores base; an empty base yields cleaned rel. */
+  ASSERT_TRUE(path_join_case("/a", "/b/c.lcl", "/b/c.lcl"));
+  ASSERT_TRUE(path_join_case("", "a//b", "a/b"));
+
+  ASSERT_TRUE(path_dirname_case("/a/b/c.lcl", "/a/b"));
+  ASSERT_TRUE(path_dirname_case("x.lcl", "."));
+  ASSERT_TRUE(path_dirname_case("/x.lcl", "/"));
+  ASSERT_TRUE(path_dirname_case("a/b", "a"));
+
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Module-identity hook (lcl_set_module_key_fn): the hook derives the
+ * require cache/cycle key from the resolved lexical path. Identity
+ * only — resolution and diagnostics stay lexical.
+ * ---------------------------------------------------------------------------
+ */
+extern void lcl_set_module_key_fn(lcl_interp *interp,
+                                  char *(*fn)(const char *lexical_path,
+                                              void *userdata),
+                                  void *userdata);
+
+/* Collapses every module to one identity: the second require of ANY
+ * file must be served from cache. */
+static char *modkey_constant(const char *lexical_path, void *userdata) {
+  (void)lexical_path;
+  (void)userdata;
+  return strdup("the-one-module");
+}
+
+/* Declines to produce a key: core must fall back to the lexical path. */
+static char *modkey_null(const char *lexical_path, void *userdata) {
+  (void)lexical_path;
+  (void)userdata;
+  return NULL;
+}
+
+static int test_require_module_key_hook(void) {
+  char root[] = "/tmp/lcl-req-key-XXXXXX";
+  char src[1200];
+  lcl_interp *in = NULL;
+  lcl_interp *in2 = NULL;
+  lcl_value *out = NULL;
+  int rc;
+  int ok_first;
+  int ok_dedup;
+  int ok_fallback;
+
+  ASSERT_TRUE(mkdtemp(root) != NULL);
+  ASSERT_TRUE(req_write_file(root, "amod.lcl",
+                             "namespace amod { var x 1 }\n"));
+  ASSERT_TRUE(req_write_file(root, "bmod.lcl",
+                             "namespace bmod { var x 2 }\n"));
+
+  /* Constant key: amod and bmod share one identity, so requiring
+   * bmod after amod is a cache hit — bmod's body never runs. */
+  in = lcl_interp_new();
+  lcl_register_core(in);
+  lcl_set_module_key_fn(in, modkey_constant, NULL);
+
+  snprintf(src, sizeof(src), "require %s/amod.lcl\n$amod::x", root);
+  ok_first = req_eval_expect(in, src, "1");
+
+  snprintf(src, sizeof(src), "require %s/bmod.lcl", root);
+  ok_dedup = req_eval_expect(in, src, "");
+
+  rc = lcl_eval_string_file(in, "$bmod::x", "req-test.lcl", &out);
+  ok_dedup = ok_dedup && (rc == LCL_RC_ERR);
+
+  if (out) {
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  /* NULL-returning hook: lexical fallback, both modules load. */
+  in2 = lcl_interp_new();
+  lcl_register_core(in2);
+  lcl_set_module_key_fn(in2, modkey_null, NULL);
+
+  snprintf(src, sizeof(src),
+           "require %s/amod.lcl\nrequire %s/bmod.lcl\n[+ $amod::x $bmod::x]",
+           root, root);
+  ok_fallback = req_eval_expect(in2, src, "3");
+
+  lcl_interp_free(in);
+  lcl_interp_free(in2);
+
+  req_remove(root, "amod.lcl");
+  req_remove(root, "bmod.lcl");
+  rmdir(root);
+
+  ASSERT_TRUE(ok_first);
+  ASSERT_TRUE(ok_dedup);
+  ASSERT_TRUE(ok_fallback);
+  return 1;
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -1829,6 +2034,9 @@ int run_test(void) {
   RUN(test_require_relative_to_file_chdir_independent);
   RUN(test_require_search_roots_order);
   RUN(test_require_cycle_detection);
+  RUN(test_path_clean_table);
+  RUN(test_path_join_and_dirname);
+  RUN(test_require_module_key_hook);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

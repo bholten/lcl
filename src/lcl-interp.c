@@ -44,6 +44,8 @@ lcl_interp *lcl_interp_new(void) {
   interp->require_stack = NULL;
   interp->require_stack_len = 0;
   interp->require_stack_cap = 0;
+  interp->module_key_fn = NULL;
+  interp->module_key_ud = NULL;
 
   return interp;
 }
@@ -90,7 +92,8 @@ void lcl_interp_free(lcl_interp *interp) {
     free(interp->require_roots);
 
     for (i = 0; i < interp->require_stack_len; i++) {
-      free(interp->require_stack[i]);
+      free(interp->require_stack[i].key);
+      free(interp->require_stack[i].path);
     }
 
     free(interp->require_stack);
@@ -137,4 +140,16 @@ void lcl_add_require_root(lcl_interp *interp, const char *dir) {
   }
 
   interp->require_roots[interp->require_roots_len++] = copy;
+}
+
+void lcl_set_module_key_fn(lcl_interp *interp,
+                           char *(*fn)(const char *lexical_path,
+                                       void *userdata),
+                           void *userdata) {
+  if (!interp) {
+    return;
+  }
+
+  interp->module_key_fn = fn;
+  interp->module_key_ud = userdata;
 }
