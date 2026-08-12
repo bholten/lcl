@@ -119,6 +119,28 @@ int c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+int c_io_is_eof(lcl_interp *interp, int argc, lcl_value **argv,
+                lcl_value **out) {
+  FILE *handle = NULL;
+  (void)interp;
+
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
+      LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (!handle) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new(feof(handle) ? 1 : 0);
+  return LCL_RC_OK;
+}
+
 int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
                lcl_value **out) {
   FILE *handle = NULL;
@@ -126,7 +148,6 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
   char *buff;
 
   (void)interp;
-  (void)out;
 
   if (argc < 2) {
     return LCL_RC_ERR;
@@ -136,7 +157,7 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (buff_size <= 0 || buff_size > INT_MAX) {
+  if (buff_size < 2 || buff_size > INT_MAX) {
     return LCL_RC_ERR;
   }
 
@@ -157,7 +178,13 @@ int c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (fgets(buff, (int)buff_size, handle) == NULL) {
     free(buff);
-    return LCL_RC_BREAK;
+
+    if (ferror(handle)) {
+      return LCL_RC_ERR;
+    }
+
+    *out = lcl_string_new("");
+    return LCL_RC_OK;
   }
 
   *out = lcl_string_new(buff);
@@ -444,6 +471,7 @@ void lcl_register_io(lcl_interp *interp) {
              lcl_c_proc_new("io::open_file", c_io_open_file));
   lcl_ns_def(io_ns, "close_file",
              lcl_c_proc_new("io::close_file", c_io_close_file));
+  lcl_ns_def(io_ns, "eof?", lcl_c_proc_new("io::eof?", c_io_is_eof));
   lcl_ns_def(io_ns, "fgets", lcl_c_proc_new("io::fgets", c_io_fgets));
   lcl_ns_def(io_ns, "fputs", lcl_c_proc_new("io::fputs", c_io_fputs));
 
