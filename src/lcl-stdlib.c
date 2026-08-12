@@ -1,3 +1,7 @@
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
+
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -6313,8 +6317,13 @@ static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
     const char *p = str;
 
     while (*p) {
-      char c[2] = {*p, '\0'};
-      lcl_value *elem = lcl_string_new(c);
+      /* C89: aggregate initializers must be constant expressions. */
+      char c[2];
+      lcl_value *elem;
+
+      c[0] = *p;
+      c[1] = '\0';
+      elem = lcl_string_new(c);
 
       if (!elem || lcl_list_push(&result, elem) != LCL_OK) {
         LCL_ERR_MSG(interp, "String::split: out of memory");
