@@ -1,0 +1,88 @@
+;;; Basic associative container (dictionary) for Lcl.
+;;;
+;;; Supports reader syntax for direct construction.
+namespace Dict {
+    ;;; Constructs a dict from a list of arguments.
+    ;;;
+    ;;; The arguments are taken as key-values.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::new x 1 y 2
+    ;;; #{"x" 1 "y" 2}
+    ;;; >> len [Dict::new a 1 b 2]
+    ;;; 2
+    ;;; >> get [Dict::new a 1 b 2] "a"
+    ;;; 1
+    proc new {*values} {}
+
+    ;;; Return the keys of a dictionary as a list. Note that order is not guaranteed.
+    ;;;
+    ;;; Keys are copied.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::keys #{a 1 b 2 c 3}
+    ;;; ("b" "a" "c")
+    proc keys {d} {}
+
+    ;;; Return the values of a dictionary as a list. Note that order is not guaranteed.
+    ;;;
+    ;;; Values are copied.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::values #{a 1 b 2 c 3}
+    ;;; (2 1 3)
+    proc values {d} {}
+
+    ;;; Return the key, value pairs of a dictionary as an associative list.
+    ;;;
+    ;;; Items are copied.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::items #{a 1 b 2 c 3}
+    ;;; (("b" 2) ("a" 1) ("c" 3))
+    proc items {d} {}
+
+    ;;; Merges two dictionaries together. When values conflict, the second dictionary takes preference over the first.
+    ;;;
+    ;;; Returns a new dictionary.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> let d1 #{a 1 b 2}
+    ;;; >> let d2 #{b 20 c 30}
+    ;;; >> Dict::merge $d1 $d2
+    ;;; #{"b" 20 "a" 1 "c" 30}
+    proc merge {a b} {}
+
+    ;;; Applies the function over a dictionary. The function is two-valued and applied on each key-value pair.
+    ;;;
+    ;;; Returns a new dictionary.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::map #{a 1 b 2 c 3} [lambda {k v} {* $v 2}]
+    ;;; #{"b" 4 "a" 2 "c" 6}
+    proc map {d fn} {}
+
+    ;;; Applies the function over a dictionary, creating a new dictionary where the function on key-value pairs produces a truthy value.
+    ;;;
+    ;;; Returns a new dictionary.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::filter #{a 1 b 2 c 3} [lambda {k v} {> $v 1}]
+    ;;; #{"b" 2 "c" 3}
+    proc filter {d fn} {}
+
+    ;;; Applies a function over the key-value pairs, passing an accumulator and return the end result with an initializer. Does not mutate the dictionary.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Dict::reduce #{a 1 b 2 c 3} 0 [lambda {acc k v} {+ $acc $v}]
+    ;;; 6
+    proc reduce {d init fn} {}
+}
