@@ -126,6 +126,49 @@ Test::suite "File Handle Operations" {
         Test::eq [io::read_file $test_file] "test data"
         io::remove $test_file
     }
+
+    Test::case "fgets returns empty string on eof" {
+        let test_file "/tmp/lcl_io_fgets_eof.txt"
+        io::write_file $test_file "one\n\ntwo"
+
+        let fh [io::open_file $test_file r]
+        Test::false [io::eof? $fh]
+
+        Test::eq [io::fgets $fh 64] "one\n"
+        Test::eq [io::fgets $fh 64] "\n"     ;; blank line is "\n", not ""
+        Test::eq [io::fgets $fh 64] "two"    ;; final line without newline
+        Test::eq [io::fgets $fh 64] ""       ;; EOF — empty string, no error
+        Test::true [io::eof? $fh]
+
+        ;; still empty (and no error) on repeated reads past EOF
+        Test::eq [io::fgets $fh 64] ""
+
+        io::close_file $fh
+        io::remove $test_file
+    }
+
+    Test::case "eof? on empty file" {
+        let test_file "/tmp/lcl_io_eof_empty.txt"
+        io::write_file $test_file ""
+
+        let fh [io::open_file $test_file r]
+        Test::false [io::eof? $fh]           ;; feof is set by a read, not by position
+        Test::eq [io::fgets $fh 64] ""
+        Test::true [io::eof? $fh]
+
+        io::close_file $fh
+        io::remove $test_file
+    }
+
+    Test::case "fgets rejects buffer size below 2" {
+        let test_file "/tmp/lcl_io_fgets_size.txt"
+        io::write_file $test_file "data"
+
+        let fh [io::open_file $test_file r]
+        Test::eq [catch { io::fgets $fh 1 }] 1
+        io::close_file $fh
+        io::remove $test_file
+    }
 }
 
 ;; ============================================================================

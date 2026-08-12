@@ -54,9 +54,14 @@ io::close_file $f
 |----------|-------------|
 | `io::open_file $path $mode` | Open file (mode: r, w, rb, wb, etc.) |
 | `io::close_file $handle` | Close file handle |
-| `io::fgets $handle $size` | Read line (up to size bytes) |
+| `io::fgets $handle $size` | Read line (up to size-1 bytes; size ≥ 2). Returns `""` at EOF |
 | `io::fputs $handle $data` | Write string to file |
 | `io::flush $handle` | Flush file buffer |
+| `io::eof? $handle` | 1 if the handle has hit end-of-file, else 0 |
+
+`io::fgets` keeps the trailing newline, so a blank line reads as `"\n"` —
+an empty result always means end-of-file. Read errors raise an error;
+EOF never does (use `io::eof?` or test the length, as in the loop above).
 
 (For stdout writes, use bare `puts` from the core stdlib.)
 
