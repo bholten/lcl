@@ -5075,5 +5075,43 @@ Test::suite "Lex::commands" {
     }
 }
 
+Test::suite "empty program result is the empty string" {
+    Test::case "empty subcommand yields empty string" {
+        Test::eq [type []] string
+        Test::eq [String::from []] {}
+    }
+
+    Test::case "empty subcommand binds as empty string" {
+        let i85_x []
+        Test::eq "got=$i85_x" {got=}
+    }
+
+    Test::case "empty subcommand interpolates as empty string" {
+        Test::eq "x=[]" {x=}
+    }
+
+    Test::case "empty proc body yields empty string" {
+        proc i85_empty {} {}
+        Test::eq "v=[i85_empty]" {v=}
+    }
+
+    Test::case "bare return yields empty string" {
+        proc i85_bare {} { return }
+        Test::eq "v=[i85_bare]" {v=}
+    }
+
+    Test::case "empty subcommand at command head errors" {
+        let r [catch { [] x } res err]
+        Test::eq $r 1
+        Test::eq $err {empty command name}
+    }
+
+    Test::case "empty string at command head errors the same way" {
+        let r [catch { "" x } res err]
+        Test::eq $r 1
+        Test::eq $err {empty command name}
+    }
+}
+
 Test::run
 
