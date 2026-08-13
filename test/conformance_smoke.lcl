@@ -2595,6 +2595,16 @@ Test::suite "Threading Operators" {
     Test::case "-> with inline lambda" {
         Test::eq [-> 10 {[lambda {x} {+ $x 100}]}] 110
     }
+
+    Test::case "-> return propagates value from enclosing proc" {
+        proc t {} { -> 5 return; puts "unreached" }
+        Test::eq [t] 5
+    }
+
+    Test::case "->> return propagates value from enclosing proc" {
+        proc t2 {} { ->> 7 return; puts "unreached" }
+        Test::eq [t2] 7
+    }
 }
 
 ;; ============================================================================

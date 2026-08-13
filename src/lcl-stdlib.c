@@ -2624,6 +2624,7 @@ static lcl_frame *find_global_frame(lcl_frame *f) {
 }
 
 /* resolve or create a namespace path like "a::b::c".
+ *
  * Creates intermediate namespaces as needed.
  *
  * When the root segment isn't already reachable via the lexical
@@ -3116,9 +3117,11 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
             if (!next ||
                 !hash_table_put(parent->as.namespace.namespace, part, next)) {
               LCL_ERR_MSG(interp, "namespace: out of memory");
+
               if (next) {
                 lcl_ref_dec(next);
               }
+
               lcl_ref_dec(parent);
               lcl_ref_dec(ns);
               free(ns_name);
@@ -3126,6 +3129,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
               return LCL_RC_ERR;
             }
           }
+
           lcl_ref_dec(parent);
           parent = next;
           rest = next_rest;
@@ -5652,7 +5656,10 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
     free(threaded);
 
     if (rc != LCL_RC_OK) {
+      /* Fuzz bugfix: RC_RETURN delivers its value via result; pass it
+       * up like any special's body would (cf. s_if). */
       lcl_ref_dec(current);
+      *out = result;
 
       return rc;
     }
@@ -5744,7 +5751,10 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
     free(threaded);
 
     if (rc != LCL_RC_OK) {
+      /* Fuzz bugfix: RC_RETURN delivers its value via result; pass it
+       * up like any special's body would (cf. s_if). */
       lcl_ref_dec(current);
+      *out = result;
 
       return rc;
     }
