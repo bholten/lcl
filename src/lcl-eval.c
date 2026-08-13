@@ -504,12 +504,27 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     return rc;
   }
 
+  /* Fuzz: An empty subcommand (`[]`) evaluates to no value; as a
+   * command head that is an error, not a dispatch. */
+  if (callee == NULL) {
+    interp->in_tail_position = saved_tail_position;
+    LCL_ERR_MSG(interp, "empty command name");
+    return LCL_RC_ERR;
+  }
+
   if (callee->type == LCL_STRING) {
     lcl_value *name = callee;
     const char *cmd_name;
     callee = NULL;
 
     if (lcl_value_to_cstring(interp, name, &cmd_name) != LCL_OK) {
+      lcl_ref_dec(name);
+      return LCL_RC_ERR;
+    }
+
+    /* Fuzz: */
+    if (cmd_name[0] == '\0') {
+      LCL_ERR_MSG(interp, "empty command name");
       lcl_ref_dec(name);
       return LCL_RC_ERR;
     }
@@ -1047,6 +1062,21 @@ lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
 
   if (out) {
     *out = last;
+
+    /* Fuzz: A program with no commands (`[]`, an empty proc body) —
+     * or a bare `return` — yields no value. Normalize to the empty
+     * string here, at the single producer, so NULL never enters
+     * bindings, argv arrays, or concatenation. TAILCALL is excluded:
+     * its NULL result is internal and unwound before user code sees
+     * it. */
+    if (*out == NULL && (rc == LCL_RC_OK || rc == LCL_RC_RETURN)) {
+      *out = lcl_string_new("");
+
+      if (*out == NULL) {
+        LCL_ERR_MSG(interp, "out of memory");
+        rc = LCL_RC_ERR;
+      }
+    }
   } else if (last) {
     lcl_ref_dec(last);
   }

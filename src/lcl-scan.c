@@ -614,14 +614,21 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
         }
 
         content_len = (size_t)(sc->i - begin - 1);
-        subsrc = strndup(sc->s + begin, content_len);
+        /* Fuzz: Not strndup; the span may contain NUL bytes (the
+         * _bytes entry points admit them), and strndup would stop
+         * early, leaving the buffer shorter than content_len. */
+        subsrc = malloc(content_len + 1);
+
         if (!subsrc) {
           return scan_fail(sc, "out of memory", open_line);
         }
 
-        normalize_separators(subsrc, content_len);
+        memcpy(subsrc, sc->s + begin, content_len);
+        subsrc[content_len] = '\0';
 
-        sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
+        content_len = normalize_separators(subsrc, content_len);
+
+        sub = lcl_program_compile_bytes_ex(subsrc, content_len, NULL, &suberr);
         free(subsrc);
 
         if (!sub) {
