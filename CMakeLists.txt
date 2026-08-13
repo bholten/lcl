@@ -25,6 +25,7 @@ option(LCL_BUILD_CLI "Build command-line interpreter" ON)
 option(LCL_BUILD_TESTS "Build test executable" OFF)
 option(LCL_BUILD_EXAMPLES "Build embedding examples under examples/" OFF)
 option(LCL_ENABLE_ASAN "Enable AddressSanitizer (debug builds)" OFF)
+option(LCL_BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
 option(LCL_ENABLE_CLANG_TIDY "Run clang-tidy alongside compilation" OFF)
 option(LCL_DEBUG_REFC "Enable debug reference counting" OFF)
 option(LCL_STATIC_BINARY "Build fully static CLI binary (requires static libs)" OFF)
@@ -113,6 +114,25 @@ if(LCL_ENABLE_ASAN)
   set(LCL_LINK_OPTIONS -fsanitize=address,undefined)
 endif()
 
+if(LCL_BUILD_FUZZERS)
+  if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "LCL_BUILD_FUZZERS requires Clang (configure with CC=clang)")
+  endif()
+  if(NOT LCL_BUILD_STATIC)
+    message(FATAL_ERROR "LCL_BUILD_FUZZERS requires LCL_BUILD_STATIC=ON")
+  endif()
+  if(LCL_ENABLE_ASAN)
+    message(FATAL_ERROR "LCL_BUILD_FUZZERS already enables ASan/UBSan; leave LCL_ENABLE_ASAN off")
+  endif()
+  # Instrument the whole tree for coverage feedback (fuzzer-no-link);
+  # each fuzz executable links the driver via -fsanitize=fuzzer below.
+  # -O1 keeps execution fast while ASan stays accurate.
+  list(APPEND LCL_COMPILE_OPTIONS
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-sanitize-recover=all -fno-omit-frame-pointer -g -O1)
+  set(LCL_LINK_OPTIONS -fsanitize=address,undefined)
+endif()
+
 # Static binary requires static library
 if(LCL_STATIC_BINARY AND NOT LCL_BUILD_STATIC)
   message(FATAL_ERROR "LCL_STATIC_BINARY requires LCL_BUILD_STATIC=ON")
@@ -135,7 +155,7 @@ if(LCL_BUILD_SHARED)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
   )
   target_compile_options(lcl_shared PRIVATE ${LCL_COMPILE_OPTIONS})
-  if(LCL_ENABLE_ASAN)
+  if(LCL_ENABLE_ASAN OR LCL_BUILD_FUZZERS)
     target_link_options(lcl_shared PRIVATE ${LCL_LINK_OPTIONS})
   endif()
 endif()
@@ -155,7 +175,7 @@ if(LCL_BUILD_STATIC)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
   )
   target_compile_options(lcl_static PRIVATE ${LCL_COMPILE_OPTIONS})
-  if(LCL_ENABLE_ASAN)
+  if(LCL_ENABLE_ASAN OR LCL_BUILD_FUZZERS)
     target_link_options(lcl_static PRIVATE ${LCL_LINK_OPTIONS})
   endif()
 endif()
@@ -177,7 +197,7 @@ if(LCL_BUILD_CLI)
     target_link_libraries(lcl-cli PRIVATE lcl_shared)
   endif()
 
-  if(LCL_ENABLE_ASAN)
+  if(LCL_ENABLE_ASAN OR LCL_BUILD_FUZZERS)
     target_link_options(lcl-cli PRIVATE ${LCL_LINK_OPTIONS})
   endif()
 
@@ -436,6 +456,17 @@ if(LCL_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
+if(LCL_BUILD_FUZZERS)
+  foreach(FUZZ_NAME compile eval)
+    add_executable(fuzz-${FUZZ_NAME} test/fuzz/fuzz-${FUZZ_NAME}.c)
+    target_compile_options(fuzz-${FUZZ_NAME} PRIVATE ${LCL_COMPILE_OPTIONS})
+    target_include_directories(fuzz-${FUZZ_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(fuzz-${FUZZ_NAME} PRIVATE lcl_static)
+    target_link_options(fuzz-${FUZZ_NAME} PRIVATE
+      -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
+  endforeach()
+endif()
+
 if(LCL_BUILD_TESTS)
   # The C-level harness uses `-Wl,--wrap` to inject failures into
   # calloc/strndup/strdup and intercept a couple of internal calls for
@@ -452,7 +483,7 @@ if(LCL_BUILD_TESTS)
       target_link_libraries(lcl-test PRIVATE lcl_shared)
     endif()
 
-    if(LCL_ENABLE_ASAN)
+    if(LCL_ENABLE_ASAN OR LCL_BUILD_FUZZERS)
       target_link_options(lcl-test PRIVATE ${LCL_LINK_OPTIONS})
     endif()
 
