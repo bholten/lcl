@@ -166,11 +166,30 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
   default_start = p;
 
   {
+    /* Fuzz bugfix: Mirror extract_param_token: braces are opaque
+     * brace-counted blocks (quotes inside are literal), so both
+     * scanners agree on where the default ends. */
     int depth = 0;
     while (*p) {
-      if (*p == '(' || *p == '{') {
+      if (*p == '{') {
+        int bd = 1;
+        p++;
+
+        while (*p && bd > 0) {
+          if (*p == '{') {
+            bd++;
+          } else if (*p == '}') {
+            bd--;
+          }
+          p++;
+        }
+
+        continue;
+      }
+
+      if (*p == '(') {
         depth++;
-      } else if (*p == ')' || *p == '}') {
+      } else if (*p == ')') {
         if (depth > 0) {
           depth--;
         } else {
@@ -184,6 +203,10 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
             p++;
           }
           p++;
+        }
+
+        if (!*p) {
+          break;
         }
       }
       p++;
