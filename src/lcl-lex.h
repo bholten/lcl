@@ -40,6 +40,22 @@ lcl_program *lcl_program_compile_ex(const char *src, const char *file,
 lcl_program *lcl_program_compile_bytes_ex(const char *src, size_t len,
                                           const char *file,
                                           lcl_compile_err *err);
+
+/* Maximum syntactic nesting depth. Bounds both the scanner's
+ * alternating-delimiter recursion (skip_balanced) and the
+ * compile-time recursion into subprograms (`[...]`, `(...)`, `#{...}`
+ * and braced-body precompiles), which recurse one C round-trip per
+ * nesting level. Past the cap: "nesting too deep" compile error. */
+#define LCL_SCAN_MAX_NEST 256
+
+/* Internal compile entry carrying the syntactic nesting level.
+ * `nest` is 0 for top-level source; the scanner passes `nest + 1`
+ * when compiling a nested subprogram. Fails with "nesting too deep"
+ * once `nest` exceeds LCL_SCAN_MAX_NEST. The public compile
+ * functions are nest-0 wrappers. */
+lcl_program *lcl_program_compile_depth(const char *src, size_t len,
+                                       const char *file, lcl_compile_err *err,
+                                       int nest);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
 typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
@@ -101,6 +117,7 @@ typedef struct {
    * later failures during unwinding do not overwrite it. */
   const char *err;
   long err_line;
+  int nest;
 } lcl_scan;
 
 void lcl_scan_init(lcl_scan *sc, const char *src);

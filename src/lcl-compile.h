@@ -151,6 +151,11 @@ struct lcl_interp {
    * cur_file — identity only. */
   char *(*module_key_fn)(const char *lexical_path, void *userdata);
   void *module_key_ud;
+  int (*step_fn)(lcl_interp *interp, void *userdata);
+  void *step_ud;
+  unsigned long step_interval;
+  unsigned long step_countdown;
+  int interrupted;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

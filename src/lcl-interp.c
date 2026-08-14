@@ -46,6 +46,11 @@ lcl_interp *lcl_interp_new(void) {
   interp->require_stack_cap = 0;
   interp->module_key_fn = NULL;
   interp->module_key_ud = NULL;
+  interp->step_fn = NULL;
+  interp->step_ud = NULL;
+  interp->step_interval = 0;
+  interp->step_countdown = 0;
+  interp->interrupted = 0;
 
   return interp;
 }
@@ -140,6 +145,19 @@ void lcl_add_require_root(lcl_interp *interp, const char *dir) {
   }
 
   interp->require_roots[interp->require_roots_len++] = copy;
+}
+
+void lcl_set_step_hook(lcl_interp *interp,
+                       int (*fn)(lcl_interp *interp, void *userdata),
+                       void *userdata, unsigned long interval) {
+  if (!interp) {
+    return;
+  }
+
+  interp->step_fn = fn;
+  interp->step_ud = userdata;
+  interp->step_interval = interval ? interval : 1;
+  interp->step_countdown = interp->step_interval;
 }
 
 void lcl_set_module_key_fn(lcl_interp *interp,

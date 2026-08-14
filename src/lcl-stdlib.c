@@ -1630,6 +1630,13 @@ static int c_catch(lcl_interp *interp, int argc, const lcl_word **args,
     free_if_owned(prog, prog_owned);
   }
 
+  if (rc == LCL_RC_ERR && interp->interrupted) {
+    lcl_ref_dec(result);
+    free(result_var);
+    free(error_var);
+    return LCL_RC_ERR;
+  }
+
   if (rc == LCL_RC_ERR) {
     if (error_var) {
       const char *err_msg = interp->err_msg ? interp->err_msg : "unknown error";

@@ -105,7 +105,7 @@ void *lcl_interp_get_user_data(lcl_interp *interp);
  *
  * `dir` is copied; the caller keeps ownership of the argument. Paths
  * beginning with "./" or "../" always resolve relative to the file
- * that contains the `require`, and absolute paths are used as-is —
+ * that contains the `require`, and absolute paths are used as-is --
  * neither consults the search roots.
  */
 void lcl_add_require_root(lcl_interp *interp, const char *dir);
@@ -116,7 +116,7 @@ void lcl_add_require_root(lcl_interp *interp, const char *dir);
  * Lcl module paths are lexical names: `require` resolves its argument
  * to a cleaned lexical path ('/'-separated; '.', '..', and repeated
  * separators normalized by string rules alone, symlinks not
- * consulted) and by default uses that path as the module's identity —
+ * consulted) and by default uses that path as the module's identity --
  * the key for the require cache and for dependency-cycle detection.
  * Two lexical spellings that reach the same file through symlinks are
  * therefore two modules.
@@ -138,6 +138,36 @@ void lcl_add_require_root(lcl_interp *interp, const char *dir);
 typedef char *(*lcl_module_key_fn)(const char *lexical_path, void *userdata);
 void lcl_set_module_key_fn(lcl_interp *interp, lcl_module_key_fn fn,
                            void *userdata);
+
+/*
+ * Install a step hook: a host callback invoked from the evaluator
+ * every `interval` commands.
+ *
+ * The hook returning nonzero aborts evaluation: the current
+ * evaluation fails with the error "evaluation aborted by host", and
+ * the abort is sticky -- it propagates through `catch` (a script
+ * cannot trap it) and keeps failing until control returns to the
+ * host. The next top-level evaluation starts fresh, with the abort
+ * cleared and the command countdown reset to `interval`.
+ *
+ * This is the budget/watchdog mechanism for untrusted or
+ * possibly-non-terminating scripts (`while {1} {}`): a hook that
+ * unconditionally returns 1 turns `interval` into a hard per-eval
+ * command budget; a timing hook can instead abort on a wall-clock
+ * deadline, yield to a UI, or poll for user interruption.
+ *
+ * Counting is per command dispatched, uniformly across loop
+ * iterations, proc calls, subcommands, and `eval`. The hook runs
+ * with the interpreter mid-evaluation: it must not evaluate code on
+ * this interp or free it; reading state and returning is safe.
+ *
+ * Pass fn = NULL to remove the hook. `interval` 0 is treated as 1
+ * (every command).
+ */
+typedef int (*lcl_step_fn)(lcl_interp *interp, void *userdata);
+
+void lcl_set_step_hook(lcl_interp *interp, lcl_step_fn fn, void *userdata,
+                       unsigned long interval);
 
 /* ============================================================================
  * Evaluation
@@ -364,7 +394,7 @@ const char *lcl_value_to_string(lcl_value *value);
  * Domain-strict string getter: succeeds only when `value` is an
  * actual string (LCL_STRING tag). On success returns LCL_OK and
  * writes the borrowed content pointer to *out. Returns LCL_ERROR for
- * NULL input or any other type — no rendering is performed. The
+ * NULL input or any other type -- no rendering is performed. The
  * counterpart of lcl_value_to_int/_to_float for the string domain;
  * scripts render explicitly with String::from.
  */
