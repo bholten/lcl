@@ -322,6 +322,7 @@ static int and_or_impl(lcl_interp *interp, int argc, const lcl_word **args,
     val = NULL;
 
     if (lcl_eval_word(interp, args[i], &val) != LCL_RC_OK) {
+      lcl_ref_dec(val);
       return LCL_RC_ERR;
     }
 
@@ -1060,6 +1061,7 @@ static int s_binding_cell(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_eval_word(interp, args[0], &name_v) != LCL_RC_OK) {
+    lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
 
@@ -1102,10 +1104,12 @@ static int s_same_binding(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_eval_word(interp, args[0], &name1_v) != LCL_RC_OK) {
+    lcl_ref_dec(name1_v);
     return LCL_RC_ERR;
   }
 
   if (lcl_eval_word(interp, args[1], &name2_v) != LCL_RC_OK) {
+    lcl_ref_dec(name2_v);
     lcl_ref_dec(name1_v);
     return LCL_RC_ERR;
   }
@@ -1177,6 +1181,11 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (interp->def_depth > interp->def_floor) {
+    if (lcl_def_target_check_kind(interp, "let", name,
+                                  argv[1]->type == LCL_NAMESPACE) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
     if (lcl_def_target_bind(interp, name, argv[1]) != LCL_OK) {
       LCL_ERR_MSG(interp, "let: out of memory");
       return LCL_RC_ERR;
@@ -1294,6 +1303,7 @@ static int s_set_bang(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_eval_word(interp, args[1], &val_v) != LCL_RC_OK) {
+    lcl_ref_dec(val_v);
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
@@ -1370,11 +1380,18 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
   }
 
   if (lcl_eval_word(interp, argv[1], &init_v) != LCL_RC_OK) {
+    lcl_ref_dec(init_v);
     lcl_ref_dec(name_v);
     return LCL_RC_ERR;
   }
 
   if (interp->def_depth > interp->def_floor) {
+    if (lcl_def_target_check_kind(interp, "var", name_str, 0) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(init_v);
+      return LCL_RC_ERR;
+    }
+
     if (lcl_def_target_var(interp, name_str, init_v) != LCL_OK) {
       LCL_ERR_MSG(interp, "var: out of memory");
       lcl_ref_dec(name_v);
@@ -1752,6 +1769,7 @@ int s_if(lcl_interp *interp, int argc, const lcl_word **args, lcl_value **out) {
   interp->in_tail_position = 0;
 
   if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
+    lcl_ref_dec(cond_v);
     interp->in_tail_position = saved_tail_position;
     return LCL_RC_ERR;
   }
@@ -1852,12 +1870,15 @@ static int s_cond(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     if (lcl_eval_word(interp, args[i], &test_v) != LCL_RC_OK) {
+      lcl_ref_dec(test_v);
       interp->in_tail_position = saved_tail_position;
       return LCL_RC_ERR;
     }
 
     is_true = lcl_value_is_true(test_v);
     lcl_ref_dec(test_v);
+    test_v = NULL; /* a later iteration's eval-fail decref must not see
+                    * this stale pointer */
 
     if (is_true) {
       interp->in_tail_position = saved_tail_position;
@@ -1902,6 +1923,7 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
   interp->in_tail_position = 0;
 
   if (lcl_eval_word(interp, args[0], &scrutinee) != LCL_RC_OK) {
+    lcl_ref_dec(scrutinee);
     interp->in_tail_position = saved_tail_position;
     return LCL_RC_ERR;
   }
@@ -1916,6 +1938,7 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     if (lcl_eval_word(interp, args[i], &key_v) != LCL_RC_OK) {
+      lcl_ref_dec(key_v);
       lcl_ref_dec(scrutinee);
       interp->in_tail_position = saved_tail_position;
       return LCL_RC_ERR;
@@ -1923,6 +1946,8 @@ static int s_case(lcl_interp *interp, int argc, const lcl_word **args,
 
     is_match = lcl_value_equal_deep(scrutinee, key_v, &guard);
     lcl_ref_dec(key_v);
+    key_v = NULL; /* fuzz: a later iteration's eval-fail decref must
+                   * not see this stale pointer */
 
     if (is_match) {
       lcl_ref_dec(scrutinee);
@@ -1983,10 +2008,16 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
         if (last) {
           lcl_ref_dec(last);
         }
+        /* Fuzz: forward a control payload surfacing from the test; a
+         * BREAK in the test is not loop-controlled. */
+        if (cond_v) {
+          *out = cond_v;
+        }
         return rc;
       }
     } else {
       if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
+        lcl_ref_dec(cond_v);
         free_if_owned(body_p, body_owned);
         if (last) {
           lcl_ref_dec(last);
@@ -2133,10 +2164,17 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
           lcl_ref_dec(last);
         }
 
+        /* Fuzz fix: forward a control payload surfacing from the
+         * test; a BREAK in the test is not loop-controlled. */
+        if (cond_v) {
+          *out = cond_v;
+        }
+
         return rc;
       }
     } else {
       if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
+        lcl_ref_dec(cond_v);
         free_if_owned(body_p, body_owned);
         free_if_owned(next_p, next_owned);
 
@@ -2283,6 +2321,7 @@ static int s_foreach(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (lcl_eval_word(interp, args[1], &list_v) != LCL_RC_OK) {
+    lcl_ref_dec(list_v);
     lcl_ref_dec(varname_v);
 
     return LCL_RC_ERR;
@@ -2733,6 +2772,133 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
   return current;
 }
 
+/* Bugfix: an empty path segment (`foo::`, `::foo`, `a::::b`, or an
+ * empty name) would make the attach walk in s_namespace exit before
+ * the leaf step, orphaning the walk's references (#92). Invalid by
+ * grammar — the anonymous form exists for nameless namespaces. */
+static int ns_name_has_empty_segment(const char *name) {
+  const char *p;
+
+  if (name[0] == '\0' || strncmp(name, "::", 2) == 0) {
+    return 1;
+  }
+
+  for (p = strstr(name, "::"); p; p = strstr(p, "::")) {
+    p += 2;
+
+    if (*p == '\0' || strncmp(p, "::", 2) == 0) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+/* Bugfix: collision rule for the declaration form `namespace name {
+ * body }`: every segment of the path that already resolves must
+ * itself be a namespace. Runs before the body, so a colliding
+ * declaration never executes any of it. Missing segments are fine —
+ * they are created when the finished namespace is attached. */
+static lcl_result ns_build_check_path(lcl_interp *interp, const char *path) {
+  char first[256];
+  const char *rest = NULL;
+  lcl_value *current = NULL;
+  char buf[384];
+
+  if (ns_name_has_empty_segment(path)) {
+    sprintf(buf, "namespace: empty path segment in '%.200s'", path);
+    LCL_ERR_MSG_DUP(interp, buf);
+    return LCL_ERROR;
+  }
+
+  if (!lcl_ns_split(path, first, sizeof(first), &rest)) {
+    lcl_value *v = NULL;
+    int found;
+
+    if (interp->def_depth > interp->def_floor) {
+      lcl_def_target *enclosing = &interp->def_stack[interp->def_depth - 1];
+      found = hash_table_get(enclosing->overlay->locals, path, &v);
+    } else {
+      found = (lcl_env_get_value(interp, path, &v) == LCL_OK);
+    }
+
+    if (!found) {
+      return LCL_OK;
+    }
+
+    if (v->type != LCL_NAMESPACE) {
+      sprintf(buf,
+              "namespace: '%.200s' is already defined as a %s, not a "
+              "namespace",
+              path, lcl_type_name(v->type));
+      lcl_ref_dec(v);
+      LCL_ERR_MSG_DUP(interp, buf);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(v);
+    return LCL_OK;
+  }
+
+  if (lcl_env_get_value(interp, first, &current) != LCL_OK) {
+    return LCL_OK;
+  }
+
+  if (current->type != LCL_NAMESPACE) {
+    sprintf(buf,
+            "namespace: '%.200s' is already defined as a %s, not a "
+            "namespace",
+            first, lcl_type_name(current->type));
+    lcl_ref_dec(current);
+    LCL_ERR_MSG_DUP(interp, buf);
+    return LCL_ERROR;
+  }
+
+  while (rest && *rest) {
+    char part[256];
+    const char *next_rest = NULL;
+    const char *part_name;
+    lcl_value *next = NULL;
+    size_t prefix_len;
+
+    if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
+      part_name = part;
+      prefix_len = (size_t)(next_rest - path) - 2;
+    } else {
+      part_name = rest;
+      next_rest = NULL;
+      prefix_len = strlen(path);
+    }
+
+    if (lcl_ns_get(current, part_name, &next) != LCL_OK) {
+      lcl_ref_dec(current);
+      return LCL_OK;
+    }
+
+    if (next->type != LCL_NAMESPACE) {
+      if (prefix_len > 200) {
+        prefix_len = 200;
+      }
+
+      sprintf(buf,
+              "namespace: '%.*s' is already defined as a %s, not a "
+              "namespace",
+              (int)prefix_len, path, lcl_type_name(next->type));
+      lcl_ref_dec(next);
+      lcl_ref_dec(current);
+      LCL_ERR_MSG_DUP(interp, buf);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(current);
+    current = next;
+    rest = next_rest;
+  }
+
+  lcl_ref_dec(current);
+  return LCL_OK;
+}
+
 /* isolate { body }
  *
  * Evaluate body in the current frame with the namespace def-target
@@ -2852,7 +3018,10 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
    * namespace value. This makes `namespace foo { let X 1 }` from
    * inside a proc body persist correctly (the bind wouldn't propagate
    * out of the proc frame otherwise) and makes qualified-path
-   * re-entry (`namespace a::b { ... }`) preserve prior bindings. */
+   * re-entry (`namespace a::b { ... }`) preserve prior bindings.
+   *
+   * A namesspace name can't collide with anything else, e.g. a proc
+   * or anything. A namespace's parent must be a namespace itself. */
   int named;
   const lcl_word *body_word;
   lcl_value *name_v = NULL;
@@ -2881,25 +3050,35 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
       return LCL_RC_ERR;
     }
+
     if (lcl_value_to_cstring(interp, name_v, &name_cstr) != LCL_OK) {
       lcl_ref_dec(name_v);
       return LCL_RC_ERR;
     }
+
     ns_name = strdup(name_cstr);
     lcl_ref_dec(name_v);
+
     if (!ns_name) {
       LCL_ERR_MSG(interp, "namespace: out of memory");
+      return LCL_RC_ERR;
+    }
+
+    if (ns_build_check_path(interp, ns_name) != LCL_OK) {
+      free(ns_name);
       return LCL_RC_ERR;
     }
   }
 
   {
     int prog_owned_flag = 0;
+
     if (get_body_program(interp, body_word, "<namespace>", &prog,
                          &prog_owned_flag) != LCL_RC_OK) {
       free(ns_name);
       return LCL_RC_ERR;
     }
+
     prog_owned = prog_owned_flag;
   }
 
@@ -2909,6 +3088,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     } else {
       LCL_ERR_MSG(interp, "namespace: out of memory");
     }
+
     free_if_owned(prog, prog_owned);
     free(ns_name);
     return LCL_RC_ERR;
@@ -2924,8 +3104,24 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
    * qualified ("a::b::c") names. */
   if (ns_name) {
     lcl_value *found = NULL;
+    int have_found;
 
-    if (lcl_env_get_value(interp, ns_name, &found) == LCL_OK) {
+    /* Bugfix: an unqualified nested declaration inside a builder
+     * re-enters the enclosing builder's own member, never a lexically
+     * visible namespace (compositional nesting). Our own target is
+     * already pushed, so the enclosing builder sits one below the
+     * top. */
+    if (!strstr(ns_name, "::") &&
+        interp->def_depth - 1 > interp->def_floor) {
+      lcl_def_target *enclosing = &interp->def_stack[interp->def_depth - 2];
+
+      have_found =
+          hash_table_get(enclosing->overlay->locals, ns_name, &found);
+    } else {
+      have_found = (lcl_env_get_value(interp, ns_name, &found) == LCL_OK);
+    }
+
+    if (have_found) {
       if (found->type == LCL_NAMESPACE) {
         hash_iter it = {0};
         const char *key;
@@ -2962,7 +3158,28 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
 
         existing_ns = found;
       } else {
+        /* Bugfix/fuzzing: non-namespace resolved for this name
+         * (typically via the def-target self-reference fallback,
+         * which the pre-body path check cannot see). Same collision
+         * rule: error. */
+        char buf[384];
+        lcl_value *leaked_exports;
+
+        sprintf(buf,
+                "namespace: '%.200s' is already defined as a %s, not a "
+                "namespace",
+                ns_name, lcl_type_name(found->type));
         lcl_ref_dec(found);
+        leaked_exports = lcl_def_target_pop(interp);
+
+        if (leaked_exports) {
+          lcl_ref_dec(leaked_exports);
+        }
+
+        free_if_owned(prog, prog_owned);
+        free(ns_name);
+        LCL_ERR_MSG_DUP(interp, buf);
+        return LCL_RC_ERR;
       }
     }
   }
@@ -3058,6 +3275,34 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_value *value;
     int put_failed = 0;
 
+    /* Fuzz testing: reject cycles before mutating anything: an export
+       that reaches the namespace being extended (`namespace foo { let
+       me $foo }` on re-entry) would be an uncollectable refcount
+       cycle. */
+    {
+      hash_iter cit = {0};
+      const char *ck;
+      lcl_value *cv;
+      int cycle_found = 0;
+
+      while (hash_table_iterate(exports->as.dict.dictionary, &cit, &ck, &cv)) {
+        if (!cycle_found && lcl_value_would_cycle(existing_ns, cv)) {
+          cycle_found = 1;
+        }
+
+        lcl_ref_dec(cv);
+      }
+
+      if (cycle_found) {
+        lcl_ref_dec(exports);
+        lcl_ref_dec(existing_ns);
+        free(ns_name);
+        LCL_ERR_MSG(interp, "namespace: binding would create a reference "
+                            "cycle (a member contains the namespace itself)");
+        return LCL_RC_ERR;
+      }
+    }
+
     while (hash_table_iterate(exports->as.dict.dictionary, &it, &key, &value)) {
       if (!put_failed) {
         if (!hash_table_put(existing_ns->as.namespace.namespace, key, value)) {
@@ -3111,7 +3356,21 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         lcl_value *next = NULL;
 
         if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
-          if (lcl_ns_get(parent, part, &next) != LCL_OK) {
+          if (lcl_ns_get(parent, part, &next) == LCL_OK) {
+            /* Bugfix: backstop for the pre-body path check: the body
+             * may have rebound a segment (e.g. via Ns::set). Never
+             * walk into a non-namespace. */
+            if (next->type != LCL_NAMESPACE) {
+              LCL_ERR_MSG(interp, "namespace: path collides with a "
+                                  "non-namespace binding");
+              lcl_ref_dec(next);
+              lcl_ref_dec(parent);
+              lcl_ref_dec(ns);
+              free(ns_name);
+
+              return LCL_RC_ERR;
+            }
+          } else {
             next = lcl_ns_new(part);
 
             if (!next ||
@@ -3134,6 +3393,38 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
           parent = next;
           rest = next_rest;
         } else {
+          lcl_value *member = NULL;
+
+          if (lcl_ns_get(parent, rest, &member) == LCL_OK) {
+            int member_is_ns = (member->type == LCL_NAMESPACE);
+
+            lcl_ref_dec(member);
+
+            if (!member_is_ns) {
+              LCL_ERR_MSG(interp, "namespace: path collides with a "
+                                  "non-namespace binding");
+              lcl_ref_dec(parent);
+              lcl_ref_dec(ns);
+              free(ns_name);
+
+              return LCL_RC_ERR;
+            }
+          }
+
+          /* Fuzz testing: a member of the new namespace may reach the
+             parent (`namespace a::b { let x $a }`) — attaching would
+             close an uncollectable refcount cycle. */
+          if (lcl_value_would_cycle(parent, ns)) {
+            LCL_ERR_MSG(interp, "namespace: binding would create a "
+                                "reference cycle (a member contains an "
+                                "ancestor namespace)");
+            lcl_ref_dec(parent);
+            lcl_ref_dec(ns);
+            free(ns_name);
+
+            return LCL_RC_ERR;
+          }
+
           if (!hash_table_put(parent->as.namespace.namespace, rest, ns)) {
             lcl_ref_dec(parent);
             lcl_ref_dec(ns);
@@ -3163,6 +3454,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
         }
       }
     }
+
     free(ns_name);
   }
 
@@ -3186,6 +3478,7 @@ static int s_import(lcl_interp *interp, int argc, const lcl_word **argv,
   }
 
   if (lcl_eval_word(interp, argv[0], &ns_name_v) != LCL_RC_OK) {
+    lcl_ref_dec(ns_name_v);
     return LCL_RC_ERR;
   }
 
@@ -4253,6 +4546,7 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
       lcl_word_free_contents(&w);
 
       if (eval_rc != LCL_RC_OK) {
+        lcl_ref_dec(val);
         return 0;
       }
 
@@ -5534,6 +5828,10 @@ static int s_thread_first(lcl_interp *interp, int argc, const lcl_word **args,
   rc = lcl_eval_word(interp, args[0], &current);
 
   if (rc != LCL_RC_OK) {
+    if (current) {
+      *out = current;
+    }
+
     return rc;
   }
 
@@ -5693,6 +5991,10 @@ static int s_thread_last(lcl_interp *interp, int argc, const lcl_word **args,
   rc = lcl_eval_word(interp, args[0], &current);
 
   if (rc != LCL_RC_OK) {
+    if (current) {
+      *out = current;
+    }
+
     return rc;
   }
 
@@ -5804,6 +6106,12 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   if (interp->def_depth > interp->def_floor) {
+    if (lcl_def_target_check_kind(interp, "proc", name_str, 0) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
+
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
       LCL_ERR_MSG(interp, "proc: out of memory");
       lcl_ref_dec(name_v);
@@ -5865,6 +6173,12 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
   ((lcl_proc *)lam->as.procedure.proc)->is_macro = 1;
 
   if (interp->def_depth > interp->def_floor) {
+    if (lcl_def_target_check_kind(interp, "macro", name_str, 0) != LCL_OK) {
+      lcl_ref_dec(name_v);
+      lcl_ref_dec(lam);
+      return LCL_RC_ERR;
+    }
+
     if (lcl_def_target_bind(interp, name_str, lam) != LCL_OK) {
       LCL_ERR_MSG(interp, "macro: out of memory");
       lcl_ref_dec(name_v);
@@ -5908,6 +6222,7 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
   rc = lcl_eval_word(interp, args[0], &callee);
 
   if (rc != LCL_RC_OK) {
+    lcl_ref_dec(callee);
     return rc;
   }
 
@@ -5956,9 +6271,13 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
     }
 
     for (i = 0; i < nargs; i++) {
-      rc = lcl_eval_word(interp, args[i + 1], &argv[i]);
+      lcl_value *arg_v = NULL;
+
+      rc = lcl_eval_word(interp, args[i + 1], &arg_v);
 
       if (rc != LCL_RC_OK) {
+        lcl_ref_dec(arg_v);
+
         while (--i >= 0) {
           lcl_ref_dec(argv[i]);
         }
@@ -5967,6 +6286,8 @@ static int s_macroexpand(lcl_interp *interp, int argc, const lcl_word **args,
         lcl_ref_dec(callee);
         return rc;
       }
+
+      argv[i] = arg_v;
     }
   }
 
@@ -8220,6 +8541,14 @@ static int c_ns_set(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_value_to_cstring(interp, argv[1], &name) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  /* Bugfix: namespaces mutate in place, so a member that reaches the
+     namespace itself is an uncollectable refcount cycle. */
+  if (lcl_value_would_cycle(argv[0], argv[2])) {
+    LCL_ERR_MSG(interp, "Ns::set: would create a reference cycle "
+                        "(value contains the target namespace)");
     return LCL_RC_ERR;
   }
 

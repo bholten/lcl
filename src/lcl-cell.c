@@ -64,26 +64,12 @@ static int cycle_check_proc(lcl_value *target, lcl_proc *proc,
   for (i = 0; i < proc->nupvals; i++) {
     lcl_upvalue *uv = &proc->upvals[i];
 
-    if (uv->is_cell && uv->value) {
-      lcl_value *cell = uv->value;
-
-      if (cell == target) {
-        return 1;
-      }
-
-      if (cell_set_contains(visited, cell)) {
-        continue;
-      }
-
-      if (!cell_set_add(visited, cell)) {
-        continue;
-      }
-
-      if (cell->type == LCL_CELL && cell->as.cell.inner) {
-        if (cycle_check_value(target, cell->as.cell.inner, visited)) {
-          return 1;
-        }
-      }
+    /* Fuzzing: non-cell upvalues matter too: an immutable capture can
+     * hold the target directly (e.g. a proc body referencing its
+     * enclosing namespace by name, #94). cycle_check_value handles
+     * both shapes — cells get the visited-set guard there. */
+    if (uv->value && cycle_check_value(target, uv->value, visited)) {
+      return 1;
     }
   }
 
@@ -94,6 +80,10 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
                              cell_set *visited) {
   if (!val) {
     return 0;
+  }
+
+  if (val == target) {
+    return 1;
   }
 
   switch (val->type) {
@@ -134,10 +124,6 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
   }
 
   case LCL_CELL:
-    if (val == target) {
-      return 1;
-    }
-
     if (cell_set_contains(visited, val)) {
       return 0;
     }
@@ -148,26 +134,64 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
 
     return cycle_check_value(target, val->as.cell.inner, visited);
 
+  case LCL_NAMESPACE: {
+    /* Fuzzing: namespaces mutate in place (unlike COW lists/dicts),
+       so the target may be reachable through shared namespace values;
+       guard against re-walking with the visited set. */
+    hash_iter it;
+    const char *k;
+    lcl_value *v;
+
+    if (cell_set_contains(visited, val)) {
+      return 0;
+    }
+
+    if (!cell_set_add(visited, val)) {
+      return 0;
+    }
+
+    it.i = 0;
+
+    while (hash_table_iterate(val->as.namespace.namespace, &it, &k, &v)) {
+      int found = cycle_check_value(target, v, visited);
+      lcl_ref_dec(v); /* hash_table_iterate increments refcount */
+
+      if (found) {
+        return 1;
+      }
+    }
+
+    return 0;
+  }
+
   default: return 0;
   }
 }
 
-int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
+int lcl_value_would_cycle(lcl_value *container, lcl_value *value) {
   cell_set visited;
   int result;
 
-  if (!cell || cell->type != LCL_CELL || !value) {
+  if (!container || !value) {
     return 0;
   }
 
-  /* Bugfix: The value can be any container — a proc that closes over
-   * `cell` may be stored inside a list, dict, or nested cell. Walk
-   * the value graph looking for one. */
+  /* Bugfix: the value can be any container — a proc that closes over
+   * `container` may be stored inside a list, dict, cell, or
+   * namespace. Walk the value graph looking for it. */
   cell_set_init(&visited);
-  result = cycle_check_value(cell, value, &visited);
+  result = cycle_check_value(container, value, &visited);
   cell_set_free(&visited);
 
   return result;
+}
+
+int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
+  if (!cell || cell->type != LCL_CELL) {
+    return 0;
+  }
+
+  return lcl_value_would_cycle(cell, value);
 }
 
 lcl_value *lcl_cell_new(lcl_value *init) {

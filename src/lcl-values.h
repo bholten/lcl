@@ -106,6 +106,7 @@ lcl_value *lcl_cell_new(lcl_value *init);
 lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
 lcl_result lcl_cell_set(lcl_value *cell, lcl_value *v);
 int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value);
+int lcl_value_would_cycle(lcl_value *container, lcl_value *value);
 
 lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);

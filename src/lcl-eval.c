@@ -35,8 +35,15 @@ static int setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
   return 1;
 }
 
+/* Bugfix/fuzzing:
+ *
+ * On a non-OK return, `*payload_out` receives the control payload
+ * (+1) when the failing argument word carried one — a BREAK /
+ * CONTINUE / RETURN surfacing from a `[...]` argument. The caller
+ * forwards it so `puts [return 5]` propagates the value, exactly like
+ * a direct `return 5` command would. */
 static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
-                      lcl_value ***argv_out) {
+                      lcl_value ***argv_out, lcl_value **payload_out) {
   int i;
   int j;
   int word_count = cmd->argc - 1;
@@ -44,6 +51,8 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
   lcl_value **argv = NULL;
   int argc = 0;
   int cap = 0;
+
+  *payload_out = NULL;
 
   if (word_count < 0) {
     *argc_out = 0;
@@ -65,6 +74,7 @@ static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
     rc = lcl_eval_word(interp, w, &val);
 
     if (rc != LCL_RC_OK) {
+      *payload_out = val;
       goto cleanup;
     }
 
@@ -287,6 +297,11 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
                                         &def_val);
 
           if (def_rc != LCL_RC_OK) {
+            /* Fuzzing: a control code surfacing from a default-value
+             * program carries a +1 payload (#93); it dies here —
+             * there is no enclosing loop or return target across the
+             * call boundary. */
+            lcl_ref_dec(def_val);
             interp->env = saved;
             lcl_frame_ref_dec(child);
 
@@ -501,6 +516,13 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
   if (rc != LCL_RC_OK) {
     interp->in_tail_position = saved_tail_position;
+
+    /* Bugfix: a `[...]` head can surface a control payload (`[break]
+     * foo`); forward it like any other command result. */
+    if (callee) {
+      *out = callee;
+    }
+
     return rc;
   }
 
@@ -630,11 +652,16 @@ int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     int argc = 0;
     int i;
     lcl_value **argv = NULL;
-    rc = build_argv(interp, cmd, &argc, &argv);
+    lcl_value *payload = NULL;
+    rc = build_argv(interp, cmd, &argc, &argv, &payload);
 
     if (rc != LCL_RC_OK) {
       interp->in_tail_position = saved_tail_position;
       lcl_ref_dec(callee);
+
+      if (payload) {
+        *out = payload;
+      }
 
       return rc;
     }
@@ -926,6 +953,10 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       interp->in_subcmd = saved_in_subcmd;
 
       if (rc != LCL_RC_OK) {
+        /* Fuzzing: a control code (BREAK/CONTINUE/RETURN) carries a
+         * +1 payload; the concatenation consumes it here so this
+         * function never hands a value to its caller on non-OK. */
+        lcl_ref_dec(result);
         free(buf);
         return rc;
       }
