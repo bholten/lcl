@@ -6,8 +6,10 @@
  *   - load    -> error (no filesystem reads)
  *   - require -> error (no filesystem reads)
  *
- * Infinite loops (`while {1} {}`) are reachable by construction;
- * run with -timeout=N until an eval budget hook exists.
+ * Infinite loops (`while {1} {}`) are reachable by construction; a
+ * step-hook command budget turns them into a deterministic
+ * clean error so the fuzzer can mutate loop bodies freely. Keep a
+ * small -timeout as a backstop for non-eval hangs.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -17,6 +19,17 @@
 #include <lcl.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+
+/* Hard per-input command budget: the hook aborts unconditionally the
+ * first time it fires, so the interval IS the budget. Large enough
+ * that legitimate corpus inputs never come near it. */
+#define FUZZ_STEP_BUDGET 100000
+
+static int budget_abort(lcl_interp *interp, void *userdata) {
+  (void)interp;
+  (void)userdata;
+  return 1;
+}
 
 static int muted_puts(lcl_interp *interp, int argc, lcl_value **argv,
                       lcl_value **out) {
@@ -61,6 +74,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     lcl_register_proc(interp, "puts", muted_puts);
     lcl_register_spec(interp, "load", disabled_spec);
     lcl_register_spec(interp, "require", disabled_spec);
+    lcl_set_step_hook(interp, budget_abort, NULL, FUZZ_STEP_BUDGET);
 
     lcl_eval_string(interp, src, &result);
     lcl_ref_dec(result);

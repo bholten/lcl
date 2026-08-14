@@ -1042,6 +1042,14 @@ lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     return LCL_RC_ERR;
   }
 
+  /* Bugfix: A depth-0 entry is a fresh top-level evaluation from the
+   * host: clear any sticky step-hook abort and restart its command
+   * countdown, so one aborted eval doesn't poison the next. */
+  if (interp->depth == 0) {
+    interp->interrupted = 0;
+    interp->step_countdown = interp->step_interval;
+  }
+
   interp->depth++;
 
   for (i = 0; i < pr->ncmd; i++) {
@@ -1054,6 +1062,29 @@ lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
+    }
+
+    /* Step hook (lcl_set_step_hook). `interrupted` is sticky: once
+     * the hook aborts, every subsequent command errors until control
+     * returns to the host (c_catch propagates instead of trapping),
+     * so a script cannot outrun or swallow the abort.
+     *
+     * Added for fuzz testing and timeout budgeting. */
+    if (interp->interrupted) {
+      LCL_ERR_MSG(interp, "evaluation aborted by host");
+      rc = LCL_RC_ERR;
+      break;
+    }
+
+    if (interp->step_fn && --interp->step_countdown == 0) {
+      interp->step_countdown = interp->step_interval;
+
+      if (interp->step_fn(interp, interp->step_ud) != 0) {
+        interp->interrupted = 1;
+        LCL_ERR_MSG(interp, "evaluation aborted by host");
+        rc = LCL_RC_ERR;
+        break;
+      }
     }
 
     interp->in_tail_position = saved_tail_position && is_last_cmd;

@@ -73,12 +73,13 @@ static int scan_fail(lcl_scan *sc, const char *msg, long line) {
   return -1;
 }
 
-/* Same-type nesting (`[[[...]]]`) is depth-counted iteratively below;
- * the only true recursion is alternating types (e.g. `[ ( [ ... ] )
- * ]`). Cap the recursion to a sane depth so adversarial input like
- * `[([([(...)])])]` of depth 10k+ can't blow the C stack — return -1
- * instead. */
-#define LCL_SCAN_MAX_NEST 256
+/* Two recursion paths share the LCL_SCAN_MAX_NEST cap (lcl-lex.h):
+ * skip_balanced below recurses on alternating delimiter types within
+ * one scan (`[([(...)])]`), and the subcompile sites in
+ * scan_word_pieces recurse through lcl_program_compile_depth once per
+ * nesting level (`[[[...]]]`, `(((...)))`, braced bodies). Either
+ * path past the cap is a "nesting too deep" compile error instead of
+ * a C stack overflow. */
 
 static const char *unmatched_msg(char open_ch) {
   switch (open_ch) {
@@ -284,6 +285,7 @@ void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->at_cmd_start = 1;
   sc->err = NULL;
   sc->err_line = 0;
+  sc->nest = 0;
 }
 
 void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
@@ -294,6 +296,7 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->at_cmd_start = 1;
   sc->err = NULL;
   sc->err_line = 0;
+  sc->nest = 0;
 }
 
 static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
@@ -345,12 +348,9 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
     }
 
     w->braced = 1;
-
-    /* Pre-compile braced content as a program so the upvalue scanner
-     * can see variables inside code bodies (eval, foreach, while, etc.)
-     * and special forms can skip runtime compilation. If the content
-     * isn't valid code, compiled stays NULL and that's fine. */
-    w->compiled = lcl_program_compile(w->wp[0].as.lit.s, "<braced>");
+    w->compiled =
+        lcl_program_compile_depth(w->wp[0].as.lit.s, strlen(w->wp[0].as.lit.s),
+                                  "<braced>", NULL, sc->nest + 1);
 
     return 1;
   }
@@ -384,7 +384,8 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
 
     normalize_separators(subsrc + 5, content_len);
 
-    sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
+    sub = lcl_program_compile_depth(subsrc, strlen(subsrc), NULL, &suberr,
+                                    sc->nest + 1);
     free(subsrc);
 
     if (!sub) {
@@ -432,7 +433,8 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
 
     normalize_separators(subsrc + 5, content_len);
 
-    sub = lcl_program_compile_ex(subsrc, NULL, &suberr);
+    sub = lcl_program_compile_depth(subsrc, strlen(subsrc), NULL, &suberr,
+                                    sc->nest + 1);
     free(subsrc);
 
     if (!sub) {
@@ -628,7 +630,8 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
 
         content_len = normalize_separators(subsrc, content_len);
 
-        sub = lcl_program_compile_bytes_ex(subsrc, content_len, NULL, &suberr);
+        sub = lcl_program_compile_depth(subsrc, content_len, NULL, &suberr,
+                                        sc->nest + 1);
         free(subsrc);
 
         if (!sub) {

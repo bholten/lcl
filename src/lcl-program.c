@@ -73,21 +73,30 @@ static lcl_program *compile_scan(lcl_scan *sc, const char *file,
   }
 }
 
-lcl_program *lcl_program_compile_ex(const char *src, const char *file,
-                                    lcl_compile_err *err) {
+lcl_program *lcl_program_compile_depth(const char *src, size_t len,
+                                       const char *file, lcl_compile_err *err,
+                                       int nest) {
   lcl_scan sc;
 
-  lcl_scan_init(&sc, src);
+  if (nest > LCL_SCAN_MAX_NEST) {
+    compile_err_set(err, "nesting too deep", 1);
+    return NULL;
+  }
+
+  lcl_scan_init_bytes(&sc, src, len);
+  sc.nest = nest;
   return compile_scan(&sc, file, err);
+}
+
+lcl_program *lcl_program_compile_ex(const char *src, const char *file,
+                                    lcl_compile_err *err) {
+  return lcl_program_compile_depth(src, strlen(src), file, err, 0);
 }
 
 lcl_program *lcl_program_compile_bytes_ex(const char *src, size_t len,
                                           const char *file,
                                           lcl_compile_err *err) {
-  lcl_scan sc;
-
-  lcl_scan_init_bytes(&sc, src, len);
-  return compile_scan(&sc, file, err);
+  return lcl_program_compile_depth(src, len, file, err, 0);
 }
 
 lcl_program *lcl_program_compile(const char *src, const char *file) {
