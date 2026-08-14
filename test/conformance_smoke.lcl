@@ -3284,6 +3284,53 @@ Test::suite "Quasiquote" {
         let danger "puts"
         Test::eq [quasiquote {cmd ,$danger}] {cmd puts}
     }
+
+    Test::case "prose comma mid-comment is inert" {
+        ;; Previously consumed ", " and substituted "we" as a bare-word
+        ;; unquote, corrupting the comment.
+        let t [quasiquote {puts hello  ;; first, we greet}]
+        Test::eq $t {puts hello  ;; first, we greet}
+    }
+
+    Test::case "trailing comma at comment EOL is inert" {
+        ;; Previously a hard "invalid unquote" compile error (comma
+        ;; followed by newline).
+        let t [quasiquote {a  ;; greet the user,
+b}]
+        Test::assert [has? $t "greet the user,"]
+    }
+
+    Test::case "comment comma naming a variable does not substitute" {
+        let we 99
+        let t [quasiquote {puts x  ;; first, we greet}]
+        Test::eq $t {puts x  ;; first, we greet}
+    }
+
+    Test::case "unquote still fires after a commented line" {
+        let x 42
+        let t [quasiquote {;; header comment, with prose
+puts ,$x}]
+        Test::assert [has? $t "puts 42"]
+    }
+
+    Test::case "unmatched quote in comment does not desync scan" {
+        ;; Previously the string-skip swallowed from the comment's lone
+        ;; quote to the next quote, deactivating the unquote between.
+        let x 42
+        let t [quasiquote {;; don"t worry
+puts ,$x}]
+        Test::assert [has? $t "puts 42"]
+    }
+
+    Test::case "substituting a whole comment line still works" {
+        ;; The supported spelling for "unquote into a comment": build
+        ;; the comment text outside and splice the line.
+        let year 2026
+        let hdr ";; Copyright $year"
+        let t [quasiquote {,$hdr
+puts done}]
+        Test::assert [has? $t ";; Copyright 2026"]
+    }
 }
 
 ;; ============================================================================
