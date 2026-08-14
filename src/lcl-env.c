@@ -453,6 +453,44 @@ lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
   return LCL_OK;
 }
 
+lcl_result lcl_def_target_check_kind(lcl_interp *interp, const char *who,
+                                     const char *name, int incoming_is_ns) {
+  /* Fuzz testing found this:
+   *
+   * A builder member that is currently a namespace may only be
+   * replaced by another namespace. Implicitly replacing a module
+   * would orphan every live reference into it; removal must be
+   * explicit (Ns::del). */
+  lcl_def_target *target;
+  lcl_value *existing = NULL;
+  int existing_is_ns;
+
+  if (!interp || interp->def_depth <= 0 || !name || incoming_is_ns) {
+    return LCL_OK;
+  }
+
+  target = &interp->def_stack[interp->def_depth - 1];
+
+  if (!hash_table_get(target->overlay->locals, name, &existing)) {
+    return LCL_OK;
+  }
+
+  existing_is_ns = (existing->type == LCL_NAMESPACE);
+  lcl_ref_dec(existing);
+
+  if (existing_is_ns) {
+    char buf[384];
+    sprintf(buf,
+            "%s: '%.200s' is a namespace; extend it with 'namespace' or "
+            "remove it explicitly with Ns::del",
+            who, name);
+    LCL_ERR_MSG_DUP(interp, buf);
+    return LCL_ERROR;
+  }
+
+  return LCL_OK;
+}
+
 lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
                               lcl_value *value) {
   lcl_def_target *target;

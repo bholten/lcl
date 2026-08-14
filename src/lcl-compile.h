@@ -65,6 +65,8 @@ lcl_result lcl_def_target_bind(lcl_interp *interp, const char *name,
                                lcl_value *value);
 lcl_result lcl_def_target_var(lcl_interp *interp, const char *name,
                               lcl_value *value);
+lcl_result lcl_def_target_check_kind(lcl_interp *interp, const char *who,
+                                     const char *name, int incoming_is_ns);
 
 typedef struct {
   lcl_value **argv;
