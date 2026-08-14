@@ -4262,6 +4262,19 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
       continue;
     }
 
+    /* Bugfix:
+     *
+     * ;; comment: commas are prose, not unquotes. Bytes stay in the
+     * literal run; the compiler discards them when the generated
+     * template is compiled. */
+    if (c == ';' && i + 1 < len && src[i + 1] == ';') {
+      while (i < len && src[i] != '\n') {
+        i++;
+      }
+
+      continue;
+    }
+
     if (is_nested_quasiquote(src, len, i)) {
       if (i > lit_start) {
         qq_node *node = qq_node_new(QQ_LITERAL, src + lit_start, i - lit_start);
