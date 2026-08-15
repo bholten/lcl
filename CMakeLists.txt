@@ -68,6 +68,7 @@ set(LCL_SOURCES
   src/lcl-frame.c
   src/lcl-interp.c
   src/lcl-list.c
+  src/lcl-name.c
   src/lcl-ns.c
   src/lcl-num.c
   src/lcl-opaque.c

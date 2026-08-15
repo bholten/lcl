@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "lcl-lex.h"
+#include "lcl-name.h"
 #include "lcl-values.h"
 #include "str-compat.h"
 
@@ -483,10 +484,9 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
         long open_line = sc->line;
         long j = ++sc->i;
 
+        /* No newline counting: a newline inside `${...}` fails the
+         * grammar check below, reported at the open line. */
         while (j < sc->len && sc->s[j] != '}') {
-          if (sc->s[j] == '\n') {
-            sc->line++;
-          }
           j++;
         }
 
@@ -494,8 +494,16 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
           return scan_fail(sc, "unmatched '${'", open_line);
         }
 
-        if (j == sc->i) {
-          return scan_fail(sc, "empty variable name in '${}'", open_line);
+        /* `${...}` contents are a variable reference, not
+         * arbitrary bytes — validate against the qualname grammar
+         * (lcl-name.c), reporting at the open line. */
+        {
+          const char *bad =
+              lcl_name_check_ref(sc->s + sc->i, (size_t)(j - sc->i));
+
+          if (bad) {
+            return scan_fail(sc, bad, open_line);
+          }
         }
 
         {
@@ -522,48 +530,23 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
       } else {
         long j = sc->i;
 
-        if (j < sc->len &&
-            (isalpha((unsigned char)sc->s[j]) || sc->s[j] == '_')) {
+        if (j < sc->len && lcl_name_is_start((unsigned char)sc->s[j])) {
           char *varname;
           int ok;
 
           j++;
 
-          while (j < sc->len) {
-            unsigned char ch = (unsigned char)sc->s[j];
-
-            /* Bugfix:
-             * We were parsing :$foo: to do lookup a variable named $foo:
-             * Only include colon if it's part of :: namespace separator
-             */
-            if (ch == ':') {
-              if (j + 1 < sc->len && sc->s[j + 1] == ':') {
-                /* Bugfix: require an identifier char (alpha or `_`)
-                 * to start the segment after `::`. Without this,
-                 * `$foo::` silently resolves to `foo` (env_get_value
-                 * splits on `::`, then the trailing empty segment is
-                 * skipped), and `$foo::1bad` is accepted by the
-                 * scanner only to fail with a generic "undefined
-                 * variable" at runtime. Reject both at parse time. */
-                if (j + 2 >= sc->len ||
-                    (!isalpha((unsigned char)sc->s[j + 2]) &&
-                     sc->s[j + 2] != '_')) {
-                  return scan_fail(sc, "expected identifier after '::'",
-                                   sc->line);
-                }
-
-                j += 2;
-
-                continue;
-              }
-
-              break;
-            }
-
-            if (ch != '_' && !isalnum(ch)) {
-              break;
-            }
+          /* an unbraced substitution is exactly one simple name;
+           * ':' is never part of it. Qualified lookup is `${a::b}`. */
+          while (j < sc->len && lcl_name_is_char((unsigned char)sc->s[j])) {
             j++;
+          }
+
+          if (j + 2 < sc->len && sc->s[j] == ':' && sc->s[j + 1] == ':' &&
+              lcl_name_is_char((unsigned char)sc->s[j + 2])) {
+            return scan_fail(
+                sc, "qualified substitutions require braces: ${name::path}",
+                sc->line);
           }
 
           varname = strndup(sc->s + sc->i, (size_t)(j - sc->i));

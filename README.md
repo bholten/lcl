@@ -409,8 +409,11 @@ namespace math {
     }
 }
 
-;; Access namespace members with :: syntax
-puts $math::pi              ;; 3.14159
+;; Access namespace members with :: syntax. Qualified variable
+;; substitutions are always braced: ${math::pi}, never $math::pi
+;; (command heads like math::double need no braces — they are
+;; already whole words).
+puts ${math::pi}              ;; 3.14159
 puts [math::double 21]      ;; 42
 puts [math::increment]      ;; 1
 puts [math::increment]      ;; 2
@@ -445,7 +448,7 @@ Why? Lcl has lexical scoping, and qualified defintions outside of `namespace` br
 namespace utils { let x 1 }
 namespace utils { let y 2 }    ;; Can access $x here
 
-puts "$utils::x $utils::y"          ;; 1 2
+puts "${utils::x} ${utils::y}"          ;; 1 2
 ```
 
 4. **Nested namespaces are compositional** - Nested `namespace` creates bindings in the parent:
@@ -460,7 +463,7 @@ namespace outer {
     }
 }
 
-puts $outer::inner::y              ;; 2
+puts ${outer::inner::y}              ;; 2
 puts [outer::inner::greet]         ;; hello
 ```
 
@@ -468,7 +471,7 @@ puts [outer::inner::greet]         ;; hello
 ```tcl
 namespace a::b::c { let deep 42 }
 
-puts $a::b::c::deep                ;; 42
+puts ${a::b::c::deep}                ;; 42
 ```
 
 6. **Closures capture namespace variables** - Procs defined in a namespace capture cells for `set!`:
@@ -531,7 +534,7 @@ import counter n incr
 
 incr
 puts $n             ;; 1
-puts $counter::n    ;; 1 (same cell)
+puts ${counter::n}    ;; 1 (same cell)
 ```
 
 2. **Conflict detection** - Import errors if a name already exists in the current scope:

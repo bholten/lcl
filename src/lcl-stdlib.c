@@ -9,6 +9,7 @@
 
 #include "lcl-compile.h"
 #include "lcl-eval.h"
+#include "lcl-name.h"
 #include "lcl-path.h"
 #include "lcl-values.h"
 
@@ -1174,7 +1175,7 @@ static int c_let(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (strstr(name, "::") && interp->def_depth <= interp->def_floor) {
+  if (lcl_name_has_sep(name) && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "let: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     return LCL_RC_ERR;
@@ -1372,7 +1373,7 @@ static int s_var(lcl_interp *interp, int argc, const lcl_word **argv,
     return LCL_RC_ERR;
   }
 
-  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
+  if (lcl_name_has_sep(name_str) && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "var: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::def'");
     lcl_ref_dec(name_v);
@@ -2640,15 +2641,6 @@ static int s_lambda(lcl_interp *interp, int argc, const lcl_word **args,
   }
 }
 
-static int is_name_char(int c) {
-  return (c == '_' || c == ':' || (c >= 'a' && c <= 'z') ||
-          (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
-}
-
-static int is_name_start(int c) {
-  return (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'));
-}
-
 /* append n bytes to a dynamic buffer */
 static int buf_append(char **buf, size_t *len, size_t *cap, const char *s,
                       size_t n) {
@@ -2808,25 +2800,9 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
 /* Bugfix: an empty path segment (`foo::`, `::foo`, `a::::b`, or an
  * empty name) would make the attach walk in s_namespace exit before
  * the leaf step, orphaning the walk's references (#92). Invalid by
- * grammar — the anonymous form exists for nameless namespaces. */
-static int ns_name_has_empty_segment(const char *name) {
-  const char *p;
-
-  if (name[0] == '\0' || strncmp(name, "::", 2) == 0) {
-    return 1;
-  }
-
-  for (p = strstr(name, "::"); p; p = strstr(p, "::")) {
-    p += 2;
-
-    if (*p == '\0' || strncmp(p, "::", 2) == 0) {
-      return 1;
-    }
-  }
-
-  return 0;
-}
-
+ * grammar — the anonymous form exists for nameless namespaces.
+ * Structure check lives in lcl-name.c
+ *
 /* Bugfix: collision rule for the declaration form `namespace name {
  * body }`: every segment of the path that already resolves must
  * itself be a namespace. Runs before the body, so a colliding
@@ -2838,7 +2814,7 @@ static lcl_result ns_build_check_path(lcl_interp *interp, const char *path) {
   lcl_value *current = NULL;
   char buf[384];
 
-  if (ns_name_has_empty_segment(path)) {
+  if (lcl_name_has_empty_seg(path)) {
     sprintf(buf, "namespace: empty path segment in '%.200s'", path);
     LCL_ERR_MSG_DUP(interp, buf);
     return LCL_ERROR;
@@ -3144,7 +3120,7 @@ static int s_namespace(lcl_interp *interp, int argc, const lcl_word **args,
      * visible namespace (compositional nesting). Our own target is
      * already pushed, so the enclosing builder sits one below the
      * top. */
-    if (!strstr(ns_name, "::") &&
+    if (!lcl_name_has_sep(ns_name) &&
         interp->def_depth - 1 > interp->def_floor) {
       lcl_def_target *enclosing = &interp->def_stack[interp->def_depth - 2];
 
@@ -3731,6 +3707,16 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
           goto err;
         }
 
+        /* same reference grammar as the scanner's `${...}`. */
+        {
+          const char *bad = lcl_name_check_ref(src + start, i - start);
+
+          if (bad) {
+            LCL_ERR_MSG(interp, bad);
+            goto err;
+          }
+        }
+
         {
           size_t name_len = i - start;
           char *name = malloc(name_len + 1);
@@ -3781,13 +3767,20 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
         continue;
       }
 
-      if (i < src_len && is_name_start((unsigned char)src[i])) {
+      if (i < src_len && lcl_name_is_start((unsigned char)src[i])) {
         size_t start = i;
 
         i++;
 
-        while (i < src_len && is_name_char((unsigned char)src[i])) {
+        while (i < src_len && lcl_name_is_char((unsigned char)src[i])) {
           i++;
+        }
+
+        if (i + 2 < src_len && src[i] == ':' && src[i + 1] == ':' &&
+            lcl_name_is_char((unsigned char)src[i + 2])) {
+          LCL_ERR_MSG(interp,
+                      "qualified substitutions require braces: ${name::path}");
+          goto err;
         }
 
         {
@@ -4140,8 +4133,11 @@ static size_t find_quasiquote_end(const char *src, size_t len, size_t start) {
 }
 
 static int parse_unquote_word(const char *src, size_t len, size_t pos,
-                              size_t *word_start, size_t *word_end) {
+                              size_t *word_start, size_t *word_end,
+                              const char **err) {
   size_t i = pos;
+
+  *err = NULL;
 
   while (i < len && (src[i] == ' ' || src[i] == '\t')) {
     i++;
@@ -4164,8 +4160,18 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
         i++; /* skip } */
       }
     } else {
-      while (i < len && is_name_char((unsigned char)src[i])) {
+      /* a bare unquote variable is a simple name; ':' is not
+       * part of it (qualified unquotes are `,${a::b}`). */
+      while (i < len && lcl_name_is_char((unsigned char)src[i])) {
         i++;
+      }
+
+      /* Migration diagnostic, mirroring the scanner. Without it,
+       * `,$a::b` would silently become value-then-literal-"::b". */
+      if (i + 2 < len && src[i] == ':' && src[i + 1] == ':' &&
+          lcl_name_is_char((unsigned char)src[i + 2])) {
+        *err = "qualified substitutions require braces: ${name::path}";
+        return 0;
       }
     }
 
@@ -4227,7 +4233,7 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
      namespaces)
    */
   if (isalnum((unsigned char)src[i]) || src[i] == '_' || src[i] == '-') {
-    while (i < len && (is_name_char((unsigned char)src[i]) || src[i] == ':' ||
+    while (i < len && (lcl_name_is_char((unsigned char)src[i]) || src[i] == ':' ||
                        src[i] == '-')) {
       i++;
     }
@@ -4424,11 +4430,19 @@ static qq_node *qq_parse(const char *src, size_t len, int depth,
         i++;
       }
 
-      if (!parse_unquote_word(src, len, i, &word_start, &word_end)) {
-        *err_msg =
-            "invalid unquote: expected $var, [cmd], {literal}, (list), or #{dict}";
-        qq_node_free(head);
-        return NULL;
+      {
+        const char *uq_err = NULL;
+
+        if (!parse_unquote_word(src, len, i, &word_start, &word_end,
+                                &uq_err)) {
+          *err_msg =
+              uq_err
+                  ? uq_err
+                  : "invalid unquote: expected $var, [cmd], {literal}, "
+                    "(list), or #{dict}";
+          qq_node_free(head);
+          return NULL;
+        }
       }
 
       if (num_commas > depth) {
@@ -4577,7 +4591,11 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
 
       if (scan_rc < 0) {
         lcl_word_free_contents(&w);
-        LCL_ERR_MSG(interp, "quasiquote: failed to parse unquote expression");
+        /* Surface the scanner's own diagnostic when it has one
+         * (e.g. the `${...}` grammar errors). */
+        LCL_ERR_MSG(interp,
+                    sc.err ? sc.err
+                           : "quasiquote: failed to parse unquote expression");
         return 0;
       }
 
@@ -6137,7 +6155,7 @@ static int s_proc(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
+  if (lcl_name_has_sep(name_str) && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "proc: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
@@ -6202,7 +6220,7 @@ static int s_macro(lcl_interp *interp, int argc, const lcl_word **args,
     return LCL_RC_ERR;
   }
 
-  if (strstr(name_str, "::") && interp->def_depth <= interp->def_floor) {
+  if (lcl_name_has_sep(name_str) && interp->def_depth <= interp->def_floor) {
     LCL_ERR_MSG(interp, "macro: qualified name not allowed here; "
                         "define inside 'namespace' or use 'ns::proc'");
     lcl_ref_dec(name_v);
@@ -7272,6 +7290,7 @@ static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   lcl_value *min_val;
   lcl_value *max_val;
+  lcl_value *resolved = NULL;
   int min_args;
   int max_args;
 
@@ -7280,6 +7299,23 @@ static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   func = argv[0];
+
+  /* follow STRING -> command lookup, same rule as `apply`. This
+   * is the spelling for operator-named commands (`arity {+}`), whose
+   * names fall outside the substitution grammar. */
+  if (func->type == LCL_STRING) {
+    const char *name;
+
+    if (lcl_value_to_cstring(interp, func, &name) != LCL_OK) {
+      return LCL_RC_ERR;
+    }
+
+    if (lcl_env_get_command(interp, name, &resolved) != LCL_OK) {
+      return err_expected_got(interp, "arity", "proc", func);
+    }
+
+    func = resolved;
+  }
 
   if (func->type == LCL_PROC) {
     lcl_proc *p = func->as.procedure.proc;
@@ -7291,8 +7327,11 @@ static int c_arity(lcl_interp *interp, int argc, lcl_value **argv,
     min_args = 0;
     max_args = -1;
   } else {
+    lcl_ref_dec(resolved);
     return err_expected_got(interp, "arity", "proc", func);
   }
+
+  lcl_ref_dec(resolved);
 
   result = lcl_list_new();
   min_val = lcl_int_new(min_args);

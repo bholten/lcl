@@ -418,16 +418,13 @@ namespace Doc {
 
     proc _md_entries {prefix entries} {
         var out {}
-        ;; "$q::" would parse as a qualified variable name; keep the
-        ;; separator in its own piece.
-        let sep {::}
 
         foreach e $entries {
             let q "$prefix[get $e name]"
             let k [get $e kind]
 
             if [== $k "namespace"] {
-                set! out "$out## namespace `$q`\n\n[_md_doc [get $e doc]][_md_entries "$q$sep" [get $e entries]]"
+                set! out "$out## namespace `$q`\n\n[_md_doc [get $e doc]][_md_entries "$q::" [get $e entries]]"
             } else {
                 if [or [== $k "proc"] [== $k "macro"]] {
                     var sig $q
@@ -541,7 +538,6 @@ namespace Doc {
 
     proc _dt_entries {prefix entries} {
         var acc #{pass 0 fail 0 failures ()}
-        let sep {::}
 
         foreach e $entries {
             let q "$prefix[get $e name]"
@@ -551,7 +547,7 @@ namespace Doc {
             }
 
             if [== [get $e kind] "namespace"] {
-                set! acc [_dt_merge $acc [_dt_entries "$q$sep" [get $e entries]]]
+                set! acc [_dt_merge $acc [_dt_entries "$q::" [get $e entries]]]
             }
         }
 

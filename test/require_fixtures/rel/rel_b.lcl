@@ -7,6 +7,6 @@ namespace rel_b {
     ;; Proves the chained module was usable inside this one, via the
     ;; file-level binding closed over by this proc.
     proc c_val {} {
-        return $rel_c::val
+        return ${rel_c::val}
     }
 }
