@@ -669,3 +669,30 @@ Test::suite "float stringification is locale-independent" {
         Test::assert [> $diff -0.0000000001]
     }
 }
+
+;; ============================================================================
+;; Scanner-aligned delimiter boundaries (skip-primitive unification)
+;; ============================================================================
+;; Quasiquote's unquote boundary scan and subst's subcommand walk now
+;; use the scanner's own delimiter grammars, so a template splits at
+;; exactly the byte the compiler would split at.
+
+Test::suite "scanner-aligned delimiter boundaries" {
+    Test::case "unquote subcommand boundary honors quotes" {
+        ;; Pre-unification, the quote-blind walk ended the unquote at
+        ;; the "]" inside the string, corrupting the template.
+        let out [eval [quasiquote { + 1 ,[String::length "]"] }]]
+        Test::eq $out 2
+    }
+
+    Test::case "subst subcommand boundary honors quotes" {
+        Test::eq [subst {x=[String::length "]"]}] "x=1"
+    }
+
+    Test::case "subst reports unterminated subcommand" {
+        var err ""
+        let r [catch { subst {x=[+ 1 2} } res err]
+        Test::eq $r 1
+        Test::assert [has? $err {unmatched '['}]
+    }
+}

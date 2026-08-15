@@ -1421,6 +1421,49 @@ static int test_issue98_bare_spread_is_compile_error(void) {
   return 1;
 }
 
+/* Scanner-unification regressions: list/dict literals compile by
+ * byte length (an embedded NUL used to strlen-truncate the desugared
+ * `list ...` program — the #84 wrinkle), and the exported span
+ * helpers reject unterminated spans. */
+static int test_sub_literal_scan_unification(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  /* "len (a \0 b)" — the NUL byte is an ordinary 1-byte word, so the
+   * list has three elements. Pre-fix the program truncated at the
+   * NUL and compiled `list a `. */
+  {
+    static const char src[] = "len (a \0 b)";
+
+    rc = lcl_eval_bytes(lcl_test_interp, src, sizeof(src) - 1, &out);
+    ASSERT_TRUE(rc == LCL_RC_OK);
+    ASSERT_TRUE(out != NULL);
+    ASSERT_TRUE(out->type == LCL_INT);
+    ASSERT_TRUE(out->as.i == 3);
+    lcl_ref_dec(out);
+    out = NULL;
+  }
+
+  /* Span helpers: boundary conventions and failure on unterminated. */
+  {
+    static const char buf[] = "a \"]\" ] x"; /* after '[': a "]" ] x */
+    size_t end = 0;
+
+    ASSERT_TRUE(lcl_scan_skip_balanced_span(buf, sizeof(buf) - 1, 0, '[', ']',
+                                            &end) == 0);
+    ASSERT_TRUE(buf[end - 1] == ']');
+    ASSERT_TRUE(end == 7); /* the ']' inside quotes is not a boundary */
+
+    ASSERT_TRUE(lcl_scan_skip_balanced_span("no close", 8, 0, '[', ']',
+                                            &end) != 0);
+    ASSERT_TRUE(lcl_scan_skip_braces_span("no close", 8, 0, &end) != 0);
+  }
+
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
 /* `lcl_dict_clone_shallow` ignores `hash_table_put` return.  On OOM
  * the clone is silently truncated. We force the first put inside the
  * clone iteration to fail, trigger COW on a shared dict, and verify:
@@ -2307,6 +2350,7 @@ int run_test(void) {
   RUN(test_issue71_compile_nesting_cap);
   RUN(test_issue71_step_hook_budget);
   RUN(test_issue98_bare_spread_is_compile_error);
+  RUN(test_sub_literal_scan_unification);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);
