@@ -12,7 +12,7 @@ lcl_value *lcl_string_new(const char *str) {
   /* A STRING value's `str_repr` is its content; unlike lazy-reify
    * types (INT/FLOAT/LIST/DICT), there is no second source of truth
    * to reify from. So `str_repr == NULL` on a STRING is a poison
-   * state — anyone stringifying it sees a NULL return and raises "out
+   * state -- anyone stringifying it sees a NULL return and raises "out
    * of memory". Treat `str == NULL` as the empty string at
    * construction time; callers like `io::getenv` of an unset variable
    * used to silently get "" out of this path and we want to preserve

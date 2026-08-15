@@ -79,6 +79,16 @@ set(LCL_SOURCES
   src/lcl-ref.c
   src/lcl-scan.c
   src/lcl-stdlib.c
+  src/lcl-stdlib-binding.c
+  src/lcl-stdlib-control.c
+  src/lcl-stdlib-dict.c
+  src/lcl-stdlib-eval.c
+  src/lcl-stdlib-lex.c
+  src/lcl-stdlib-list.c
+  src/lcl-stdlib-module.c
+  src/lcl-stdlib-ns.c
+  src/lcl-stdlib-num.c
+  src/lcl-stdlib-string.c
   src/lcl-string.c
   src/lcl-word.c
   src/str-compat.c
