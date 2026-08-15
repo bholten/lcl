@@ -125,4 +125,21 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len);
 int lcl_scan_word(lcl_scan *sc, lcl_word *w);
 int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd);
 
+/* Delimiter-skip helpers over a raw byte buffer — the scanner's own
+ * grammars, exported so template walkers (quasiquote, subst) find the
+ * same boundaries the compiler will. `pos` is the index just past the
+ * opening delimiter; on success returns 0 with *end one past the
+ * closer. Returns -1 on an unterminated span (or nesting past
+ * LCL_SCAN_MAX_NEST).
+ *
+ * _braces_span uses the brace-literal grammar (depth + escapes only;
+ * quotes are ordinary bytes) — the grammar of `{...}` words.
+ * _balanced_span uses the full cross-delimiter grammar (quote runs
+ * skipped, nested `{...}` opaque, `[...]`/`(...)` recursed) — the
+ * grammar of `[...]`, `(...)`, and `#{...}` spans. */
+int lcl_scan_skip_braces_span(const char *s, size_t len, size_t pos,
+                              size_t *end);
+int lcl_scan_skip_balanced_span(const char *s, size_t len, size_t pos,
+                                char open_ch, char close_ch, size_t *end);
+
 #endif

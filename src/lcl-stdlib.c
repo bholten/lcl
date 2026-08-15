@@ -2801,9 +2801,9 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
  * empty name) would make the attach walk in s_namespace exit before
  * the leaf step, orphaning the walk's references (#92). Invalid by
  * grammar — the anonymous form exists for nameless namespaces.
- * Structure check lives in lcl-name.c
+ * Structure check lives in lcl-name.c.
  *
-/* Bugfix: collision rule for the declaration form `namespace name {
+ * Bugfix: collision rule for the declaration form `namespace name {
  * body }`: every segment of the path that already resolves must
  * itself be a namespace. Runs before the body, so a colliding
  * declaration never executes any of it. Missing segments are fine —
@@ -3841,26 +3841,15 @@ static int s_subst(lcl_interp *interp, int argc, const lcl_word **args,
 
     if (c == '[') {
       size_t start = ++i;
-      int depth = 1;
+      size_t close_end;
 
-      while (i < src_len && depth > 0) {
-        if (src[i] == '[') {
-          depth++;
-        } else if (src[i] == ']') {
-          depth--;
-        } else if (src[i] == '\\' && i + 1 < src_len) {
-          i++;
-        }
-
-        if (depth > 0) {
-          i++;
-        }
-      }
-
-      if (depth != 0) {
-        /* bugfix: this is an unterminated [...] */
+      if (lcl_scan_skip_balanced_span(src, src_len, start, '[', ']',
+                                      &close_end) != 0) {
+        LCL_ERR_MSG(interp, "subst: unmatched '['");
         goto err;
       }
+
+      i = close_end - 1; /* index of the closing ']' */
 
       {
         size_t subcmd_len = i - start;
@@ -4042,70 +4031,6 @@ static qq_node *qq_node_new(qq_node_kind kind, const char *text, size_t len) {
   return node;
 }
 
-/* Skip balanced braces, returning position after closing brace */
-static size_t skip_braces(const char *src, size_t len, size_t start) {
-  int depth = 1;
-  size_t i = start;
-  while (i < len && depth > 0) {
-    if (src[i] == '{') {
-      depth++;
-    } else if (src[i] == '}') {
-      depth--;
-    } else if (src[i] == '\\' && i + 1 < len) {
-      i++;
-    }
-
-    if (depth > 0) {
-      i++;
-    }
-  }
-
-  return i;
-}
-
-/* Skip balanced brackets, returning position after closing bracket */
-static size_t skip_brackets(const char *src, size_t len, size_t start) {
-  int depth = 1;
-  size_t i = start;
-
-  while (i < len && depth > 0) {
-    if (src[i] == '[') {
-      depth++;
-    } else if (src[i] == ']') {
-      depth--;
-    } else if (src[i] == '\\' && i + 1 < len) {
-      i++;
-    }
-
-    if (depth > 0) {
-      i++;
-    }
-  }
-
-  return i;
-}
-
-/* Skip balanced parens, returning position after closing paren */
-static size_t skip_parens(const char *src, size_t len, size_t start) {
-  int depth = 1;
-  size_t i = start;
-  while (i < len && depth > 0) {
-    if (src[i] == '(') {
-      depth++;
-    } else if (src[i] == ')') {
-      depth--;
-    } else if (src[i] == '\\' && i + 1 < len) {
-      i++;
-    }
-
-    if (depth > 0) {
-      i++;
-    }
-  }
-
-  return i;
-}
-
 static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
   const char *kw = "quasiquote";
   size_t kw_len = 10;
@@ -4129,7 +4054,13 @@ static int is_nested_quasiquote(const char *src, size_t len, size_t pos) {
 }
 
 static size_t find_quasiquote_end(const char *src, size_t len, size_t start) {
-  return skip_braces(src, len, start + 1) + 1;
+  size_t end;
+
+  if (lcl_scan_skip_braces_span(src, len, start + 1, &end) != 0) {
+    return len + 1; /* unterminated: take the rest, as before */
+  }
+
+  return end;
 }
 
 static int parse_unquote_word(const char *src, size_t len, size_t pos,
@@ -4180,37 +4111,26 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
   }
 
   if (src[i] == '[') {
-    i++;
-    i = skip_brackets(src, len, i);
-
-    if (i <= len) {
-      i++;
+    if (lcl_scan_skip_balanced_span(src, len, i + 1, '[', ']', &i) != 0) {
+      return 0;
     }
 
     *word_end = i;
-
     return 1;
   }
 
   if (src[i] == '{') {
-    i++;
-    i = skip_braces(src, len, i);
-
-    if (i <= len) {
-      i++;
+    if (lcl_scan_skip_braces_span(src, len, i + 1, &i) != 0) {
+      return 0;
     }
 
     *word_end = i;
-
     return 1;
   }
 
   if (src[i] == '(') {
-    i++;
-    i = skip_parens(src, len, i);
-
-    if (i <= len) {
-      i++;
+    if (lcl_scan_skip_balanced_span(src, len, i + 1, '(', ')', &i) != 0) {
+      return 0;
     }
 
     *word_end = i;
@@ -4218,11 +4138,8 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
   }
 
   if (src[i] == '#' && i + 1 < len && src[i + 1] == '{') {
-    i += 2;
-    i = skip_braces(src, len, i);
-
-    if (i <= len) {
-      i++;
+    if (lcl_scan_skip_balanced_span(src, len, i + 2, '{', '}', &i) != 0) {
+      return 0;
     }
 
     *word_end = i;

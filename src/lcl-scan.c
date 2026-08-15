@@ -90,6 +90,63 @@ static const char *unmatched_msg(char open_ch) {
   }
 }
 
+/* Advance sc->i past the matching '}' of a brace literal whose '{'
+ * has already been consumed. Brace-literal grammar: nesting depth and
+ * backslash escapes only — quotes and other delimiters are ordinary
+ * bytes. The single definition of this grammar; the braced-word
+ * scanner, skip_balanced's opaque-brace case, and the exported span
+ * helper all use it. */
+static int skip_brace_literal(lcl_scan *sc, long open_line) {
+  long depth = 1;
+
+  while (sc->i < sc->len) {
+    char c = sc->s[sc->i++];
+
+    if (c == '\\' && sc->i < sc->len) {
+      if (sc->s[sc->i] == '\n') {
+        sc->line++;
+      }
+      sc->i++;
+    } else if (c == '{') {
+      depth++;
+    } else if (c == '}') {
+      depth--;
+
+      if (!depth) {
+        return 0;
+      }
+    } else if (c == '\n') {
+      sc->line++;
+    }
+  }
+
+  return scan_fail(sc, "unmatched '{'", open_line);
+}
+
+/* Advance sc->i past the closing '"' of a double-quoted run whose
+ * opening quote has already been consumed. Escapes consume the next
+ * byte; newlines are counted. */
+static int skip_dquote(lcl_scan *sc, long quote_line) {
+  while (sc->i < sc->len) {
+    char c = sc->s[sc->i++];
+
+    if (c == '"') {
+      return 0;
+    }
+
+    if (c == '\\' && sc->i < sc->len) {
+      if (sc->s[sc->i] == '\n') {
+        sc->line++;
+      }
+      sc->i++;
+    } else if (c == '\n') {
+      sc->line++;
+    }
+  }
+
+  return scan_fail(sc, "unmatched '\"'", quote_line);
+}
+
 /* Refactor:
  *
  * skip_balanced -- advance sc->i past a balanced open_ch/close_ch
@@ -138,28 +195,8 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
     } else if (c == '\n') {
       sc->line++;
     } else if (c == '{' && open_ch != '{') {
-      long k = 1;
-      long brace_line = sc->line;
-
-      while (sc->i < sc->len && k) {
-        char e = sc->s[sc->i++];
-
-        if (e == '\\' && sc->i < sc->len) {
-          if (sc->s[sc->i] == '\n') {
-            sc->line++;
-          }
-          sc->i++;
-        } else if (e == '{') {
-          k++;
-        } else if (e == '}') {
-          k--;
-        } else if (e == '\n') {
-          sc->line++;
-        }
-      }
-
-      if (k) {
-        return scan_fail(sc, "unmatched '{'", brace_line);
+      if (skip_brace_literal(sc, sc->line) != 0) {
+        return -1;
       }
     } else if (c == '(' && open_ch != '(') {
       if (skip_balanced(sc, '(', ')', rec_depth + 1, sc->line) != 0) {
@@ -170,26 +207,8 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
         return -1;
       }
     } else if (c == '"') {
-      long quote_line = sc->line;
-      int closed = 0;
-
-      while (sc->i < sc->len) {
-        char e = sc->s[sc->i++];
-
-        if (e == '"') {
-          closed = 1;
-          break;
-        }
-
-        if (e == '\\' && sc->i < sc->len) {
-          sc->i++;
-        } else if (e == '\n') {
-          sc->line++;
-        }
-      }
-
-      if (!closed) {
-        return scan_fail(sc, "unmatched '\"'", quote_line);
+      if (skip_dquote(sc, sc->line) != 0) {
+        return -1;
       }
     }
   }
@@ -300,6 +319,59 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->nest = 0;
 }
 
+/* Compile the span between a just-consumed opening delimiter and its
+ * balanced closer into a SUBCMD piece. `prefix` is the desugaring
+ * command head ("list " for `(...)`, "dict " for `#{...}`, "" for a
+ * plain `[...]` subcommand). Top-level newlines/`;` in the span
+ * separate *words*, not commands, so the copy is normalized before
+ * compiling. Compiles by byte length, so embedded NUL bytes reach the
+ * subcompiler instead of truncating the program. */
+static int scan_sub_literal(lcl_scan *sc, lcl_word *w, const char *prefix,
+                            char open_ch, char close_ch) {
+  long begin = sc->i;
+  long open_line = sc->line;
+  lcl_program *sub;
+  char *subsrc;
+  size_t plen = strlen(prefix);
+  size_t content_len;
+  lcl_compile_err suberr;
+
+  if (skip_balanced(sc, open_ch, close_ch, 0, open_line) != 0) {
+    return -1;
+  }
+
+  content_len = (size_t)(sc->i - begin - 1);
+  subsrc = (char *)malloc(plen + content_len + 1);
+
+  if (!subsrc) {
+    return scan_fail(sc, "out of memory", open_line);
+  }
+
+  memcpy(subsrc, prefix, plen);
+  memcpy(subsrc + plen, sc->s + begin, content_len);
+  subsrc[plen + content_len] = '\0';
+
+  content_len = normalize_separators(subsrc + plen, content_len);
+
+  sub = lcl_program_compile_depth(subsrc, plen + content_len, NULL, &suberr,
+                                  sc->nest + 1);
+  free(subsrc);
+
+  if (!sub) {
+    /* The sub-source is a normalized copy, so its line numbers do
+     * not map back; attribute the sub's message to the line the
+     * literal opened on. */
+    return scan_fail(sc, suberr.msg, open_line);
+  }
+
+  if (!lcl_word_add_sub(w, sub)) {
+    lcl_program_free(sub);
+    return scan_fail(sc, "out of memory", open_line);
+  }
+
+  return 1;
+}
+
 static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
   long quote_line = 0;
@@ -311,37 +383,12 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   }
 
   if (sc->i < sc->len && sc->s[sc->i] == '{') {
-    long depth = 1;
     long open_line = sc->line;
     sc->i++;
     start = sc->i;
 
-    while (sc->i < sc->len) {
-      char c = sc->s[sc->i++];
-
-      if (c == '\\' && sc->i < sc->len) {
-        if (sc->s[sc->i] == '\n') {
-          sc->line++;
-        }
-        sc->i++;
-        continue;
-      }
-
-      if (c == '{') {
-        depth++;
-      } else if (c == '}') {
-        depth--;
-
-        if (!depth) {
-          break;
-        }
-      } else if (c == '\n') {
-        sc->line++;
-      }
-    }
-
-    if (depth) {
-      return scan_fail(sc, "unmatched '{'", open_line);
+    if (skip_brace_literal(sc, open_line) != 0) {
+      return -1;
     }
 
     if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start - 1))) {
@@ -358,96 +405,15 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
 
   /* () list literal - desugars to [list ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '(') {
-    long begin;
-    long open_line = sc->line;
-    lcl_program *sub;
-    char *subsrc;
-    size_t content_len;
-    lcl_compile_err suberr;
-
     sc->i++;
-    begin = sc->i;
-
-    if (skip_balanced(sc, '(', ')', 0, open_line) != 0) {
-      return -1;
-    }
-
-    content_len = (size_t)(sc->i - begin - 1);
-    subsrc = (char *)malloc(5 + content_len + 1);
-
-    if (!subsrc) {
-      return scan_fail(sc, "out of memory", open_line);
-    }
-
-    memcpy(subsrc, "list ", 5);
-    memcpy(subsrc + 5, sc->s + begin, content_len);
-    subsrc[5 + content_len] = '\0';
-
-    normalize_separators(subsrc + 5, content_len);
-
-    sub = lcl_program_compile_depth(subsrc, strlen(subsrc), NULL, &suberr,
-                                    sc->nest + 1);
-    free(subsrc);
-
-    if (!sub) {
-      /* The sub-source is a normalized copy, so its line numbers do
-       * not map back; attribute the sub's message to the line the
-       * literal opened on. */
-      return scan_fail(sc, suberr.msg, open_line);
-    }
-
-    if (!lcl_word_add_sub(w, sub)) {
-      lcl_program_free(sub);
-      return scan_fail(sc, "out of memory", open_line);
-    }
-
-    return 1;
+    return scan_sub_literal(sc, w, "list ", '(', ')');
   }
 
   /* #{} dict literal - desugars to [dict ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '#' && sc->i + 1 < sc->len &&
       sc->s[sc->i + 1] == '{') {
-    long begin;
-    long open_line = sc->line;
-    lcl_program *sub;
-    char *subsrc;
-    size_t content_len;
-    lcl_compile_err suberr;
-
     sc->i += 2;
-    begin = sc->i;
-
-    if (skip_balanced(sc, '{', '}', 0, open_line) != 0) {
-      return -1;
-    }
-
-    content_len = (size_t)(sc->i - begin - 1);
-    subsrc = (char *)malloc(5 + content_len + 1);
-
-    if (!subsrc) {
-      return scan_fail(sc, "out of memory", open_line);
-    }
-
-    memcpy(subsrc, "dict ", 5);
-    memcpy(subsrc + 5, sc->s + begin, content_len);
-    subsrc[5 + content_len] = '\0';
-
-    normalize_separators(subsrc + 5, content_len);
-
-    sub = lcl_program_compile_depth(subsrc, strlen(subsrc), NULL, &suberr,
-                                    sc->nest + 1);
-    free(subsrc);
-
-    if (!sub) {
-      return scan_fail(sc, suberr.msg, open_line);
-    }
-
-    if (!lcl_word_add_sub(w, sub)) {
-      lcl_program_free(sub);
-      return scan_fail(sc, "out of memory", open_line);
-    }
-
-    return 1;
+    return scan_sub_literal(sc, w, "dict ", '{', '}');
   }
 
   if (sc->i < sc->len && sc->s[sc->i] == '"') {
@@ -583,52 +549,13 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
         }
       }
 
-      {
-        long begin;
-        long open_line = sc->line;
-        lcl_program *sub;
-        size_t content_len;
-        char *subsrc;
-        lcl_compile_err suberr;
+      sc->i++;
 
-        sc->i++;
-        begin = sc->i;
-
-        if (skip_balanced(sc, '[', ']', 0, open_line) != 0) {
-          return -1;
-        }
-
-        content_len = (size_t)(sc->i - begin - 1);
-        /* Fuzz: Not strndup; the span may contain NUL bytes (the
-         * _bytes entry points admit them), and strndup would stop
-         * early, leaving the buffer shorter than content_len. */
-        subsrc = malloc(content_len + 1);
-
-        if (!subsrc) {
-          return scan_fail(sc, "out of memory", open_line);
-        }
-
-        memcpy(subsrc, sc->s + begin, content_len);
-        subsrc[content_len] = '\0';
-
-        content_len = normalize_separators(subsrc, content_len);
-
-        sub = lcl_program_compile_depth(subsrc, content_len, NULL, &suberr,
-                                        sc->nest + 1);
-        free(subsrc);
-
-        if (!sub) {
-          return scan_fail(sc, suberr.msg, open_line);
-        }
-
-        if (!lcl_word_add_sub(w, sub)) {
-          lcl_program_free(sub);
-          return scan_fail(sc, "out of memory", open_line);
-        }
-
-        start = sc->i;
+      if (scan_sub_literal(sc, w, "", '[', ']') < 0) {
+        return -1;
       }
 
+      start = sc->i;
       continue;
     }
 
@@ -845,6 +772,40 @@ static int scan_type_numeric_word(lcl_scan *sc, lcl_word *w) {
   }
 
   return 1;
+}
+
+/* Byte-span skip helpers (lcl-lex.h): the scanner's delimiter
+ * grammars exposed for consumers that walk raw template text (the
+ * quasiquote boundary scanner, subst). One grammar definition — a
+ * boundary found here is the boundary the compiler will see. */
+int lcl_scan_skip_braces_span(const char *s, size_t len, size_t pos,
+                              size_t *end) {
+  lcl_scan sc;
+
+  lcl_scan_init_bytes(&sc, s, len);
+  sc.i = (long)pos;
+
+  if (skip_brace_literal(&sc, 1) != 0) {
+    return -1;
+  }
+
+  *end = (size_t)sc.i;
+  return 0;
+}
+
+int lcl_scan_skip_balanced_span(const char *s, size_t len, size_t pos,
+                                char open_ch, char close_ch, size_t *end) {
+  lcl_scan sc;
+
+  lcl_scan_init_bytes(&sc, s, len);
+  sc.i = (long)pos;
+
+  if (skip_balanced(&sc, open_ch, close_ch, 0, 1) != 0) {
+    return -1;
+  }
+
+  *end = (size_t)sc.i;
+  return 0;
 }
 
 /* On entry sc->i sits on the word's first byte (any @ prefix
