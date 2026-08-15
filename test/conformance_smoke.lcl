@@ -2370,6 +2370,24 @@ Test::suite "@ Expansion Operator" {
         let y [list 3 4]
         Test::eq [+ @$x @$y] 10
     }
+
+    Test::case "bare @ is a compile error, not silent truncation" {
+        ;; A word of only the spread prefix used to scan as an empty
+        ;; word, which ended the parse: everything after it was
+        ;; silently dropped from the compiled program.
+        var res ""
+        var err ""
+        let caught [catch { eval "let __x98 1\n@\nlet __y98 2" } res err]
+        Test::eq $caught 1
+        Test::true [has? $err "expected a word after '@'"]
+    }
+
+    Test::case "bare @ in a braced script errors when evaluated" {
+        ;; The braced word itself is fine (braces are quoting); the
+        ;; compile error surfaces when catch evaluates it as a script.
+        let caught [catch {@}]
+        Test::eq $caught 1
+    }
 }
 
 ;; ============================================================================

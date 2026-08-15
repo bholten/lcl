@@ -2006,6 +2006,19 @@ static int s_while(lcl_interp *interp, int argc, const lcl_word **args,
     lcl_value *cond_v = NULL;
     int is_true;
 
+    /* Bugfix: Tick the step budget per iteration: with an unbraced
+     * (constant) test and a zero-command body, no command is ever
+     * dispatched, so the eval loop's own tick never runs and `while x
+     * {}` would spin forever outside the host's budget. */
+    if (lcl_step_tick(interp) != LCL_RC_OK) {
+      free_if_owned(test_p, test_owned);
+      free_if_owned(body_p, body_owned);
+      if (last) {
+        lcl_ref_dec(last);
+      }
+      return LCL_RC_ERR;
+    }
+
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);
 
@@ -2158,6 +2171,19 @@ static int s_for(lcl_interp *interp, int argc, const lcl_word **args,
   for (;;) {
     lcl_value *cond_v = NULL;
     int is_true;
+
+    /* Per-iteration budget tick — see the matching tick in s_while. */
+    if (lcl_step_tick(interp) != LCL_RC_OK) {
+      free_if_owned(test_p, test_owned);
+      free_if_owned(body_p, body_owned);
+      free_if_owned(next_p, next_owned);
+
+      if (last) {
+        lcl_ref_dec(last);
+      }
+
+      return LCL_RC_ERR;
+    }
 
     if (test_is_braced) {
       rc = lcl_eval_program(interp, test_p, &cond_v);

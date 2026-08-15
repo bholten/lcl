@@ -1021,6 +1021,32 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
+/* One tick of the step-hook budget (lcl_set_step_hook). The eval
+ * loop ticks once per command dispatched; loop specials tick once
+ * per iteration so a loop whose test and body execute zero commands
+ * (`while x {}`) still consumes budget instead of spinning
+ * unbounded in C. Returns LCL_RC_ERR with the sticky abort recorded
+ * when the budget is exhausted (or a prior abort is still in
+ * effect), LCL_RC_OK otherwise. */
+lcl_return_code lcl_step_tick(lcl_interp *interp) {
+  if (interp->interrupted) {
+    LCL_ERR_MSG(interp, "evaluation aborted by host");
+    return LCL_RC_ERR;
+  }
+
+  if (interp->step_fn && --interp->step_countdown == 0) {
+    interp->step_countdown = interp->step_interval;
+
+    if (interp->step_fn(interp, interp->step_ud) != 0) {
+      interp->interrupted = 1;
+      LCL_ERR_MSG(interp, "evaluation aborted by host");
+      return LCL_RC_ERR;
+    }
+  }
+
+  return LCL_RC_OK;
+}
+
 lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
                                  lcl_value **out) {
   int i;
@@ -1070,21 +1096,9 @@ lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
      * so a script cannot outrun or swallow the abort.
      *
      * Added for fuzz testing and timeout budgeting. */
-    if (interp->interrupted) {
-      LCL_ERR_MSG(interp, "evaluation aborted by host");
+    if (lcl_step_tick(interp) != LCL_RC_OK) {
       rc = LCL_RC_ERR;
       break;
-    }
-
-    if (interp->step_fn && --interp->step_countdown == 0) {
-      interp->step_countdown = interp->step_interval;
-
-      if (interp->step_fn(interp, interp->step_ud) != 0) {
-        interp->interrupted = 1;
-        LCL_ERR_MSG(interp, "evaluation aborted by host");
-        rc = LCL_RC_ERR;
-        break;
-      }
     }
 
     interp->in_tail_position = saved_tail_position && is_last_cmd;
