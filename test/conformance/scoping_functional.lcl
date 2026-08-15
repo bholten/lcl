@@ -1,0 +1,267 @@
+;; Lcl conformance tests: lexical scoping, threading operators, functional primitives.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Lexical Scoping" {
+    Test::case "closure captures outer variable" {
+        let outer 100
+        proc get_outer {} {
+            $outer
+        }
+        Test::eq [get_outer] 100
+    }
+
+    Test::case "shadowing" {
+        let shadow outer
+        proc test_shadow {} {
+            let shadow inner
+            $shadow
+        }
+        Test::eq [test_shadow] inner
+        Test::eq $shadow outer
+    }
+
+    Test::case "closure captures value at definition time" {
+        let capture_val A
+        proc capture_test {} {
+            $capture_val
+        }
+        let capture_val B
+        Test::eq [capture_test] A
+    }
+
+    Test::case "cell mutation through closure" {
+        var counter 0
+        proc incr_counter {} {
+            set! counter [+ $counter 1]
+            $counter
+        }
+        Test::eq [incr_counter] 1
+        Test::eq [incr_counter] 2
+        Test::eq $counter 2
+    }
+
+    Test::case "multiple closures sharing cell" {
+        var shared 0
+        proc add_to_shared {n} {
+            set! shared [+ $shared $n]
+        }
+        proc get_shared {} {
+            $shared
+        }
+        add_to_shared 10
+        add_to_shared 5
+        Test::eq [get_shared] 15
+    }
+
+    Test::case "nested closures" {
+        proc make_adder {x} {
+            lambda {y} {
+                + $x $y
+            }
+        }
+        let add5 [make_adder 5]
+        let add10 [make_adder 10]
+        Test::eq [$add5 3] 8
+        Test::eq [$add10 3] 13
+    }
+
+    Test::case "counter factory - independent counters" {
+        proc make_counter {} {
+            var n 0
+            lambda {} {
+                set! n [+ $n 1]
+                $n
+            }
+        }
+        let c1 [make_counter]
+        let c2 [make_counter]
+        Test::eq [apply $c1] 1
+        Test::eq [apply $c1] 2
+        Test::eq [apply $c2] 1
+    }
+
+    Test::case "proc parameter shadows outer" {
+        let param_test outer_value
+        proc param_shadow {param_test} {
+            $param_test
+        }
+        Test::eq [param_shadow inner_value] inner_value
+        Test::eq $param_test outer_value
+    }
+
+    Test::case "closures capture each iteration value" {
+        var closures [list]
+        foreach iter_val [list 1 2 3] {
+            set! closures [List::push $closures [lambda {} { $iter_val }]]
+        }
+        Test::eq [apply [get $closures 0]] 1
+        Test::eq [apply [get $closures 1]] 2
+        Test::eq [apply [get $closures 2]] 3
+    }
+
+    Test::case "mutual recursion is rejected" {
+        ;; Mutual recursion via cells creates reference cycles that cannot
+        ;; be freed with reference counting (no GC). Both cells exist before
+        ;; either lambda is created, so both lambdas capture both cells:
+        ;;   cell_A -> lambda_A -> cell_B -> lambda_B -> cell_A  (cycle!)
+        ;; LCL detects and rejects this at set! time.
+        var is_even_fn {}
+        var is_odd_fn {}
+        set! is_even_fn [lambda {n} {
+            if [== $n 0] { return 1 }
+            [$is_odd_fn [+ $n -1]]
+        }]
+        ;; This should fail - is_odd_fn captures is_even_fn which captures is_odd_fn
+        Test::raises {
+            set! is_odd_fn [lambda {n} {
+                if [== $n 0] { return 0 }
+                [$is_even_fn [+ $n -1]]
+            }]
+        }
+    }
+
+    Test::case "proc mutual recursion works (no cycle)" {
+        ;; Unlike var/set!, sequential proc definitions do NOT create
+        ;; reference cycles. When even? is defined, odd? doesn't exist
+        ;; yet, so it's skipped during upvalue capture (forward reference).
+        ;; odd? captures even? as an upvalue. The reference graph is a DAG:
+        ;;   odd? -> even?  (one-way, no cycle)
+        ;; At runtime, even? finds odd? through the caller's frame chain.
+        proc mr_even? {n} {
+            if [== $n 0] { return 1 }
+            mr_odd? [- $n 1]
+        }
+        proc mr_odd? {n} {
+            if [== $n 0] { return 0 }
+            mr_even? [- $n 1]
+        }
+        Test::eq [mr_even? 0] 1
+        Test::eq [mr_even? 1] 0
+        Test::eq [mr_even? 4] 1
+        Test::eq [mr_odd? 0] 0
+        Test::eq [mr_odd? 1] 1
+        Test::eq [mr_odd? 5] 1
+        Test::eq [mr_odd? 13] 1
+    }
+
+    Test::case "proc mutual recursion hits depth limit" {
+        ;; Mutual recursion is NOT tail-call optimized (TCO only applies
+        ;; to self-recursive calls). Each mutual call consumes a stack
+        ;; frame, so deep mutual recursion hits the max depth (1024).
+        proc deep_even? {n} {
+            if [== $n 0] { return 1 }
+            deep_odd? [- $n 1]
+        }
+        proc deep_odd? {n} {
+            if [== $n 0] { return 0 }
+            deep_even? [- $n 1]
+        }
+        Test::raises {
+            deep_even? 2000
+        }
+    }
+}
+
+;; ============================================================================
+;; Threading Operators
+;; ============================================================================
+
+Test::suite "Threading Operators" {
+    Test::case "-> thread-first with get" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [-> $d {get b}] 2
+    }
+
+    Test::case "-> chained" {
+        let d [dict a 1 b 2]
+        let d2 [-> $d {put c 3} {del a}]
+        Test::true [has? $d2 c]
+        Test::false [has? $d2 a]
+    }
+
+    Test::case "-> identity" {
+        Test::eq [-> 42] 42
+    }
+
+    Test::case "-> with String::upper" {
+        Test::eq [-> hello {String::upper}] HELLO
+    }
+
+    Test::case "->> thread-last" {
+        proc greet {greeting name} {
+            return "$greeting, $name!"
+        }
+        Test::eq [->> World {greet Hello}] {Hello, World!}
+    }
+
+    Test::case "->> identity" {
+        Test::eq [->> hello] hello
+    }
+
+    Test::case "-> with lambda" {
+        let inc [lambda {x} {+ $x 1}]
+        Test::eq [-> 10 {$inc}] 11
+    }
+
+    Test::case "-> with inline lambda" {
+        Test::eq [-> 10 {[lambda {x} {+ $x 100}]}] 110
+    }
+
+    Test::case "-> return propagates value from enclosing proc" {
+        proc t {} { -> 5 return; puts "unreached" }
+        Test::eq [t] 5
+    }
+
+    Test::case "->> return propagates value from enclosing proc" {
+        proc t2 {} { ->> 7 return; puts "unreached" }
+        Test::eq [t2] 7
+    }
+}
+
+;; ============================================================================
+;; Functional Primitives
+;; ============================================================================
+
+Test::suite "Functional Primitives" {
+    Test::case "List::map" {
+        let lst [list 1 2 3 4 5]
+        let doubled [List::map $lst [lambda {x} {* $x 2}]]
+        Test::eq $doubled [list 2 4 6 8 10]
+    }
+
+    Test::case "List::filter" {
+        let lst [list 1 2 3 4 5]
+        let evens [List::filter $lst [lambda {x} {== [% $x 2] 0}]]
+        Test::eq $evens [list 2 4]
+    }
+
+    Test::case "List::reduce" {
+        let lst [list 1 2 3 4 5]
+        let sum [List::reduce $lst 0 [lambda {acc x} {+ $acc $x}]]
+        Test::eq $sum 15
+    }
+
+    Test::case "Dict::map" {
+        let d [dict a 1 b 2 c 3]
+        let mapped [Dict::map $d [lambda {k v} {* $v 10}]]
+        Test::eq [len [Dict::keys $mapped]] 3
+    }
+
+    Test::case "Dict::filter" {
+        let d [dict a 1 b 2 c 3]
+        let filtered [Dict::filter $d [lambda {k v} {> $v 1}]]
+        Test::eq [len [Dict::keys $filtered]] 2
+    }
+
+    Test::case "Dict::reduce" {
+        let d [dict a 1 b 2 c 3]
+        let sum [Dict::reduce $d 0 [lambda {acc k v} {+ $acc $v}]]
+        Test::eq $sum 6
+    }
+}
+
+;; ============================================================================
+;; List:: Namespace Functions
+;; ============================================================================

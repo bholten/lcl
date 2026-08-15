@@ -1,0 +1,244 @@
+;; Lcl conformance tests: list and dict operations.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "List Operations" {
+    Test::case "list creation and length" {
+        let mylist [list a b c d e]
+        Test::eq [len $mylist] 5
+    }
+
+    Test::case "empty list literal ()" {
+        let empty ()
+        Test::eq [len $empty] 0
+        Test::assert [list? $empty]
+        Test::eq $empty [list]
+    }
+
+    Test::case "get elements by index" {
+        let mylist [list a b c d e]
+        Test::eq [get $mylist 0] a
+        Test::eq [get $mylist 2] c
+        Test::eq [get $mylist 4] e
+    }
+
+    Test::case "has? on lists is membership, not index bounds" {
+        let hs_list [list a b c]
+        Test::true [has? $hs_list b]
+        Test::false [has? $hs_list z]
+        ;; index-shaped needles are still just members (or not)
+        Test::false [has? $hs_list 0]
+        Test::false [has? $hs_list ()]
+    }
+
+    Test::case "has? uses deep equality with numeric coercion" {
+        let hs_nums [list [+ 1 1] 3]
+        Test::true [has? $hs_nums 2]
+        Test::true [has? $hs_nums "2"]
+        Test::false [has? $hs_nums 4]
+        let hs_nested [list (1 2) (3 4)]
+        Test::true [has? $hs_nested (1 2)]
+        Test::false [has? $hs_nested (2 1)]
+    }
+
+    Test::case "List::slice" {
+        let mylist [list a b c d e]
+        let slice [List::slice $mylist 1 4]
+        Test::eq [len $slice] 3
+        Test::eq [get $slice 0] b
+        Test::eq [get $slice 2] d
+    }
+
+    Test::case "List::concat" {
+        let list1 [list 1 2]
+        let list2 [list 3 4]
+        let combined [List::concat $list1 $list2]
+        Test::eq [len $combined] 4
+        Test::eq [get $combined 0] 1
+        Test::eq [get $combined 3] 4
+    }
+
+    Test::case "String::join" {
+        let mylist [list a b c d e]
+        Test::eq [String::join $mylist -] {a-b-c-d-e}
+        Test::eq [String::join $mylist {}] {abcde}
+    }
+
+    Test::case "String::split" {
+        let parts [String::split "hello,world,test" ","]
+        Test::eq [len $parts] 3
+        Test::eq [get $parts 0] hello
+        Test::eq [get $parts 1] world
+    }
+
+    Test::case "List::push" {
+        let nums [list 1 2 3]
+        let nums [List::push $nums 4]
+        let nums [List::push $nums 5]
+        Test::eq [len $nums] 5
+        Test::eq [get $nums 4] 5
+    }
+
+    Test::case "put modifies element" {
+        let items [list a b c]
+        let items [put $items 1 B]
+        Test::eq [get $items 0] a
+        Test::eq [get $items 1] B
+        Test::eq [get $items 2] c
+    }
+
+    Test::case "nested list indexing" {
+        let nested [list [list x y] [list z w]]
+        Test::eq [get [get $nested 0] 0] x
+        Test::eq [get [get $nested 0] 1] y
+        Test::eq [get [get $nested 1] 0] z
+    }
+
+    Test::case "merge via splat operator" {
+        let list1 (1 2 3 4)
+        let list2 (5 6 7 8)
+        let list3 (@$list1 @$list2)
+
+        Test::eq $list3 (1 2 3 4 5 6 7 8)
+        Test::eq $list3 [List::concat $list1 $list2]
+        Test::eq [+ [len $list1] [len $list2]] [len $list3]
+    }
+
+    Test::case "nested splat" {
+        let list1 (1 2 3 4)
+        let list2 (4 5 6 7)
+        let list3 (1 2 3 (4 5 6 7 @$list2))
+
+        Test::eq $list3 (1 2 3 (4 5 6 7 4 5 6 7))
+    }
+
+    Test::case "multi-line lambda inside list literal" {
+        ;; Regression test: multi-line lambda bodies in () list literals
+        ;; must preserve newlines inside braces for command separation
+        let handlers (
+            ("key1" [lambda {x} {
+                let doubled [* $x 2]
+                let result [+ $doubled 10]
+                $result
+            }])
+            ("key2" [lambda {x} {
+                let tripled [* $x 3]
+                $tripled
+            }])
+        )
+        ;; Verify the list structure
+        Test::eq [len $handlers] 2
+        Test::eq [get [get $handlers 0] 0] "key1"
+        Test::eq [get [get $handlers 1] 0] "key2"
+        ;; Call the lambdas and verify they work
+        let fn1 [get [get $handlers 0] 1]
+        let fn2 [get [get $handlers 1] 1]
+        Test::eq [$fn1 5] 20   ;; (5*2) + 10 = 20
+        Test::eq [$fn2 5] 15   ;; 5*3 = 15
+    }
+}
+
+;; ============================================================================
+;; Dict Operations
+;; ============================================================================
+
+Test::suite "Dict Operations" {
+    Test::case "dict create and size" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len $d] 3
+    }
+
+    Test::case "empty dict literal #{}" {
+        let empty #{}
+        Test::eq [len $empty] 0
+        Test::assert [dict? $empty]
+        Test::eq $empty [dict]
+    }
+
+    Test::case "get by key" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [get $d a] 1
+        Test::eq [get $d b] 2
+        Test::eq [get $d c] 3
+    }
+
+    Test::case "has? checks key existence" {
+        let d [dict a 1 b 2]
+        Test::true [has? $d a]
+        Test::false [has? $d missing]
+    }
+
+    Test::case "has? on strings is substring containment" {
+        Test::true [has? "hello world" "lo wo"]
+        Test::true [has? "hello" "hello"]
+        Test::true [has? "hello" ""]
+        Test::false [has? "hello" "xyz"]
+        Test::false [has? "" "x"]
+    }
+
+    Test::case "Dict::keys" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len [Dict::keys $d]] 3
+    }
+
+    Test::case "Dict::values" {
+        let d [dict a 1 b 2 c 3]
+        Test::eq [len [Dict::values $d]] 3
+    }
+
+    Test::case "put updates dict" {
+        var md [dict x 10]
+        set! md [put $md x 20]
+        Test::eq [get $md x] 20
+        set! md [put $md y 30]
+        Test::eq [get $md y] 30
+        Test::eq [len $md] 2
+    }
+
+    Test::case "del removes key" {
+        var md [dict x 10 y 20]
+        set! md [del $md x]
+        Test::eq [len $md] 1
+        Test::false [has? $md x]
+    }
+
+    Test::case "empty dict" {
+        let empty [dict]
+        Test::eq [len $empty] 0
+    }
+
+    Test::case "nested dict" {
+        let nested [dict outer [dict inner 42]]
+        Test::eq [get [get $nested outer] inner] 42
+    }
+
+    Test::case "multi-line lambda inside dict literal" {
+        ;; Regression test: multi-line lambda bodies in #{} dict literals
+        ;; must preserve newlines inside braces for command separation
+        let handlers #{
+            process [lambda {x} {
+                let doubled [* $x 2]
+                let result [+ $doubled 5]
+                $result
+            }]
+            transform [lambda {x} {
+                let squared [* $x $x]
+                $squared
+            }]
+        }
+        ;; Verify the dict structure
+        Test::eq [len $handlers] 2
+        Test::true [has? $handlers process]
+        Test::true [has? $handlers transform]
+        ;; Call the lambdas and verify they work
+        let fn1 [get $handlers process]
+        let fn2 [get $handlers transform]
+        Test::eq [$fn1 10] 25   ;; (10*2) + 5 = 25
+        Test::eq [$fn2 5] 25    ;; 5*5 = 25
+    }
+}
+
+;; ============================================================================
+;; Control Flow: if/else
+;; ============================================================================

@@ -1,0 +1,374 @@
+;; Lcl conformance tests: TCO, type conversion, quasiquote, multiline subcommands.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Tail Call Optimization" {
+    Test::case "deep self-recursion doesn't overflow" {
+        proc count {n} {
+            if [== $n 0] { 0 } else { [count [- $n 1]] }
+        }
+        ;; Would overflow without TCO (default max_depth is 1024)
+        Test::eq [count 5000] 0
+    }
+
+    Test::case "tail position in if branch" {
+        proc factorial {n acc} {
+            if [<= $n 1] { $acc } else { [factorial [- $n 1] [* $n $acc]] }
+        }
+        Test::eq [factorial 10 1] 3628800
+    }
+
+    Test::case "named lambda gets TCO" {
+        let sum_to [lambda sum_to {n acc} {
+            if [== $n 0] { $acc } else { [sum_to [- $n 1] [+ $n $acc]] }
+        }]
+        Test::eq [sum_to 1000 0] 500500
+    }
+
+    Test::case "non-tail call still works" {
+        proc sum {n} {
+            if [== $n 0] { 0 } else { [+ $n [sum [- $n 1]]] }
+        }
+        ;; Not a tail call - + happens after recursive call
+        Test::eq [sum 10] 55
+    }
+
+    Test::case "anonymous lambda no TCO" {
+        ;; Anonymous lambdas have no self_name so can't do TCO
+        ;; This should work for small n but would overflow for large n
+        let anon [lambda {n} {
+            if [== $n 0] { $n } else { [$anon [- $n 1]] }
+        }]
+        Test::eq [$anon 10] 0
+    }
+}
+
+;; ============================================================================
+;; Type Conversion
+;; ============================================================================
+
+Test::suite "Type Conversion" {
+    Test::case "int from integer string" {
+        Test::eq [int 42] 42
+        Test::eq [int -10] -10
+        Test::eq [int 0] 0
+    }
+
+    Test::case "int from float string truncates" {
+        Test::eq [int 3.14] 3
+        Test::eq [int 3.99] 3
+        Test::eq [int -2.7] -2
+    }
+
+    Test::case "int from float value truncates" {
+        let f [float 3.14]
+        Test::eq [int $f] 3
+    }
+
+    Test::case "int preserves int value" {
+        let i [int 42]
+        Test::eq [int $i] 42
+        Test::true [int? [int 42]]
+    }
+
+    Test::case "float from float string" {
+        let f [float 3.14]
+        Test::true [float? $f]
+    }
+
+    Test::case "float from integer" {
+        let f [float 42]
+        Test::true [float? $f]
+    }
+
+    Test::case "float preserves float value" {
+        let f [float 3.14]
+        Test::true [float? [float $f]]
+    }
+
+    Test::case "numeric sort ascending" {
+        let nums [list 1 10 2 20 3]
+        let sorted [List::sort_with $nums [lambda {a b} { - [int $a] [int $b] }]]
+        Test::eq [get $sorted 0] 1
+        Test::eq [get $sorted 1] 2
+        Test::eq [get $sorted 2] 3
+        Test::eq [get $sorted 3] 10
+        Test::eq [get $sorted 4] 20
+    }
+
+    Test::case "numeric sort descending" {
+        let nums [list 1 10 2 20 3]
+        let sorted [List::sort_with $nums [lambda {a b} { - [int $b] [int $a] }]]
+        Test::eq [get $sorted 0] 20
+        Test::eq [get $sorted 1] 10
+        Test::eq [get $sorted 2] 3
+        Test::eq [get $sorted 3] 2
+        Test::eq [get $sorted 4] 1
+    }
+}
+
+;; ============================================================================
+;; Quasiquote
+;; ============================================================================
+
+Test::suite "Quasiquote" {
+    Test::case "basic unquote with variable" {
+        let x 42
+        Test::eq [quasiquote {value is ,$x}] {value is 42}
+    }
+
+    Test::case "unquote with command substitution" {
+        Test::eq [quasiquote {sum is ,[+ 1 2 3]}] {sum is 6}
+    }
+
+    Test::case "splice-unquote with string" {
+        let items {a b c}
+        Test::eq [quasiquote {list: ,@$items end}] {list: a b c end}
+    }
+
+    Test::case "splice-unquote with list value" {
+        let mylist [list x y z]
+        Test::eq [quasiquote {items: ,@$mylist done}] {items: x y z done}
+    }
+
+    Test::case "braced literal unquote" {
+        ;; ,{...} inserts the literal text
+        Test::eq [quasiquote {result: ,{name}}] {result: name}
+    }
+
+    Test::case "multiple unquotes" {
+        let a 1
+        let b 2
+        Test::eq [quasiquote {a=,$a b=,$b}] {a=1 b=2}
+    }
+
+    Test::case "unquote with computed value" {
+        let a 10
+        let b 20
+        Test::eq [quasiquote {total: ,[+ $a $b]}] {total: 30}
+    }
+
+    Test::case "defun macro pattern" {
+        ;; Macro returns code, caller evals it
+        proc defun {name params body} {
+            return [quasiquote {
+                proc ,$name {,@$params} {,$body}
+            }]
+        }
+        eval [defun add2 {x y} { + $x $y }]
+        Test::eq [add2 3 4] 7
+    }
+
+    Test::case "backslash preserves comma" {
+        let x 42
+        Test::eq [quasiquote {value is \,x}] {value is ,x}
+    }
+
+    Test::case "nested quasiquote passes comma through" {
+        ;; At depth 2, a single comma should be preserved as literal
+        let x 42
+        Test::eq [quasiquote {quasiquote {value is ,$x}}] {quasiquote {value is ,$x}}
+    }
+
+    Test::case "nested quasiquote with double comma" {
+        ;; At depth 2, ,, evaluates outer and preserves inner comma
+        ;; Simple values like 42 become bare words (,42), not braced
+        let x 42
+        Test::eq [quasiquote {quasiquote {value is ,,$x}}] {quasiquote {value is ,42}}
+    }
+
+    Test::case "list literal in unquote" {
+        ;; ,(a b c) evaluates list literal
+        Test::eq [quasiquote {items: ,(a b c)}] {items: a b c}
+    }
+
+    Test::case "dict literal in unquote" {
+        ;; ,#{...} evaluates dict literal
+        let d [quasiquote {data: ,#{name test val 123}}]
+        ;; The dict will be stringified - "name" is at position 6
+        Test::eq [String::find $d "name"] 6
+    }
+
+    Test::case "unquote of value that names a proc" {
+        ;; Regression: ,$var must do variable substitution, NOT command
+        ;; dispatch. If the value's string form happens to match a callable
+        ;; name, qq_build previously evaluated the unquote text as a
+        ;; one-word program, which dispatched the proc with zero args and
+        ;; raised "too few arguments" mid-expansion.
+        proc GET {url} { return $url }
+        let danger "GET"
+        Test::eq [quasiquote {method ,$danger}] {method GET}
+    }
+
+    Test::case "unquote of value that names a builtin" {
+        ;; Same regression, exercised against a built-in command name.
+        let danger "puts"
+        Test::eq [quasiquote {cmd ,$danger}] {cmd puts}
+    }
+
+    Test::case "prose comma mid-comment is inert" {
+        ;; Previously consumed ", " and substituted "we" as a bare-word
+        ;; unquote, corrupting the comment.
+        let t [quasiquote {puts hello  ;; first, we greet}]
+        Test::eq $t {puts hello  ;; first, we greet}
+    }
+
+    Test::case "trailing comma at comment EOL is inert" {
+        ;; Previously a hard "invalid unquote" compile error (comma
+        ;; followed by newline).
+        let t [quasiquote {a  ;; greet the user,
+b}]
+        Test::assert [has? $t "greet the user,"]
+    }
+
+    Test::case "comment comma naming a variable does not substitute" {
+        let we 99
+        let t [quasiquote {puts x  ;; first, we greet}]
+        Test::eq $t {puts x  ;; first, we greet}
+    }
+
+    Test::case "unquote still fires after a commented line" {
+        let x 42
+        let t [quasiquote {;; header comment, with prose
+puts ,$x}]
+        Test::assert [has? $t "puts 42"]
+    }
+
+    Test::case "unmatched quote in comment does not desync scan" {
+        ;; Previously the string-skip swallowed from the comment's lone
+        ;; quote to the next quote, deactivating the unquote between.
+        let x 42
+        let t [quasiquote {;; don"t worry
+puts ,$x}]
+        Test::assert [has? $t "puts 42"]
+    }
+
+    Test::case "substituting a whole comment line still works" {
+        ;; The supported spelling for "unquote into a comment": build
+        ;; the comment text outside and splice the line.
+        let year 2026
+        let hdr ";; Copyright $year"
+        let t [quasiquote {,$hdr
+puts done}]
+        Test::assert [has? $t ";; Copyright 2026"]
+    }
+}
+
+;; ============================================================================
+;; Multiline Subcommands
+;; ============================================================================
+
+Test::suite "Multiline Subcommands" {
+    Test::case "multiline list inside brackets" {
+        ;; Inside [...], newlines are whitespace - no backslash needed
+        let result [list
+            a
+            b
+            c
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] a
+        Test::eq [get $result 1] b
+        Test::eq [get $result 2] c
+    }
+
+    Test::case "nested subcommands across lines" {
+        ;; This was the original bug - only the last element was kept
+        let result [list
+            [list x y]
+            [list p q]
+            [list m n]
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] [list x y]
+        Test::eq [get $result 1] [list p q]
+        Test::eq [get $result 2] [list m n]
+    }
+
+    Test::case "multiline case inside brackets" {
+        let op {add}
+        let a 10
+        let b 5
+        let result [case $op
+            {add} [+ $a $b]
+            {sub} [- $a $b]
+            {mul} [* $a $b]
+            else  0]
+        Test::eq $result 15
+    }
+
+    Test::case "multiline cond inside brackets" {
+        let x 5
+        let result [cond
+            [< $x 0]   {negative}
+            [== $x 0]  {zero}
+            else       {positive}]
+        Test::eq $result positive
+    }
+
+    Test::case "semicolons inside braces preserved" {
+        ;; Semicolons inside {...} must NOT be converted to spaces
+        let script {echo hello; echo world}
+        Test::eq $script {echo hello; echo world}
+    }
+
+    Test::case "semicolons inside braces in subcommand" {
+        ;; Even inside [...], braced content keeps its semicolons
+        let result [list {a; b} {c; d}]
+        Test::eq [get $result 0] {a; b}
+        Test::eq [get $result 1] {c; d}
+    }
+
+    Test::case "newlines inside quotes preserved" {
+        let text "line1
+line2"
+        Test::eq [String::find $text "\n"] 5
+    }
+
+    Test::case "bare command needs backslash continuation" {
+        ;; This tests that backslash continuation still works
+        let result [list \
+            item1 \
+            item2 \
+            item3]
+        Test::eq [len $result] 3
+    }
+
+    Test::case "nested brackets with multiline" {
+        ;; Deeply nested multiline expressions
+        let result [list
+            [dict
+                a 1
+                b 2]
+            [dict
+                c 3
+                d 4]]
+        Test::eq [len $result] 2
+        Test::eq [get [get $result 0] a] 1
+        Test::eq [get [get $result 1] d] 4
+    }
+
+    Test::case "multiline with list literals" {
+        let result [list
+            (nested list)
+            (another one)
+        ]
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] (nested list)
+    }
+
+    Test::case "eval with multiline block" {
+        ;; eval {...} with multiple statements still works
+        let result [eval {
+            let a 10
+            let b 20
+            + $a $b
+        }]
+        Test::eq $result 30
+    }
+}
+
+;; ============================================================================
+;; Optional Parameters
+;; ============================================================================

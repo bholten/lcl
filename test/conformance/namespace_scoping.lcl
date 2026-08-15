@@ -1,0 +1,391 @@
+;; Lcl conformance tests: qualified self-ref, def-target leakage, re-entry, Ns::set/del/clear.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Qualified self-reference" {
+    Test::case "self-reference reads let binding while still building" {
+        namespace qsr_simple {
+            let X "value"
+            Test::eq $qsr_simple::X "value"
+        }
+    }
+
+    Test::case "self-reference reads var (cell) and dereferences it" {
+        namespace qsr_cell {
+            var counter 0
+            set! counter [+ $qsr_cell::counter 1]
+            Test::eq $qsr_cell::counter 1
+        }
+    }
+
+    Test::case "self-reference works from inside a proc defined in the namespace" {
+        namespace qsr_proc {
+            let Y "via proc"
+            proc qsr_reader {} { $qsr_proc::Y }
+            Test::eq [qsr_reader] "via proc"
+        }
+    }
+
+    Test::case "self-reference works through nested namespace" {
+        namespace qsr_outer {
+            namespace qsr_inner { let X 99 }
+            Test::eq $qsr_outer::qsr_inner::X 99
+        }
+    }
+
+    Test::case "self-reference works with qualified namespace name" {
+        namespace qsr_alpha::qsr_beta {
+            let Z 42
+            Test::eq $qsr_alpha::qsr_beta::Z 42
+        }
+    }
+
+    Test::case "self-reference fails for non-existent binding" {
+        namespace qsr_missing {
+            let present 1
+            Test::raises { puts $qsr_missing::absent }
+        }
+    }
+
+    Test::case {bare $foo (no qualifier) inside namespace foo still fails} {
+        ;; The partial-build state isn't a first-class value; only
+        ;; suffix-bearing keys go through the def_target fallback.
+        Test::raises {
+            namespace qsr_bare {
+                let X 1
+                puts $qsr_bare
+            }
+        }
+    }
+
+    Test::case "sibling namespace lookup uses already-built namespace, not target" {
+        namespace qsr_sibling::first { let A 1 }
+        namespace qsr_sibling::second {
+            ;; first is already a real namespace value; resolution
+            ;; should go through normal env_get_simple, not def_target.
+            Test::eq $qsr_sibling::first::A 1
+            let B 2
+            ;; self-reference for the in-progress namespace still works
+            Test::eq $qsr_sibling::second::B 2
+        }
+    }
+
+    ;; --- Self-reference through proc-call boundary ---
+    ;; Regression: user-proc calls raise def_floor (to block helper
+    ;; bindings from leaking into the caller's namespace) but must
+    ;; NOT raise def_lookup_floor. So $foo::X from inside a helper
+    ;; proc called from foo's body still resolves via the def_target
+    ;; overlay fallback.
+
+    Test::case "self-reference works through a helper proc that evals body" {
+        proc qsr_reader1 {body} { eval $body }
+        namespace qsr_through_proc1 {
+            let X "via-proc"
+            qsr_reader1 { Test::eq $qsr_through_proc1::X "via-proc" }
+        }
+    }
+
+    Test::case "self-reference works through multiple nested proc calls" {
+        proc qsr_layer3 {body} { eval $body }
+        proc qsr_layer2 {body} { qsr_layer3 $body }
+        proc qsr_layer1 {body} { qsr_layer2 $body }
+        namespace qsr_through_proc2 {
+            let X 42
+            qsr_layer1 { Test::eq $qsr_through_proc2::X 42 }
+        }
+    }
+
+    Test::case "self-reference reads a var (cell) through a proc call" {
+        proc qsr_reader2 {body} { eval $body }
+        namespace qsr_through_proc3 {
+            var counter 7
+            qsr_reader2 { Test::eq $qsr_through_proc3::counter 7 }
+        }
+    }
+
+    Test::case "self-reference works for qualified ns name through proc call" {
+        proc qsr_reader3 {body} { eval $body }
+        namespace qsr_q1::qsr_q2 {
+            let Z "qual-via-proc"
+            qsr_reader3 { Test::eq $qsr_q1::qsr_q2::Z "qual-via-proc" }
+        }
+    }
+
+    Test::case "isolate cuts off self-reference even through proc calls" {
+        ;; Isolate is the full barrier: raises both def_floor (writes)
+        ;; AND def_lookup_floor (reads). A proc call inside isolate
+        ;; cannot see outer-namespace self-references.
+        proc qsr_reader4 {body} { eval $body }
+        namespace qsr_through_isolate {
+            let X "should-be-hidden"
+            isolate {
+                Test::raises { qsr_reader4 { puts $qsr_through_isolate::X } }
+            }
+        }
+    }
+}
+
+;; ============================================================================
+;; Helper-proc binding leak regression (Dagwood feedback round 3)
+;; ============================================================================
+;; The user reported that `proc` declarations inside a helper proc
+;; still leaked even after the def_floor fix. Could not reproduce
+;; (likely a misread of the unknown-command-returns-string
+;; fallback). These tests lock in the actual behavior: var, let,
+;; proc, and macro declarations inside a helper all stay local.
+
+Test::suite "Helper-proc binding leak (all forms)" {
+    Test::case "proc inside helper does not leak (Ns::has? check)" {
+        proc hlp_proc_helper {} {
+            proc hlp_proc_inner {} { 42 }
+        }
+        namespace hlp_proc_ns1 {
+            hlp_proc_helper
+        }
+        Test::eq [Ns::has? $hlp_proc_ns1 hlp_proc_inner] 0
+    }
+
+    Test::case "proc inside helper that evals body does not leak" {
+        proc hlp_proc_helper2 {body} {
+            proc hlp_proc_inner2 {} { 99 }
+            eval $body
+        }
+        namespace hlp_proc_ns2 {
+            hlp_proc_helper2 { }
+        }
+        Test::eq [Ns::has? $hlp_proc_ns2 hlp_proc_inner2] 0
+    }
+
+    Test::case "var inside helper that evals body does not leak" {
+        proc hlp_var_helper {body} {
+            var hlp_var_state "private"
+            eval $body
+        }
+        namespace hlp_var_ns {
+            hlp_var_helper { }
+        }
+        Test::eq [Ns::has? $hlp_var_ns hlp_var_state] 0
+    }
+
+    Test::case "let inside helper that evals body does not leak" {
+        proc hlp_let_helper {body} {
+            let hlp_let_const "private"
+            eval $body
+        }
+        namespace hlp_let_ns {
+            hlp_let_helper { }
+        }
+        Test::eq [Ns::has? $hlp_let_ns hlp_let_const] 0
+    }
+
+    Test::case "macro inside helper that evals body does not leak" {
+        proc hlp_macro_helper {body} {
+            macro hlp_macro_inner {} { quote {1} }
+            eval $body
+        }
+        namespace hlp_macro_ns {
+            hlp_macro_helper { }
+        }
+        Test::eq [Ns::has? $hlp_macro_ns hlp_macro_inner] 0
+    }
+
+    Test::case "all forms together stay local (Dagwood task_impl shape)" {
+        proc hlp_task_impl {body} {
+            var _task #{}
+            let TASK_PRIVATE "x"
+            proc hlp_attr_setter {v} { puts $v }
+            macro hlp_attr_macro {} { quote {0} }
+            eval $body
+        }
+        namespace hlp_proj {
+            hlp_task_impl { }
+            let proj_var 1
+        }
+        Test::eq [Ns::has? $hlp_proj _task] 0
+        Test::eq [Ns::has? $hlp_proj TASK_PRIVATE] 0
+        Test::eq [Ns::has? $hlp_proj hlp_attr_setter] 0
+        Test::eq [Ns::has? $hlp_proj hlp_attr_macro] 0
+        Test::eq $hlp_proj::proj_var 1
+    }
+}
+
+;; ============================================================================
+;; Namespace re-entry (in-place mutation)
+;; ============================================================================
+
+Test::suite "Namespace re-entry" {
+    Test::case "let inside namespace re-entry from proc body persists" {
+        namespace re_ns1 { var existing "ok" }
+        proc add_let {} {
+            namespace re_ns1 { let FROM_PROC "value" }
+        }
+        add_let
+        Test::eq $re_ns1::FROM_PROC "value"
+        Test::eq $re_ns1::existing "ok"
+    }
+
+    Test::case "var inside namespace re-entry from proc body persists" {
+        namespace re_ns2 {}
+        proc add_var {} {
+            namespace re_ns2 { var COUNT 0 }
+        }
+        add_var
+        Test::eq $re_ns2::COUNT 0
+        set! re_ns2::COUNT 5
+        Test::eq $re_ns2::COUNT 5
+    }
+
+    Test::case "proc inside namespace re-entry from proc body persists" {
+        namespace re_ns3 {}
+        proc add_proc {} {
+            namespace re_ns3 { proc helper {} { return 42 } }
+        }
+        add_proc
+        Test::eq [re_ns3::helper] 42
+    }
+
+    Test::case "dynamic name var inside namespace re-entry from proc body" {
+        namespace re_ns4 {}
+        proc bind_dynamic {n v} {
+            namespace re_ns4 { var $n $v }
+        }
+        bind_dynamic "DYNAMIC_NAME" "dynamic_value"
+        Test::eq $re_ns4::DYNAMIC_NAME "dynamic_value"
+    }
+
+    Test::case "qualified-path re-entry preserves prior bindings" {
+        namespace re_qual::sub { let X 1 }
+        namespace re_qual::sub { let Y 2 }
+        Test::eq $re_qual::sub::X 1
+        Test::eq $re_qual::sub::Y 2
+    }
+
+    Test::case "namespace value identity preserved across re-entry" {
+        namespace re_ns5 { let A 1 }
+        let captured $re_ns5
+        namespace re_ns5 { let B 2 }
+        ;; The captured reference sees the new binding because we
+        ;; mutated in place.
+        Test::eq [Ns::has? $captured B] 1
+        Test::eq [Ns::has? $captured A] 1
+    }
+
+    Test::case "set! across re-entry still works (regression)" {
+        namespace re_ns6 { var counter 0 }
+        proc bump {} {
+            namespace re_ns6 { set! counter [+ $counter 1] }
+        }
+        bump
+        bump
+        bump
+        Test::eq $re_ns6::counter 3
+    }
+}
+
+;; ============================================================================
+;; Ns::set
+;; ============================================================================
+
+Test::suite "Ns::set" {
+    Test::case "binds a new name into namespace" {
+        namespace nsset_ns1 {}
+        Ns::set $nsset_ns1 X 42
+        Test::eq $nsset_ns1::X 42
+        Test::eq [Ns::has? $nsset_ns1 X] 1
+    }
+
+    Test::case "overwrites existing binding" {
+        namespace nsset_ns2 { let X 1 }
+        Ns::set $nsset_ns2 X 99
+        Test::eq $nsset_ns2::X 99
+    }
+
+    Test::case "supports the Dagwood-style def pattern" {
+        namespace nsset_proj {}
+        proc nsset_def {ns name value} {
+            Ns::set [getvar $ns] $name $value
+            return $value
+        }
+        nsset_def nsset_proj alpha 10
+        nsset_def nsset_proj beta  "hello"
+        Test::eq $nsset_proj::alpha 10
+        Test::eq $nsset_proj::beta "hello"
+    }
+
+    Test::case "errors when first arg is not a namespace" {
+        Test::raises { Ns::set "not a ns" X 1 }
+    }
+
+    Test::case "errors on wrong arity" {
+        namespace nsset_ns3 {}
+        Test::raises { Ns::set $nsset_ns3 X }
+        Test::raises { Ns::set }
+    }
+
+    Test::case "value can be any type" {
+        namespace nsset_ns4 {}
+        Ns::set $nsset_ns4 a_list [list 1 2 3]
+        Ns::set $nsset_ns4 a_dict [dict k v]
+        Test::eq [len $nsset_ns4::a_list] 3
+        Test::eq [get $nsset_ns4::a_dict k] v
+    }
+}
+
+Test::suite "Ns::del and Ns::clear" {
+    Test::case "del removes a binding and reports 1" {
+        namespace nsdel_ns1 { let X 1; let Y 2 }
+        Test::eq [Ns::del $nsdel_ns1 X] 1
+        Test::eq [Ns::has? $nsdel_ns1 X] 0
+        Test::eq $nsdel_ns1::Y 2
+        Test::raises { puts $nsdel_ns1::X }
+    }
+
+    Test::case "del of absent binding reports 0" {
+        namespace nsdel_ns2 { let X 1 }
+        Test::eq [Ns::del $nsdel_ns2 missing] 0
+        Test::eq [Ns::del $nsdel_ns2 X] 1
+        Test::eq [Ns::del $nsdel_ns2 X] 0
+    }
+
+    Test::case "clear empties the namespace" {
+        namespace nsclr_ns1 { let a 1; var b 2; proc f {} { 3 } }
+        Test::eq [len [Ns::keys $nsclr_ns1]] 3
+        Ns::clear $nsclr_ns1
+        Test::eq [len [Ns::keys $nsclr_ns1]] 0
+        Test::eq [Ns::has? $nsclr_ns1 f] 0
+        Test::raises { nsclr_ns1::f }
+    }
+
+    Test::case "clear preserves namespace identity for re-entry" {
+        namespace nsclr_ns2 { let old 1 }
+        let nsclr_alias $nsclr_ns2
+        Ns::clear $nsclr_ns2
+        namespace nsclr_ns2 { let fresh 9 }
+        Test::eq $nsclr_ns2::fresh 9
+        ;; alias references the same value, so it sees clear + repopulate
+        Test::eq [Ns::has? $nsclr_alias old] 0
+        Test::eq $nsclr_alias::fresh 9
+    }
+
+    Test::case "imported cells survive clear" {
+        namespace nsclr_ctr { var nsclr_cell 5 }
+        import nsclr_ctr nsclr_cell
+        Ns::clear $nsclr_ctr
+        Test::eq $nsclr_cell 5
+        set! nsclr_cell 6
+        Test::eq $nsclr_cell 6
+    }
+
+    Test::case "errors on non-namespace or wrong arity" {
+        Test::raises { Ns::clear "not a ns" }
+        Test::raises { Ns::del "not a ns" x }
+        Test::raises { Ns::clear }
+        namespace nsdel_ns3 {}
+        Test::raises { Ns::del $nsdel_ns3 }
+    }
+}
+
+;; ============================================================================
+;; Require
+;; ============================================================================

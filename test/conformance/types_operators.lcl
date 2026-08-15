@@ -1,0 +1,359 @@
+;; Lcl conformance tests: type inspection, and/or, arity diagnostics, @ spread, equality.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Type inspection and conversion" {
+    Test::case "type names" {
+        Test::eq [type "hello"] string
+        Test::eq [type [+ 1 2]] int
+        Test::eq [type [+ 1.5 1]] float
+        Test::eq [type (1 2)] list
+        Test::eq [type #{a 1}] dict
+        Test::eq [type [ref 5]] cell
+        Test::eq [type [lambda {} {1}]] proc
+        Test::eq [type $List] namespace
+    }
+
+    Test::case "bare numeric literals are typed at compile time" {
+        Test::eq [type 42] int
+        Test::eq [type 3.14] float
+        Test::eq [type [int 42]] int
+        ;; quoting/bracing is the explicit "this is text" spelling
+        Test::eq [type "42"] string
+        Test::eq [type {42}] string
+    }
+
+    Test::case "repr distinguishes list from string" {
+        let l (a b)
+        let s "a b"
+        Test::eq [repr $l] {("a" "b")}
+        Test::eq [repr $s] {"a b"}
+    }
+
+    Test::case "repr of numbers and nesting" {
+        Test::eq [repr [+ 1 2]] 3
+        Test::eq [repr [list [+ 1 1] (x)]] {(2 ("x"))}
+        Test::eq [repr #{k v}] {#{"k" "v"}}
+    }
+
+    Test::case "repr escapes quotes in strings" {
+        ;; repr of the 3-char string a"b is the 6-char text "a\"b"
+        Test::eq [len [repr {a"b}]] 6
+    }
+
+    Test::case "repr of cells and procs" {
+        Test::eq [repr [ref [+ 1 1]]] {<cell 2>}
+        proc repr_named {} { 1 }
+        Test::eq [repr $repr_named] {<proc repr_named>}
+        Test::eq [repr [lambda {} {1}]] {<lambda>}
+    }
+
+    Test::case "String::from converts explicitly" {
+        let l (a b)
+        let s [String::from $l]
+        Test::eq [type $s] string
+        Test::eq $s "a b"
+        Test::eq [String::from [+ 1 2]] "3"
+    }
+}
+
+;; ============================================================================
+;; Short-Circuit and/or
+;; ============================================================================
+
+Test::suite "Short-circuit and/or" {
+    Test::case "and returns first falsy operand" {
+        Test::eq [and 1 0 2] 0
+        Test::eq [and 1 {} 2] {}
+    }
+
+    Test::case "and returns final operand when all truthy" {
+        Test::eq [and 1 2 3] 3
+        Test::eq [and "a" "b"] "b"
+    }
+
+    Test::case "or returns first truthy operand" {
+        Test::eq [or 0 {} 5 7] 5
+    }
+
+    Test::case "or returns final operand when all falsy" {
+        Test::eq [or 0 {}] {}
+        Test::eq [or {} 0] 0
+    }
+
+    Test::case "identities and single operand" {
+        Test::eq [and] 1
+        Test::eq [or] 0
+        Test::eq [and 7] 7
+        Test::eq [or {}] {}
+    }
+
+    Test::case "or as default-value idiom" {
+        let configured ""
+        let editor [or $configured "vi"]
+        Test::eq $editor "vi"
+    }
+
+    Test::case "and short-circuits side effects" {
+        var sc_hits 0
+        proc sc_bump {} { set! sc_hits [+ $sc_hits 1]; return 1 }
+        let r [and 0 [sc_bump]]
+        Test::eq $r 0
+        Test::eq $sc_hits 0
+    }
+
+    Test::case "or short-circuits side effects" {
+        var sc_hits2 0
+        proc sc_bump2 {} { set! sc_hits2 [+ $sc_hits2 1]; return 1 }
+        let r [or 5 [sc_bump2]]
+        Test::eq $r 5
+        Test::eq $sc_hits2 0
+    }
+
+    Test::case "later operands do evaluate when reached" {
+        var sc_hits3 0
+        proc sc_bump3 {} { set! sc_hits3 [+ $sc_hits3 1]; return 9 }
+        let r [and 1 [sc_bump3]]
+        Test::eq $r 9
+        Test::eq $sc_hits3 1
+    }
+
+    Test::case "and guards out-of-bounds indexing" {
+        let xs (1 2 3)
+        let i 5
+        let r [and [< $i [len $xs]] [get $xs $i]]
+        Test::eq $r 0
+    }
+
+    Test::case "@ spread is rejected" {
+        let sc_conds (1 1)
+        let caught [catch { and @$sc_conds } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "operand error propagates" {
+        let caught [catch { or 0 [no_such_proc_xyz 1] } res msg]
+        Test::eq $caught 1
+    }
+}
+
+;; ============================================================================
+;; Arity Diagnostics
+;; ============================================================================
+
+Test::suite "Arity Diagnostics" {
+    Test::case "too many args names the proc" {
+        proc sq_arity {x} { * $x $x }
+        let caught [catch { sq_arity 1 2 } res msg]
+        Test::eq $caught 1
+        Test::eq $msg {sq_arity: expected 1 argument, got 2}
+    }
+
+    Test::case "too few args" {
+        proc add_arity {a b} { + $a $b }
+        catch { add_arity 1 } res msg
+        Test::eq $msg {add_arity: expected 2 arguments, got 1}
+    }
+
+    Test::case "zero-param proc" {
+        proc noargs_arity {} { 42 }
+        catch { noargs_arity 1 } res msg
+        Test::eq $msg {noargs_arity: expected 0 arguments, got 1}
+    }
+
+    Test::case "range with optional params" {
+        proc rng_arity {a (b 2) (c 3)} { + $a $b }
+        catch { rng_arity 1 2 3 4 } res msg
+        Test::eq $msg {rng_arity: expected 1 to 3 arguments, got 4}
+    }
+
+    Test::case "rest param reports at-least" {
+        proc rest_arity {a b *rest} { + $a $b }
+        catch { rest_arity 1 } res msg
+        Test::eq $msg {rest_arity: expected at least 2 arguments, got 1}
+    }
+
+    Test::case "alias reports invoked name, not definition name" {
+        proc canonical_arity {x} { $x }
+        let alias_arity $canonical_arity
+        catch { alias_arity 1 2 } res msg
+        Test::eq $msg {alias_arity: expected 1 argument, got 2}
+    }
+}
+
+;; ============================================================================
+;; @ Expansion Operator
+;; ============================================================================
+
+Test::suite "@ Expansion Operator" {
+    Test::case "expand list to operator" {
+        let nums [list 1 2 3 4 5]
+        Test::eq [+ @$nums] 15
+    }
+
+    Test::case "expand in list construction" {
+        let a [list 1 2]
+        let b [list 3 4]
+        let combined [list @$a @$b]
+        Test::eq $combined [list 1 2 3 4]
+    }
+
+    Test::case "expand single value" {
+        let single 42
+        Test::eq [+ 1 @$single] 43
+    }
+
+    Test::case "expand empty list" {
+        let empty [list]
+        let result [list a @$empty b]
+        Test::eq $result [list a b]
+    }
+
+    Test::case "expand in proc arguments" {
+        proc sum3 {a b c} { + $a [+ $b $c] }
+        let args [list 10 20 30]
+        Test::eq [sum3 @$args] 60
+    }
+
+    Test::case "multiple expansions" {
+        let x [list 1 2]
+        let y [list 3 4]
+        Test::eq [+ @$x @$y] 10
+    }
+
+    Test::case "bare @ is a compile error, not silent truncation" {
+        ;; A word of only the spread prefix used to scan as an empty
+        ;; word, which ended the parse: everything after it was
+        ;; silently dropped from the compiled program.
+        var res ""
+        var err ""
+        let caught [catch { eval "let __x98 1\n@\nlet __y98 2" } res err]
+        Test::eq $caught 1
+        Test::true [has? $err "expected a word after '@'"]
+    }
+
+    Test::case "bare @ in a braced script errors when evaluated" {
+        ;; The braced word itself is fine (braces are quoting); the
+        ;; compile error surfaces when catch evaluates it as a script.
+        let caught [catch {@}]
+        Test::eq $caught 1
+    }
+}
+
+;; ============================================================================
+;; Equality Operators
+;; ============================================================================
+
+Test::suite "Equality Operators" {
+    Test::case "== value equality" {
+        Test::true [== 1 1]
+        Test::false [== 1 2]
+        Test::true [== hello hello]
+        Test::false [== hello world]
+    }
+
+    Test::case "numeric promotion" {
+        Test::true [== 1 1.0]
+    }
+
+    Test::case "list deep equality" {
+        let l1 [list 1 2 3]
+        let l2 [list 1 2 3]
+        let l3 [list 1 2 4]
+        Test::true [== $l1 $l2]
+        Test::false [== $l1 $l3]
+    }
+
+    Test::case "dict deep equality" {
+        let d1 [dict a 1 b 2]
+        let d2 [dict a 1 b 2]
+        let d3 [dict a 1 b 3]
+        Test::true [== $d1 $d2]
+        Test::false [== $d1 $d3]
+    }
+
+    Test::case "!= inequality" {
+        Test::false [!= 1 1]
+        Test::true [!= 1 2]
+    }
+
+    Test::case "same? identity" {
+        let x 42
+        Test::true [same? $x $x]
+        let y 42
+        Test::false [same? $x $y]
+    }
+
+    Test::case "cell? predicate" {
+        Test::true [cell? [ref 1]]
+        Test::false [cell? 1]
+    }
+
+    Test::case "same-binding? for cells" {
+        var p 100
+        var q 200
+        Test::true [same-binding? p p]
+        Test::false [same-binding? p q]
+    }
+}
+
+;; ============================================================================
+;; Equality with Control Flow
+;; ============================================================================
+
+Test::suite "Equality with Control Flow" {
+    Test::case "while with != condition" {
+        var i 5
+        var target 2
+        while [!= $i $target] {
+            set! i [+ $i -1]
+        }
+        Test::eq $i $target
+    }
+
+    Test::case "for loop with list comparison" {
+        var built [list]
+        for {var j 1} {[!= $j 4]} {set! j [+ $j 1]} {
+            set! built [List::push $built $j]
+        }
+        Test::eq $built [list 1 2 3]
+    }
+
+    Test::case "foreach find matching element" {
+        let haystack [list apple banana cherry date]
+        var found 0
+        foreach item $haystack {
+            if [== $item cherry] {
+                set! found 1
+                break
+            }
+        }
+        Test::eq $found 1
+    }
+
+    Test::case "foreach filter with !=" {
+        var kept [list]
+        foreach x [list a skip b skip c] {
+            if [!= $x skip] {
+                set! kept [List::push $kept $x]
+            }
+        }
+        Test::eq $kept [list a b c]
+    }
+
+    Test::case "continue with equality check" {
+        var sum 0
+        foreach n [list 1 2 3 4 5] {
+            if [== $n 3] {
+                continue
+            }
+            set! sum [+ $sum $n]
+        }
+        Test::eq $sum 12
+    }
+}
+
+;; ============================================================================
+;; Lexical Scoping
+;; ============================================================================

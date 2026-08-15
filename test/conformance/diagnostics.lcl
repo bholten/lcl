@@ -1,0 +1,578 @@
+;; Lcl conformance tests: diagnostics, error messages, dispatch rules, late regressions.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "if validates the else keyword" {
+    Test::case "4-arg if with bogus keyword errors when cond is false" {
+        ;; Pre-fix: silently accepts and runs the 4th-arg branch.
+        ;; Post-fix: errors structurally before evaluating any branch.
+        let errored [catch { if 0 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with bogus keyword errors when cond is true" {
+        ;; Validation is syntactic — the keyword check fires regardless
+        ;; of which branch the condition would have selected.
+        let errored [catch { if 1 {+ 1 0} foobar {+ 0 1} }]
+        Test::eq $errored 1
+    }
+
+    Test::case "4-arg if with else keyword still works" {
+        Test::eq [if 1 {+ 7 0} else {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} else {+ 0 7}] 7
+    }
+
+    Test::case "3-arg if positional-else still works" {
+        Test::eq [if 1 {+ 7 0} {+ 0 99}] 7
+        Test::eq [if 0 {+ 99 0} {+ 0 7}] 7
+    }
+
+    Test::case "2-arg if no-else still works" {
+        Test::eq [if 1 {+ 7 0}] 7
+        Test::eq [if 0 {+ 7 0}] ""
+    }
+}
+
+Test::suite "gensym prefix length and counter" {
+    Test::case "default gensym produces _GN names" {
+        let a [gensym]
+        let b [gensym]
+        ;; Names must differ; both must start with `_G`.
+        Test::assert [!= $a $b]
+        Test::assert [== [String::find $a "_G"] 0]
+        Test::assert [== [String::find $b "_G"] 0]
+    }
+
+    Test::case "custom prefix is honored" {
+        let s [gensym myprefix]
+        Test::assert [== [String::find $s "myprefix"] 0]
+    }
+
+    Test::case "overlong prefix is rejected" {
+        ;; Build a 97-byte prefix (> 96-byte cap).
+        var p ""
+        var i 0
+        while {[< $i 97]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 1
+    }
+
+    Test::case "96-byte prefix is accepted" {
+        var p ""
+        var i 0
+        while {[< $i 96]} {
+            set! p "${p}x"
+            set! i [+ $i 1]
+        }
+        let r [catch { gensym $p }]
+        Test::eq $r 0
+    }
+}
+
+Test::suite "scanner rejects bad :: tails in variable refs" {
+    Test::case "trailing :: is a parse error" {
+        ;; Pre-fix: scanner accepted "$foo::", env_get_value split
+        ;; "foo::" into segment "foo" + empty rest, and silently
+        ;; returned $foo's value.
+        let foo 5
+        let r [catch { eval "puts \$foo::" }]
+        Test::eq $r 1
+    }
+
+    Test::case "::digit (non-identifier-start) is a parse error" {
+        ;; Pre-fix: scanner happily consumed "::1bad" as part of the
+        ;; varname, deferring to a runtime "undefined variable".
+        let foo 5
+        let r [catch { eval "puts \$foo::1bad" }]
+        Test::eq $r 1
+    }
+
+    Test::case "valid single :: still parses" {
+        namespace ns48a { let x 7 }
+        Test::eq $ns48a::x 7
+    }
+
+    Test::case "valid nested :: still parses" {
+        namespace ns48b { namespace inner { let y 11 } }
+        Test::eq $ns48b::inner::y 11
+    }
+
+    Test::case "underscore-led segment after :: still parses" {
+        namespace ns48c { let _x 13 }
+        Test::eq $ns48c::_x 13
+    }
+}
+
+Test::suite " stdlib errors name the proc" {
+    Test::case "arity error names the builtin" {
+        let r [catch { % 5 } res err]
+        Test::eq $r 1
+        Test::eq $err {%: expected 2 arguments, got 1}
+    }
+
+    Test::case "conversion failure states expected vs got" {
+        let r [catch { % 5 abc } res err]
+        Test::eq $r 1
+        Test::eq $err {%: expected integer, got "abc"}
+    }
+
+    Test::case "comparison names itself" {
+        let r [catch { < x y } res err]
+        Test::eq $r 1
+        Test::eq $err {<: expected number, got "x"}
+    }
+
+    Test::case "get reports out-of-range index" {
+        let r [catch { get (1 2 3) 9 } res err]
+        Test::eq $r 1
+        Test::eq $err {get: index 9 out of range}
+    }
+
+    Test::case "get reports missing dict key" {
+        let r [catch { get #{a 1} missing } res err]
+        Test::eq $r 1
+        Test::eq $err {get: key "missing" not found}
+    }
+
+    Test::case "type mismatch names proc and both types" {
+        let r [catch { del (1 2) 0 } res err]
+        Test::eq $r 1
+        Test::eq $err {del: expected dict, got list}
+    }
+
+    Test::case "callable check names the proc" {
+        let r [catch { List::map (1 2) (3) } res err]
+        Test::eq $r 1
+        Test::eq $err {List::map: expected callable, got list}
+    }
+
+    Test::case "set! on unbound name says undefined" {
+        let r [catch { set! definitely_unbound_68 1 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: undefined variable "definitely_unbound_68"}
+    }
+
+    Test::case "set! on immutable binding suggests var" {
+        let immut68 "1"
+        let r [catch { set! immut68 2 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: expected cell (declare with 'var'), got "1"}
+    }
+
+    Test::case "set! diagnostic names typed int binding" {
+        let immut75 1
+        let r [catch { set! immut75 2 } res err]
+        Test::eq $r 1
+        Test::eq $err {set!: expected cell (declare with 'var'), got int}
+    }
+
+    Test::case "if arity error names the form" {
+        let r [catch { eval "if 1" } res err]
+        Test::eq $r 1
+        Test::eq $err {if: expected 2 to 4 arguments, got 1}
+    }
+
+    Test::case "special form arity via chk (sort family)" {
+        let r [catch { List::sort_by (1 2) "5" } res err]
+        Test::eq $r 1
+        Test::eq $err {List::sort_by: expected callable, got "5"}
+    }
+}
+
+Test::suite "compile errors carry a message" {
+    Test::case "eval of unmatched bracket names the delimiter" {
+        let r [catch { eval "puts \[" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '['}
+    }
+
+    Test::case "eval of unmatched quote names the delimiter" {
+        let r [catch { eval "puts \"unclosed" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '"'}
+    }
+
+    Test::case "catch traps compile error of its own script" {
+        ;; Braces balance, so the body parses as a word; the inner
+        ;; unmatched [ only surfaces when catch compiles the script.
+        let r [catch {let x [+ 1} res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched '['}
+    }
+
+    Test::case "stray close-bracket is reported" {
+        let r [catch { eval "puts \]" } res err]
+        Test::eq $r 1
+        Test::eq $err {unmatched ']'}
+    }
+
+    Test::case "bad :: tail is reported with a message" {
+        let r [catch { eval "puts \$foo::" } res err]
+        Test::eq $r 1
+        Test::eq $err {expected identifier after '::'}
+    }
+}
+
+Test::suite "unknown bare identifier at head errors (no self-quote)" {
+    Test::case "unknown bare id as one-word command errors" {
+        let r [catch { i74_no_such_cmd } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_cmd}
+    }
+
+    Test::case "eval of a one-word unknown string errors" {
+        let r [catch { eval "i74_no_such_cmd" } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_cmd}
+    }
+
+    Test::case "qualified unknown errors for unresolvable root" {
+        let r [catch { i74_nosuch_ns::member } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_nosuch_ns::member}
+    }
+
+    Test::case "qualified unknown errors for missing member (symmetry)" {
+        namespace i74_cfg { let x 1 }
+        let r [catch { i74_cfg::nope } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_cfg::nope}
+    }
+
+    Test::case "typo'd zero-arg command in proc tail errors" {
+        proc i74_oops {} { i74_no_such_zero_arg }
+        let r [catch { i74_oops } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: i74_no_such_zero_arg}
+    }
+
+    Test::case "quoted one-word program is a value form" {
+        let r ["red"]
+        Test::eq $r red
+        Test::eq [type ["red"]] string
+    }
+
+    Test::case "quoted value branch" {
+        let c [if 1 { "red" } else { "blue" }]
+        Test::eq $c red
+    }
+
+    Test::case "double-braced value branch" {
+        let c [if 0 {{red}} else {{blue}}]
+        Test::eq $c blue
+    }
+
+    Test::case "quoted proc tail returns the string" {
+        proc i74_color {} { "red" }
+        Test::eq [i74_color] red
+    }
+
+    Test::case "numeric one-word programs are value forms" {
+        Test::eq [42] 42
+        Test::eq [-3] -3
+        Test::eq [3.14] 3.14
+        Test::eq [1e5] 1e5
+        Test::eq [if 1 { 42 }] 42
+    }
+
+    Test::case "out-of-range integer literal is a compile error" {
+        ;; matching the numeric grammar but overflowing commits
+        ;; loudly (never degrades to "the text itself"). Braces/quotes
+        ;; remain the spelling for huge digit strings as data.
+        let r [catch { eval "99999999999999999999" } res err]
+        Test::eq $r 1
+        Test::eq $err {integer literal out of range}
+        Test::eq [len {99999999999999999999}] 20
+    }
+
+    Test::case "non-decimal forms are identifiers, not numbers" {
+        let r [catch { eval "0x10" } res err]
+        Test::eq $r 1
+        Test::eq $err {unknown command: 0x10}
+    }
+
+    Test::case "while with numeric literal test still loops" {
+        var i74_i 0
+        while {1} {
+            set! i74_i [+ $i74_i 1]
+            if [== $i74_i 3] { break }
+        }
+        Test::eq $i74_i 3
+    }
+
+    Test::case "known bare id still dispatches" {
+        proc i74_get {} { return "called" }
+        Test::eq [i74_get] called
+    }
+
+    Test::case "bare id bound to a non-callable value yields the value" {
+        let i74_bound 99
+        Test::eq [i74_bound] 99
+    }
+
+    Test::case "argument-position bare words are untouched" {
+        let w hello
+        Test::eq $w hello
+        Test::eq [type $w] string
+    }
+}
+
+;; ============================================================================
+;; Lex::commands (reader reflection)
+;; ============================================================================
+
+Test::suite "Lex::commands" {
+    Test::case "bare words lex to literal word records" {
+        let r [Lex::commands {ls -lsa}]
+        Test::eq [len $r] 1
+        let ws [get [get $r 0] words]
+        Test::eq [len $ws] 2
+        Test::eq [get [get $ws 0] text] {ls}
+        Test::eq [get [get $ws 0] dynamic] 0
+        Test::eq [get [get $ws 1] text] {-lsa}
+    }
+
+    Test::case "braced word decodes verbatim and is never dynamic" {
+        let ws [get [get [Lex::commands {grep {a $x [b] c}}] 0] words]
+        Test::eq [get [get $ws 1] text] {a $x [b] c}
+        Test::eq [get [get $ws 1] braced] 1
+        Test::eq [get [get $ws 1] dynamic] 0
+    }
+
+    Test::case "quoted word decodes escapes without substituting" {
+        let ws [get [get [Lex::commands {echo "a\tb"}] 0] words]
+        Test::eq [get [get $ws 1] text] "a\tb"
+        Test::eq [get [get $ws 1] quoted] 1
+        Test::eq [get [get $ws 1] dynamic] 0
+    }
+
+    Test::case "var reference makes a word dynamic with pieces" {
+        let ws [get [get [Lex::commands {echo $foo}] 0] words]
+        let w [get $ws 1]
+        Test::eq [get $w dynamic] 1
+        Test::eq [get $w text] {}
+        let p [get [get $w pieces] 0]
+        Test::eq [get $p kind] {var}
+        Test::eq [get $p name] {foo}
+    }
+
+    Test::case "subcommand makes a word dynamic" {
+        let ws [get [get [Lex::commands {echo [pwd]}] 0] words]
+        Test::eq [get [get $ws 1] dynamic] 1
+        Test::eq [get [get [get [get $ws 1] pieces] 0] kind] {sub}
+    }
+
+    Test::case "mixed word reports its pieces in order" {
+        let ws [get [get [Lex::commands {echo pre$x}] 0] words]
+        let ps [get [get $ws 1] pieces]
+        Test::eq [len $ps] 2
+        Test::eq [get [get $ps 0] kind] {lit}
+        Test::eq [get [get $ps 0] text] {pre}
+        Test::eq [get [get $ps 1] kind] {var}
+    }
+
+    Test::case "list and dict literals lex as dynamic (subcommands)" {
+        let ws [get [get [Lex::commands "f () #\{a 1\}"] 0] words]
+        Test::eq [get [get $ws 1] dynamic] 1
+        Test::eq [get [get $ws 2] dynamic] 1
+    }
+
+    Test::case "expand flag is reported" {
+        let ws [get [get [Lex::commands {f @$args}] 0] words]
+        Test::eq [get [get $ws 1] expand] 1
+    }
+
+    Test::case "statements split on newline and semicolon with lines" {
+        let r [Lex::commands "puts a\nputs b; puts c"]
+        Test::eq [len $r] 3
+        Test::eq [get [get $r 0] line] 1
+        Test::eq [get [get $r 2] line] 2
+    }
+
+    Test::case "statement-level continuation joins statements" {
+        let r [Lex::commands "puts a \\\nb"]
+        Test::eq [len $r] 1
+        Test::eq [len [get [get $r 0] words]] 3
+    }
+
+    Test::case "comment-only and empty input lex to no statements" {
+        Test::eq [len [Lex::commands {;; nothing}]] 0
+        Test::eq [len [Lex::commands {}]] 0
+    }
+
+    Test::case "nothing is evaluated by lexing" {
+        var lexed_se 0
+        let r [Lex::commands {set! lexed_se [+ $lexed_se 1]}]
+        Test::eq $lexed_se 0
+        Test::eq [len $r] 1
+    }
+
+    Test::case "malformed input errors with the compiler's message" {
+        var e {}
+        var m {}
+        let rc [catch { Lex::commands "echo \"open" } e m]
+        Test::eq $rc 1
+        Test::assert [>= [String::find $m {unmatched}] 0]
+    }
+
+    Test::case "word records carry half-open byte spans" {
+        let ws [get [get [Lex::commands {ls -lsa}] 0] words]
+        Test::eq [get [get $ws 0] span] (0 2)
+        Test::eq [get [get $ws 1] span] (3 7)
+    }
+
+    Test::case "spans slice original bytes with quoting intact" {
+        let src {grep {a $x [b] c} "q\tw" @$args}
+        let ws [get [get [Lex::commands $src] 0] words]
+        proc wsrc {src w} {
+            let sp [get $w span]
+            String::range $src [get $sp 0] [get $sp 1]
+        }
+        Test::eq [wsrc $src [get $ws 1]] {{a $x [b] c}}
+        Test::eq [wsrc $src [get $ws 2]] {"q\tw"}
+        Test::eq [wsrc $src [get $ws 3]] {@$args}
+    }
+
+    Test::case "spans are absolute offsets across lines and comments" {
+        let src "puts a\n;; note\nputs zz"
+        let w [get [get [get [Lex::commands $src] 1] words] 1]
+        Test::eq [String::range $src @[get $w span]] {zz}
+    }
+
+    Test::case "span slices rejoin commands without comments or padding" {
+        let src "puts   {a  b}  ;; trailing"
+        let ws [get [get [Lex::commands $src] 0] words]
+        var parts ()
+        foreach w $ws {
+            set! parts [List::push $parts [String::range $src @[get $w span]]]
+        }
+        Test::eq [String::join $parts " "] {puts {a  b}}
+    }
+}
+
+Test::suite "empty program result is the empty string" {
+    Test::case "empty subcommand yields empty string" {
+        Test::eq [type []] string
+        Test::eq [String::from []] {}
+    }
+
+    Test::case "empty subcommand binds as empty string" {
+        let i85_x []
+        Test::eq "got=$i85_x" {got=}
+    }
+
+    Test::case "empty subcommand interpolates as empty string" {
+        Test::eq "x=[]" {x=}
+    }
+
+    Test::case "empty proc body yields empty string" {
+        proc i85_empty {} {}
+        Test::eq "v=[i85_empty]" {v=}
+    }
+
+    Test::case "bare return yields empty string" {
+        proc i85_bare {} { return }
+        Test::eq "v=[i85_bare]" {v=}
+    }
+
+    Test::case "empty subcommand at command head errors" {
+        let r [catch { [] x } res err]
+        Test::eq $r 1
+        Test::eq $err {empty command name}
+    }
+
+    Test::case "empty string at command head errors the same way" {
+        let r [catch { "" x } res err]
+        Test::eq $r 1
+        Test::eq $err {empty command name}
+    }
+}
+
+Test::suite "empty namespace path segments are rejected" {
+    Test::case "trailing separator errors before the body runs" {
+        var i92_ran 0
+        let r [catch { namespace i92_t:: { set! i92_ran 1 } } res err]
+        Test::eq $r 1
+        Test::eq $err {namespace: empty path segment in 'i92_t::'}
+        Test::eq $i92_ran 0
+    }
+
+    Test::case "leading separator errors" {
+        let r [catch { namespace ::i92_l {} } res err]
+        Test::eq $r 1
+        Test::eq $err {namespace: empty path segment in '::i92_l'}
+    }
+
+    Test::case "empty middle segment errors" {
+        let r [catch { namespace i92_a::::i92_b {} } res err]
+        Test::eq $r 1
+        Test::eq $err {namespace: empty path segment in 'i92_a::::i92_b'}
+    }
+
+    Test::case "empty name errors" {
+        let r [catch { namespace "" {} } res err]
+        Test::eq $r 1
+        Test::eq $err {namespace: empty path segment in ''}
+    }
+
+    Test::case "valid multi-segment paths still work" {
+        namespace i92_x::i92_y::i92_z { let v 3 }
+        Test::eq $i92_x::i92_y::i92_z::v 3
+    }
+}
+
+Test::suite "control payloads survive nested positions" {
+    Test::case "return value propagates from argument position" {
+        proc i93_arg {} { let x [return 5]; puts unreachable }
+        Test::eq [i93_arg] 5
+    }
+
+    Test::case "return value propagates from command-head position" {
+        proc i93_head {} { [return 6] ignored; puts unreachable }
+        Test::eq [i93_head] 6
+    }
+
+    Test::case "return inside concatenation aborts; the string consumes the value" {
+        proc i93_cat {} { let x "a[return 7]b"; puts unreachable }
+        Test::eq "v=[i93_cat]" {v=}
+    }
+
+    Test::case "return value propagates from a threaded head" {
+        proc i93_thread {} { -> [return 8] String::from; puts unreachable }
+        Test::eq [i93_thread] 8
+    }
+
+    Test::case "return value propagates from a braced while test" {
+        proc i93_while {} { while {[return 9]} {}; puts unreachable }
+        Test::eq [i93_while] 9
+    }
+
+    Test::case "case key eval failing after a compared clause is a clean error" {
+        let r [catch { case 1 2 {a} [i93_nosuchcmd] {b} } res err]
+        Test::eq $r 1
+    }
+
+    Test::case "cond test eval failing after a tested clause is a clean error" {
+        let r [catch { cond [== 1 0] {a} [i93_nosuchcmd] {b} } res err]
+        Test::eq $r 1
+    }
+}
+
+Test::suite "proc capture of the enclosing namespace is rejected" {
+    Test::case "re-entry proc referencing the namespace is a cycle error" {
+        namespace i94_n {}
+        let r [catch { namespace i94_n { proc a {} {i94_n} } } res err]
+        Test::eq $r 1
+        Test::assert [has? $err {reference cycle}]
+    }
+
+    Test::case "re-entry without self-capture still works" {
+        namespace i94_m {}
+        namespace i94_m { proc twice {x} { + $x $x } }
+        Test::eq [i94_m::twice 21] 42
+    }
+}

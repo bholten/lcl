@@ -1,0 +1,382 @@
+;; Lcl conformance tests: optional/rest params, apply, parse-time dispatch, param validation.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Optional Parameters" {
+    Test::case "optional with default" {
+        proc greet {name (greeting "Hello")} {
+            "$greeting, $name!"
+        }
+        Test::eq [greet "World"] "Hello, World!"
+        Test::eq [greet "Alice" "Hi"] "Hi, Alice!"
+    }
+
+    Test::case "multiple optionals" {
+        proc range_opts {(start 0) (end 10) (step 1)} {
+            list $start $end $step
+        }
+        Test::eq [range_opts] (0 10 1)
+        Test::eq [range_opts 5] (5 10 1)
+        Test::eq [range_opts 5 20] (5 20 1)
+        Test::eq [range_opts 5 20 2] (5 20 2)
+    }
+
+    Test::case "default references earlier param" {
+        proc range_end {start (end [+ $start 10])} {
+            list $start $end
+        }
+        Test::eq [range_end 5] (5 15)
+        Test::eq [range_end 5 20] (5 20)
+    }
+
+    Test::case "default evaluated per call" {
+        var counter 0
+        proc incr {} { set! counter [+ $counter 1]; $counter }
+        proc next_id {(id [incr])} { $id }
+        Test::eq [next_id] 1
+        Test::eq [next_id] 2
+        Test::eq [next_id 99] 99
+        Test::eq [next_id] 3
+    }
+
+    Test::case "optional with default should work with lambdas" {
+        let greet [lambda {name (greeting "Hello")} {
+            "$greeting, $name!"
+        }]
+
+        Test::eq [greet "world"] "Hello, world!"
+        Test::eq [greet "Alice" "Hi"] "Hi, Alice!"
+    }
+
+    Test::case "multiple optionals with lambdas" {
+        let range_opts [lambda {(start 0) (end 10) (step 1)} {
+            list $start $end $step
+        }]
+
+        Test::eq [range_opts] (0 10 1)
+        Test::eq [range_opts 5] (5 10 1)
+        Test::eq [range_opts 5 20] (5 20 1)
+        Test::eq [range_opts 5 20 2] (5 20 2)
+    }
+
+    Test::case "default references earlier param with lambdas" {
+        let range_end [lambda {start (end [+ $start 10])} {
+            list $start $end
+        }]
+        Test::eq [range_end 5] (5 15)
+        Test::eq [range_end 5 20] (5 20)
+    }
+
+    Test::case "default evaluated per call with lambdas" {
+        var counter 0
+        let incr [lambda {} { set! counter [+ $counter 1]; $counter }]
+        let next_id [lambda {(id [incr])} { $id }]
+        Test::eq [next_id] 1
+        Test::eq [next_id] 2
+        Test::eq [next_id 99] 99
+        Test::eq [next_id] 3
+    }
+}
+
+;; ============================================================================
+;; Rest Parameters
+;; ============================================================================
+
+Test::suite "Rest Parameters" {
+    Test::case "basic rest parameter" {
+        proc sum {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }
+        Test::eq [sum 1 2 3 4 5] 15
+        Test::eq [sum] 0
+    }
+
+    Test::case "required and rest" {
+        proc join_with {sep *items} {
+            if [== [len $items] 0] { return "" }
+            var result [get $items 0]
+            foreach item [List::slice $items 1 [len $items]] {
+                set! result "$result$sep$item"
+            }
+            $result
+        }
+        Test::eq [join_with "," "a" "b" "c"] "a,b,c"
+        Test::eq [join_with "-" "foo"] "foo"
+        Test::eq [join_with "|"] ""
+    }
+
+    Test::case "required, optional, and rest" {
+        proc window {n (step 1) *xs} {
+            list $n $step $xs
+        }
+        Test::eq [window 3] (3 1 ())
+        Test::eq [window 3 2] (3 2 ())
+        Test::eq [window 3 2 "a" "b" "c"] (3 2 ("a" "b" "c"))
+    }
+
+    Test::case "basic rest parameter with lambdas" {
+        let sum [lambda {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }]
+        Test::eq [sum 1 2 3 4 5] 15
+        Test::eq [sum] 0
+    }
+
+    Test::case "required and rest with lambdas" {
+        let join_with [lambda {sep *items} {
+            if [== [len $items] 0] { return "" }
+            var result [get $items 0]
+            foreach item [List::slice $items 1 [len $items]] {
+                set! result "$result$sep$item"
+            }
+            $result
+        }]
+        Test::eq [join_with "," "a" "b" "c"] "a,b,c"
+        Test::eq [join_with "-" "foo"] "foo"
+        Test::eq [join_with "|"] ""
+    }
+
+    Test::case "required, optional, and rest with lambdas" {
+        let window [lambda {n (step 1) *xs} {
+            list $n $step $xs
+        }]
+        Test::eq [window 3] (3 1 ())
+        Test::eq [window 3 2] (3 2 ())
+        Test::eq [window 3 2 "a" "b" "c"] (3 2 ("a" "b" "c"))
+    }
+}
+
+;; ============================================================================
+;; Apply and Arity
+;; ============================================================================
+
+Test::suite "Apply and Arity" {
+    Test::case "apply with c proc" {
+        ;; varargs: apply fn arg1 arg2 ...
+        Test::eq [apply ${+} 1 2 3] 6
+        Test::eq [apply ${*} 2 3 4] 24
+    }
+
+    Test::case "apply with user proc" {
+        proc sum {*xs} {
+            var acc 0
+            foreach x $xs { set! acc [+ $acc $x] }
+            $acc
+        }
+        Test::eq [apply ${sum} 10 20 30] 60
+        Test::eq [apply ${sum}] 0
+    }
+
+    Test::case "apply with @ spread (list splat)" {
+        ;; list-splat now via @ spread rather than implicit splat
+        proc window {n (step 1) *xs} { list $n $step $xs }
+        let args (3 2 "a" "b" "c")
+        Test::eq [apply ${window} @$args] (3 2 ("a" "b" "c"))
+    }
+
+    Test::case "apply on a stored command name (string)" {
+        ;; Resolution path: STRING -> command lookup -> dispatch.
+        ;; This replaces the implicit `eval $cmd` Tcl idiom.
+        proc greet {who} { return "hello $who" }
+        let name "greet"
+        Test::eq [apply $name "world"] "hello world"
+    }
+
+    Test::case "apply on a stored builtin name (string)" {
+        let op "+"
+        Test::eq [apply $op 1 2 3 4] 10
+    }
+
+    Test::case "apply on a lambda value" {
+        let f [lambda {x} { + $x 1 }]
+        Test::eq [apply $f 41] 42
+    }
+
+    Test::case "apply on a closure" {
+        proc make_counter {start} {
+            var n $start
+            return [lambda {} { set! n [+ $n 1]; $n }]
+        }
+        let c [make_counter 10]
+        Test::eq [apply $c] 11
+        Test::eq [apply $c] 12
+    }
+
+    Test::case "apply errors on unknown command name" {
+        let rc [catch { apply "no_such_command_xyzzy" } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on non-callable value" {
+        let rc [catch { apply 42 } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on special form" {
+        ;; "if" is a special form - apply cannot dispatch it because
+        ;; specials want raw words, not pre-evaluated values.
+        let rc [catch { apply "if" 1 {} {} } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply errors on macro" {
+        macro my_macro {x} { quasiquote {,$x} }
+        let rc [catch { apply "my_macro" 1 } _ err]
+        Test::eq $rc 1
+    }
+
+    Test::case "apply with zero args" {
+        proc noargs {} { return "ok" }
+        Test::eq [apply ${noargs}] "ok"
+    }
+
+    Test::case "arity of required-only proc" {
+        proc foo {a b c} { + $a $b $c }
+        Test::eq [arity ${foo}] (3 3)
+    }
+
+    Test::case "arity of optional proc" {
+        proc bar {a (b 10)} { + $a $b }
+        Test::eq [arity ${bar}] (1 2)
+    }
+
+    Test::case "arity of rest proc" {
+        proc baz {*xs} { len $xs }
+        Test::eq [arity ${baz}] (0 -1)
+    }
+
+    Test::case "arity of combined proc" {
+        proc qux {a (b 1) *rest} { list $a $b $rest }
+        Test::eq [arity ${qux}] (1 -1)
+    }
+
+    Test::case "arity of c proc" {
+        ;; C procs report (0 -1) since their arity isn't tracked
+        Test::eq [arity ${+}] (0 -1)
+    }
+}
+
+;; ============================================================================
+;; Parse-time dispatch rule (value-substitution redesign, Phase 3)
+;; ============================================================================
+;;
+;; The argc==1 dispatch rule: a one-word command dispatches its first word
+;; only when that word is a bare identifier (single-piece, unbracketed LIT).
+;; Every other form yields the word's value without any command-lookup
+;; attempt. This eliminates the previous runtime "is this value callable?"
+;; hybrid that caused values matching proc names to silently dispatch.
+Test::suite "Parse-time dispatch rule" {
+
+    Test::case {[$x] returns value when $x names a registered proc} {
+        ;; Before Phase 3: silent dispatch -> "too few arguments" error.
+        ;; After Phase 3: clean variable substitution.
+        proc GET {url} { return "ignored" }
+        let val "GET"
+        Test::eq [$val] "GET"
+    }
+
+    Test::case {[$x] returns value when $x names a builtin} {
+        let val "puts"
+        Test::eq [$val] "puts"
+    }
+
+    Test::case {eval {$x} returns value, not dispatch} {
+        proc GET {url} { return "ignored" }
+        let val "GET"
+        Test::eq [eval {$val}] "GET"
+    }
+
+    Test::case {[$c] returns the closure value, not a call} {
+        ;; Closure-as-value: [$c] is no longer a zero-arg invocation. Use
+        ;; `apply $c` for invocation.
+        let c [lambda {} { 42 }]
+        Test::eq [proc? [$c]] 1
+    }
+
+    Test::case {[apply $c] invokes the closure} {
+        let c [lambda {} { 42 }]
+        Test::eq [apply $c] 42
+    }
+
+    Test::case {[{literal}] returns the literal string} {
+        Test::eq [{hello world}] "hello world"
+    }
+
+    Test::case {[42] returns the literal value} {
+        Test::eq [42] 42
+    }
+
+    Test::case "multi-piece concat one-word program returns string" {
+        let a hello
+        let b world
+        Test::eq [eval {"$a $b"}] "hello world"
+    }
+
+    Test::case "bare-id one-word still dispatches" {
+        ;; Bare identifiers retain their dispatch behavior (the Tcl idiom).
+        proc plain {} { return "called" }
+        Test::eq [plain] "called"
+    }
+
+    Test::case {eval $cmd dispatches stored command name (Tcl idiom)} {
+        ;; `eval $cmd` compiles to a one-word program with a bare-identifier
+        ;; word — so the parse-time rule routes it through dispatch. The
+        ;; Tcl pattern of "run this stored command name" survives.
+        proc CMD {} { return "dispatched" }
+        let cmd "CMD"
+        Test::eq [eval $cmd] "dispatched"
+    }
+
+    Test::case {[[expr]] needs apply now} {
+        ;; The [[inner]] pattern (call the result of inner) is no longer
+        ;; automatic. Inner subcommand yields the value; outer apply
+        ;; dispatches it.
+        let closures (
+            [lambda {} { 1 }]
+            [lambda {} { 2 }]
+        )
+        Test::eq [apply [get $closures 0]] 1
+        Test::eq [apply [get $closures 1]] 2
+    }
+
+    Test::case "subcmd inside concat word unchanged" {
+        ;; Within a value-position [...] inside a larger string, one-word
+        ;; programs still yield values - exactly as before. This guards
+        ;; against accidental semantic drift in the multi-piece word path.
+        let x 42
+        Test::eq "x=[$x]" "x=42"
+    }
+}
+
+;; ============================================================================
+;; Parameter Validation Errors
+;; ============================================================================
+
+Test::suite "Parameter Validation Errors" {
+    Test::case "too few arguments" {
+        proc needs_two {a b} { + $a $b }
+        let errored [catch { needs_two 1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "too many arguments (no rest)" {
+        proc takes_two {a (b 10)} { + $a $b }
+        let errored [catch { takes_two 1 2 3 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "rest accepts any extra" {
+        proc takes_rest {a *rest} { list $a $rest }
+        let errored [catch { takes_rest 1 2 3 4 5 }]
+        Test::eq $errored 0
+    }
+}
+
+;; ============================================================================
+;; Regression Tests (from  audit)
+;; ============================================================================

@@ -1,0 +1,671 @@
+;; Lcl conformance tests: scanner/eval hardening regressions (fuzzer- and audit-driven).
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Scanner: escape sequences" {
+    Test::case "hex escape \\x41 produces A" {
+        Test::eq "\x41" A
+    }
+
+    Test::case "hex escape requires 2 digits" {
+        Test::eq [len "\x4z"] 4
+        Test::eq "\x4z" "\\x4z"
+    }
+
+    Test::case "unknown escape preserves backslash" {
+        Test::eq [len "\q"] 2
+        Test::eq "\q" "\\q"
+    }
+
+    Test::case "octal escape \\101 produces A" {
+        Test::eq "\101" A
+    }
+
+    Test::case "brace backslash balance" {
+        let val {foo \} bar}
+        Test::eq [String::find $val "foo"] 0
+        Test::eq [String::find $val "bar"] 7
+    }
+}
+
+let _test_vbrace_d #{key "v}al"}
+let _test_vbrace_expect "v}al"
+
+;; ============================================================================
+;; Scanner: balanced delimiters with quotes
+;; ============================================================================
+
+Test::suite "Scanner: balanced delimiters" {
+    Test::case "quoted close-paren inside list literal" {
+        let result (foo ")" bar)
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] foo
+        Test::eq [get $result 1] ")"
+        Test::eq [get $result 2] bar
+    }
+
+    Test::case "quoted close-bracket inside subcommand" {
+        let result [list "a]b" c]
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] "a]b"
+    }
+
+    Test::case "quoted close-brace inside dict literal" {
+        Test::eq [get $_test_vbrace_d key] $_test_vbrace_expect
+    }
+}
+
+;; ============================================================================
+;; Scanner: comments in literals
+;; ============================================================================
+
+Test::suite "Scanner: comments in literals" {
+    Test::case ";; comment stripped in list literal" {
+        let result (foo ;; this is a comment
+bar)
+        Test::eq [len $result] 2
+        Test::eq [get $result 0] foo
+        Test::eq [get $result 1] bar
+    }
+
+    Test::case ";; comment stripped in dict literal" {
+        let d #{
+            key1 val1 ;; comment
+            key2 val2
+        }
+        Test::eq [len $d] 2
+        Test::eq [get $d key1] val1
+        Test::eq [get $d key2] val2
+    }
+
+    Test::case ";; comment stripped in subcommand" {
+        let result [list
+            a ;; comment
+            b
+            c
+        ]
+        Test::eq [len $result] 3
+        Test::eq [get $result 0] a
+        Test::eq [get $result 1] b
+        Test::eq [get $result 2] c
+    }
+}
+
+;; ============================================================================
+;; Upvalue Capture Through Braced Literals
+;; ============================================================================
+
+Test::suite "Upvalue Capture Through Braced Literals" {
+
+    Test::case "eval sees namespace let-binding" {
+        namespace _uv1 {
+            let val hello
+            proc test {} { eval {$val} }
+        }
+        Test::eq [_uv1::test] hello
+    }
+
+    Test::case "eval sees multiple namespace let-bindings" {
+        namespace _uv2 {
+            let a hello
+            let b world
+            proc test {} { eval {"$a $b"} }
+        }
+        Test::eq [_uv2::test] {hello world}
+    }
+
+    Test::case "foreach body sees namespace let-binding" {
+        namespace _uv3 {
+            let tag X
+            proc test {} {
+                var out ""
+                foreach k {a b} {
+                    set! out "$out$k:$tag "
+                }
+                $out
+            }
+        }
+        Test::eq [_uv3::test] {a:X b:X }
+    }
+
+    Test::case "while body sees namespace let-binding" {
+        namespace _uv4 {
+            let msg hi
+            proc test {} {
+                var i 0
+                var out ""
+                while {[< $i 2]} {
+                    set! out "$out$msg"
+                    set! i [+ $i 1]
+                }
+                $out
+            }
+        }
+        Test::eq [_uv4::test] hihi
+    }
+
+    Test::case "var-bound upvalues work in foreach (no regression)" {
+        namespace _uv5 {
+            var counter 0
+            proc test {} {
+                foreach k {a b c} {
+                    set! counter [+ $counter 1]
+                }
+                $counter
+            }
+        }
+        Test::eq [_uv5::test] 3
+    }
+
+    Test::case "imported proc sees namespace let-binding in eval" {
+        namespace _uv6 {
+            let secret 42
+            proc reveal {} { eval {$secret} }
+        }
+        import _uv6 reveal
+        Test::eq [reveal] 42
+    }
+
+    Test::case "nested braced literals capture upvalues" {
+        namespace _uv7 {
+            let x 10
+            proc test {} {
+                eval {eval {$x}}
+            }
+        }
+        Test::eq [_uv7::test] 10
+    }
+}
+
+;; ============================================================================
+;; Macros
+;; ============================================================================
+
+Test::suite "Macros" {
+
+    Test::case "basic macro definition and expansion" {
+        macro bind-double {x} {
+            quasiquote { let _r [+ ,$x ,$x] }
+        }
+        bind-double 5
+        Test::eq $_r 10
+    }
+
+    Test::case "macro expansion creates bindings in caller frame" {
+        macro bind-it {val} {
+            quasiquote { let it ,$val }
+        }
+        bind-it 42
+        Test::eq $it 42
+    }
+
+    Test::case "macro with quasiquote generates code" {
+        macro bind-sum {a b} {
+            quasiquote { let _s [+ ,$a ,$b] }
+        }
+
+        bind-sum 3 7
+        Test::eq $_s 10
+    }
+
+    Test::case "macro in value position errors" {
+        macro add-ten {x} {
+            quasiquote { + ,$x 10 }
+        }
+
+        if [catch { eval {let x [add-ten 5]} } _res msg] {
+            Test::eq $msg "macro cannot be used in value position"
+        } else {
+            error "expected macro value-position error"
+        }
+    }
+
+    Test::case "macro calling macro (nesting)" {
+        macro bind-add-one {x} {
+            quasiquote { let _r [+ ,$x 1] }
+        }
+        macro bind-add-two {x} {
+            quasiquote {
+                bind-add-one [+ ,$x 1]
+            }
+        }
+        bind-add-two 5
+        Test::eq $_r 7
+    }
+
+    Test::case "macro inside if body (command position)" {
+        macro set-val {name val} {
+            quasiquote { let ,$name ,$val }
+        }
+
+        if 1 {
+            set-val myvar 99
+        }
+        Test::eq $myvar 99
+    }
+
+    Test::case "macro inside while body" {
+        var total 0
+        var i 0
+
+        macro add-i-to-total {} {
+            quasiquote { set! total [+ $total $i] }
+        }
+
+        while [< $i 3] {
+            add-i-to-total
+            set! i [+ $i 1]
+        }
+        ;; 0 + 1 + 2 = 3
+        Test::eq $total 3
+    }
+
+    Test::case "macro in namespace" {
+        namespace macro_ns {
+            macro bind-greet {name} {
+                quasiquote { let _g [String::join (Hello " " ,$name) {}] }
+            }
+        }
+        macro_ns::bind-greet World
+        Test::eq $_g "Hello World"
+    }
+
+    Test::case "macroexpand returns template without evaluating" {
+        macro add-ten {x} {
+            quasiquote { + ,$x 10 }
+        }
+        let tmpl [macroexpand add-ten 5]
+        ;; tmpl is a string containing the unexpanded template
+        Test::eq [String::trim $tmpl] "+ 5 10"
+    }
+
+    Test::case "eval macroexpand for value position" {
+        macro double {x} {
+            quasiquote { + ,$x ,$x }
+        }
+        let result [eval [macroexpand double 7]]
+        Test::eq $result 14
+    }
+
+    Test::case "macroexpand on non-macro errors" {
+        proc not-a-macro {x} { + $x 1 }
+        if [catch { macroexpand not-a-macro 5 } _res msg] {
+            Test::eq $msg "macroexpand: not a macro"
+        } else {
+            error "expected macroexpand error on non-macro"
+        }
+    }
+
+    Test::case "nested macros expand in command position" {
+        macro inner-add {x} {
+            quasiquote { + ,$x 1 }
+        }
+        macro outer-double-add {x} {
+            quasiquote { inner-add [+ ,$x ,$x] }
+        }
+        ;; outer-double-add 3 → inner-add [+ 3 3] → inner-add 6 → + 6 1 → 7
+        outer-double-add 3
+        ;; Last value is 7; bind it to check
+        let _r [eval [macroexpand outer-double-add 3]]
+        Test::eq $_r 7
+    }
+
+    Test::case "macroexpand returns one level only" {
+        macro step1 {x} {
+            quasiquote { step2 ,$x }
+        }
+        macro step2 {x} {
+            quasiquote { + ,$x 100 }
+        }
+        ;; macroexpand only expands step1, not step2 inside the template
+        let tmpl [macroexpand step1 5]
+        Test::eq [String::trim $tmpl] "step2 5"
+        ;; But eval expands step2 since it's a command head
+        let result [eval $tmpl]
+        Test::eq $result 105
+    }
+
+    Test::case "three levels of macro nesting" {
+        macro wrap3 {x} {
+            quasiquote { wrap2 ,$x }
+        }
+        macro wrap2 {x} {
+            quasiquote { wrap1 ,$x }
+        }
+        macro wrap1 {x} {
+            quasiquote { + ,$x 1000 }
+        }
+        ;; All three levels expand through evaluation
+        wrap3 42
+        let _r [eval [macroexpand wrap3 42]]
+        Test::eq $_r 1042
+    }
+
+    Test::case "nested macros with side effects at each level" {
+        var trace [list]
+        macro level-a {x} {
+            quasiquote {
+                set! trace [List::push $trace "a"]
+                level-b ,$x
+            }
+        }
+        macro level-b {x} {
+            quasiquote {
+                set! trace [List::push $trace "b"]
+                + ,$x 1
+            }
+        }
+        level-a 10
+        ;; Both macros expanded and ran: trace has a then b
+        Test::eq $trace [list a b]
+    }
+}
+
+Test::suite "integer conversion overflow safety" {
+    Test::case "int rejects out-of-range float (positive)" {
+        ;; (long)1e20 is UB on every common platform — should error,
+        ;; not silently clamp to LONG_MIN/garbage.
+        let errored [catch { int 1e20 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int rejects out-of-range float (negative)" {
+        let errored [catch { int -1e20 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "int rejects overflowing integer string" {
+        ;; strtol returns LONG_MAX with errno=ERANGE; bug accepts as valid.
+        let errored [catch { int "99999999999999999999" }]
+        Test::eq $errored 1
+    }
+
+    Test::case "float rejects nan/inf text" {
+        ;; The numeric-text grammar excludes nan/inf/hex, so strtod's
+        ;; acceptance of them (glibc/musl) can no longer leak in. The
+        ;; NaN→long UB guard this case used to reach through `float
+        ;; "nan"` is now pinned at the C level.
+        Test::eq [catch { float "nan" }] 1
+        Test::eq [catch { float "inf" }] 1
+        Test::eq [catch { float "0x10" }] 1
+    }
+
+    Test::case "int still accepts in-range values" {
+        Test::eq [int 42] 42
+        Test::eq [int 3.7] 3
+        Test::eq [int "-100"] -100
+    }
+}
+
+Test::suite "integer arithmetic overflow detection" {
+    ;; Signed integer overflow is C UB and triggers UBSan; we detect it
+    ;; explicitly and return LCL_RC_ERR so scripts can `catch` it.
+
+    Test::case "+ near LONG_MAX errors, doesn't wrap" {
+        let errored [catch { + 9223372036854775807 1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "+ small ints still work" {
+        Test::eq [+ 1 2 3] 6
+        Test::eq [+ -5 10] 5
+    }
+
+    Test::case "- subtraction overflow errors" {
+        ;; LONG_MAX - (-1) = LONG_MAX + 1 → overflow
+        let errored [catch { - 9223372036854775807 -1 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "- small ints still work" {
+        Test::eq [- 10 3 2] 5
+    }
+
+    Test::case "* overflow errors" {
+        let errored [catch { * 9223372036854775000 1000 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "* small ints still work" {
+        Test::eq [* 7 8] 56
+        Test::eq [* 2 3 4] 24
+    }
+
+    Test::case "% LONG_MIN -1 returns 0 (not UB)" {
+        ;; The buggy code computed LONG_MIN % -1 directly — UB on x86 because
+        ;; the quotient LONG_MIN/-1 = -LONG_MIN overflows. Mathematically the
+        ;; remainder is 0; we return that instead of UB-trapping or erroring.
+        let long_min [- -9223372036854775807 1]
+        Test::eq [% $long_min -1] 0
+    }
+
+    Test::case "% small ints still work" {
+        Test::eq [% 10 3] 1
+        Test::eq [% -10 3] -1
+    }
+
+    Test::case "List::range still works for normal cases" {
+        Test::eq [len [List::range 0 5]] 5
+        Test::eq [len [List::range 0 10 2]] 5
+    }
+}
+
+Test::suite "single-pass list/dict stringification" {
+    ;; The previous two-pass implementation computed each element's size
+    ;; via lcl_value_to_string(elem) then re-called it to write — between
+    ;; calls a partial-OOM could shift an element from "" (fallback) to
+    ;; its real representation, overflowing the buffer. The fix replaces
+    ;; both reify functions with a single growing-buffer pass. These
+    ;; smoke tests exercise the round-trip behavior across the styles
+    ;; that the new code paths produce.
+
+    Test::case "empty list stringifies" {
+        Test::eq [len [list]] 0
+        Test::eq [String::length [String::from [list]]] 0
+    }
+
+    Test::case "empty dict stringifies" {
+        Test::eq [len [dict]] 0
+        Test::eq [String::length [String::from [dict]]] 0
+    }
+
+    Test::case "nested list with mixed styles round-trips" {
+        let inner [list "has space" plain "br\}ace"]
+        let outer [list $inner $inner]
+        Test::eq [len $outer] 2
+        Test::eq [len [get $outer 0]] 3
+    }
+
+    Test::case "dict round-trips with quoted keys and values" {
+        let d [dict "k 1" "v 1" plain "br\}ace"]
+        Test::eq [get $d "k 1"] "v 1"
+        Test::eq [get $d plain] "br\}ace"
+    }
+
+    Test::case "deeply nested list stringifies" {
+        let l [list [list [list a b] c] d]
+        Test::eq [len $l] 2
+        Test::eq [len [get $l 0]] 2
+        Test::eq [len [get [get $l 0] 0]] 2
+    }
+}
+
+Test::suite "dispatch handles SPECIAL CPROCs safely" {
+    ;; Originally a regression test for a buggy single-subcmd dispatch path:
+    ;; `[get_if]` (where get_if returned $if) routed through fn.proc instead
+    ;; of fn.spec — undefined behavior.
+    ;;
+    ;; After the parse-time-rule redesign (Phase 3 of the value-substitution
+    ;; redesign), `[get_if]` no longer dispatches its result — it returns the
+    ;; value. Explicit dispatch via `apply` is the migration target, and
+    ;; `apply` itself rejects special forms cleanly.
+    Test::case "applying a special-form value errors cleanly" {
+        proc get_if {} { return $if }
+        let errored [catch { apply [get_if] }]
+        Test::eq $errored 1
+    }
+}
+
+Test::suite "cycle detection sees through containers" {
+    ;; The spec rejects mutual recursion at proc-def time because refcounting
+    ;; cannot collect cycles. Before this fix, cycle_check_value only
+    ;; recursed through LCL_PROC, so a proc hidden inside a list/dict/cell
+    ;; was invisible to the check and the cycle was created (and leaked).
+
+    Test::case "cell -> list -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [list $p] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> list -> list -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [list [list $p]] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> dict -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let errored [catch { set! c [dict k $p] }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell -> cell -> proc -> cell cycle rejected" {
+        var c [ref [list]]
+        let p [lambda {} { $c }]
+        let inner [ref $p]
+        let errored [catch { set! c $inner }]
+        Test::eq $errored 1
+    }
+
+    Test::case "cell can hold list with non-capturing procs" {
+        var c [ref [list]]
+        let p [lambda {x} { + $x 1 }]
+        let errored [catch { set! c [list $p] }]
+        Test::eq $errored 0
+    }
+
+    Test::case "cell can hold list of primitive values" {
+        var c [ref [list]]
+        let errored [catch { set! c [list 1 2 3] }]
+        Test::eq $errored 0
+    }
+}
+
+Test::suite "String::replace handles edge cases without overflow" {
+    ;; The actual size_t overflow requires ~2^64 bytes of input — not
+    ;; reachable in a normal test. These cases exercise the same arithmetic
+    ;; (count*(new_len-old_len)) on small inputs to lock in correctness
+    ;; under the new overflow-checked code path.
+    Test::case "replace shrinks (new shorter than old)" {
+        Test::eq [String::replace "aaaaaa" "aa" ""] ""
+    }
+
+    Test::case "replace expands (new longer than old)" {
+        Test::eq [String::replace "ab" "a" "xxx"] "xxxb"
+    }
+
+    Test::case "replace same length" {
+        Test::eq [String::replace "abc" "b" "B"] "aBc"
+    }
+
+    Test::case "replace with no matches returns source" {
+        Test::eq [String::replace "abc" "z" "Z"] "abc"
+    }
+
+    Test::case "replace many occurrences of long old_str" {
+        ;; (old_len=4, new_len=2, count=4) — exercises count*(2-4) underflow.
+        Test::eq [String::replace "abcdabcdabcdabcd" "abcd" "xy"] "xyxyxyxy"
+    }
+}
+
+Test::suite "integer comparison precision" {
+    ;; LONG_MAX-1 (9223372036854775806) and LONG_MAX (9223372036854775807) both
+    ;; round to 2^63 when converted to double, so all four comparisons would
+    ;; produce wrong results when args were integers cast via double.
+    Test::case "< between adjacent large ints is correct" {
+        Test::assert [< 9223372036854775806 9223372036854775807]
+        Test::assert [not [< 9223372036854775807 9223372036854775806]]
+    }
+
+    Test::case "> between adjacent large ints is correct" {
+        Test::assert [> 9223372036854775807 9223372036854775806]
+        Test::assert [not [> 9223372036854775806 9223372036854775807]]
+    }
+
+    Test::case "<= and >= behave correctly at the boundary" {
+        Test::assert [<= 9223372036854775806 9223372036854775807]
+        Test::assert [>= 9223372036854775807 9223372036854775806]
+        Test::assert [<= 9223372036854775807 9223372036854775807]
+    }
+
+    Test::case "mixed int/float comparison still uses float path" {
+        ;; When either operand is float, comparing via double is expected.
+        Test::assert [< 1 2.5]
+        Test::assert [> 3.5 3]
+    }
+}
+
+Test::suite "stray ] is a parse error, not silent truncation" {
+    Test::case "stray ] at top level errors" {
+        ;; Before fix: silently compiles only `list a` and ignores the rest.
+        ;; After fix: compile error, eval propagates LCL_RC_ERR.
+        let errored [catch { eval "list a ] list b" }]
+        Test::eq $errored 1
+    }
+
+    Test::case "stray ] between commands errors" {
+        let errored [catch { eval "let x 1 ; ] ; let y 2" }]
+        Test::eq $errored 1
+    }
+}
+
+Test::suite "eval does not propagate tail position to inner commands" {
+    Test::case "self-recursive call inside eval body does not escape eval" {
+        ;; If `eval` doesn't reset in_tail_position per command, the
+        ;; recursive `recur` call below is detected as a tail call
+        ;; (saved_tail_position && callee == current_proc) and escapes
+        ;; via LCL_RC_TAILCALL — abandoning the `return marker` after.
+        ;;
+        ;; Buggy behavior: returns the accumulator (e.g. 3).
+        ;; Correct behavior: returns "marker".
+        proc recur {n acc} {
+            if [== $n 0] {
+                return $acc
+            }
+            eval {
+                recur [- $n 1] [+ $acc 1]
+                return marker
+            }
+        }
+        Test::eq [recur 3 0] marker
+    }
+}
+
+Test::suite "float stringification is locale-independent" {
+    Test::case "stringified float contains ASCII '.' as decimal separator" {
+        ;; Force a real FLOAT via arithmetic (not just a literal string),
+        ;; then render explicitly to trigger lcl_reify_str_float.
+        ;; (Note "$f" would NOT render -- a single-piece quoted word
+        ;; forwards the float unchanged per the single-piece rule.)
+        let f [+ 1.0 2.14]
+        let s [String::from $f]
+        ;; On any locale (de_DE etc. included), the serialized form must
+        ;; contain ASCII '.', never ',' — spec §10 determinism.
+        Test::assert [>= [String::find $s "."] 0]
+    }
+
+    Test::case "float parses ASCII '.' regardless of runtime locale" {
+        ;; lcl_parse_double_c must accept '.' on any locale.
+        let parsed [float "3.14"]
+        ;; Round-trip approximate (cant Test::eq due to %.17g precision
+        ;; widening "3.14" to "3.1400000000000001").
+        let diff [- $parsed 3.14]
+        Test::assert [< $diff 0.0000000001]
+        Test::assert [> $diff -0.0000000001]
+    }
+}

@@ -1,0 +1,202 @@
+;; Lcl conformance tests: bindings, cells, quoting, escapes, user procs, lambdas.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Immutability & Substitution" {
+    Test::case "let creates immutable binding" {
+        let x 10
+        Test::eq $x 10
+    }
+}
+
+;; ============================================================================
+;; Cells (var/ref) & set!
+;; ============================================================================
+
+Test::suite "Cells (var/ref) & set!" {
+    Test::case "var creates mutable binding" {
+        var n 0
+        set! n [+ $n 1]
+        Test::eq $n 1
+    }
+
+    Test::case "ref creates cell" {
+        ;; cell? on direct ref output (not via variable, which dereferences)
+        Test::assert [cell? [ref 42]]
+    }
+}
+
+;; ============================================================================
+;; Quoting and Subcommand Substitution
+;; ============================================================================
+
+Test::suite "Quoting and Subcommand Substitution" {
+    Test::case "quoted string with substitution" {
+        let a 10
+        let s "x=$a [ + 1 2 ]"
+        Test::eq $s {x=10 3}
+    }
+
+    Test::case "braced string is literal" {
+        let a 10
+        let t {x=$a [ + 1 2 ]}
+        Test::eq $t {x=$a [ + 1 2 ]}
+    }
+
+    Test::case "empty quoted string equals empty braced string" {
+        let a ""
+        let b {}
+        Test::eq $a $b
+        Test::eq [String::length $a] 0
+        Test::eq [String::length $b] 0
+    }
+
+    Test::case "var with empty quoted string" {
+        var v ""
+        Test::eq $v {}
+        set! v "updated"
+        Test::eq $v "updated"
+    }
+}
+
+;; ============================================================================
+;; Escape Sequences
+;; ============================================================================
+
+Test::suite "Escape Sequences" {
+    Test::case "newline escape" {
+        let esc_nl "line1\nline2"
+        Test::eq [len $esc_nl] 11
+    }
+
+    Test::case "tab escape" {
+        let esc_tab "col1\tcol2"
+        Test::eq [len $esc_tab] 9
+    }
+
+    Test::case "backslash escape" {
+        let esc_bs "a\\b"
+        Test::eq [len $esc_bs] 3
+    }
+
+    Test::case "quote escape" {
+        let esc_qt "say \"hi\""
+        Test::eq [len $esc_qt] 8
+    }
+
+    Test::case "dollar escape prevents substitution" {
+        let esc_var 100
+        let esc_dol "\$esc_var"
+        Test::eq $esc_dol {$esc_var}
+    }
+
+    Test::case "bracket escape prevents command substitution" {
+        let esc_brk "\[+ 1 2\]"
+        Test::eq $esc_brk {[+ 1 2]}
+    }
+
+    Test::case "escape in unquoted words" {
+        let esc_unq hello\nworld
+        Test::eq [len $esc_unq] 11
+    }
+
+    Test::case "braced strings are literal (no escapes)" {
+        let esc_brace {a\nb}
+        Test::eq [len $esc_brace] 4
+        Test::eq $esc_brace {a\nb}
+    }
+}
+
+;; ============================================================================
+;; User Procs, Return, and Closures
+;; ============================================================================
+
+Test::suite "User Procs" {
+    Test::case "simple proc with return" {
+        proc add {a b} { return [+ $a $b] }
+        Test::eq [add 20 22] 42
+    }
+
+    Test::case "closure counter" {
+        proc makeCounter {start} {
+            var n $start
+            return [lambda {} { set! n [+ $n 1]; $n }]
+        }
+        let c [makeCounter 10]
+        Test::eq [apply $c] 11
+        Test::eq [apply $c] 12
+    }
+
+    Test::case "lambda expression" {
+        let lam [lambda {x} { + $x 10 }]
+        Test::eq [$lam 10] 20
+    }
+
+    Test::case "nested lambda closure" {
+        let lambda_counter [lambda {start} {
+            var n $start
+            return [lambda {} {
+                set! n [+ $n 1]
+                return $n
+            }]
+        }]
+        let lam_count [$lambda_counter 10]
+        apply $lam_count
+        apply $lam_count
+        apply $lam_count
+        Test::eq [apply $lam_count] 14
+    }
+}
+
+;; ============================================================================
+;; Named Lambda Self-Recursion
+;; ============================================================================
+
+Test::suite "Named Lambda Self-Recursion" {
+    Test::case "factorial via named lambda" {
+        let factorial [lambda factorial {n} {
+            if [<= $n 1] { 1 } else { [* $n [factorial [- $n 1]]] }
+        }]
+        Test::eq [factorial 5] 120
+    }
+
+    Test::case "fibonacci via named lambda" {
+        let fib [lambda fib {n} {
+            if [< $n 2] { $n } else { [+ [fib [- $n 1]] [fib [- $n 2]]] }
+        }]
+        Test::eq [fib 10] 55
+    }
+
+    Test::case "proc uses named lambda internally" {
+        proc fact {n} {
+            if [<= $n 1] { 1 } else { [* $n [fact [- $n 1]]] }
+        }
+        Test::eq [fact 6] 720
+    }
+
+    Test::case "anonymous lambda still works" {
+        let double [lambda {x} { [* $x 2] }]
+        Test::eq [double 21] 42
+    }
+
+    Test::case "self-recursive counter" {
+        ;; Uses SELF binding, no cycle
+        proc counter {n acc} {
+            if [== $n 0] { $acc } else { [counter [- $n 1] [+ $acc 1]] }
+        }
+        Test::eq [counter 100 0] 100
+    }
+
+    Test::case "named lambda with closure" {
+        let base 10
+        let addBase [lambda addBase {n} {
+            if [== $n 0] { $base } else { [+ 1 [addBase [- $n 1]]] }
+        }]
+        Test::eq [addBase 5] 15
+    }
+}
+
+;; ============================================================================
+;; Namespaces
+;; ============================================================================

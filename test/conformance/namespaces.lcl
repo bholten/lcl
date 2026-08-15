@@ -1,0 +1,359 @@
+;; Lcl conformance tests: namespace builder basics, eval, subst.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Namespaces" {
+    Test::case "namespace creates binding" {
+        namespace math {
+            let ten 10
+        }
+        Test::eq $math::ten 10
+    }
+
+    Test::case "braced variable form" {
+        namespace math2 {
+            let val 42
+        }
+        Test::eq ${math2::val} 42
+    }
+
+    Test::case "Ns:: functions" {
+        namespace math3 {
+            let val 42
+
+            proc test {a b} {
+                + $val 23
+            }
+        }
+
+        ;; Hash iteration order is not specified — sort before comparing.
+        Test::eq [List::sort [Ns::keys $math3]] (test val)
+        Test::eq [Ns::name $math3] math3
+        Test::eq [Ns::has? $math3 test] 1
+        ;; generic has? dispatches to Ns::has? for namespaces
+        Test::true [has? $math3 val]
+        Test::false [has? $math3 missing]
+    }
+
+    Test::case "generic len and get on namespaces" {
+        namespace math4 {
+            let val 42
+            var ctr 7
+        }
+        Test::eq [len $math4] 2
+        Test::eq [get $math4 val] 42
+        ;; var bindings are cells — get derefs like $math4::ctr does
+        Test::eq [get $math4 ctr] 7
+        Test::eq [get $math4 missing "fallback"] "fallback"
+        Test::raises { get $math4 missing }
+        Ns::del $math4 val
+        Test::eq [len $math4] 1
+        Ns::clear $math4
+        Test::eq [len $math4] 0
+    }
+
+    Test::case "namespace parents can't be callable" {
+        ;; a namespace declaration errors when any
+        ;; already-defined segment of its path is not a namespace.
+        Test::raises { namespace Dict::merge::foo::bar { let mol 42 } }
+        Test::raises { namespace List::flatten::bar { var goat 23 }}
+        Test::raises { namespace List::map { var pi 3.14 } }
+
+        let Example123 "just a string"
+        Test::raises { namespace Example123 { let a "asdf" } }
+        Test::raises { namespace Example123::child { let b "123" } }
+    }
+
+    Test::case "colliding namespace declaration never runs its body" {
+        var ns_guard_side 0
+        catch { namespace List::map { set! ns_guard_side 1 } }
+        Test::eq $ns_guard_side 0
+    }
+
+    Test::case "builder writes can't replace a namespace member" {
+        namespace kind_guard {
+            namespace sub { let x 1 }
+        }
+        Test::raises { namespace kind_guard { let sub 5 } }
+        Test::raises { namespace kind_guard { var sub 5 } }
+        Test::raises { namespace kind_guard { proc sub {} { 1 } } }
+        Test::raises { namespace kind_guard { macro sub {} { {1} } } }
+        Test::eq $kind_guard::sub::x 1
+    }
+
+    Test::case "kind guard applies within a single builder body too" {
+        Test::raises {
+            namespace kind_guard2 {
+                namespace sub { let x 1 }
+                let sub 5
+            }
+        }
+        Test::raises {
+            namespace kind_guard3 {
+                let member 5
+                namespace member { let x 1 }
+            }
+        }
+    }
+
+    Test::case "non-namespace members can still be redefined on re-entry" {
+        namespace redef_ok { let v 1; proc p {} { 10 } }
+        namespace redef_ok { let v 2; proc p {} { 20 } }
+        Test::eq $redef_ok::v 2
+        Test::eq [redef_ok::p] 20
+    }
+
+    Test::case "nested member isn't blocked by a lexical binding" {
+        let shadow_probe 5
+        namespace nest_host { namespace shadow_probe { let z 3 } }
+        Test::eq $nest_host::shadow_probe::z 3
+        Test::eq $shadow_probe 5
+    }
+
+    Test::case "nested member doesn't alias a lexical namespace" {
+        namespace alias_src { let a 1 }
+        namespace alias_host { namespace alias_src { let b 2 } }
+        Test::eq $alias_host::alias_src::b 2
+        Test::eq [Ns::has? $alias_host::alias_src a] 0
+        Test::eq [Ns::has? $alias_src b] 0
+    }
+
+    Test::case "anonymous namespace expression keeps let semantics" {
+        proc expr_form_probe {} { 1 }
+        let expr_form_probe [namespace { let x 7 }]
+        Test::eq $expr_form_probe::x 7
+    }
+
+    Test::case "#namespace cycles are rejected, not leaked" {
+        ;; direct self-insert
+        namespace cyc_self {}
+        Test::raises { Ns::set $cyc_self me $cyc_self }
+        Test::eq [Ns::has? $cyc_self me] 0
+
+        ;; mutual: A -> B is fine, closing B -> A is not
+        namespace cyc_a {}
+        namespace cyc_b {}
+        Ns::set $cyc_b a $cyc_a
+        Test::raises { Ns::set $cyc_a b $cyc_b }
+        Test::eq [Ns::has? $cyc_a b] 0
+
+        ;; hidden inside a container
+        namespace cyc_deep {}
+        Test::raises { Ns::set $cyc_deep bag (1 ($cyc_deep)) }
+
+        ;; re-entry body binding the namespace into itself
+        namespace cyc_re {}
+        Test::raises { namespace cyc_re { let me $cyc_re } }
+        Test::eq [Ns::has? $cyc_re me] 0
+
+        ;; child member reaching an ancestor at qualified attach
+        namespace cyc_anc {}
+        Test::raises { namespace cyc_anc::sub { let up $cyc_anc } }
+
+        ;; set! storing a namespace into a cell that namespace holds
+        namespace cyc_cell { var slot 0 }
+        Test::raises { set! cyc_cell::slot $cyc_cell }
+    }
+}
+
+;; ============================================================================
+;; Eval
+;; ============================================================================
+
+Test::suite "Eval" {
+    Test::case "basic eval" {
+        Test::eq [eval {+ 1 2}] 3
+    }
+
+    Test::case "eval accesses outer variables" {
+        let ev_x 42
+        Test::eq [eval {+ $ev_x 1}] 43
+    }
+
+    Test::case "eval defines in current frame" {
+        eval {let ev_y 100}
+        Test::eq $ev_y 100
+    }
+
+    Test::case "eval with multiple args" {
+        let ev_cmd1 "let ev_z"
+        let ev_cmd2 "200"
+        eval $ev_cmd1 $ev_cmd2
+        Test::eq $ev_z 200
+    }
+
+    Test::case "return inside eval in proc" {
+        proc testEvalReturn {} {
+            eval { return 999 }
+        }
+        Test::eq [testEvalReturn] 999
+    }
+}
+
+;; ============================================================================
+;; Subst
+;; ============================================================================
+
+Test::suite "Subst" {
+    Test::case "variable substitution" {
+        let sub_x 42
+        Test::eq [subst {x is $sub_x}] {x is 42}
+    }
+
+    Test::case "subcommand substitution" {
+        Test::eq [subst {sum=[+ 1 2]}] {sum=3}
+    }
+
+    Test::case "braced variable form" {
+        let sub_foo bar
+        Test::eq [subst {${sub_foo}!}] {bar!}
+    }
+
+    Test::case "backslash escapes" {
+        Test::eq [subst {literal \$x}] {literal $x}
+    }
+
+    Test::case "braces are literal" {
+        Test::eq [subst {braces {} ok}] {braces {} ok}
+    }
+}
+
+;; ============================================================================
+;; Namespace
+;; ============================================================================
+
+Test::suite "Namespace" {
+    Test::case "define values in namespace" {
+        namespace myns {
+            let val 100
+        }
+        Test::eq $myns::val 100
+    }
+
+    Test::case "define procs in namespace" {
+        namespace funcs {
+            proc double {n} { return [+ $n $n] }
+        }
+        Test::eq [funcs::double 7] 14
+    }
+
+    Test::case "nested namespace path" {
+        namespace outer::inner::leaf {
+            let deep 42
+        }
+        Test::eq $outer::inner::leaf::deep 42
+    }
+
+    Test::case "multiple evals on same namespace" {
+        namespace ns1 { let x 1 }
+        namespace ns1 { let y 2 }
+        Test::eq $ns1::x 1
+        Test::eq $ns1::y 2
+    }
+
+    Test::case "namespace changes lookup resolution" {
+        namespace ns3 {
+            let x 1
+
+            proc foo {bar} {
+                $bar
+            }
+
+            namespace ns4 {
+                let y 1
+
+                proc qux {} {
+                    42
+                }
+            }
+        }
+
+        namespace ns3 {
+            Test::eq [foo 123] 123
+            Test::eq $x 1
+
+            namespace ns4 {
+                Test::eq [qux] 42
+            }
+
+            Test::eq [ns4::qux] 42
+        }
+
+        Test::eq [ns3::foo 321] 321
+        Test::eq $ns3::x 1
+        Test::eq [ns3::ns4::qux] 42
+
+        namespace ns5 {
+            let v 42
+
+            proc foo {} {
+                $v
+            }
+
+            proc bar {} {
+                foo
+            }
+        }
+
+        Test::eq [ns5::foo] 42
+        Test::eq [ns5::bar] 42
+
+        ;; Reopening should work
+        namespace ns5 {
+            proc qux {} {
+                foo
+            }
+        }
+
+        Test::eq [ns5::qux] 42
+    }
+
+    ;; --- Qualified path root anchoring (regression) ---
+    ;; `namespace foo::bar { ... }` inside an enclosing `namespace baz`
+    ;; used to create the root `foo` in the builder's overlay frame,
+    ;; orphaning the sub-namespace when the overlay popped. Roots now
+    ;; anchor at the global frame so the qualified path is always
+    ;; reachable absolutely.
+
+    Test::case "qualified path with new root inside enclosing namespace" {
+        namespace qroot_outer1 {
+            namespace qroot_new1::qleaf1 { let x 1 }
+        }
+        ;; Root is created at global and reachable absolutely.
+        Test::eq $qroot_new1::qleaf1::x 1
+    }
+
+    Test::case "qualified path with existing root inside enclosing namespace" {
+        ;; Pre-existing root: should be found via lexical chain, not re-created.
+        namespace qroot_existing { let initial 1 }
+        namespace qroot_outer2 {
+            namespace qroot_existing::qleaf2 { let y 2 }
+        }
+        Test::eq $qroot_existing::initial 1
+        Test::eq $qroot_existing::qleaf2::y 2
+    }
+
+    Test::case "qualified path inside proc body (Dagwood pattern)" {
+        ;; namespace ${proj}::${task} inside a proc that itself
+        ;; runs inside namespace ${proj} { ... }.
+        namespace qrootD { let marker 1 }
+        proc qrootD_helper {leaf} {
+            namespace qrootD::$leaf { let from_proc 7 }
+        }
+        namespace qrootD {
+            qrootD_helper task1
+        }
+        Test::eq $qrootD::task1::from_proc 7
+        Test::eq $qrootD::marker 1
+    }
+}
+
+;; ============================================================================
+;; Qualified self-reference inside a namespace builder
+;; ============================================================================
+;; `namespace foo { ... }` is running, foo isn't yet bound as a namespace
+;; value, so `$foo::X` used to fail with "undefined variable". Fix:
+;; lcl_env_get_value's qualified-path resolution walks the def_target
+;; stack for a name that matches a "::"-bounded prefix of the key, and
+;; resolves the suffix from that target's overlay.
