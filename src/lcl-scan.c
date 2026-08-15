@@ -874,6 +874,16 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   rc = scan_word_pieces(sc, w);
   w->src_end = sc->i;
 
+  /* Bugfix: a word consisting of only the spread prefix consumed the
+   * `@` and produced zero pieces, which the empty-word check in
+   * lcl_scan_parse_command reads as end-of-input — silently
+   * discarding the rest of the program. A spread must have a word
+   * attached (`""` counts: an explicit empty word is the caller's
+   * business at eval time). */
+  if (rc == 0 && w->expand) {
+    return scan_fail(sc, "expected a word after '@'", sc->line);
+  }
+
   return rc;
 }
 

@@ -1305,6 +1305,122 @@ static int test_issue71_step_hook_budget(void) {
   return 1;
 }
 
+/*  the step budget must tick per loop iteration, not just per command
+ * dispatched. A `while`/`for` whose test is an unbraced
+ * (constant-truthy) word and whose body compiles to zero commands
+ * executes no commands at all, so without the per-iteration tick in
+ * s_while/s_for the loop spins forever in C, outside the budget. */
+static int test_issue99_step_budget_empty_body_loops(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  int rc;
+
+  lcl_set_step_hook(lcl_test_interp, step_hook_abort, NULL, 1000);
+
+  /* while: unbraced truthy test + empty body. */
+  step_hook_fires = 0;
+  prog = lcl_program_compile("while x {}", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(step_hook_fires == 1);
+  ASSERT_TRUE(lcl_test_interp->err_msg != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_msg, "evaluation aborted by host");
+
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
+
+  lcl_clear_error(lcl_test_interp);
+
+  /* for: empty start/next/body, unbraced truthy test. */
+  step_hook_fires = 0;
+  prog = lcl_program_compile("for {} x {} {}", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(step_hook_fires == 1);
+
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
+
+  lcl_clear_error(lcl_test_interp);
+
+  /* An empty braced test is falsy (empty string) — the loop must
+   * still exit normally, well under budget. */
+  step_hook_fires = 0;
+  prog = lcl_program_compile("while {} {}", "test.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(step_hook_fires == 0);
+
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
+
+  lcl_set_step_hook(lcl_test_interp, NULL, NULL, 0);
+  return 1;
+}
+
+/*  a word consisting of only the spread prefix (`@` followed by a
+ * separator, `]`, or EOF) used to scan as an empty word, which the
+ * command parser reads as end-of-input: everything after the bare `@`
+ * was silently discarded from the compiled program. It must be a
+ * compile error instead. */
+static int test_issue98_bare_spread_is_compile_error(void) {
+  static const struct {
+    const char *src;
+    long line;
+  } bad[] = {
+      {"puts hi\n@\nputs bye\n", 2},   /* bare @ command head */
+      {"puts hi\n@ x\nputs bye\n", 2}, /* bare @ with trailing words */
+      {"puts @ 1\n", 1},               /* bare @ in argument position */
+      {"puts [list @]\n", 1},          /* bare @ before ']' */
+      {"puts @", 1},                   /* bare @ at EOF */
+  };
+  static const char *good[] = {
+      "apply $f @$args\n", /* spread of a variable */
+      "puts @(1 2)\n",     /* spread of a list literal */
+      "puts @[list 1]\n",  /* spread of a subcommand */
+      "puts @{a b}\n",     /* spread of a braced literal */
+      "puts @\"\"\n",      /* explicit empty word — eval's business */
+      "puts a@b\n@ok\n",   /* mid-word '@' stays literal; @word compiles */
+  };
+  size_t i;
+
+  for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+    lcl_compile_err err;
+    lcl_program *prog = lcl_program_compile_ex(bad[i].src, "t.lcl", &err);
+
+    ASSERT_TRUE(prog == NULL);
+    ASSERT_TRUE(err.msg != NULL);
+    ASSERT_STREQ(err.msg, "expected a word after '@'");
+    ASSERT_TRUE(err.line == bad[i].line);
+  }
+
+  for (i = 0; i < sizeof(good) / sizeof(good[0]); i++) {
+    lcl_compile_err err;
+    lcl_program *prog = lcl_program_compile_ex(good[i], "t.lcl", &err);
+
+    ASSERT_TRUE(prog != NULL);
+    lcl_program_free(prog);
+  }
+
+  return 1;
+}
+
 /* `lcl_dict_clone_shallow` ignores `hash_table_put` return.  On OOM
  * the clone is silently truncated. We force the first put inside the
  * clone iteration to fail, trigger COW on a shared dict, and verify:
@@ -2180,6 +2296,8 @@ int run_test(void) {
   RUN(test_issue45_skip_balanced_depth_limit);
   RUN(test_issue71_compile_nesting_cap);
   RUN(test_issue71_step_hook_budget);
+  RUN(test_issue98_bare_spread_is_compile_error);
+  RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);
   RUN(test_issue67_compile_ex_msg_and_line);

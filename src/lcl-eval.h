@@ -21,6 +21,8 @@ int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
 lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
                                  lcl_value **out);
 
+lcl_return_code lcl_step_tick(lcl_interp *interp);
+
 lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
                                 const char *file);
 
