@@ -206,11 +206,12 @@ struct lcl_interp {
 lcl_interp *lcl_interp_new(void);
 void lcl_interp_free(lcl_interp *interp);
 
-typedef int (*lcl_c_proc_fn)(lcl_interp *, int argc, lcl_value **argv,
-                             lcl_value **out);
+typedef lcl_return_code (*lcl_c_proc_fn)(lcl_interp *, int argc,
+                                         lcl_value **argv, lcl_value **out);
 
-typedef int (*lcl_c_spec_fn)(lcl_interp *, int argc, const lcl_word **args,
-                             lcl_value **out);
+typedef lcl_return_code (*lcl_c_spec_fn)(lcl_interp *, int argc,
+                                         const lcl_word **args,
+                                         lcl_value **out);
 
 typedef enum { LCL_CK_PROC, LCL_CK_SPECIAL } lcl_c_kind;
 
@@ -252,8 +253,9 @@ typedef struct {
   int is_macro;
 } lcl_proc;
 
-int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                       const lcl_param_spec *pspec, const char *self_name,
-                       lcl_upvalue **upvals_out, int *nout);
+lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
+                                   const lcl_param_spec *pspec,
+                                   const char *self_name,
+                                   lcl_upvalue **upvals_out, int *nout);
 
 #endif

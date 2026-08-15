@@ -29,14 +29,15 @@
 /* A custom command exposed to scripts as `mul`. CPROCs receive argv
  * as pre-evaluated values (ownership stays with the caller) and write
  * their result into *out with a +1 refcount on success. */
-static int c_mul(lcl_interp *interp, int argc, lcl_value **argv,
-                 lcl_value **out) {
+static lcl_return_code c_mul(lcl_interp *interp, int argc, lcl_value **argv,
+                             lcl_value **out) {
     long a, b;
 
     if (argc != 2) {
         lcl_set_error(interp, "mul: expected 2 integer arguments");
         return LCL_RC_ERR;
     }
+
     if (lcl_value_to_int(argv[0], &a) != LCL_OK ||
         lcl_value_to_int(argv[1], &b) != LCL_OK) {
         lcl_set_error(interp, "mul: arguments must be integers");

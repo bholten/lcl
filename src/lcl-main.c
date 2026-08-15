@@ -75,9 +75,8 @@ static const lcl_embedded_lib curl_dsl_lib = {
 #ifdef LCL_HAVE_DOC_LIB
 #include "doc-lib-data.h"
 
-static const lcl_embedded_lib doc_lib = {"lib/doc/src/Doc.lcl",
-                                         lib_doc_src_Doc_lcl,
-                                         sizeof(lib_doc_src_Doc_lcl)};
+static const lcl_embedded_lib doc_lib = {
+    "lib/doc/src/Doc.lcl", lib_doc_src_Doc_lcl, sizeof(lib_doc_src_Doc_lcl)};
 #endif
 
 static char *read_stdin(void) {
@@ -149,7 +148,7 @@ static lcl_interp *create_interp(void) {
 #endif
 
 #ifdef LCL_HAVE_TEST
-  if (lcl_register_embedded_lib(interp, &test_framework_lib) != 0) {
+  if (lcl_register_embedded_lib(interp, &test_framework_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load test framework\n");
   }
 #endif
@@ -172,25 +171,25 @@ static lcl_interp *create_interp(void) {
 
 #ifdef LCL_HAVE_EXPECT
   lcl_register_expect(interp);
-  if (lcl_register_embedded_lib(interp, &expect_convenience_lib) != 0) {
+  if (lcl_register_embedded_lib(interp, &expect_convenience_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load expect convenience library\n");
   }
 #endif
 
 #ifdef LCL_HAVE_SH_LIB
-  if (lcl_register_embedded_lib(interp, &sh_lib) != 0) {
+  if (lcl_register_embedded_lib(interp, &sh_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load sh library\n");
   }
 #endif
 
 #ifdef LCL_HAVE_CURL_DSL_LIB
-  if (lcl_register_embedded_lib(interp, &curl_dsl_lib) != 0) {
+  if (lcl_register_embedded_lib(interp, &curl_dsl_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load curl-dsl library\n");
   }
 #endif
 
 #ifdef LCL_HAVE_DOC_LIB
-  if (lcl_register_embedded_lib(interp, &doc_lib) != 0) {
+  if (lcl_register_embedded_lib(interp, &doc_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load doc library\n");
   }
 #endif

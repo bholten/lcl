@@ -307,8 +307,8 @@ static lcl_value *cjson_to_lcl(cJSON *json) {
   return lcl_string_new("");
 }
 
-static int c_json_encode(lcl_interp *interp, int argc, lcl_value **argv,
-                         lcl_value **out) {
+static lcl_return_code c_json_encode(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   cJSON *json;
   char *str;
   (void)interp;
@@ -336,8 +336,8 @@ static int c_json_encode(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_decode(lcl_interp *interp, int argc, lcl_value **argv,
-                         lcl_value **out) {
+static lcl_return_code c_json_decode(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   const char *json_str;
   cJSON *json;
 
@@ -360,8 +360,8 @@ static int c_json_decode(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_true(lcl_interp *interp, int argc, lcl_value **argv,
-                       lcl_value **out) {
+static lcl_return_code c_json_true(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
   (void)interp;
   (void)argv;
 
@@ -373,8 +373,8 @@ static int c_json_true(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_false(lcl_interp *interp, int argc, lcl_value **argv,
-                        lcl_value **out) {
+static lcl_return_code c_json_false(lcl_interp *interp, int argc,
+                                    lcl_value **argv, lcl_value **out) {
   (void)interp;
   (void)argv;
 
@@ -386,8 +386,8 @@ static int c_json_false(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_null(lcl_interp *interp, int argc, lcl_value **argv,
-                       lcl_value **out) {
+static lcl_return_code c_json_null(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
   (void)interp;
   (void)argv;
 
@@ -399,8 +399,8 @@ static int c_json_null(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_is_bool(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_json_is_bool(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -411,8 +411,8 @@ static int c_json_is_bool(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_json_is_null(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_json_is_null(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   (void)interp;
 
   if (argc != 1) {
@@ -427,11 +427,16 @@ void lcl_register_json(lcl_interp *interp) {
   lcl_value *json_ns = lcl_ns_new(JSON_NS);
   lcl_define_take(interp, JSON_NS, json_ns);
 
-  lcl_ns_def(json_ns, "encode", lcl_c_proc_new("json::encode", c_json_encode));
-  lcl_ns_def(json_ns, "decode", lcl_c_proc_new("json::decode", c_json_decode));
-  lcl_ns_def(json_ns, "true", lcl_c_proc_new("json::true", c_json_true));
-  lcl_ns_def(json_ns, "false", lcl_c_proc_new("json::false", c_json_false));
-  lcl_ns_def(json_ns, "null", lcl_c_proc_new("json::null", c_json_null));
-  lcl_ns_def(json_ns, "bool?", lcl_c_proc_new("json::bool?", c_json_is_bool));
-  lcl_ns_def(json_ns, "null?", lcl_c_proc_new("json::null?", c_json_is_null));
+  lcl_ns_def_take(json_ns, "encode",
+                  lcl_c_proc_new("json::encode", c_json_encode));
+  lcl_ns_def_take(json_ns, "decode",
+                  lcl_c_proc_new("json::decode", c_json_decode));
+  lcl_ns_def_take(json_ns, "true", lcl_c_proc_new("json::true", c_json_true));
+  lcl_ns_def_take(json_ns, "false",
+                  lcl_c_proc_new("json::false", c_json_false));
+  lcl_ns_def_take(json_ns, "null", lcl_c_proc_new("json::null", c_json_null));
+  lcl_ns_def_take(json_ns, "bool?",
+                  lcl_c_proc_new("json::bool?", c_json_is_bool));
+  lcl_ns_def_take(json_ns, "null?",
+                  lcl_c_proc_new("json::null?", c_json_is_null));
 }

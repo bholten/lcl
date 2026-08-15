@@ -21,7 +21,7 @@ namespace expect {
 
     ;; expect::get-timeout - get default timeout
     proc get-timeout {} {
-        $expect::_default_timeout
+        ${expect::_default_timeout}
     }
 
     ;; ========================================================================
@@ -41,7 +41,7 @@ namespace expect {
     ;; Returns: session dict #{handle <h> timeout <t>}
     proc spawn {cmd (opts #{})} {
         let pty_mode [get $opts pty 1]
-        let timeout [get $opts timeout $expect::_default_timeout]
+        let timeout [get $opts timeout ${expect::_default_timeout}]
         let rows [get $opts rows 24]
         let cols [get $opts cols 80]
         let env [get $opts env #{}]

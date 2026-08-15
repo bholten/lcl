@@ -110,8 +110,8 @@ static int rbuf_append(struct rbuf *b, const char *s, size_t n) {
 }
 
 /* regex::regcomp pattern - compile to a reusable handle */
-static int c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
-                     lcl_value **out) {
+static lcl_return_code c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
   struct lcl_regex *re = NULL;
   const char *pattern = NULL;
   int errcode;
@@ -147,8 +147,8 @@ static int c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* regex::regexec regex string -> 1 if matched, 0 if not */
-static int c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
-                     lcl_value **out) {
+static lcl_return_code c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
   struct lcl_regex *re = NULL;
   int status;
   const char *str = NULL;
@@ -175,8 +175,8 @@ static int c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* regex::match pattern|regex string -> 1 if matched, 0 if not */
-static int c_match(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static lcl_return_code c_match(lcl_interp *interp, int argc, lcl_value **argv,
+                               lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -209,8 +209,8 @@ static int c_match(lcl_interp *interp, int argc, lcl_value **argv,
 
 /* regex::find pattern|regex string -> (start end) of the first
  * match (byte offsets, end exclusive), or the empty list */
-static int c_find(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static lcl_return_code c_find(lcl_interp *interp, int argc, lcl_value **argv,
+                              lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -256,8 +256,8 @@ static int c_find(lcl_interp *interp, int argc, lcl_value **argv,
  * texts: element 0 is the whole match, 1..n the capture groups
  * (unmatched optional groups become empty strings). Empty list when
  * the pattern does not match. */
-static int c_captures(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static lcl_return_code c_captures(lcl_interp *interp, int argc,
+                                  lcl_value **argv, lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -332,8 +332,8 @@ static int c_captures(lcl_interp *interp, int argc, lcl_value **argv,
  * Unmatched groups are (-1 -1). Empty list when nothing matches.
  * Iteration contract: resume with from = end when end > start,
  * from = start + 1 on a zero-width match. */
-static int c_search(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
+                                lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -424,8 +424,8 @@ static int c_search(lcl_interp *interp, int argc, lcl_value **argv,
 
 /* regex::find_all pattern|regex string -> list of every
  * (non-overlapping) whole-match text, left to right */
-static int c_find_all(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static lcl_return_code c_find_all(lcl_interp *interp, int argc,
+                                  lcl_value **argv, lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -527,8 +527,8 @@ static int append_replacement(struct rbuf *b, const char *tmpl,
 /* regex::replace pattern|regex replacement string -> string with
  * every match replaced. The replacement may reference group texts
  * with \0 (whole match) .. \9; \\ is a literal backslash. */
-static int c_replace(lcl_interp *interp, int argc, lcl_value **argv,
-                     lcl_value **out) {
+static lcl_return_code c_replace(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -616,8 +616,8 @@ static int c_replace(lcl_interp *interp, int argc, lcl_value **argv,
 /* regex::split pattern|regex string -> list of the substrings
  * between matches (a match at the start or end contributes an empty
  * leading/trailing element; empty matches are skipped) */
-static int c_split(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static lcl_return_code c_split(lcl_interp *interp, int argc, lcl_value **argv,
+                               lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
@@ -697,16 +697,21 @@ void lcl_register_regex(lcl_interp *interp) {
   lcl_value *regex_ns = lcl_ns_new(REGEX_NS);
   lcl_define_take(interp, REGEX_NS, regex_ns);
 
-  lcl_ns_def(regex_ns, "compile", lcl_c_proc_new("regex::compile", c_regcomp));
-  lcl_ns_def(regex_ns, "regcomp", lcl_c_proc_new("regex::regcomp", c_regcomp));
-  lcl_ns_def(regex_ns, "regexec", lcl_c_proc_new("regex::regexec", c_regexec));
-  lcl_ns_def(regex_ns, "match", lcl_c_proc_new("regex::match", c_match));
-  lcl_ns_def(regex_ns, "find", lcl_c_proc_new("regex::find", c_find));
-  lcl_ns_def(regex_ns, "captures",
-             lcl_c_proc_new("regex::captures", c_captures));
-  lcl_ns_def(regex_ns, "search", lcl_c_proc_new("regex::search", c_search));
-  lcl_ns_def(regex_ns, "find_all",
-             lcl_c_proc_new("regex::find_all", c_find_all));
-  lcl_ns_def(regex_ns, "replace", lcl_c_proc_new("regex::replace", c_replace));
-  lcl_ns_def(regex_ns, "split", lcl_c_proc_new("regex::split", c_split));
+  lcl_ns_def_take(regex_ns, "compile",
+                  lcl_c_proc_new("regex::compile", c_regcomp));
+  lcl_ns_def_take(regex_ns, "regcomp",
+                  lcl_c_proc_new("regex::regcomp", c_regcomp));
+  lcl_ns_def_take(regex_ns, "regexec",
+                  lcl_c_proc_new("regex::regexec", c_regexec));
+  lcl_ns_def_take(regex_ns, "match", lcl_c_proc_new("regex::match", c_match));
+  lcl_ns_def_take(regex_ns, "find", lcl_c_proc_new("regex::find", c_find));
+  lcl_ns_def_take(regex_ns, "captures",
+                  lcl_c_proc_new("regex::captures", c_captures));
+  lcl_ns_def_take(regex_ns, "search",
+                  lcl_c_proc_new("regex::search", c_search));
+  lcl_ns_def_take(regex_ns, "find_all",
+                  lcl_c_proc_new("regex::find_all", c_find_all));
+  lcl_ns_def_take(regex_ns, "replace",
+                  lcl_c_proc_new("regex::replace", c_replace));
+  lcl_ns_def_take(regex_ns, "split", lcl_c_proc_new("regex::split", c_split));
 }

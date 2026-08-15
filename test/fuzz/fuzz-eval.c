@@ -31,8 +31,8 @@ static int budget_abort(lcl_interp *interp, void *userdata) {
   return 1;
 }
 
-static int muted_puts(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static lcl_return_code muted_puts(lcl_interp *interp, int argc,
+                                  lcl_value **argv, lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -42,8 +42,8 @@ static int muted_puts(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int disabled_spec(lcl_interp *interp, int argc, const lcl_word **args,
-                         lcl_value **out) {
+static lcl_return_code disabled_spec(lcl_interp *interp, int argc,
+                                     const lcl_word **args, lcl_value **out) {
   (void)argc;
   (void)args;
   (void)out;

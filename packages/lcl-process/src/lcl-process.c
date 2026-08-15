@@ -7,14 +7,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/wait.h>
-#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 /* PTY support - platform specific headers */
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) ||      \
+    defined(__NetBSD__)
 #include <util.h>
 #elif defined(__linux__)
 #include <pty.h>
@@ -263,8 +264,8 @@ static lcl_value *get_opt_val(lcl_value *opts, const char *key) {
  *
  * Returns: #{status N stdout "..." stderr "..."}
  */
-static int c_process_run(lcl_interp *interp, int argc, lcl_value **argv,
-                         lcl_value **out) {
+static lcl_return_code c_process_run(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   lcl_value *argv_list;
   lcl_value *opts = NULL;
   size_t argv_len;
@@ -596,8 +597,8 @@ cleanup:
  *
  * Returns: handle (opaque)
  */
-int c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
+                                lcl_value **out) {
   lcl_value *argv_list;
   lcl_value *opts = NULL;
   size_t argv_len;
@@ -873,8 +874,8 @@ error:
   return LCL_RC_ERR;
 }
 
-static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_process_send(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   process_handle *h;
   const char *data;
   size_t len;
@@ -911,8 +912,9 @@ static int c_process_send(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int c_process_close_stdin(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_process_close_stdin(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   process_handle *h;
   (void)interp;
 
@@ -943,8 +945,8 @@ static int c_process_close_stdin(lcl_interp *interp, int argc, lcl_value **argv,
  *   stderr  - read from stderr instead of stdout
  *   timeout - ms to wait (0 = non-blocking)
  */
-static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_process_read(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   process_handle *h;
   lcl_value *opts = NULL;
   int fd;
@@ -1039,8 +1041,8 @@ static int c_process_read(lcl_interp *interp, int argc, lcl_value **argv,
  *   pattern - the pattern that matched (empty if not matched)
  *   index   - index of matched pattern in list (0 if single pattern)
  */
-static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
-                                lcl_value **out) {
+static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
+                                            lcl_value **argv, lcl_value **out) {
   process_handle *h;
   lcl_value *patterns;
   lcl_value *opts = NULL;
@@ -1279,8 +1281,8 @@ static int c_process_read_until(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Returns: #{exited 1 status N} or #{exited 0} on timeout
  */
-static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_process_wait(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   process_handle *h;
   lcl_value *opts = NULL;
   int timeout_ms;
@@ -1394,8 +1396,8 @@ static int c_process_wait(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int c_process_alive(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_process_alive(lcl_interp *interp, int argc,
+                                       lcl_value **argv, lcl_value **out) {
   process_handle *h;
   int status;
   pid_t ret;
@@ -1443,8 +1445,8 @@ static int c_process_alive(lcl_interp *interp, int argc, lcl_value **argv,
  * Options:
  *   signal - signal name or number (default: TERM)
  */
-static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_process_kill(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   process_handle *h;
   lcl_value *opts = NULL;
   const char *sig_str;
@@ -1505,8 +1507,8 @@ static int c_process_kill(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_process_close(lcl_interp *interp, int argc,
+                                       lcl_value **argv, lcl_value **out) {
   process_handle *h;
 
   (void)interp;
@@ -1552,8 +1554,8 @@ static int c_process_close(lcl_interp *interp, int argc, lcl_value **argv,
 /*
  * process::pty? handle - check if handle is using PTY mode
  */
-static int c_process_is_pty(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_process_is_pty(lcl_interp *interp, int argc,
+                                        lcl_value **argv, lcl_value **out) {
   process_handle *h;
   (void)interp;
 
@@ -1576,8 +1578,9 @@ static int c_process_is_pty(lcl_interp *interp, int argc, lcl_value **argv,
  * Set the terminal window size for PTY handles.
  * Only works on PTY handles; returns error for pipe handles.
  */
-static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   process_handle *h;
   long rows;
   long cols;
@@ -1623,8 +1626,9 @@ static int c_process_set_winsize(lcl_interp *interp, int argc, lcl_value **argv,
  * Get the terminal window size for PTY handles.
  * Returns: #{rows N cols M}
  */
-static int c_process_get_winsize(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_process_get_winsize(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   process_handle *h;
   struct winsize ws;
   lcl_value *result;
@@ -1667,10 +1671,9 @@ static int c_process_get_winsize(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Provides the process:: namespace with:
  *   process::run        - synchronous execution with capture
- *   process::spawn      - asynchronous execution, returns handle (with PTY support)
- *   process::send       - write to stdin
- *   process::read       - read from stdout/stderr
- *   process::read-until - read until pattern matched (expect-like)
+ *   process::spawn      - asynchronous execution, returns handle (with PTY
+ * support) process::send       - write to stdin process::read       - read from
+ * stdout/stderr process::read-until - read until pattern matched (expect-like)
  *   process::wait       - wait for process exit
  *   process::close      - close handle and cleanup
  *   process::alive?     - check if process is still running
@@ -1683,21 +1686,28 @@ void lcl_register_process(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(PROCESS_NS);
   lcl_define_take(interp, PROCESS_NS, ns);
 
-  lcl_ns_def(ns, "run", lcl_c_proc_new("process::run", c_process_run));
-  lcl_ns_def(ns, "spawn", lcl_c_proc_new("process::spawn", c_process_spawn));
-  lcl_ns_def(ns, "send", lcl_c_proc_new("process::send", c_process_send));
-  lcl_ns_def(ns, "close-stdin",
-             lcl_c_proc_new("process::close-stdin", c_process_close_stdin));
-  lcl_ns_def(ns, "read", lcl_c_proc_new("process::read", c_process_read));
-  lcl_ns_def(ns, "read-until",
-             lcl_c_proc_new("process::read-until", c_process_read_until));
-  lcl_ns_def(ns, "wait", lcl_c_proc_new("process::wait", c_process_wait));
-  lcl_ns_def(ns, "alive?", lcl_c_proc_new("process::alive?", c_process_alive));
-  lcl_ns_def(ns, "kill", lcl_c_proc_new("process::kill", c_process_kill));
-  lcl_ns_def(ns, "close", lcl_c_proc_new("process::close", c_process_close));
-  lcl_ns_def(ns, "pty?", lcl_c_proc_new("process::pty?", c_process_is_pty));
-  lcl_ns_def(ns, "set-winsize",
-             lcl_c_proc_new("process::set-winsize", c_process_set_winsize));
-  lcl_ns_def(ns, "get-winsize",
-             lcl_c_proc_new("process::get-winsize", c_process_get_winsize));
+  lcl_ns_def_take(ns, "run", lcl_c_proc_new("process::run", c_process_run));
+  lcl_ns_def_take(ns, "spawn",
+                  lcl_c_proc_new("process::spawn", c_process_spawn));
+  lcl_ns_def_take(ns, "send", lcl_c_proc_new("process::send", c_process_send));
+  lcl_ns_def_take(
+      ns, "close-stdin",
+      lcl_c_proc_new("process::close-stdin", c_process_close_stdin));
+  lcl_ns_def_take(ns, "read", lcl_c_proc_new("process::read", c_process_read));
+  lcl_ns_def_take(ns, "read-until",
+                  lcl_c_proc_new("process::read-until", c_process_read_until));
+  lcl_ns_def_take(ns, "wait", lcl_c_proc_new("process::wait", c_process_wait));
+  lcl_ns_def_take(ns, "alive?",
+                  lcl_c_proc_new("process::alive?", c_process_alive));
+  lcl_ns_def_take(ns, "kill", lcl_c_proc_new("process::kill", c_process_kill));
+  lcl_ns_def_take(ns, "close",
+                  lcl_c_proc_new("process::close", c_process_close));
+  lcl_ns_def_take(ns, "pty?",
+                  lcl_c_proc_new("process::pty?", c_process_is_pty));
+  lcl_ns_def_take(
+      ns, "set-winsize",
+      lcl_c_proc_new("process::set-winsize", c_process_set_winsize));
+  lcl_ns_def_take(
+      ns, "get-winsize",
+      lcl_c_proc_new("process::get-winsize", c_process_get_winsize));
 }

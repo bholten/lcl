@@ -32,10 +32,10 @@ project lcl {
                      -DCMAKE_BUILD_TYPE=Release)
 
     command build {
-        run [subst {
+        run {
             cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::DEBUG_OPTS} && \
             cmake --build build
-        }]
+        }
     }
 
     command emcc {
@@ -46,17 +46,17 @@ project lcl {
     }
 
     command release {
-        run [subst {
+        run {
             cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::RELEASE_OPTS} && \
             cmake --build build
-        }]
+        }
     }
 
     command static {
-        run [subst {
+        run {
             cmake -B build ${lcl::ALL_PKGS} ${lcl::ALL_LIBS} ${lcl::STATIC_OPTS} && \
             cmake --build build
-        }]
+        }
     }
 
     command test {
@@ -68,6 +68,18 @@ project lcl {
     command clean {
         run {
             rm -rf build
+        }
+    }
+
+    command doctest {
+        shell lcl
+        shell_arg -c
+        run {
+            let docs [posix::glob docs/*.lcl]
+
+            foreach doc $docs {
+                Doc::report [Doc::doctest_file $doc]
+            }
         }
     }
 }

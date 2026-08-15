@@ -47,8 +47,8 @@ static const EVP_MD *get_md_by_name(const char *name) {
   return NULL;
 }
 
-static int c_crypto_sha256(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
+                                       lcl_value **argv, lcl_value **out) {
   const char *data;
   unsigned char hash[EVP_MAX_MD_SIZE];
   unsigned int hash_len = 0;
@@ -91,8 +91,8 @@ static int c_crypto_sha256(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
+                                       lcl_value **argv, lcl_value **out) {
   const char *data;
   unsigned char hash[EVP_MAX_MD_SIZE];
   unsigned int hash_len = 0;
@@ -135,8 +135,8 @@ static int c_crypto_sha512(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_crypto_hmac(lcl_interp *interp, int argc, lcl_value **argv,
-                         lcl_value **out) {
+static lcl_return_code c_crypto_hmac(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   const char *key;
   const char *data;
   const char *algo;
@@ -184,8 +184,9 @@ static int c_crypto_hmac(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static int c_crypto_sign_rsa_pss(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   const char *key_pem;
   const char *data;
   const char *algo;
@@ -295,8 +296,8 @@ cleanup:
   return result;
 }
 
-static int c_crypto_sign_ecdsa(lcl_interp *interp, int argc, lcl_value **argv,
-                               lcl_value **out) {
+static lcl_return_code c_crypto_sign_ecdsa(lcl_interp *interp, int argc,
+                                           lcl_value **argv, lcl_value **out) {
   const char *key_pem;
   const char *data;
   const char *curve;
@@ -400,8 +401,9 @@ cleanup:
   return result;
 }
 
-static int c_crypto_base64_encode(lcl_interp *interp, int argc,
-                                  lcl_value **argv, lcl_value **out) {
+static lcl_return_code c_crypto_base64_encode(lcl_interp *interp, int argc,
+                                              lcl_value **argv,
+                                              lcl_value **out) {
   const char *data;
   size_t data_len;
   BIO *bio = NULL;
@@ -466,8 +468,9 @@ cleanup:
   return rc;
 }
 
-static int c_crypto_base64_decode(lcl_interp *interp, int argc,
-                                  lcl_value **argv, lcl_value **out) {
+static lcl_return_code c_crypto_base64_decode(lcl_interp *interp, int argc,
+                                              lcl_value **argv,
+                                              lcl_value **out) {
   const char *data;
   size_t data_len;
   BIO *bio = NULL;
@@ -530,17 +533,21 @@ void lcl_register_crypto(lcl_interp *interp) {
   lcl_value *crypto_ns = lcl_ns_new(CRYPTO_NS);
   lcl_define_take(interp, CRYPTO_NS, crypto_ns);
 
-  lcl_ns_def(crypto_ns, "sha256",
-             lcl_c_proc_new("crypto::sha256", c_crypto_sha256));
-  lcl_ns_def(crypto_ns, "sha512",
-             lcl_c_proc_new("crypto::sha512", c_crypto_sha512));
-  lcl_ns_def(crypto_ns, "hmac", lcl_c_proc_new("crypto::hmac", c_crypto_hmac));
-  lcl_ns_def(crypto_ns, "sign_rsa_pss",
-             lcl_c_proc_new("crypto::sign_rsa_pss", c_crypto_sign_rsa_pss));
-  lcl_ns_def(crypto_ns, "sign_ecdsa",
-             lcl_c_proc_new("crypto::sign_ecdsa", c_crypto_sign_ecdsa));
-  lcl_ns_def(crypto_ns, "base64_encode",
-             lcl_c_proc_new("crypto::base64_encode", c_crypto_base64_encode));
-  lcl_ns_def(crypto_ns, "base64_decode",
-             lcl_c_proc_new("crypto::base64_decode", c_crypto_base64_decode));
+  lcl_ns_def_take(crypto_ns, "sha256",
+                  lcl_c_proc_new("crypto::sha256", c_crypto_sha256));
+  lcl_ns_def_take(crypto_ns, "sha512",
+                  lcl_c_proc_new("crypto::sha512", c_crypto_sha512));
+  lcl_ns_def_take(crypto_ns, "hmac",
+                  lcl_c_proc_new("crypto::hmac", c_crypto_hmac));
+  lcl_ns_def_take(
+      crypto_ns, "sign_rsa_pss",
+      lcl_c_proc_new("crypto::sign_rsa_pss", c_crypto_sign_rsa_pss));
+  lcl_ns_def_take(crypto_ns, "sign_ecdsa",
+                  lcl_c_proc_new("crypto::sign_ecdsa", c_crypto_sign_ecdsa));
+  lcl_ns_def_take(
+      crypto_ns, "base64_encode",
+      lcl_c_proc_new("crypto::base64_encode", c_crypto_base64_encode));
+  lcl_ns_def_take(
+      crypto_ns, "base64_decode",
+      lcl_c_proc_new("crypto::base64_decode", c_crypto_base64_decode));
 }

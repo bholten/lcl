@@ -68,9 +68,10 @@ lcl_type lcl_value_type_of(const lcl_value *value) {
   return value ? value->type : LCL_STRING;
 }
 
-int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out) {
+lcl_return_code lcl_eval_file(lcl_interp *interp, const char *path,
+                              lcl_value **out) {
   char *src;
-  int rc;
+  lcl_return_code rc;
 
   if (!interp || !path) {
     return LCL_RC_ERR;
@@ -110,6 +111,8 @@ const char *lcl_interp_error_msg(lcl_interp *interp) {
 }
 
 void lcl_set_error(lcl_interp *interp, const char *msg) {
+  char *copy;
+
   if (!interp) {
     return;
   }
@@ -118,13 +121,21 @@ void lcl_set_error(lcl_interp *interp, const char *msg) {
   interp->err_file = interp->cur_file ? strdup(interp->cur_file) : NULL;
   interp->err_file_owned = interp->cur_file ? 1 : 0;
   interp->err_line = interp->cur_line;
-  interp->err_msg = msg;
-  /* Bugfix: `msg` is borrowed (caller-owned static or literal), so
-   * make ownership explicit. LCL_ERR_CLEAR above already zeroes the
-   * flag, but re-asserting here keeps the invariant local to this
-   * function — robust against future reorderings of CLEAR or
-   * additions of an early-return path. */
-  interp->err_msg_owned = 0;
+
+  /* Copy: extensions build messages in stack buffers (snprintf into
+   * char[128] is the common shape), so a borrowed pointer would dangle
+   * by the time the host reads lcl_interp_error_msg(). If the copy
+   * itself fails, fall back to a static message rather than lose the
+   * error entirely. */
+  copy = msg ? strdup(msg) : NULL;
+
+  if (copy) {
+    interp->err_msg = copy;
+    interp->err_msg_owned = 1;
+  } else {
+    interp->err_msg = msg ? "out of memory" : NULL;
+    interp->err_msg_owned = 0;
+  }
 }
 
 void lcl_clear_error(lcl_interp *interp) {
@@ -239,12 +250,13 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
   return rc;
 }
 
-int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib) {
+lcl_result lcl_register_embedded_lib(lcl_interp *interp,
+                                     const lcl_embedded_lib *lib) {
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   if (!interp || !lib || !lib->data) {
-    return -1;
+    return LCL_ERROR;
   }
 
   rc = lcl_eval_bytes_file(interp, (const char *)lib->data, lib->len,
@@ -268,5 +280,5 @@ int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib) {
     lcl_ref_dec(result);
   }
 
-  return rc == LCL_RC_OK ? 0 : -1;
+  return rc == LCL_RC_OK ? LCL_OK : LCL_ERROR;
 }

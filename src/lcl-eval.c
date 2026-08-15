@@ -11,7 +11,8 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
-int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out);
+lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *w,
+                              lcl_value **out);
 
 static int setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
   int i;
@@ -42,12 +43,13 @@ static int setup_tail_call(lcl_interp *interp, int argc, lcl_value **argv) {
  * CONTINUE / RETURN surfacing from a `[...]` argument. The caller
  * forwards it so `puts [return 5]` propagates the value, exactly like
  * a direct `return 5` command would. */
-static int build_argv(lcl_interp *interp, const lcl_command *cmd, int *argc_out,
-                      lcl_value ***argv_out, lcl_value **payload_out) {
+static lcl_return_code build_argv(lcl_interp *interp, const lcl_command *cmd,
+                                  int *argc_out, lcl_value ***argv_out,
+                                  lcl_value **payload_out) {
   int i;
   int j;
   int word_count = cmd->argc - 1;
-  int rc;
+  lcl_return_code rc;
   lcl_value **argv = NULL;
   int argc = 0;
   int cap = 0;
@@ -162,11 +164,12 @@ cleanup:
   return rc;
 }
 
-int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
-                       const char *invoked_name, int argc, lcl_value **argv,
-                       lcl_value **out) {
+lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
+                                   lcl_proc *p, const char *invoked_name,
+                                   int argc, lcl_value **argv,
+                                   lcl_value **out) {
   int i;
-  int rc;
+  lcl_return_code rc;
   lcl_env saved = interp->env;
   int saved_tail_position = interp->in_tail_position;
   lcl_value *saved_current_proc = interp->current_proc;
@@ -293,8 +296,8 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
           }
         } else {
           lcl_value *def_val = NULL;
-          int def_rc = lcl_eval_program(interp, p->pspec.params[pidx].def_prog,
-                                        &def_val);
+          lcl_return_code def_rc = lcl_eval_program(
+              interp, p->pspec.params[pidx].def_prog, &def_val);
 
           if (def_rc != LCL_RC_OK) {
             /* Fuzzing: a control code surfacing from a default-value
@@ -414,7 +417,8 @@ int lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val, lcl_proc *p,
   return rc;
 }
 
-int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
+lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *w,
+                              lcl_value **out) {
   /* #75 rule 1: numeric literals were typed at scan time; the word
    * denotes that value directly. */
   if (w && w->typed) {
@@ -458,7 +462,7 @@ int lcl_eval_word(lcl_interp *interp, const lcl_word *w, lcl_value **out) {
       return LCL_RC_OK;
     }
     case LCL_WP_SUBCMD: {
-      int sub_rc;
+      lcl_return_code sub_rc;
       int saved_in_subcmd = interp->in_subcmd;
       interp->in_subcmd = 1;
       sub_rc = lcl_eval_program(interp, wp->as.sub.program, out);
@@ -476,10 +480,10 @@ static int lit_is_numeric(const char *s, size_t n) {
   return lcl_num_text_classify(s, n) != LCL_NUM_NONE;
 }
 
-int lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
-                        lcl_value **out) {
+lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
+                                    lcl_value **out) {
   lcl_value *callee = NULL;
-  int rc;
+  lcl_return_code rc;
   int saved_tail_position = interp->in_tail_position;
   int was_in_subcmd = interp->in_subcmd;
   char invoked_buf[64];
@@ -769,10 +773,10 @@ lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
   return p;
 }
 
-int lcl_eval_string_file(lcl_interp *interp, const char *src, const char *file,
-                         lcl_value **out) {
+lcl_return_code lcl_eval_string_file(lcl_interp *interp, const char *src,
+                                     const char *file, lcl_value **out) {
   lcl_program *P = lcl_compile_report(interp, src, file ? file : "<string>");
-  int rc;
+  lcl_return_code rc;
 
   if (!P) {
     return LCL_RC_ERR;
@@ -784,16 +788,18 @@ int lcl_eval_string_file(lcl_interp *interp, const char *src, const char *file,
   return rc;
 }
 
-int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out) {
+lcl_return_code lcl_eval_string(lcl_interp *interp, const char *src,
+                                lcl_value **out) {
   return lcl_eval_string_file(interp, src, NULL, out);
 }
 
-int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
-                        const char *file, lcl_value **out) {
+lcl_return_code lcl_eval_bytes_file(lcl_interp *interp, const char *src,
+                                    size_t len, const char *file,
+                                    lcl_value **out) {
   lcl_compile_err cerr;
   lcl_program *P =
       lcl_program_compile_bytes_ex(src, len, file ? file : "<bytes>", &cerr);
-  int rc;
+  lcl_return_code rc;
 
   if (!P) {
     const char *saved_file = interp->cur_file;
@@ -813,13 +819,13 @@ int lcl_eval_bytes_file(lcl_interp *interp, const char *src, size_t len,
   return rc;
 }
 
-int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
-                   lcl_value **out) {
+lcl_return_code lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
+                               lcl_value **out) {
   return lcl_eval_bytes_file(interp, src, len, NULL, out);
 }
 
-int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
-                         lcl_value **out) {
+lcl_return_code lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
+                                     lcl_value **out) {
   char *buf = NULL;
   size_t len = 0;
   size_t cap = 0;
@@ -946,7 +952,7 @@ int lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       const char *s;
       size_t slen;
       size_t need;
-      int rc;
+      lcl_return_code rc;
       int saved_in_subcmd = interp->in_subcmd;
       interp->in_subcmd = 1;
       rc = lcl_eval_program(interp, wp->as.sub.program, &result);

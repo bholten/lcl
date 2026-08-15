@@ -80,7 +80,7 @@ lcl_result lcl_env_var(lcl_env *env, const char *name, lcl_value *value) {
       return LCL_ERROR;
     }
 
-    r = hash_table_put(env->frame->locals, name, cell) ? LCL_RC_OK : LCL_ERROR;
+    r = hash_table_put(env->frame->locals, name, cell) ? LCL_OK : LCL_ERROR;
 
     lcl_ref_dec(cell);
 
