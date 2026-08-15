@@ -1125,7 +1125,10 @@ lcl_return_code lcl_eval_program(lcl_interp *interp, const lcl_program *pr,
       if (!interp->err_file) {
         interp->err_file = pr->file ? strdup(pr->file) : NULL;
         interp->err_file_owned = pr->file ? 1 : 0;
-        interp->err_line = cmd->line;
+
+        if (!interp->err_line) {
+          interp->err_line = cmd->line;
+        }
       }
       break;
     }

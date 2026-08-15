@@ -56,6 +56,16 @@ lcl_program *lcl_program_compile_bytes_ex(const char *src, size_t len,
 lcl_program *lcl_program_compile_depth(const char *src, size_t len,
                                        const char *file, lcl_compile_err *err,
                                        int nest);
+
+/* Compile a delimiter span (the interior of `[...]`, `(...)`,
+ * `#{...}`, plus any desugaring prefix) as a single command: newlines
+ * and `;` separate words, `;;` comments and \-newline continuations
+ * behave as in ordinary source. `start_line` is the file line the
+ * span opens on — compiled commands and error reports carry absolute
+ * line numbers. */
+lcl_program *lcl_program_compile_span(const char *src, size_t len,
+                                      lcl_compile_err *err, int nest,
+                                      long start_line);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
 typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
@@ -118,6 +128,7 @@ typedef struct {
   const char *err;
   long err_line;
   int nest;
+  int sep_as_ws;
 } lcl_scan;
 
 void lcl_scan_init(lcl_scan *sc, const char *src);

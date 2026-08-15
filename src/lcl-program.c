@@ -88,6 +88,23 @@ lcl_program *lcl_program_compile_depth(const char *src, size_t len,
   return compile_scan(&sc, file, err);
 }
 
+lcl_program *lcl_program_compile_span(const char *src, size_t len,
+                                      lcl_compile_err *err, int nest,
+                                      long start_line) {
+  lcl_scan sc;
+
+  if (nest > LCL_SCAN_MAX_NEST) {
+    compile_err_set(err, "nesting too deep", start_line);
+    return NULL;
+  }
+
+  lcl_scan_init_bytes(&sc, src, len);
+  sc.nest = nest;
+  sc.line = start_line;
+  sc.sep_as_ws = 1;
+  return compile_scan(&sc, NULL, err);
+}
+
 lcl_program *lcl_program_compile_ex(const char *src, const char *file,
                                     lcl_compile_err *err) {
   return lcl_program_compile_depth(src, strlen(src), file, err, 0);

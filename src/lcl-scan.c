@@ -216,87 +216,6 @@ static int skip_balanced(lcl_scan *sc, char open_ch, char close_ch,
   return scan_fail(sc, unmatched_msg(open_ch), open_line);
 }
 
-/* Refactor:
- *
- * normalize_separators -- replace top-level \n and ; with spaces in-place.
- *
- * Tracks brace_depth, in_dquotes, bracket_depth, paren_depth.
- * Handles \\\n continuation by removing both chars.
- *
- * Returns new length after normalization.
- */
-static size_t normalize_separators(char *buf, size_t len) {
-  size_t j;
-  size_t k;
-  int brace_depth = 0;
-  int in_dquotes = 0;
-  int bracket_depth = 0;
-  int paren_depth = 0;
-
-  for (j = 0, k = 0; j < len; j++) {
-    char ch = buf[j];
-
-    if (ch == '\\' && j + 1 < len) {
-      char next = buf[j + 1];
-
-      if (next == '\n' && brace_depth == 0 && !in_dquotes &&
-          bracket_depth == 0 && paren_depth == 0) {
-        j++;
-        continue;
-      }
-
-      buf[k++] = ch;
-      j++;
-      buf[k++] = next;
-      continue;
-    }
-
-    if (ch == '{' && !in_dquotes) {
-      brace_depth++;
-    } else if (ch == '}' && !in_dquotes && brace_depth > 0) {
-      brace_depth--;
-    } else if (ch == '"' && brace_depth == 0) {
-      in_dquotes = !in_dquotes;
-    } else if (ch == '[' && brace_depth == 0 && !in_dquotes) {
-      bracket_depth++;
-    } else if (ch == ']' && brace_depth == 0 && !in_dquotes &&
-               bracket_depth > 0) {
-      bracket_depth--;
-    } else if (ch == '(' && brace_depth == 0 && !in_dquotes) {
-      paren_depth++;
-    } else if (ch == ')' && brace_depth == 0 && !in_dquotes &&
-               paren_depth > 0) {
-      paren_depth--;
-    }
-
-    /* ;; comment: skip to next \n (which will become a space) */
-    if (ch == ';' && j + 1 < len && buf[j + 1] == ';' && brace_depth == 0 &&
-        !in_dquotes && bracket_depth == 0 && paren_depth == 0) {
-
-      while (j < len && buf[j] != '\n') {
-        j++;
-      }
-
-      if (j < len) {
-        /* \n at top level becomes a space */
-        buf[k++] = ' ';
-      }
-
-      continue;
-    }
-
-    if ((ch == '\n' || ch == ';') && brace_depth == 0 && !in_dquotes &&
-        bracket_depth == 0 && paren_depth == 0) {
-      buf[k++] = ' ';
-    } else {
-      buf[k++] = ch;
-    }
-  }
-
-  buf[k] = '\0';
-  return k;
-}
-
 void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->s = src;
   sc->i = 0;
@@ -306,6 +225,7 @@ void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->err = NULL;
   sc->err_line = 0;
   sc->nest = 0;
+  sc->sep_as_ws = 0;
 }
 
 void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
@@ -317,6 +237,7 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->err = NULL;
   sc->err_line = 0;
   sc->nest = 0;
+  sc->sep_as_ws = 0;
 }
 
 /* Compile the span between a just-consumed opening delimiter and its
@@ -351,17 +272,12 @@ static int scan_sub_literal(lcl_scan *sc, lcl_word *w, const char *prefix,
   memcpy(subsrc + plen, sc->s + begin, content_len);
   subsrc[plen + content_len] = '\0';
 
-  content_len = normalize_separators(subsrc + plen, content_len);
-
-  sub = lcl_program_compile_depth(subsrc, plen + content_len, NULL, &suberr,
-                                  sc->nest + 1);
+  sub = lcl_program_compile_span(subsrc, plen + content_len, &suberr,
+                                 sc->nest + 1, open_line);
   free(subsrc);
 
   if (!sub) {
-    /* The sub-source is a normalized copy, so its line numbers do
-     * not map back; attribute the sub's message to the line the
-     * literal opened on. */
-    return scan_fail(sc, suberr.msg, open_line);
+    return scan_fail(sc, suberr.msg, suberr.line ? suberr.line : open_line);
   }
 
   if (!lcl_word_add_sub(w, sub)) {
@@ -874,6 +790,20 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
     }
 
     if (sc->s[sc->i] == ';') {
+      if (sc->sep_as_ws) {
+        /* Span mode: `;;` is a comment to end-of-line, a single `;`
+         * is word whitespace. */
+        if (sc->i + 1 < sc->len && sc->s[sc->i + 1] == ';') {
+          while (sc->i < sc->len && sc->s[sc->i] != '\n') {
+            sc->i++;
+          }
+        } else {
+          sc->i++;
+        }
+
+        continue;
+      }
+
       sc->i++;
       sc->at_cmd_start = 1;
       break;
@@ -882,6 +812,11 @@ int lcl_scan_parse_command(lcl_scan *sc, lcl_command *cmd) {
     if (sc->s[sc->i] == '\n') {
       sc->i++;
       sc->line++;
+
+      if (sc->sep_as_ws) {
+        continue;
+      }
+
       sc->at_cmd_start = 1;
       break;
     }
