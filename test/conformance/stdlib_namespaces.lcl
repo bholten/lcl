@@ -1,0 +1,333 @@
+;; Lcl conformance tests: List::, Dict::, String:: library namespaces.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "List:: Namespace" {
+    Test::case "List::new" {
+        Test::eq [List::new a b c] [list a b c]
+    }
+
+    Test::case "List::push" {
+        Test::eq [List::push [list 1 2] 3] [list 1 2 3]
+        Test::eq [List::push [list] x] [list x]
+    }
+
+    Test::case "List::pop" {
+        Test::eq [List::pop [list a b c]] [list a b]
+        Test::eq [len [List::pop [list x]]] 0
+    }
+
+    Test::case "List::slice" {
+        Test::eq [List::slice [list a b c d e] 1 4] [list b c d]
+        Test::eq [List::slice [list 1 2 3 4 5] 0 3] [list 1 2 3]
+    }
+
+    Test::case "List::concat" {
+        Test::eq [List::concat [list a b] [list c d]] [list a b c d]
+        Test::eq [List::concat [list 1 2] [list]] [list 1 2]
+    }
+
+    Test::case "List::reverse" {
+        Test::eq [List::reverse [list 1 2 3 4]] [list 4 3 2 1]
+        Test::eq [List::reverse [list x]] [list x]
+        Test::eq [len [List::reverse [list]]] 0
+    }
+
+    Test::case "List::index" {
+        Test::eq [List::index [list a b c d] 2] c
+    }
+
+    Test::case "List::range" {
+        Test::eq [List::range 1 5] [list 1 2 3 4]
+        Test::eq [List::range 0 10 2] [list 0 2 4 6 8]
+        Test::eq [List::range 5 0 -1] [list 5 4 3 2 1]
+        Test::eq [len [List::range 5 5]] 0
+    }
+
+    Test::case "List::sort" {
+        let sorted [List::sort [list banana apple cherry]]
+        Test::eq [get $sorted 0] apple
+        Test::eq [get $sorted 1] banana
+        Test::eq [get $sorted 2] cherry
+    }
+
+    Test::case "List::sort orders numbers numerically" {
+        Test::eq [List::sort (10 9 2)] (2 9 10)
+        Test::eq [List::sort (2.5 10 -3)] (-3 2.5 10)
+    }
+
+    Test::case "List::sort_with takes a comparator" {
+        let nums [list 10 2 5 1 20]
+        let cmp [lambda {a b} { if [< $a $b] { return -1 }; if [> $a $b] { return 1 }; return 0 }]
+        let sorted [List::sort_with $nums $cmp]
+        Test::eq $sorted [list 1 2 5 10 20]
+    }
+
+    Test::case "List::sort_with descending" {
+        let cmp [lambda {a b} { if [> $a $b] { return -1 }; if [< $a $b] { return 1 }; return 0 }]
+        Test::eq [List::sort_with (3 1 2) $cmp] (3 2 1)
+    }
+
+    Test::case "List::sort_with comparator error propagates" {
+        let cmp [lambda {a b} { error "bad comparator" }]
+        let caught [catch { List::sort_with $cmp (3 1 2) } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "List::sort_by takes a key function" {
+        let rows [list (bob 30) (amy 25) (cal 28)]
+        let by_age [List::sort_by $rows [lambda {r} {get $r 1}]]
+        Test::eq $by_age [list (amy 25) (cal 28) (bob 30)]
+    }
+
+    Test::case "List::sort_by calls keyfn once per element" {
+        var key_calls 0
+        proc count_key {x} { set! key_calls [+ $key_calls 1]; return $x }
+        let sorted [List::sort_by (4 2 3 1 5) $count_key]
+        Test::eq $sorted (1 2 3 4 5)
+        Test::eq $key_calls 5
+    }
+
+    Test::case "sorts are stable (layered ordering)" {
+        let rows [list (bob 2) (amy 1) (ann 1)]
+        let by_name [List::sort_by $rows [lambda {r} {get $r 0}]]
+        ;; amy ann bob; then a stable sort on priority keeps amy before ann
+        let by_prio [List::sort_by $by_name [lambda {r} {get $r 1}]]
+        Test::eq $by_prio [list (amy 1) (ann 1) (bob 2)]
+    }
+
+    Test::case "List::sort_by keyfn error propagates" {
+        let caught [catch { List::sort_by [lambda {x} { error "bad key" }] (1 2) } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "List::find" {
+        let lst [list 1 5 10 15 20]
+        Test::eq [List::find $lst [lambda {x} {> $x 8}]] 10
+        Test::empty [List::find $lst [lambda {x} {> $x 100}]]
+    }
+
+    Test::case "List::any?" {
+        let lst [list 1 2 3 4 5]
+        Test::true [List::any? $lst [lambda {x} {> $x 4}]]
+        Test::false [List::any? $lst [lambda {x} {> $x 100}]]
+        Test::false [List::any? () [lambda {x} {== $x 1}]]
+    }
+
+    Test::case "List::all?" {
+        let lst [list 1 2 3 4 5]
+        Test::true [List::all? $lst [lambda {x} {> $x 0}]]
+        Test::false [List::all? $lst [lambda {x} {> $x 3}]]
+        Test::true [List::all? () [lambda {x} {== $x impossible}]]
+    }
+
+    Test::case "List::unique" {
+        let dupes [list a b a c b d a]
+        let unique [List::unique $dupes]
+        Test::eq [len $unique] 4
+        Test::eq [get $unique 0] a
+        Test::eq [get $unique 1] b
+        Test::eq [get $unique 2] c
+        Test::eq [get $unique 3] d
+    }
+
+    Test::case "List::flatten" {
+        let nested [list [list 1 2] [list 3 4] 5]
+        let flat [List::flatten $nested]
+        Test::eq [len $flat] 5
+        Test::eq [get $flat 0] 1
+        Test::eq [get $flat 4] 5
+    }
+
+    Test::case "List::flatten recurses to any depth" {
+        let nested [list a [list b [list c [list d e]]] f]
+        let flat [List::flatten $nested]
+        Test::eq [len $flat] 6
+        Test::eq [get $flat 0] a
+        Test::eq [get $flat 3] d
+        Test::eq [get $flat 5] f
+
+        ;; empty sublists vanish at every depth
+        Test::eq [len [List::flatten [list [list] [list 1 [list]] 2]]] 2
+
+        ;; flattening an empty list
+        Test::eq [len [List::flatten [list]]] 0
+    }
+
+    Test::case "List::flatten optional depth" {
+        let nested [list a [list b [list c [list d]]]]
+
+        ;; depth 0: unchanged
+        let d0 [List::flatten $nested 0]
+        Test::eq [len $d0] 2
+        Test::eq [type [get $d0 1]] list
+
+        ;; depth 1: one level unwrapped
+        let d1 [List::flatten $nested 1]
+        Test::eq [len $d1] 3
+        Test::eq [get $d1 1] b
+        Test::eq [type [get $d1 2]] list
+
+        ;; depth 2
+        let d2 [List::flatten $nested 2]
+        Test::eq [len $d2] 4
+        Test::eq [get $d2 2] c
+        Test::eq [type [get $d2 3]] list
+
+        ;; depth beyond actual nesting: same as full
+        Test::eq [len [List::flatten $nested 99]] 4
+
+        ;; negative depth: unlimited (same as omitted)
+        let dn [List::flatten $nested -1]
+        Test::eq [len $dn] 4
+        Test::eq [get $dn 3] d
+
+        ;; non-integer depth errors
+        Test::eq [catch { List::flatten $nested bogus }] 1
+    }
+
+    Test::case "List::flatten deep nesting does not overflow" {
+        var deep [list 42]
+        var i 0
+        while {[< $i 10000]} {
+            set! deep [list $deep]
+            set! i [+ $i 1]
+        }
+        let flat [List::flatten $deep]
+        Test::eq [len $flat] 1
+        Test::eq [get $flat 0] 42
+    }
+}
+
+;; ============================================================================
+;; Dict:: Namespace Functions
+;; ============================================================================
+
+Test::suite "Dict:: Namespace" {
+    Test::case "Dict::new" {
+        let d [Dict::new x 1 y 2]
+        Test::eq [len $d] 2
+        Test::eq [get $d x] 1
+    }
+
+    Test::case "Dict::keys" {
+        Test::eq [len [Dict::keys [dict a 1 b 2 c 3]]] 3
+    }
+
+    Test::case "Dict::values" {
+        Test::eq [len [Dict::values [dict a 10 b 20 c 30]]] 3
+    }
+
+    Test::case "Dict::items" {
+        let items [Dict::items [dict x 1 y 2]]
+        Test::eq [len $items] 2
+        Test::eq [len [get $items 0]] 2
+    }
+
+    Test::case "Dict::merge" {
+        let d1 [dict a 1 b 2]
+        let d2 [dict b 20 c 30]
+        let merged [Dict::merge $d1 $d2]
+        Test::eq [len $merged] 3
+        Test::eq [get $merged a] 1
+        Test::eq [get $merged b] 20
+        Test::eq [get $merged c] 30
+    }
+
+    Test::case "Dict::map" {
+        let mapped [Dict::map [dict a 1 b 2 c 3] [lambda {k v} {* $v 2}]]
+        Test::eq [get $mapped a] 2
+        Test::eq [get $mapped b] 4
+        Test::eq [get $mapped c] 6
+    }
+
+    Test::case "Dict::filter" {
+        let filtered [Dict::filter [dict a 1 b 2 c 3] [lambda {k v} {> $v 1}]]
+        Test::eq [len [Dict::keys $filtered]] 2
+        Test::false [has? $filtered a]
+        Test::true [has? $filtered b]
+    }
+
+    Test::case "Dict::reduce" {
+        let sum [Dict::reduce [dict a 1 b 2 c 3] 0 [lambda {acc k v} {+ $acc $v}]]
+        Test::eq $sum 6
+    }
+}
+
+;; ============================================================================
+;; String:: Namespace Functions
+;; ============================================================================
+
+Test::suite "String:: Namespace" {
+    Test::case "String::upper" {
+        Test::eq [String::upper hello] HELLO
+        Test::eq [String::upper HeLLo] HELLO
+        Test::eq [String::upper abc123] ABC123
+    }
+
+    Test::case "String::lower" {
+        Test::eq [String::lower HELLO] hello
+        Test::eq [String::lower HeLLo] hello
+        Test::eq [String::lower ABC123] abc123
+    }
+
+    Test::case "String::find" {
+        Test::eq [String::find hello ll] 2
+        Test::eq [String::find hello h] 0
+        Test::eq [String::find hello o] 4
+        Test::eq [String::find hello xyz] -1
+    }
+
+    Test::case "String::replace" {
+        Test::eq [String::replace hello ll LL] heLLo
+        Test::eq [String::replace hello he HE] HEllo
+        Test::eq [String::replace hello lo LO] helLO
+        Test::eq [String::replace hello ll {}] heo
+        Test::eq [String::replace hello xyz ZZZ] hello
+    }
+
+    Test::case "String::split" {
+        Test::eq [String::split "a,b,c" ","] [list a b c]
+        Test::eq [len [String::split hello ","]] 1
+    }
+
+    Test::case "String::join" {
+        Test::eq [String::join [list a b c] -] a-b-c
+        Test::eq [String::join [list x y z] {}] xyz
+        Test::eq [String::join [list 1 2 3] ", "] {1, 2, 3}
+        Test::eq [String::join [list only] -] only
+        Test::eq [String::join [list] -] {}
+    }
+
+    Test::case "String::length" {
+        Test::eq [String::length hello] 5
+        Test::eq [String::length {}] 0
+        Test::eq [String::length "hello world"] 11
+    }
+
+    Test::case "String::index" {
+        Test::eq [String::index hello 0] h
+        Test::eq [String::index hello 4] o
+        Test::eq [String::index hello -1] o
+        Test::eq [String::index hello -2] l
+    }
+
+    Test::case "String::range" {
+        Test::eq [String::range hello 1 4] ell
+        Test::eq [String::range hello 0 2] he
+        Test::eq [String::range hello 0 -1] hell
+        Test::eq [String::range hello -3 -1] ll
+    }
+
+    Test::case "String::trim" {
+        Test::eq [String::trim "  hello  "] hello
+        Test::eq [String::trim "\thello\n"] hello
+        Test::eq [String::trim hello] hello
+        Test::eq [String::trim "   "] {}
+    }
+}
+
+;; ============================================================================
+;; Tail Call Optimization
+;; ============================================================================

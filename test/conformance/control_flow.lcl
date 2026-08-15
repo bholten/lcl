@@ -1,0 +1,476 @@
+;; Lcl conformance tests: if/cond/case, loops, break/continue, error handling.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "If/Else" {
+    Test::case "simple true" {
+        var result 0
+        if 1 { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "simple false" {
+        var result 0
+        if 0 { set! result 1 }
+        Test::eq $result 0
+    }
+
+    Test::case "if-else with keyword" {
+        var result {}
+        if 0 { set! result yes } else { set! result no }
+        Test::eq $result no
+    }
+
+    Test::case "if-else positional (no keyword)" {
+        var result {}
+        if 0 { set! result yes } { set! result no }
+        Test::eq $result no
+    }
+
+    Test::case "nested if (replaces elseif)" {
+        var result {}
+        if 0 {
+            set! result first
+        } {
+            if 1 {
+                set! result second
+            } {
+                set! result third
+            }
+        }
+        Test::eq $result second
+    }
+
+    Test::case "computed condition" {
+        let x 5
+        var result 0
+        if [+ $x 0] { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "string truthiness" {
+        var result 0
+        if hello { set! result 1 }
+        Test::eq $result 1
+    }
+
+    Test::case "empty string is false" {
+        var result 0
+        if {} { set! result 1 } else { set! result 2 }
+        Test::eq $result 2
+    }
+
+    Test::case "if returns last value" {
+        let result [if 1 { + 10 20 }]
+        Test::eq $result 30
+    }
+}
+
+;; ============================================================================
+;; Control Flow: cond (multi-branch conditional)
+;; ============================================================================
+
+Test::suite "Cond" {
+    Test::case "first truthy clause wins" {
+        let result [cond 0 {first} 1 {second} else {default}]
+        Test::eq $result "second"
+    }
+
+    Test::case "else clause when no match" {
+        let result [cond 0 {first} 0 {second} else {default}]
+        Test::eq $result "default"
+    }
+
+    Test::case "first clause matches" {
+        let result [cond 1 {first} 1 {second} else {default}]
+        Test::eq $result "first"
+    }
+
+    Test::case "cond with comparisons" {
+        let n 5
+        let result [cond
+                    [== $n 0] {zero}
+                    [< $n 0] {negative}
+                    else {positive}]
+        Test::eq $result "positive"
+    }
+
+    Test::case "cond with negative number" {
+        let n -3
+        let result [cond
+                    [== $n 0] {zero}
+                    [< $n 0] {negative}
+                    else {positive}]
+        Test::eq $result "negative"
+    }
+
+    Test::case "cond evaluates expression result" {
+        let a 10
+        let b 20
+        let result [cond 0 {wrong} 1 [+ $a $b] else {default}]
+        Test::eq $result 30
+    }
+
+    Test::case "cond short-circuits" {
+        var counter 0
+        proc inc_and_check {} {
+            set! counter [+ $counter 1]
+            0
+        }
+        ;; Only first two tests should be evaluated
+        let result [cond [inc_and_check] {a} [inc_and_check] {b} 1 {c} [inc_and_check] {d}]
+        Test::eq $result "c"
+        Test::eq $counter 2
+    }
+
+    Test::case "cond without else errors on no match" {
+        let errored [catch {cond 0 {a} 0 {b}}]
+        Test::eq $errored 1
+    }
+}
+
+;; ============================================================================
+;; Control Flow: case (value dispatch)
+;; ============================================================================
+
+Test::suite "Case" {
+    Test::case "basic string dispatch" {
+        let op {add}
+        let result [case $op {add} {addition} {sub} {subtraction} else {unknown}]
+        Test::eq $result "addition"
+    }
+
+    Test::case "else clause when no match" {
+        let op {div}
+        let result [case $op {add} {addition} {sub} {subtraction} else {unknown}]
+        Test::eq $result "unknown"
+    }
+
+    Test::case "numeric dispatch" {
+        let code 404
+        let result [case $code 200 {OK} 404 {Not Found} 500 {Error} else {Other}]
+        Test::eq $result "Not Found"
+    }
+
+    Test::case "dispatch with variable as key" {
+        let expected {mul}
+        let op {mul}
+        let result [case $op $expected {matched} else {not matched}]
+        Test::eq $result "matched"
+    }
+
+    Test::case "case evaluates expression result" {
+        let op {add}
+        let num1 10
+        let num2 5
+        let result [case $op \
+                        {add} [+ $num1 $num2] \
+                        {sub} [- $num1 $num2] \
+                        else {0}]
+        Test::eq $result 15
+    }
+
+    Test::case "case short-circuits" {
+        var counter 0
+        proc inc_and_return {val} {
+            set! counter [+ $counter 1]
+            $val
+        }
+        let target {y}
+        ;; Only first two keys should be evaluated before match
+        let result [case $target \
+                        [inc_and_return x] {X} \
+                        [inc_and_return y] {Y} \
+                        [inc_and_return z] {Z}]
+        Test::eq $result "Y"
+        Test::eq $counter 2
+    }
+
+    Test::case "case without else errors on no match" {
+        let errored [catch {case {x} {a} {A} {b} {B}}]
+        Test::eq $errored 1
+    }
+
+    Test::case "case with list equality" {
+        let data [list 1 2 3]
+        let result [case $data [list 1 2] {two} [list 1 2 3] {three} else {other}]
+        Test::eq $result "three"
+    }
+}
+
+;; ============================================================================
+;; Control Flow: while
+;; ============================================================================
+
+Test::suite "While Loop" {
+    Test::case "basic countdown" {
+        var i 3
+        var results [list]
+        while $i {
+            set! results [List::push $results $i]
+            set! i [+ $i -1]
+        }
+        Test::eq $results [list 3 2 1]
+    }
+
+    Test::case "condition false initially" {
+        var ran 0
+        while 0 { set! ran 1 }
+        Test::eq $ran 0
+    }
+
+    Test::case "while returns last body value" {
+        var x 3
+        let result [while $x { set! x [+ $x -1] }]
+        Test::eq $result 0
+    }
+}
+
+;; ============================================================================
+;; Control Flow: for
+;; ============================================================================
+
+Test::suite "For Loop" {
+    Test::case "basic for loop" {
+        var results [list]
+        for {var i 3} {$i} {set! i [+ $i -1]} {
+            set! results [List::push $results $i]
+        }
+        Test::eq $results [list 3 2 1]
+    }
+
+    Test::case "condition false initially" {
+        var ran 0
+        for {var j 0} {$j} {set! j [+ $j -1]} {
+            set! ran 1
+        }
+        Test::eq $ran 0
+    }
+
+    Test::case "for returns last body value" {
+        let result [for {var m 3} {$m} {set! m [+ $m -1]} { $m }]
+        Test::eq $result 1
+    }
+}
+
+;; ============================================================================
+;; Control Flow: foreach
+;; ============================================================================
+
+Test::suite "Foreach Loop" {
+    Test::case "basic foreach" {
+        var results [list]
+        foreach x [list a b c] {
+            set! results [List::push $results $x]
+        }
+        Test::eq $results [list a b c]
+    }
+
+    Test::case "foreach over list variable" {
+        let items [list 1 2 3]
+        var sum 0
+        foreach item $items {
+            set! sum [+ $sum $item]
+        }
+        Test::eq $sum 6
+    }
+
+    Test::case "empty list" {
+        var ran 0
+        foreach y [list] {
+            set! ran 1
+        }
+        Test::eq $ran 0
+    }
+
+    Test::case "foreach returns last body value" {
+        let result [foreach z [list x y z] { $z }]
+        Test::eq $result z
+    }
+}
+
+;; ============================================================================
+;; Control Flow: break
+;; ============================================================================
+
+Test::suite "Break" {
+    Test::case "break in while" {
+        var i 5
+        var results [list]
+        while 1 {
+            set! results [List::push $results $i]
+            set! i [+ $i -1]
+            if $i { } else { break }
+        }
+        Test::eq $results [list 5 4 3 2 1]
+    }
+
+    Test::case "break in for" {
+        var count 0
+        for {var j 1} {1} {set! j [+ $j 1]} {
+            set! count [+ $count 1]
+            break
+        }
+        Test::eq $count 1
+    }
+
+    Test::case "break in foreach" {
+        var first {}
+        foreach x [list a b c] {
+            set! first $x
+            break
+        }
+        Test::eq $first a
+    }
+}
+
+;; ============================================================================
+;; Control Flow: continue
+;; ============================================================================
+
+Test::suite "Continue" {
+    Test::case "continue in while" {
+        var i 3
+        var results [list]
+        while $i {
+            let cur $i
+            set! i [+ $i -1]
+            if [== $cur 2] { continue }
+            set! results [List::push $results $cur]
+        }
+        Test::eq $results [list 3 1]
+    }
+
+    Test::case "continue in for" {
+        var results [list]
+        for {var j 3} {$j} {set! j [+ $j -1]} {
+            if [== $j 2] { continue }
+            set! results [List::push $results $j]
+        }
+        Test::eq $results [list 3 1]
+    }
+
+    Test::case "continue in foreach" {
+        var count 0
+        foreach x [list a b c] {
+            set! count [+ $count 1]
+            continue
+        }
+        Test::eq $count 3
+    }
+}
+
+;; ============================================================================
+;; Error Handling
+;; ============================================================================
+
+Test::suite "Error Handling" {
+    Test::case "catch success returns 0" {
+        let caught [catch { + 1 2 }]
+        Test::eq $caught 0
+    }
+
+    Test::case "catch error returns 1" {
+        let caught [catch { error "test error" }]
+        Test::eq $caught 1
+    }
+
+    Test::case "catch with result variable (success)" {
+        if [catch { + 10 20 } res msg] {
+            Test::assert 0
+        } else {
+            Test::eq $res 30
+        }
+    }
+
+    Test::case "catch with error variable" {
+        if [catch { error "my error" } res msg] {
+            Test::eq $msg {my error}
+        } else {
+            Test::assert 0
+        }
+    }
+
+    Test::case "catch nested error" {
+        proc may_fail {x} {
+            if [== $x 0] {
+                error "cannot be zero"
+            }
+            return [+ $x 1]
+        }
+        if [catch { may_fail 0 } res msg] {
+            Test::eq $msg {cannot be zero}
+        } else {
+            Test::assert 0
+        }
+    }
+
+    Test::case "catch nested success" {
+        proc may_fail2 {x} {
+            if [== $x 0] {
+                error "cannot be zero"
+            }
+            return [+ $x 1]
+        }
+        if [catch { may_fail2 5 } res msg] {
+            Test::assert 0
+        } else {
+            Test::eq $res 6
+        }
+    }
+
+    Test::case "catch unknown command returns 1" {
+        let caught [catch { definitely_not_a_command 1 2 } res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "catch traps syntax error in dynamic script" {
+        let code {this is [syntactically bad}
+        let caught [catch $code res msg]
+        Test::eq $caught 1
+        Test::assert [> [len $msg] 0]
+    }
+
+    Test::case "catch traps syntax error in braced literal" {
+        let caught [catch {oops [unclosed} res msg]
+        Test::eq $caught 1
+    }
+
+    Test::case "error variable empty on success" {
+        let caught [catch { + 1 1 } res msg]
+        Test::eq $caught 0
+        Test::eq $msg {}
+    }
+
+    Test::case "result variable empty on failure" {
+        let caught [catch { error "boom" } res msg]
+        Test::eq $caught 1
+        Test::eq $res {}
+    }
+
+    Test::case "nested catch: inner catches, outer sees success" {
+        let outer [catch {
+            let inner [catch { error "inner boom" } ires imsg]
+            if [!= $inner 1] { error "inner did not catch" }
+        } ores omsg]
+        Test::eq $outer 0
+    }
+
+    Test::case "error state cleared after successful catch" {
+        catch { error "transient" } res msg
+        ;; a following command must evaluate cleanly
+        Test::eq [+ 2 2] 4
+    }
+
+    Test::case "catch propagates substitution failure of its argument" {
+        ;; $no_such_script fails while constructing the argument, before
+        ;; catch owns a script; the outer catch observes that error.
+        let outer [catch { catch $no_such_script res msg } ores omsg]
+        Test::eq $outer 1
+    }
+}
+
+;; ============================================================================
+;; Type Inspection (type / repr / String::from)
+;; ============================================================================

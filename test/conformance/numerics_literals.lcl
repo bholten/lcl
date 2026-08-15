@@ -1,0 +1,283 @@
+;; Lcl conformance tests: numeric semantics, float formatting, typed literals, brace escaping.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+
+Test::suite "Modulo by zero" {
+    Test::case "modulo by zero returns error, not crash" {
+        let errored [catch { % 5 0 }]
+        Test::eq $errored 1
+    }
+
+    Test::case "modulo with valid divisor still works" {
+        Test::eq [% 10 3] 1
+    }
+}
+
+Test::suite "Float precision" {
+    Test::case "float conversion preserves double precision" {
+        ;; pi to 15 decimal places -- should not be truncated to 32-bit float
+        let pi_str "3.141592653589793"
+        let pi_val [float $pi_str]
+        ;; With correct double parsing, the first 15 digits should be preserved.
+        ;; With the bug (32-bit float), it becomes 3.1415927410125732
+        Test::assert [!= $pi_val 3.1415927410125732]
+    }
+}
+
+Test::suite "step 1: Compact float formatting" {
+    ;; These assertions wrap the value in a concat ("<...>") to force
+    ;; the rendered string; a bare Test::eq would coerce both sides
+    ;; numerically and pass even with the old %.17g formatting.
+    Test::case "0.1 prints compactly" {
+        Test::eq "<[/ 1.0 10]>" "<0.1>"
+    }
+
+    Test::case "17-digit values keep every digit" {
+        Test::eq "<[+ 0.1 0.2]>" "<0.30000000000000004>"
+    }
+
+    Test::case "float arithmetic result prints compactly" {
+        Test::eq "<[* 1.5 3]>" "<4.5>"
+    }
+
+    Test::case "compact rendering parses back to the same value" {
+        ;; Note: [float "[/ 1.0 10]"] would NOT test the string path --
+        ;; a single-piece quoted word forwards the float unchanged
+        ;; (single-piece rule). String::from forces the rendered form.
+        Test::eq [float [String::from [/ 1.0 10]]] [/ 1.0 10]
+    }
+}
+
+Test::suite " step 2: Typed numeric literals" {
+    Test::case "grammar-canonical spellings are typed" {
+        Test::eq [type 42] int
+        Test::eq [type -3] int
+        Test::eq [type 0] int
+        Test::eq [type 3.14] float
+        Test::eq [type 1.50] float
+        Test::eq [type 0.1] float
+        Test::eq [type 1e3] float
+        Test::eq [type 1.5e-3] float
+        Test::eq [type -0.5] float
+    }
+
+    Test::case "non-canonical spellings stay strings" {
+        Test::eq [type 007] string
+        Test::eq [type +5] string
+        Test::eq [type -0] string
+        Test::eq [type .5] string
+        Test::eq [type 5.] string
+    }
+
+    Test::case "typed literals print their source spelling" {
+        Test::eq "<42>" "<42>"
+        Test::eq "<[- 0 3]>" "<-3>"
+        ;; non-canonical float spellings normalize when typed
+        Test::eq "<[+ 1.50 0]>" "<1.5>"
+    }
+
+    Test::case "list literal elements are typed" {
+        Test::eq [type [get (1 2 3) 0]] int
+        Test::eq [repr (1 2.5 x)] {(1 2.5 "x")}
+    }
+
+    Test::case "dict literal values are typed" {
+        Test::eq [type [get #{a 1} a]] int
+        ;; typed key collapses to its canonical string for hashing
+        Test::eq [get #{1 one} "1"] one
+    }
+
+    Test::case "escaped digits are not typed" {
+        ;; \x32 is '2': the bytes are "42" but the source spelling is
+        ;; not the literal 42, so the word stays a string
+        Test::eq [type 4\x32] string
+    }
+
+    Test::case "typed literals still work in string contexts" {
+        ;; stringification is total; concat and String::from see the
+        ;; canonical string. (Note: ops whose domain never included
+        ;; numbers -- len, has? -- now error on typed literals exactly
+        ;; as they always did on [int 42]; classification of string
+        ;; contexts is the step-4 audit.)
+        Test::eq [String::from 3.14] "3.14"
+        Test::eq "n=[+ 40 2]" "n=42"
+    }
+
+    Test::case "int predicates see typed literals" {
+        Test::true [int? 42]
+        Test::true [float? 2.5]
+        Test::true [number? 42]
+        Test::assert [not [int? "42"]]
+    }
+}
+
+Test::suite "Numeric text & string domains" {
+    Test::case "numeric text is liberal about data spellings" {
+        ;; data has no spelling intent: leading zeros, +, and bare
+        ;; dots convert in numeric contexts even though the same
+        ;; spellings are not numeric literals
+        Test::eq [+ 1 "007"] 8
+        Test::eq [+ 1 "+5"] 6
+        Test::eq [+ 0 ".5"] 0.5
+        Test::eq [< "007" 8] 1
+    }
+
+    Test::case "libc extras are not numeric text" {
+        ;; the language grammar decides acceptance, not strtol/strtod:
+        ;; whitespace skip, hex, and partial parses are all out
+        Test::eq [catch { + 1 " 42" }] 1
+        Test::eq [catch { + 1 "0x10" }] 1
+        Test::eq [catch { + 1 "3.14abc" }] 1
+        Test::eq [number? " 42"] 0
+        Test::eq [number? "0x10"] 0
+        Test::eq [number? "007"] 1
+    }
+
+    Test::case "truthiness follows the grammar" {
+        ;; " 0" is not numeric text, so it is an ordinary non-empty
+        ;; (truthy) string; "0"/"-0" remain falsy; "0.0" remains
+        ;; truthy (integer-shaped text only, as ever)
+        Test::eq [if " 0" { "t" } else { "f" }] t
+        Test::eq [if "-0" { "t" } else { "f" }] f
+        Test::eq [if "0.0" { "t" } else { "f" }] t
+    }
+
+    Test::case "equality falls back to bytewise for non-numeric text" {
+        Test::eq [== "0x10" 16] 0
+        Test::eq [== "007" 7] 1
+    }
+
+    Test::case "string operators require strings" {
+        let r [catch { String::upper 42 } res err]
+        Test::eq $r 1
+        Test::eq $err {String::upper: expected string (use String::from to render), got int}
+        Test::eq [String::upper [String::from 42]] 42
+        Test::eq [catch { String::length (a b) }] 1
+        Test::eq [catch { String::find 3.14 "." }] 1
+    }
+
+    Test::case "String::from and interpolation remain total renderers" {
+        Test::eq [String::from (1 2)] "1 2"
+        Test::eq "v=[+ 1 2]" "v=3"
+    }
+
+    Test::case "float overflow text errors instead of inf" {
+        ;; grammar-accepted (number? true) but range-rejected on
+        ;; conversion -- loud, never inf
+        Test::eq [number? "1e999"] 1
+        Test::eq [catch { + 0 "1e999" }] 1
+    }
+}
+
+;; Define strings with unbalanced braces at top level (the brace scanner
+;; inside { } doesn't process escapes, so \} would break brace balancing)
+let _i14_rbrace "a\}b"
+let _i14_lbrace "a\{b"
+
+Test::suite "List brace escaping" {
+    Test::case "list element with spaces round-trips" {
+        ;; Elements with spaces require bracing in stringified lists
+        let mylist [list "hello world" "foo bar"]
+        Test::eq [len $mylist] 2
+        Test::eq [get $mylist 0] "hello world"
+        Test::eq [get $mylist 1] "foo bar"
+    }
+
+    Test::case "list element with dollar sign round-trips" {
+        let mylist [list "a" "b\$c"]
+        Test::eq [len $mylist] 2
+        Test::eq [get $mylist 1] "b\$c"
+    }
+
+    Test::case "element with unbalanced close brace round-trips" {
+        ;; _i14_rbrace contains an unbalanced brace - defined at top level
+        let mylist [list $_i14_rbrace]
+        Test::eq [len $mylist] 1
+        ;; Re-parse stringified list - the element must survive
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $_i14_rbrace
+    }
+
+    Test::case "element with unbalanced open brace round-trips" {
+        let mylist [list $_i14_lbrace]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $_i14_lbrace
+    }
+
+    Test::case "element with bracket round-trips" {
+        let elem "x\[y"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with backslash round-trips" {
+        let elem "a\\b"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with double quote round-trips" {
+        let elem "say \"hi\""
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "element with semicolon round-trips" {
+        let elem "a;b"
+        let mylist [list $elem]
+        Test::eq [len $mylist] 1
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 1
+        Test::eq [get $reparsed 0] $elem
+    }
+
+    Test::case "mixed bare, braced, and quoted elements" {
+        ;; bare: simple, braced: has space, quoted: has unbalanced brace
+        let mylist [list simple "hello world" $_i14_rbrace]
+        Test::eq [len $mylist] 3
+        let reparsed [eval "list $mylist"]
+        Test::eq [len $reparsed] 3
+        Test::eq [get $reparsed 0] simple
+        Test::eq [get $reparsed 1] "hello world"
+        Test::eq [get $reparsed 2] $_i14_rbrace
+    }
+}
+
+Test::suite "Arithmetic type preservation" {
+    Test::case "integer addition returns int" {
+        Test::assert [int? [+ 1 2]]
+    }
+
+    Test::case "float addition returns float" {
+        Test::assert [float? [+ 1.5 2.5]]
+    }
+
+    Test::case "mixed addition returns float" {
+        Test::assert [float? [+ 1 2.5]]
+    }
+
+    Test::case "integer subtraction returns int" {
+        Test::assert [int? [- 5 3]]
+    }
+
+    Test::case "integer multiplication returns int" {
+        Test::assert [int? [* 3 4]]
+    }
+}
+
+;; ============================================================================
+;; Scanner: escape sequences
+;; ============================================================================

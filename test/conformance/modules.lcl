@@ -1,0 +1,502 @@
+;; Lcl conformance tests: require, isolate, proc-call def-target boundary, import, load.
+;; Part of the conformance suite; run via test/conformance_smoke.lcl
+;; (suites only register here -- the runner calls Test::run).
+
+;; Top-level cell seeded for the Require suite's side-effect test.
+;; Required files evaluate in an overlay whose parent is the global
+;; frame, so a globally-scoped cell is visible for set!.
+var require_se_counter 0
+var require_lex_counter 0
+
+;; ============================================================================
+;; Immutability & Substitution
+;; ============================================================================
+
+
+Test::suite "Require" {
+    Test::case "namespace is lifted into caller" {
+        require test/require_fixtures/clean_lib.lcl
+        Test::eq $cleanlib::version "1.0"
+        Test::eq [cleanlib::greet "world"] "hi world"
+        Test::eq [cleanlib::add 2 3] 5
+    }
+
+    Test::case "loose top-level let is discarded" {
+        require test/require_fixtures/leaky_lib.lcl
+        ;; The lifted namespace is present.
+        Test::eq [leakylib::serve] 9090
+        ;; LOOSE_CONST, loose_counter, loose_helper must NOT leak.
+        Test::raises { $LOOSE_CONST }
+        Test::raises { $loose_counter }
+        ;; Bareword `loose_helper` with no args would silently fall
+        ;; back to the literal string "loose_helper" (lcl-eval.c), so
+        ;; we invoke it with an arg to force unknown-command resolution.
+        Test::raises { loose_helper junk }
+    }
+
+    Test::case "nested-path namespaces lift" {
+        require test/require_fixtures/nested_ns_lib.lcl
+        Test::eq $nestedlib::top_v 1
+        Test::eq $nestedlib::sub::deep_v 42
+    }
+
+    Test::case "procs in namespace see file-level constants via closure" {
+        require test/require_fixtures/closure_lib.lcl
+        Test::eq [closurelib::get_helper_const] 42
+        ;; But HELPER_CONST is not visible at caller scope.
+        Test::raises { $HELPER_CONST }
+    }
+
+    Test::case "repeated require is cached (file body runs once)" {
+        ;; require_se_counter is seeded as a top-level (global) cell at
+        ;; the bottom of this file — required files see it via the
+        ;; overlay's parent chain into the global frame.
+        set! require_se_counter 0
+        require test/require_fixtures/sideeffect_lib.lcl
+        require test/require_fixtures/sideeffect_lib.lcl
+        require test/require_fixtures/sideeffect_lib.lcl
+        ;; Cache means body evaluated exactly once across the 3 calls.
+        Test::eq $require_se_counter 1
+        ;; Namespace is still bound after cache-served requires.
+        Test::eq [selib::nop] 0
+    }
+
+    Test::case "module identity is the cleaned lexical path" {
+        ;; Lcl module paths are lexical names: ".",
+        ;; "..", and repeated separators are normalized by string
+        ;; rules, so these spellings are all ONE module — the body
+        ;; must run exactly once across the three requires.
+        set! require_lex_counter 0
+        require test/require_fixtures/lexical_id_lib.lcl
+        require test/require_fixtures/./lexical_id_lib.lcl
+        require test/require_fixtures/../require_fixtures//lexical_id_lib.lcl
+        Test::eq $require_lex_counter 1
+        Test::eq [lexlib::nop] 0
+    }
+
+    Test::case "missing file errors cleanly" {
+        Test::raises { require /no/such/path/here.lcl }
+    }
+
+    Test::case "compile error in required file propagates" {
+        Test::raises { require test/require_fixtures/compile_error_lib.lcl }
+    }
+
+    Test::case "runtime error in required file propagates" {
+        Test::raises { require test/require_fixtures/runtime_error_lib.lcl }
+        ;; The namespace defined before the error must NOT be cached
+        ;; or lifted; the require returned an error, so partial state
+        ;; should be discarded.
+        Test::raises { $good_before_err::v }
+    }
+
+    Test::case "require inside namespace lifts into that namespace" {
+        namespace req_outer {
+            require test/require_fixtures/clean_lib.lcl
+        }
+        ;; cleanlib should be a member of req_outer, not at top level
+        ;; (because the require ran inside a builder, its def-target
+        ;; was active and lifted bindings went there).
+        Test::eq [Ns::has? $req_outer cleanlib] 1
+        Test::eq [req_outer::cleanlib::greet "alice"] "hi alice"
+    }
+
+    Test::case "require: too few args is an error" {
+        Test::raises { require }
+    }
+
+    Test::case "require: too many args is an error" {
+        Test::raises { require foo bar }
+    }
+
+    Test::case "./ paths resolve relative to the requiring file" {
+        ;; rel_a requires ./rel_b.lcl, which requires ./sub/rel_c.lcl —
+        ;; each "./" resolves against its own file's directory, and the
+        ;; lifted namespaces cascade up to us.
+        require test/require_fixtures/rel/rel_a.lcl
+        Test::eq $rel_a::tag "a"
+        Test::eq $rel_b::tag "b"
+        Test::eq $rel_c::val 7
+        ;; The chained module was also usable inside rel_b itself.
+        Test::eq [rel_b::c_val] 7
+    }
+
+    Test::case "require cycle is a clear error, not runaway recursion" {
+        Test::raises_with { require test/require_fixtures/cyc_a.lcl } \
+            "dependency cycle"
+    }
+
+    Test::case "self-require is a cycle error" {
+        Test::raises_with { require test/require_fixtures/cyc_self.lcl } \
+            "dependency cycle"
+    }
+
+    Test::case "failed require names the argument and attempted paths" {
+        Test::raises_with { require test/require_fixtures/no_such_mod.lcl } \
+            "no_such_mod.lcl"
+        Test::raises_with { require test/require_fixtures/no_such_mod.lcl } \
+            "tried"
+    }
+}
+
+;; ============================================================================
+;; Isolate
+;; ============================================================================
+
+Test::suite "Isolate" {
+    Test::case "let inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns1 {
+            isolate { let local_leak "nope" }
+            let public_one 1
+        }
+        ;; The isolated let should be discarded.
+        Test::eq [Ns::has? $iso_ns1 local_leak] 0
+        ;; But subsequent bare lets in the namespace still land in it.
+        Test::eq $iso_ns1::public_one 1
+    }
+
+    Test::case "var inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns2 {
+            isolate { var hidden_counter 0 }
+        }
+        Test::eq [Ns::has? $iso_ns2 hidden_counter] 0
+    }
+
+    Test::case "proc inside isolate does not leak to enclosing namespace" {
+        namespace iso_ns3 {
+            isolate { proc hidden_helper {} { 42 } }
+            proc public_helper {} { 99 }
+        }
+        Test::eq [Ns::has? $iso_ns3 hidden_helper] 0
+        Test::eq [iso_ns3::public_helper] 99
+    }
+
+    Test::case "isolate inside proc inside namespace (Dagwood task_impl pattern)" {
+        namespace iso_ns4 {
+            proc task_impl {body} {
+                isolate { eval $body }
+            }
+        }
+        namespace iso_ns4 {
+            iso_ns4::task_impl { let tmp_file "out.txt" }
+        }
+        ;; tmp_file must not have leaked into iso_ns4
+        Test::eq [Ns::has? $iso_ns4 tmp_file] 0
+    }
+
+    Test::case "isolate returns body's last value" {
+        Test::eq [isolate { + 1 2 }] 3
+    }
+
+    Test::case "empty body returns empty string" {
+        Test::eq [isolate { }] {}
+    }
+
+    Test::case "isolate outside any namespace is a no-op for scoping" {
+        isolate { let iso_top_x 7 }
+        Test::eq $iso_top_x 7
+    }
+
+    Test::case "nested isolate behaves the same as a single isolate" {
+        namespace iso_ns5 {
+            isolate {
+                isolate { let inner_x 1 }
+                let middle_x 2
+            }
+        }
+        Test::eq [Ns::has? $iso_ns5 inner_x] 0
+        Test::eq [Ns::has? $iso_ns5 middle_x] 0
+    }
+
+    Test::case "def_depth is restored after isolate error" {
+        catch {
+            namespace iso_ns6 {
+                isolate { error "boom" }
+                let after_err 42
+            }
+        }
+        ;; After the error, the namespace's def-target was properly popped,
+        ;; so a brand-new namespace builder still works normally.
+        namespace iso_ns7 { let post 1 }
+        Test::eq $iso_ns7::post 1
+    }
+
+    Test::case "return inside isolate returns from enclosing proc" {
+        proc iso_returns {} {
+            isolate { return 99 }
+            ;; unreachable
+            return 0
+        }
+        Test::eq [iso_returns] 99
+    }
+
+    Test::case "isolate: too few args is an error" {
+        Test::raises { isolate }
+    }
+
+    Test::case "isolate: too many args is an error" {
+        Test::raises { isolate {x} {y} }
+    }
+
+    ;; --- namespace inside isolate (regression: feature 4 in LCL_FEATURE_REQUESTS) ---
+    ;; Setting def_depth=0 used to make a nested namespace's def_target_push
+    ;; overwrite the enclosing namespace's def_stack slot, leaving the outer
+    ;; with NULL exports and either "failed to create namespace" or a segfault.
+
+    Test::case "unqualified namespace inside isolate inside outer namespace" {
+        namespace iso_ns_inner1 {
+            isolate {
+                namespace just_sub_a { let inner_x 1 }
+            }
+            let outer_one 1
+        }
+        ;; The inner namespace was isolated, so it must not leak into
+        ;; the outer namespace's exports. The outer's normal exports survive.
+        Test::eq [Ns::has? $iso_ns_inner1 just_sub_a] 0
+        Test::eq $iso_ns_inner1::outer_one 1
+    }
+
+    Test::case "qualified namespace inside top-level isolate" {
+        isolate {
+            namespace iso_top_root::iso_top_leaf { let qx 9 }
+        }
+        ;; Qualified path resolves via current frame, so the namespace
+        ;; survives outside isolate (root binding made via lcl_env_let).
+        Test::eq $iso_top_root::iso_top_leaf::qx 9
+    }
+
+    Test::case "re-entering an existing namespace inside isolate (regression: line 2668 NULL deref)" {
+        namespace iso_reenter_root::iso_reenter_leaf { let first 1 }
+        isolate {
+            namespace iso_reenter_root::iso_reenter_leaf { let second 2 }
+        }
+        ;; Re-entry must extend the existing namespace in place, not crash.
+        Test::eq $iso_reenter_root::iso_reenter_leaf::first 1
+        Test::eq $iso_reenter_root::iso_reenter_leaf::second 2
+    }
+
+    Test::case "qualified namespace inside isolate inside outer namespace" {
+        ;; The bug: isolate's `def_depth = 0` reset caused the inner
+        ;; namespace's def_stack push to overwrite the outer's slot,
+        ;; either erroring with "failed to create namespace" or, when
+        ;; the qualified path hit the re-entry branch, segfaulting at
+        ;; line 2668. The fix uses a def_floor so the inner push goes
+        ;; to a fresh slot above the outer's. With the qualified-root
+        ;; anchor fix, the inner qualified namespace also survives
+        ;; (its root is anchored at the global frame).
+        namespace iso_outer_q {
+            isolate {
+                namespace iso_qroot::iso_qleaf { let qy 7 }
+            }
+            let public_two 2
+        }
+        Test::eq $iso_outer_q::public_two 2
+        Test::eq $iso_qroot::iso_qleaf::qy 7
+    }
+}
+
+;; ============================================================================
+;; Proc-call boundary blocks def-target leakage
+;; ============================================================================
+;; Helper procs called from inside a namespace block used to leak their
+;; var/proc declarations into the enclosing namespace because the def-target
+;; stack was dynamically scoped through proc calls.
+Test::suite "Proc-call boundary stops def-target leakage" {
+    Test::case "var inside helper proc does not leak to caller's namespace" {
+        proc pclb_helper1 {} {
+            var pclb_private "set by helper"
+        }
+        namespace pclb_ns1 {
+            pclb_helper1
+            let pclb_public 1
+        }
+        Test::eq [Ns::has? $pclb_ns1 pclb_private] 0
+        Test::eq $pclb_ns1::pclb_public 1
+    }
+
+    Test::case "proc inside helper proc does not leak to caller's namespace" {
+        proc pclb_helper2 {} {
+            proc pclb_inner {} { 42 }
+        }
+        namespace pclb_ns2 {
+            pclb_helper2
+        }
+        Test::eq [Ns::has? $pclb_ns2 pclb_inner] 0
+    }
+
+    Test::case "let inside eval body of helper does not leak (call-boundary applies through eval)" {
+        proc pclb_helper3 {body} {
+            eval $body
+        }
+        namespace pclb_ns3 {
+            pclb_helper3 { let pclb_from_body "x" }
+        }
+        ;; eval runs in the helper's frame, which is below the floor,
+        ;; so let in body stays local to the helper.
+        Test::eq [Ns::has? $pclb_ns3 pclb_from_body] 0
+    }
+
+    Test::case "explicit namespace re-entry from inside helper still extends the namespace" {
+        ;; Proc-call boundary only blocks IMPLICIT def-target inheritance.
+        ;; Code that explicitly re-enters via `namespace foo { ... }`
+        ;; pushes its own target above the floor, so let/var/proc inside
+        ;; that re-entry still write to foo as expected.
+        namespace pclb_ns4 { let initial 1 }
+        proc pclb_extender {} {
+            namespace pclb_ns4 { let added_by_proc 2 }
+        }
+        pclb_extender
+        Test::eq $pclb_ns4::initial 1
+        Test::eq $pclb_ns4::added_by_proc 2
+    }
+
+    Test::case "nested helper calls do not leak through multiple proc boundaries" {
+        proc pclb_inner_helper {} {
+            var deeply_nested "x"
+        }
+        proc pclb_outer_helper {} {
+            var also_nested "y"
+            pclb_inner_helper
+        }
+        namespace pclb_ns5 {
+            pclb_outer_helper
+        }
+        Test::eq [Ns::has? $pclb_ns5 deeply_nested] 0
+        Test::eq [Ns::has? $pclb_ns5 also_nested] 0
+    }
+
+    Test::case "helper proc with private var and helper procs (Dagwood task_impl pattern)" {
+        ;; Dagwood's task_impl pattern from the bug report — no isolate
+        ;; needed once the proc-call boundary blocks the leak.
+        proc pclb_task_impl {task_name body} {
+            var _task #{}
+            proc pclb_always_run {v} { puts "always_run $v" }
+            eval $body
+        }
+        namespace pclb_proj {
+            pclb_task_impl "task1" { }
+            let pclb_proj_var 1
+        }
+        ;; The helper's private state stays out of pclb_proj.
+        Test::eq [Ns::has? $pclb_proj _task] 0
+        Test::eq [Ns::has? $pclb_proj pclb_always_run] 0
+        ;; The project's own bindings still land in pclb_proj.
+        Test::eq $pclb_proj::pclb_proj_var 1
+    }
+}
+
+;; ============================================================================
+;; Import
+;; ============================================================================
+
+Test::suite "Import" {
+    Test::case "import all bindings from namespace" {
+        namespace imp_math_all {
+            let imp_ten 10
+            proc imp_square {x} { * $x $x }
+        }
+        import imp_math_all
+        Test::eq $imp_ten 10
+        Test::eq [imp_square 5] 25
+    }
+
+    Test::case "import specific bindings" {
+        namespace imp_utils_spec {
+            let imp_aa 1
+            let imp_bb 2
+            let imp_cc 3
+        }
+        import imp_utils_spec imp_aa imp_cc
+        Test::eq $imp_aa 1
+        Test::eq $imp_cc 3
+        ;; imp_bb should not be imported - accessing it should error
+        Test::raises { $imp_bb }
+    }
+
+    Test::case "import from nested namespace" {
+        namespace imp_outer_nest {
+            namespace imp_inner_nest {
+                let imp_deep 42
+            }
+        }
+        import imp_outer_nest::imp_inner_nest imp_deep
+        Test::eq $imp_deep 42
+    }
+
+    Test::case "imported cells share mutation" {
+        namespace imp_counter_share {
+            var imp_cnt 0
+            proc imp_incr {} { set! imp_cnt [+ $imp_cnt 1] }
+            proc imp_getval {} { return $imp_cnt }
+        }
+        import imp_counter_share imp_cnt imp_incr imp_getval
+        Test::eq [imp_getval] 0
+        imp_incr
+        Test::eq [imp_getval] 1
+        set! imp_cnt 100
+        Test::eq [imp_getval] 100
+        Test::eq $imp_counter_share::imp_cnt 100
+    }
+
+    Test::case "import inside namespace builder" {
+        namespace imp_helpers_ns {
+            proc imp_helper {} { return 42 }
+        }
+        namespace imp_app_ns {
+            import imp_helpers_ns imp_helper
+            proc imp_run {} { imp_helper }
+        }
+        Test::eq [imp_app_ns::imp_run] 42
+    }
+
+    Test::case "import name conflict errors" {
+        namespace imp_conflict_ns {
+            let imp_myval 99
+        }
+        ;; Import twice - second import should conflict with first
+        ;; Using catch directly since Test::raises creates a new frame
+        import imp_conflict_ns imp_myval
+        let caught [catch { import imp_conflict_ns imp_myval }]
+        Test::eq $caught 1
+    }
+
+    Test::case "import name not found errors" {
+        namespace imp_empty_ns {
+            let imp_exists 1
+        }
+        Test::raises { import imp_empty_ns imp_missing }
+    }
+
+    Test::case "import with variable reference" {
+        namespace imp_ref_ns {
+            let imp_refval 123
+        }
+        let imp_ns $imp_ref_ns
+        import $imp_ns imp_refval
+        Test::eq $imp_refval 123
+    }
+}
+
+;; ============================================================================
+;; Load
+;; ============================================================================
+
+Test::suite "Load" {
+    Test::case "load file and call procs" {
+        load test/conformance_lib.lcl
+        Test::eq [lib_add 10 20] 30
+        Test::eq $LIB_CONST 42
+    }
+
+    Test::case "load into namespace" {
+        namespace imported {
+            load test/conformance_lib.lcl
+        }
+        Test::eq [imported::lib_add 5 5] 10
+        Test::eq $imported::LIB_CONST 42
+    }
+}
+
+;; ============================================================================
+;; List Operations
+;; ============================================================================
