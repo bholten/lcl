@@ -158,8 +158,12 @@ Test::suite "Rest Parameters" {
 Test::suite "Apply and Arity" {
     Test::case "apply with c proc" {
         ;; varargs: apply fn arg1 arg2 ...
-        Test::eq [apply ${+} 1 2 3] 6
-        Test::eq [apply ${*} 2 3 4] 24
+        ;; operator names fall outside the substitution grammar
+        ;; (`${+}` is a compile error); the spelling for callables
+        ;; with non-identifier names is the STRING -> command-lookup
+        ;; rule: a braced/quoted name resolves at apply time.
+        Test::eq [apply {+} 1 2 3] 6
+        Test::eq [apply {*} 2 3 4] 24
     }
 
     Test::case "apply with user proc" {
@@ -256,8 +260,9 @@ Test::suite "Apply and Arity" {
     }
 
     Test::case "arity of c proc" {
-        ;; C procs report (0 -1) since their arity isn't tracked
-        Test::eq [arity ${+}] (0 -1)
+        ;; C procs report (0 -1) since their arity isn't tracked.
+        ;; name string resolves via command lookup, like apply.
+        Test::eq [arity {+}] (0 -1)
     }
 }
 

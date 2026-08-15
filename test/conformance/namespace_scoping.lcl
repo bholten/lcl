@@ -7,22 +7,22 @@ Test::suite "Qualified self-reference" {
     Test::case "self-reference reads let binding while still building" {
         namespace qsr_simple {
             let X "value"
-            Test::eq $qsr_simple::X "value"
+            Test::eq ${qsr_simple::X} "value"
         }
     }
 
     Test::case "self-reference reads var (cell) and dereferences it" {
         namespace qsr_cell {
             var counter 0
-            set! counter [+ $qsr_cell::counter 1]
-            Test::eq $qsr_cell::counter 1
+            set! counter [+ ${qsr_cell::counter} 1]
+            Test::eq ${qsr_cell::counter} 1
         }
     }
 
     Test::case "self-reference works from inside a proc defined in the namespace" {
         namespace qsr_proc {
             let Y "via proc"
-            proc qsr_reader {} { $qsr_proc::Y }
+            proc qsr_reader {} { ${qsr_proc::Y} }
             Test::eq [qsr_reader] "via proc"
         }
     }
@@ -30,21 +30,21 @@ Test::suite "Qualified self-reference" {
     Test::case "self-reference works through nested namespace" {
         namespace qsr_outer {
             namespace qsr_inner { let X 99 }
-            Test::eq $qsr_outer::qsr_inner::X 99
+            Test::eq ${qsr_outer::qsr_inner::X} 99
         }
     }
 
     Test::case "self-reference works with qualified namespace name" {
         namespace qsr_alpha::qsr_beta {
             let Z 42
-            Test::eq $qsr_alpha::qsr_beta::Z 42
+            Test::eq ${qsr_alpha::qsr_beta::Z} 42
         }
     }
 
     Test::case "self-reference fails for non-existent binding" {
         namespace qsr_missing {
             let present 1
-            Test::raises { puts $qsr_missing::absent }
+            Test::raises { puts ${qsr_missing::absent} }
         }
     }
 
@@ -64,17 +64,17 @@ Test::suite "Qualified self-reference" {
         namespace qsr_sibling::second {
             ;; first is already a real namespace value; resolution
             ;; should go through normal env_get_simple, not def_target.
-            Test::eq $qsr_sibling::first::A 1
+            Test::eq ${qsr_sibling::first::A} 1
             let B 2
             ;; self-reference for the in-progress namespace still works
-            Test::eq $qsr_sibling::second::B 2
+            Test::eq ${qsr_sibling::second::B} 2
         }
     }
 
     ;; --- Self-reference through proc-call boundary ---
     ;; Regression: user-proc calls raise def_floor (to block helper
     ;; bindings from leaking into the caller's namespace) but must
-    ;; NOT raise def_lookup_floor. So $foo::X from inside a helper
+    ;; NOT raise def_lookup_floor. So ${foo::X} from inside a helper
     ;; proc called from foo's body still resolves via the def_target
     ;; overlay fallback.
 
@@ -82,7 +82,7 @@ Test::suite "Qualified self-reference" {
         proc qsr_reader1 {body} { eval $body }
         namespace qsr_through_proc1 {
             let X "via-proc"
-            qsr_reader1 { Test::eq $qsr_through_proc1::X "via-proc" }
+            qsr_reader1 { Test::eq ${qsr_through_proc1::X} "via-proc" }
         }
     }
 
@@ -92,7 +92,7 @@ Test::suite "Qualified self-reference" {
         proc qsr_layer1 {body} { qsr_layer2 $body }
         namespace qsr_through_proc2 {
             let X 42
-            qsr_layer1 { Test::eq $qsr_through_proc2::X 42 }
+            qsr_layer1 { Test::eq ${qsr_through_proc2::X} 42 }
         }
     }
 
@@ -100,7 +100,7 @@ Test::suite "Qualified self-reference" {
         proc qsr_reader2 {body} { eval $body }
         namespace qsr_through_proc3 {
             var counter 7
-            qsr_reader2 { Test::eq $qsr_through_proc3::counter 7 }
+            qsr_reader2 { Test::eq ${qsr_through_proc3::counter} 7 }
         }
     }
 
@@ -108,7 +108,7 @@ Test::suite "Qualified self-reference" {
         proc qsr_reader3 {body} { eval $body }
         namespace qsr_q1::qsr_q2 {
             let Z "qual-via-proc"
-            qsr_reader3 { Test::eq $qsr_q1::qsr_q2::Z "qual-via-proc" }
+            qsr_reader3 { Test::eq ${qsr_q1::qsr_q2::Z} "qual-via-proc" }
         }
     }
 
@@ -120,7 +120,7 @@ Test::suite "Qualified self-reference" {
         namespace qsr_through_isolate {
             let X "should-be-hidden"
             isolate {
-                Test::raises { qsr_reader4 { puts $qsr_through_isolate::X } }
+                Test::raises { qsr_reader4 { puts ${qsr_through_isolate::X} } }
             }
         }
     }
@@ -206,7 +206,7 @@ Test::suite "Helper-proc binding leak (all forms)" {
         Test::eq [Ns::has? $hlp_proj TASK_PRIVATE] 0
         Test::eq [Ns::has? $hlp_proj hlp_attr_setter] 0
         Test::eq [Ns::has? $hlp_proj hlp_attr_macro] 0
-        Test::eq $hlp_proj::proj_var 1
+        Test::eq ${hlp_proj::proj_var} 1
     }
 }
 
@@ -221,8 +221,8 @@ Test::suite "Namespace re-entry" {
             namespace re_ns1 { let FROM_PROC "value" }
         }
         add_let
-        Test::eq $re_ns1::FROM_PROC "value"
-        Test::eq $re_ns1::existing "ok"
+        Test::eq ${re_ns1::FROM_PROC} "value"
+        Test::eq ${re_ns1::existing} "ok"
     }
 
     Test::case "var inside namespace re-entry from proc body persists" {
@@ -231,9 +231,9 @@ Test::suite "Namespace re-entry" {
             namespace re_ns2 { var COUNT 0 }
         }
         add_var
-        Test::eq $re_ns2::COUNT 0
+        Test::eq ${re_ns2::COUNT} 0
         set! re_ns2::COUNT 5
-        Test::eq $re_ns2::COUNT 5
+        Test::eq ${re_ns2::COUNT} 5
     }
 
     Test::case "proc inside namespace re-entry from proc body persists" {
@@ -251,14 +251,14 @@ Test::suite "Namespace re-entry" {
             namespace re_ns4 { var $n $v }
         }
         bind_dynamic "DYNAMIC_NAME" "dynamic_value"
-        Test::eq $re_ns4::DYNAMIC_NAME "dynamic_value"
+        Test::eq ${re_ns4::DYNAMIC_NAME} "dynamic_value"
     }
 
     Test::case "qualified-path re-entry preserves prior bindings" {
         namespace re_qual::sub { let X 1 }
         namespace re_qual::sub { let Y 2 }
-        Test::eq $re_qual::sub::X 1
-        Test::eq $re_qual::sub::Y 2
+        Test::eq ${re_qual::sub::X} 1
+        Test::eq ${re_qual::sub::Y} 2
     }
 
     Test::case "namespace value identity preserved across re-entry" {
@@ -279,7 +279,7 @@ Test::suite "Namespace re-entry" {
         bump
         bump
         bump
-        Test::eq $re_ns6::counter 3
+        Test::eq ${re_ns6::counter} 3
     }
 }
 
@@ -291,14 +291,14 @@ Test::suite "Ns::set" {
     Test::case "binds a new name into namespace" {
         namespace nsset_ns1 {}
         Ns::set $nsset_ns1 X 42
-        Test::eq $nsset_ns1::X 42
+        Test::eq ${nsset_ns1::X} 42
         Test::eq [Ns::has? $nsset_ns1 X] 1
     }
 
     Test::case "overwrites existing binding" {
         namespace nsset_ns2 { let X 1 }
         Ns::set $nsset_ns2 X 99
-        Test::eq $nsset_ns2::X 99
+        Test::eq ${nsset_ns2::X} 99
     }
 
     Test::case "supports the Dagwood-style def pattern" {
@@ -309,8 +309,8 @@ Test::suite "Ns::set" {
         }
         nsset_def nsset_proj alpha 10
         nsset_def nsset_proj beta  "hello"
-        Test::eq $nsset_proj::alpha 10
-        Test::eq $nsset_proj::beta "hello"
+        Test::eq ${nsset_proj::alpha} 10
+        Test::eq ${nsset_proj::beta} "hello"
     }
 
     Test::case "errors when first arg is not a namespace" {
@@ -327,8 +327,8 @@ Test::suite "Ns::set" {
         namespace nsset_ns4 {}
         Ns::set $nsset_ns4 a_list [list 1 2 3]
         Ns::set $nsset_ns4 a_dict [dict k v]
-        Test::eq [len $nsset_ns4::a_list] 3
-        Test::eq [get $nsset_ns4::a_dict k] v
+        Test::eq [len ${nsset_ns4::a_list}] 3
+        Test::eq [get ${nsset_ns4::a_dict} k] v
     }
 }
 
@@ -337,8 +337,8 @@ Test::suite "Ns::del and Ns::clear" {
         namespace nsdel_ns1 { let X 1; let Y 2 }
         Test::eq [Ns::del $nsdel_ns1 X] 1
         Test::eq [Ns::has? $nsdel_ns1 X] 0
-        Test::eq $nsdel_ns1::Y 2
-        Test::raises { puts $nsdel_ns1::X }
+        Test::eq ${nsdel_ns1::Y} 2
+        Test::raises { puts ${nsdel_ns1::X} }
     }
 
     Test::case "del of absent binding reports 0" {
@@ -362,10 +362,10 @@ Test::suite "Ns::del and Ns::clear" {
         let nsclr_alias $nsclr_ns2
         Ns::clear $nsclr_ns2
         namespace nsclr_ns2 { let fresh 9 }
-        Test::eq $nsclr_ns2::fresh 9
+        Test::eq ${nsclr_ns2::fresh} 9
         ;; alias references the same value, so it sees clear + repopulate
         Test::eq [Ns::has? $nsclr_alias old] 0
-        Test::eq $nsclr_alias::fresh 9
+        Test::eq ${nsclr_alias::fresh} 9
     }
 
     Test::case "imported cells survive clear" {

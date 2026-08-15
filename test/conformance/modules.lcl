@@ -16,7 +16,7 @@ var require_lex_counter 0
 Test::suite "Require" {
     Test::case "namespace is lifted into caller" {
         require test/require_fixtures/clean_lib.lcl
-        Test::eq $cleanlib::version "1.0"
+        Test::eq ${cleanlib::version} "1.0"
         Test::eq [cleanlib::greet "world"] "hi world"
         Test::eq [cleanlib::add 2 3] 5
     }
@@ -36,8 +36,8 @@ Test::suite "Require" {
 
     Test::case "nested-path namespaces lift" {
         require test/require_fixtures/nested_ns_lib.lcl
-        Test::eq $nestedlib::top_v 1
-        Test::eq $nestedlib::sub::deep_v 42
+        Test::eq ${nestedlib::top_v} 1
+        Test::eq ${nestedlib::sub::deep_v} 42
     }
 
     Test::case "procs in namespace see file-level constants via closure" {
@@ -87,7 +87,7 @@ Test::suite "Require" {
         ;; The namespace defined before the error must NOT be cached
         ;; or lifted; the require returned an error, so partial state
         ;; should be discarded.
-        Test::raises { $good_before_err::v }
+        Test::raises { ${good_before_err::v} }
     }
 
     Test::case "require inside namespace lifts into that namespace" {
@@ -114,9 +114,9 @@ Test::suite "Require" {
         ;; each "./" resolves against its own file's directory, and the
         ;; lifted namespaces cascade up to us.
         require test/require_fixtures/rel/rel_a.lcl
-        Test::eq $rel_a::tag "a"
-        Test::eq $rel_b::tag "b"
-        Test::eq $rel_c::val 7
+        Test::eq ${rel_a::tag} "a"
+        Test::eq ${rel_b::tag} "b"
+        Test::eq ${rel_c::val} 7
         ;; The chained module was also usable inside rel_b itself.
         Test::eq [rel_b::c_val] 7
     }
@@ -152,7 +152,7 @@ Test::suite "Isolate" {
         ;; The isolated let should be discarded.
         Test::eq [Ns::has? $iso_ns1 local_leak] 0
         ;; But subsequent bare lets in the namespace still land in it.
-        Test::eq $iso_ns1::public_one 1
+        Test::eq ${iso_ns1::public_one} 1
     }
 
     Test::case "var inside isolate does not leak to enclosing namespace" {
@@ -218,7 +218,7 @@ Test::suite "Isolate" {
         ;; After the error, the namespace's def-target was properly popped,
         ;; so a brand-new namespace builder still works normally.
         namespace iso_ns7 { let post 1 }
-        Test::eq $iso_ns7::post 1
+        Test::eq ${iso_ns7::post} 1
     }
 
     Test::case "return inside isolate returns from enclosing proc" {
@@ -253,7 +253,7 @@ Test::suite "Isolate" {
         ;; The inner namespace was isolated, so it must not leak into
         ;; the outer namespace's exports. The outer's normal exports survive.
         Test::eq [Ns::has? $iso_ns_inner1 just_sub_a] 0
-        Test::eq $iso_ns_inner1::outer_one 1
+        Test::eq ${iso_ns_inner1::outer_one} 1
     }
 
     Test::case "qualified namespace inside top-level isolate" {
@@ -262,7 +262,7 @@ Test::suite "Isolate" {
         }
         ;; Qualified path resolves via current frame, so the namespace
         ;; survives outside isolate (root binding made via lcl_env_let).
-        Test::eq $iso_top_root::iso_top_leaf::qx 9
+        Test::eq ${iso_top_root::iso_top_leaf::qx} 9
     }
 
     Test::case "re-entering an existing namespace inside isolate (regression: line 2668 NULL deref)" {
@@ -271,8 +271,8 @@ Test::suite "Isolate" {
             namespace iso_reenter_root::iso_reenter_leaf { let second 2 }
         }
         ;; Re-entry must extend the existing namespace in place, not crash.
-        Test::eq $iso_reenter_root::iso_reenter_leaf::first 1
-        Test::eq $iso_reenter_root::iso_reenter_leaf::second 2
+        Test::eq ${iso_reenter_root::iso_reenter_leaf::first} 1
+        Test::eq ${iso_reenter_root::iso_reenter_leaf::second} 2
     }
 
     Test::case "qualified namespace inside isolate inside outer namespace" {
@@ -290,8 +290,8 @@ Test::suite "Isolate" {
             }
             let public_two 2
         }
-        Test::eq $iso_outer_q::public_two 2
-        Test::eq $iso_qroot::iso_qleaf::qy 7
+        Test::eq ${iso_outer_q::public_two} 2
+        Test::eq ${iso_qroot::iso_qleaf::qy} 7
     }
 }
 
@@ -311,7 +311,7 @@ Test::suite "Proc-call boundary stops def-target leakage" {
             let pclb_public 1
         }
         Test::eq [Ns::has? $pclb_ns1 pclb_private] 0
-        Test::eq $pclb_ns1::pclb_public 1
+        Test::eq ${pclb_ns1::pclb_public} 1
     }
 
     Test::case "proc inside helper proc does not leak to caller's namespace" {
@@ -346,8 +346,8 @@ Test::suite "Proc-call boundary stops def-target leakage" {
             namespace pclb_ns4 { let added_by_proc 2 }
         }
         pclb_extender
-        Test::eq $pclb_ns4::initial 1
-        Test::eq $pclb_ns4::added_by_proc 2
+        Test::eq ${pclb_ns4::initial} 1
+        Test::eq ${pclb_ns4::added_by_proc} 2
     }
 
     Test::case "nested helper calls do not leak through multiple proc boundaries" {
@@ -381,7 +381,7 @@ Test::suite "Proc-call boundary stops def-target leakage" {
         Test::eq [Ns::has? $pclb_proj _task] 0
         Test::eq [Ns::has? $pclb_proj pclb_always_run] 0
         ;; The project's own bindings still land in pclb_proj.
-        Test::eq $pclb_proj::pclb_proj_var 1
+        Test::eq ${pclb_proj::pclb_proj_var} 1
     }
 }
 
@@ -435,7 +435,7 @@ Test::suite "Import" {
         Test::eq [imp_getval] 1
         set! imp_cnt 100
         Test::eq [imp_getval] 100
-        Test::eq $imp_counter_share::imp_cnt 100
+        Test::eq ${imp_counter_share::imp_cnt} 100
     }
 
     Test::case "import inside namespace builder" {
@@ -493,7 +493,7 @@ Test::suite "Load" {
             load test/conformance_lib.lcl
         }
         Test::eq [imported::lib_add 5 5] 10
-        Test::eq $imported::LIB_CONST 42
+        Test::eq ${imported::LIB_CONST} 42
     }
 }
 

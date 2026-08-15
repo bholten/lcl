@@ -1697,7 +1697,17 @@ static int test_issue67_compile_ex_msg_and_line(void) {
       {"let d #{a\n",                                  "unmatched '{'",                  1},
       {"puts ${\n",                                    "unmatched '${'",                 1},
       {"puts ${}\n",                                   "empty variable name in '${}'",   1},
-      {"let x $foo::\n",                               "expected identifier after '::'", 1},
+      {"let x $foo::bar\n",
+       "qualified substitutions require braces: ${name::path}",             1},
+      {"let x $foo::1bad\n",
+       "qualified substitutions require braces: ${name::path}",             1},
+      {"let x ${foo::}\n",     "empty segment in qualified variable name",  1},
+      {"let x ${::foo}\n",     "empty segment in qualified variable name",  1},
+      {"let x ${a::::b}\n",    "empty segment in qualified variable name",  1},
+      {"let x ${foo::1bad}\n", "name segment must start with a letter or '_'",
+       1},
+      {"let x ${foo bar}\n",   "invalid character in variable name",        1},
+      {"let x ${fo\no}\n",     "invalid character in variable name",        1},
   };
   size_t i;
 
@@ -1851,8 +1861,8 @@ static int test_require_relative_to_file_chdir_independent(void) {
     out = NULL;
   }
 
-  ok_a = (rc == LCL_RC_OK) && req_eval_expect(in, "$core::v", "42") &&
-         req_eval_expect(in, "$util::greeting", "hi");
+  ok_a = (rc == LCL_RC_OK) && req_eval_expect(in, "${core::v}", "42") &&
+         req_eval_expect(in, "${util::greeting}", "hi");
 
   /* Same file from a different CWD in a fresh interp: behavior must
    * be identical. */
@@ -1866,7 +1876,7 @@ static int test_require_relative_to_file_chdir_independent(void) {
     out = NULL;
   }
 
-  ok_b = (rc2 == LCL_RC_OK) && req_eval_expect(in2, "$core::v", "42");
+  ok_b = (rc2 == LCL_RC_OK) && req_eval_expect(in2, "${core::v}", "42");
 
   ASSERT_TRUE(chdir(saved_cwd) == 0);
   lcl_interp_free(in);
@@ -1926,10 +1936,10 @@ static int test_require_search_roots_order(void) {
   lcl_add_require_root(in, root_b);
 
   /* Both roots have mod.lcl: registration order wins (rootA). */
-  ok_order = req_eval_expect(in, "require mod.lcl\n$whichmod::src", "A");
+  ok_order = req_eval_expect(in, "require mod.lcl\n${whichmod::src}", "A");
   /* Only rootB has only_b.lcl: search falls through in order. */
   ok_fallthrough =
-      req_eval_expect(in, "require only_b.lcl\n$onlyb::src", "B-only");
+      req_eval_expect(in, "require only_b.lcl\n${onlyb::src}", "B-only");
 
   /* No roots registered + CWD without the file: clean error naming
    * the argument. */
@@ -1952,7 +1962,7 @@ static int test_require_search_roots_order(void) {
   cwd_fallback = lcl_interp_new();
   lcl_register_core(cwd_fallback);
   ok_cwd =
-      req_eval_expect(cwd_fallback, "require mod.lcl\n$whichmod::src", "B");
+      req_eval_expect(cwd_fallback, "require mod.lcl\n${whichmod::src}", "B");
 
   ASSERT_TRUE(chdir(saved_cwd) == 0);
   lcl_interp_free(in);
@@ -2205,13 +2215,13 @@ static int test_require_module_key_hook(void) {
   lcl_register_core(in);
   lcl_set_module_key_fn(in, modkey_constant, NULL);
 
-  snprintf(src, sizeof(src), "require %s/amod.lcl\n$amod::x", root);
+  snprintf(src, sizeof(src), "require %s/amod.lcl\n${amod::x}", root);
   ok_first = req_eval_expect(in, src, "1");
 
   snprintf(src, sizeof(src), "require %s/bmod.lcl", root);
   ok_dedup = req_eval_expect(in, src, "");
 
-  rc = lcl_eval_string_file(in, "$bmod::x", "req-test.lcl", &out);
+  rc = lcl_eval_string_file(in, "${bmod::x}", "req-test.lcl", &out);
   ok_dedup = ok_dedup && (rc == LCL_RC_ERR);
 
   if (out) {
@@ -2225,7 +2235,7 @@ static int test_require_module_key_hook(void) {
   lcl_set_module_key_fn(in2, modkey_null, NULL);
 
   snprintf(src, sizeof(src),
-           "require %s/amod.lcl\nrequire %s/bmod.lcl\n[+ $amod::x $bmod::x]",
+           "require %s/amod.lcl\nrequire %s/bmod.lcl\n[+ ${amod::x} ${bmod::x}]",
            root, root);
   ok_fallback = req_eval_expect(in2, src, "3");
 

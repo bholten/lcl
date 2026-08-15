@@ -73,37 +73,45 @@ Test::suite "gensym prefix length and counter" {
     }
 }
 
-Test::suite "scanner rejects bad :: tails in variable refs" {
-    Test::case "trailing :: is a parse error" {
-        ;; Pre-fix: scanner accepted "$foo::", env_get_value split
-        ;; "foo::" into segment "foo" + empty rest, and silently
-        ;; returned $foo's value.
+Test::suite "unbraced substitution is a simple name" {
+    Test::case "trailing :: is literal text now" {
+        ;; the old grammar rejected "$foo::" only
+        ;; because it had claimed '::' for itself. An unbraced
+        ;; substitution is one simple name; the tail is literal.
         let foo 5
-        let r [catch { eval "puts \$foo::" }]
-        Test::eq $r 1
+        Test::eq "$foo::" {5::}
     }
 
-    Test::case "::digit (non-identifier-start) is a parse error" {
-        ;; Pre-fix: scanner happily consumed "::1bad" as part of the
-        ;; varname, deferring to a runtime "undefined variable".
+    Test::case {$name::name gets the migration diagnostic} {
         let foo 5
-        let r [catch { eval "puts \$foo::1bad" }]
+        let r [catch { eval "puts \$foo::bar" } res err]
         Test::eq $r 1
+        Test::assert [has? $err {qualified substitutions require braces}]
     }
 
-    Test::case "valid single :: still parses" {
+    Test::case "::digit gets the diagnostic too (broad predicate)" {
+        ;; Deliberately broad: under the old grammar $foo::1bad was a
+        ;; compile error; a narrow predicate would silently turn it
+        ;; into value-then-literal concatenation.
+        let foo 5
+        let r [catch { eval "puts \$foo::1bad" } res err]
+        Test::eq $r 1
+        Test::assert [has? $err {qualified substitutions require braces}]
+    }
+
+    Test::case "valid single :: still parses (braced)" {
         namespace ns48a { let x 7 }
-        Test::eq $ns48a::x 7
+        Test::eq ${ns48a::x} 7
     }
 
     Test::case "valid nested :: still parses" {
         namespace ns48b { namespace inner { let y 11 } }
-        Test::eq $ns48b::inner::y 11
+        Test::eq ${ns48b::inner::y} 11
     }
 
     Test::case "underscore-led segment after :: still parses" {
         namespace ns48c { let _x 13 }
-        Test::eq $ns48c::_x 13
+        Test::eq ${ns48c::_x} 13
     }
 }
 
@@ -210,10 +218,10 @@ Test::suite "compile errors carry a message" {
         Test::eq $err {unmatched ']'}
     }
 
-    Test::case "bad :: tail is reported with a message" {
-        let r [catch { eval "puts \$foo::" } res err]
+    Test::case "the diagnostic names the required spelling" {
+        let r [catch { eval "puts \$foo::bar" } res err]
         Test::eq $r 1
-        Test::eq $err {expected identifier after '::'}
+        Test::eq $err {qualified substitutions require braces: ${name::path}}
     }
 }
 
@@ -521,7 +529,7 @@ Test::suite "empty namespace path segments are rejected" {
 
     Test::case "valid multi-segment paths still work" {
         namespace i92_x::i92_y::i92_z { let v 3 }
-        Test::eq $i92_x::i92_y::i92_z::v 3
+        Test::eq ${i92_x::i92_y::i92_z::v} 3
     }
 }
 
@@ -574,5 +582,101 @@ Test::suite "proc capture of the enclosing namespace is rejected" {
         namespace i94_m {}
         namespace i94_m { proc twice {x} { + $x $x } }
         Test::eq [i94_m::twice 21] 42
+    }
+}
+
+;; ============================================================================
+;; Braced qualified substitution — Tcl break: ${foo::bar} replaces $foo::bar
+;; ============================================================================
+
+Test::suite "braced qualified substitution" {
+    Test::case {${qualname} resolves qualified names} {
+        namespace i97_a { let x 3; namespace inner { let y 4 } }
+        Test::eq ${i97_a::x} 3
+        Test::eq ${i97_a::inner::y} 4
+    }
+
+    Test::case {${name} single segment is identical to $name} {
+        let i97_v 42
+        Test::eq ${i97_v} $i97_v
+        Test::eq [type ${i97_v}] [type $i97_v]
+    }
+
+    Test::case {${...} contents are grammar-checked at compile time} {
+        let empty_seg [catch { eval "puts \${foo::}" } res err]
+        Test::eq $empty_seg 1
+        Test::assert [has? $err {empty segment}]
+
+        let lead_seg [catch { eval "puts \${::foo}" } res err]
+        Test::eq $lead_seg 1
+        Test::assert [has? $err {empty segment}]
+
+        let dbl_seg [catch { eval "puts \${a::::b}" } res err]
+        Test::eq $dbl_seg 1
+        Test::assert [has? $err {empty segment}]
+
+        let digit_seg [catch { eval "puts \${foo::1bad}" } res err]
+        Test::eq $digit_seg 1
+        Test::assert [has? $err {must start with a letter}]
+
+        let bad_char [catch { eval "puts \${foo bar}" } res err]
+        Test::eq $bad_char 1
+        Test::assert [has? $err {invalid character}]
+
+        let op_name [catch { eval "puts \${+}" } res err]
+        Test::eq $op_name 1
+        Test::assert [has? $err {invalid character}]
+    }
+
+    Test::case "freed spellings are literal text now" {
+        ;; These errored under the old grammar only because it had
+        ;; claimed '::' for the scanner.
+        let q 9
+        Test::eq "$q::" {9::}
+        let host h; let port 80
+        Test::eq "$host::$port" {h::80}
+        let foo 5
+        Test::eq "$foo:::bar" {5:::bar}
+        Test::eq "$foo:bar" {5:bar}
+    }
+
+    Test::case {${foo}::bar is explicit literal-tail concatenation} {
+        let foo 5
+        Test::eq ${foo}::bar {5::bar}
+        Test::eq [type ${foo}::bar] string
+    }
+
+    Test::case "dynamic qualification through a parameter still works" {
+        namespace i97_dyn { let child 7 }
+        proc i97_read {parent} { return ${parent::child} }
+        Test::eq [i97_read $i97_dyn] 7
+    }
+
+    Test::case "self-reference fallback works with the braced spelling" {
+        namespace i97_self {
+            let x 11
+            let got ${i97_self::x}
+        }
+        Test::eq ${i97_self::got} 11
+    }
+
+    Test::case "subst follows the same grammar" {
+        namespace i97_s { let v 5 }
+        Test::eq [subst {${i97_s::v}}] 5
+        let r [catch { subst {$i97_s::v} } res err]
+        Test::eq $r 1
+        Test::assert [has? $err {qualified substitutions require braces}]
+        let r2 [catch { subst {${i97_s::}} } res err]
+        Test::eq $r2 1
+        Test::assert [has? $err {empty segment}]
+    }
+
+    Test::case "quasiquote unquote follows the same grammar" {
+        namespace i97_q { let v 6 }
+        let ok [eval [quasiquote { + 1 ,${i97_q::v} }]]
+        Test::eq $ok 7
+        let r [catch { eval {quasiquote { + 1 ,$i97_q::v }} } res err]
+        Test::eq $r 1
+        Test::assert [has? $err {qualified substitutions require braces}]
     }
 }
