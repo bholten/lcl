@@ -636,8 +636,7 @@ static int scan_type_numeric_word(lcl_scan *sc, lcl_word *w) {
   size_t n;
   long start;
 
-  if (w->np != 1 || w->quoted || w->braced ||
-      w->wp[0].kind != LCL_WP_LIT) {
+  if (w->np != 1 || w->quoted || w->braced || w->wp[0].kind != LCL_WP_LIT) {
     return 1;
   }
 
