@@ -1464,6 +1464,36 @@ static int test_sub_literal_scan_unification(void) {
   return 1;
 }
 
+/* Delimiter spans compile with file-absolute line numbers
+ * (lcl_program_compile_span): both compile and runtime errors inside
+ * a multiline `[...]`/`(...)`/`#{...}` name the real line, not the
+ * line the span opened on. */
+static int test_span_line_attribution(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  /* Compile error on line 3 (bare `@` inside the bracket span). */
+  {
+    lcl_compile_err err;
+    lcl_program *prog =
+        lcl_program_compile_ex("let a 1\nlet x [+ 1\n@\n]\n", "t.lcl", &err);
+
+    ASSERT_TRUE(prog == NULL);
+    ASSERT_TRUE(err.line == 3);
+  }
+
+  /* Runtime error on line 3 (unknown command inside the span). */
+  rc = lcl_eval_string(lcl_test_interp,
+                       "let a 1\nlet y [\n  span_no_such_cmd\n]\n", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  ASSERT_TRUE(lcl_test_interp->err_line == 3);
+
+  lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
 /* `lcl_dict_clone_shallow` ignores `hash_table_put` return.  On OOM
  * the clone is silently truncated. We force the first put inside the
  * clone iteration to fail, trigger COW on a shared dict, and verify:
@@ -2351,6 +2381,7 @@ int run_test(void) {
   RUN(test_issue71_step_hook_budget);
   RUN(test_issue98_bare_spread_is_compile_error);
   RUN(test_sub_literal_scan_unification);
+  RUN(test_span_line_attribution);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);
