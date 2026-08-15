@@ -41,6 +41,30 @@ typedef struct lcl_frame lcl_frame;
  * ============================================================================
  */
 
+/*
+ * Two result enums, two questions.  Both spell success as 0, but they
+ * are distinct types and are never mixed:
+ *
+ *   lcl_result       "did this operation succeed?"
+ *                    Returned by value accessors and mutators
+ *                    (lcl_value_to_int, lcl_list_get, lcl_dict_put,
+ *                    lcl_ns_def, lcl_define, lcl_opaque_get, ...) and by
+ *                    registration calls.  Compare against LCL_OK.
+ *
+ *   lcl_return_code  "what should the evaluator do next?"
+ *                    Returned by everything that runs Lcl code
+ *                    (lcl_eval_string, lcl_eval_file, lcl_call_proc,
+ *                    lcl_eval_word) and by the C procedures you write
+ *                    (lcl_c_proc_fn / lcl_c_spec_fn).  Compare against
+ *                    LCL_RC_OK; return LCL_RC_OK / LCL_RC_ERR from procs.
+ *                    LCL_RC_RETURN/BREAK/CONTINUE are control flow, and
+ *                    only special forms that run bodies ever see them.
+ *
+ * Rule of thumb: if the function takes an `lcl_interp *` and may run
+ * user code, it speaks lcl_return_code; otherwise lcl_result.
+ * Predicates (lcl_is_callable, ...) return plain int 0/1.
+ */
+
 /* Result for simple operations */
 typedef enum { LCL_OK = 0, LCL_ERROR = 1 } lcl_result;
 
@@ -185,7 +209,8 @@ void lcl_set_step_hook(lcl_interp *interp, lcl_step_fn fn, void *userdata,
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
  * On error, use lcl_interp_error_file/line for location info.
  */
-int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out);
+lcl_return_code lcl_eval_string(lcl_interp *interp, const char *src,
+                                lcl_value **out);
 
 /*
  * Evaluate an LCL file.
@@ -197,7 +222,8 @@ int lcl_eval_string(lcl_interp *interp, const char *src, lcl_value **out);
  *
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
  */
-int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out);
+lcl_return_code lcl_eval_file(lcl_interp *interp, const char *path,
+                              lcl_value **out);
 
 /*
  * Evaluate LCL code from a byte buffer (not null-terminated).
@@ -213,8 +239,8 @@ int lcl_eval_file(lcl_interp *interp, const char *path, lcl_value **out);
  *
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
  */
-int lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
-                   lcl_value **out);
+lcl_return_code lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
+                               lcl_value **out);
 
 /* ============================================================================
  * Embedded Libraries
@@ -242,9 +268,10 @@ typedef struct {
  *   interp - the interpreter
  *   lib    - embedded library descriptor
  *
- * Returns 0 on success, -1 on error (prints error to stderr).
+ * Returns LCL_OK on success, LCL_ERROR on error (prints error to stderr).
  */
-int lcl_register_embedded_lib(lcl_interp *interp, const lcl_embedded_lib *lib);
+lcl_result lcl_register_embedded_lib(lcl_interp *interp,
+                                     const lcl_embedded_lib *lib);
 
 /* ============================================================================
  * Error Information
@@ -272,11 +299,18 @@ const char *lcl_interp_error_msg(lcl_interp *interp);
 /*
  * Set an error message for the current evaluation position.
  * Use this in C extensions to provide meaningful error messages.
- * The msg must be a static string (not freed).
+ *
+ * The message is COPIED: `msg` may live in a stack buffer, be freed,
+ * or be overwritten as soon as this call returns. (If the copy fails
+ * for lack of memory, the error is recorded as "out of memory".)
+ * There is deliberately no printf-style variant in the core API --
+ * format into your own buffer, then call this.
  *
  * Example:
- *   if (argc < 2) {
- *     lcl_set_error(interp, "expected at least 2 arguments");
+ *   char buf[128];
+ *   if (argc != 2) {
+ *     sprintf(buf, "%s: expected 2 arguments, got %d", "my-add", argc);
+ *     lcl_set_error(interp, buf);
  *     return LCL_RC_ERR;
  *   }
  */
@@ -294,6 +328,40 @@ void lcl_clear_error(lcl_interp *interp);
  * from an lcl_* function (via an out parameter), you own a reference and
  * must call lcl_ref_dec when done. Use lcl_ref_inc to create additional
  * references.
+ *
+ * Ownership at a glance
+ * ---------------------
+ * Three rules cover the whole API; the table lists the instances.
+ *
+ *   1. `lcl_*_new` and `**out` parameters hand you +1: you must
+ *      lcl_ref_dec it.
+ *   2. Functions that take an `lcl_value *` argument BORROW it and leave
+ *      your reference untouched -- containers take their own +1 -- unless
+ *      the name ends in `_take`, which CONSUMES your reference (even on
+ *      failure).
+ *   3. `const char *` results are borrowed from the value; never free
+ *      them, and don't use them after the value's last lcl_ref_dec.
+ *
+ *   Returns +1 to caller     lcl_string_new, lcl_int_new, lcl_float_new,
+ *                            lcl_list_new, lcl_dict_new, lcl_ns_new,
+ *                            lcl_c_proc_new, lcl_c_spec_new,
+ *                            lcl_opaque_new, lcl_ref_inc (same pointer)
+ *                            and every `**out`: lcl_eval_*, lcl_call_proc,
+ *                            lcl_eval_word, lcl_list_get, lcl_dict_get,
+ *                            lcl_dict_keys, lcl_cell_get, lcl_ns_get,
+ *                            lcl_get
+ *   Borrows the argument     lcl_list_push, lcl_dict_put, lcl_ns_def,
+ *                            lcl_define, lcl_call_proc (argv),
+ *                            lcl_value_to_*, lcl_opaque_get
+ *   Consumes the argument    lcl_define_take, lcl_ns_def_take, lcl_ref_dec
+ *   Borrowed string          lcl_value_to_string, lcl_value_get_string,
+ *                            lcl_value_to_cstring, lcl_opaque_type,
+ *                            lcl_interp_error_msg / _file
+ *   Copied on entry          lcl_string_new (str), lcl_set_error (msg),
+ *                            lcl_opaque_new (type_tag), dict keys, names
+ *
+ * The consuming variants exist for the register-and-forget idiom:
+ *   lcl_ns_def_take(ns, "push", lcl_c_proc_new("List::push", c_push));
  * ============================================================================
  */
 
@@ -361,11 +429,6 @@ lcl_value *lcl_float_new(double f);
  * Create a new empty list.
  */
 lcl_value *lcl_list_new(void);
-
-/*
- * Create a new namespace.
- */
-lcl_value *lcl_ns_new(const char *name);
 
 /* ============================================================================
  * Value Access
@@ -511,8 +574,35 @@ lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
  * ============================================================================
  */
 
+/*
+ * Create a new empty namespace whose qualified name is `qname`
+ * (e.g. "raylib"). Bind it with lcl_define() to make it reachable
+ * from scripts as `raylib::member`.
+ */
 lcl_value *lcl_ns_new(const char *qname);
+
+/*
+ * Bind `value` as member `name` of namespace `ns`, replacing any
+ * existing member. Does not take ownership of `value`; the namespace
+ * takes its own +1 reference. Returns LCL_ERROR if `ns` is not a
+ * namespace or on allocation failure.
+ */
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
+
+/*
+ * As lcl_ns_def, but CONSUMES the caller's reference to `value` -- on
+ * success and on failure alike. This is the one-liner for registering
+ * freshly created procs: lcl_ns_def_take(ns, "open",
+ * lcl_c_proc_new("io::open", c_open));
+ */
+lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value);
+
+/*
+ * Look up member `name` in namespace `ns`.  Returns LCL_OK and writes
+ * the value (+1 refcount) to *out, or LCL_ERROR if `ns` is not a
+ * namespace or the member is absent.  Cells are returned as cells
+ * (not dereferenced).
+ */
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
 
 /* ============================================================================
@@ -565,8 +655,8 @@ lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
  *
  * Return LCL_RC_OK on success, LCL_RC_ERR on error.
  */
-typedef int (*lcl_c_proc_fn)(lcl_interp *interp, int argc, lcl_value **argv,
-                             lcl_value **out);
+typedef lcl_return_code (*lcl_c_proc_fn)(lcl_interp *interp, int argc,
+                                         lcl_value **argv, lcl_value **out);
 
 /*
  * Create a C procedure value.
@@ -579,11 +669,20 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
  * This is the primary way to extend LCL with C functions.
  *
  * Example:
- *   int my_add(lcl_interp *interp, int argc, lcl_value **argv, lcl_value **out)
- * { long a, b; if (argc != 2) return LCL_RC_ERR; lcl_value_to_int(argv[0], &a);
- *       lcl_value_to_int(argv[1], &b);
- *       *out = lcl_int_new(a + b);
- *       return LCL_RC_OK;
+ *   lcl_return_code my_add(lcl_interp *interp, int argc, lcl_value **argv,
+ *                          lcl_value **out) {
+ *     long a, b;
+ *     if (argc != 2) {
+ *       lcl_set_error(interp, "my-add: expected 2 arguments");
+ *       return LCL_RC_ERR;
+ *     }
+ *     if (lcl_value_to_int(argv[0], &a) != LCL_OK ||
+ *         lcl_value_to_int(argv[1], &b) != LCL_OK) {
+ *       lcl_set_error(interp, "my-add: expected integers");
+ *       return LCL_RC_ERR;
+ *     }
+ *     *out = lcl_int_new(a + b);
+ *     return LCL_RC_OK;
  *   }
  *
  *   lcl_register_proc(interp, "my-add", my_add);
@@ -614,8 +713,9 @@ typedef struct lcl_word lcl_word;
  *
  * Special forms must evaluate their arguments manually using lcl_eval_word().
  */
-typedef int (*lcl_c_spec_fn)(lcl_interp *interp, int argc,
-                             const lcl_word **args, lcl_value **out);
+typedef lcl_return_code (*lcl_c_spec_fn)(lcl_interp *interp, int argc,
+                                         const lcl_word **args,
+                                         lcl_value **out);
 
 /*
  * Create a special form value.
@@ -700,14 +800,14 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
  *       free(ctx);
  *   }
  *
- *   int c_curl_new(..., lcl_value **out) {
+ *   lcl_return_code c_curl_new(..., lcl_value **out) {
  *       struct curl_context *ctx = calloc(1, sizeof(*ctx));
  *       ctx->curl = curl_easy_init();
  *       *out = lcl_opaque_new(ctx, "curl_context", curl_ctx_free);
  *       return LCL_RC_OK;
  *   }
  *
- *   int c_curl_set_url(...) {
+ *   lcl_return_code c_curl_set_url(...) {
  *       struct curl_context *ctx;
  *       if (lcl_opaque_get(argv[0], "curl_context", (void**)&ctx) != LCL_OK) {
  *           return LCL_RC_ERR;  // type mismatch

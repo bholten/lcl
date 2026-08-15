@@ -633,20 +633,32 @@ static int test_issue75_literal_grammar(void) {
     const char *s;
     lcl_num_class want;
   } cases[] = {
-      {"42", LCL_NUM_INT},     {"0", LCL_NUM_INT},
-      {"-3", LCL_NUM_INT},     {"3.14", LCL_NUM_FLOAT},
-      {"1.50", LCL_NUM_FLOAT}, {"0.1", LCL_NUM_FLOAT},
-      {"-0.0", LCL_NUM_FLOAT}, {"1e3", LCL_NUM_FLOAT},
-      {"1E+3", LCL_NUM_FLOAT}, {"0e0", LCL_NUM_FLOAT},
+      {"42",     LCL_NUM_INT  },
+      {"0",      LCL_NUM_INT  },
+      {"-3",     LCL_NUM_INT  },
+      {"3.14",   LCL_NUM_FLOAT},
+      {"1.50",   LCL_NUM_FLOAT},
+      {"0.1",    LCL_NUM_FLOAT},
+      {"-0.0",   LCL_NUM_FLOAT},
+      {"1e3",    LCL_NUM_FLOAT},
+      {"1E+3",   LCL_NUM_FLOAT},
+      {"0e0",    LCL_NUM_FLOAT},
       {"1.5e-3", LCL_NUM_FLOAT},
       /* outside the grammar — remain strings */
-      {"007", LCL_NUM_NONE},   {"042", LCL_NUM_NONE},
-      {"+5", LCL_NUM_NONE},    {"-0", LCL_NUM_NONE},
-      {".5", LCL_NUM_NONE},    {"5.", LCL_NUM_NONE},
-      {"1e", LCL_NUM_NONE},    {"1e+", LCL_NUM_NONE},
-      {"1.2.3", LCL_NUM_NONE}, {"0x10", LCL_NUM_NONE},
-      {"nan", LCL_NUM_NONE},   {"inf", LCL_NUM_NONE},
-      {"-", LCL_NUM_NONE},     {"", LCL_NUM_NONE},
+      {"007",    LCL_NUM_NONE },
+      {"042",    LCL_NUM_NONE },
+      {"+5",     LCL_NUM_NONE },
+      {"-0",     LCL_NUM_NONE },
+      {".5",     LCL_NUM_NONE },
+      {"5.",     LCL_NUM_NONE },
+      {"1e",     LCL_NUM_NONE },
+      {"1e+",    LCL_NUM_NONE },
+      {"1.2.3",  LCL_NUM_NONE },
+      {"0x10",   LCL_NUM_NONE },
+      {"nan",    LCL_NUM_NONE },
+      {"inf",    LCL_NUM_NONE },
+      {"-",      LCL_NUM_NONE },
+      {"",       LCL_NUM_NONE },
   };
   size_t i;
 
@@ -717,14 +729,22 @@ static int test_issue75_numeric_text(void) {
     const char *s;
     lcl_num_class want;
   } cases[] = {
-      {"42", LCL_NUM_INT},      {"007", LCL_NUM_INT},
-      {"+5", LCL_NUM_INT},      {"-0", LCL_NUM_INT},
-      {".5", LCL_NUM_FLOAT},    {"5.", LCL_NUM_FLOAT},
-      {"1e3", LCL_NUM_FLOAT},   {"1e999", LCL_NUM_FLOAT},
-      {" 42", LCL_NUM_NONE},    {"42 ", LCL_NUM_NONE},
-      {"0x10", LCL_NUM_NONE},   {"nan", LCL_NUM_NONE},
-      {"inf", LCL_NUM_NONE},    {"3.14abc", LCL_NUM_NONE},
-      {"", LCL_NUM_NONE},       {"-", LCL_NUM_NONE},
+      {"42",      LCL_NUM_INT  },
+      {"007",     LCL_NUM_INT  },
+      {"+5",      LCL_NUM_INT  },
+      {"-0",      LCL_NUM_INT  },
+      {".5",      LCL_NUM_FLOAT},
+      {"5.",      LCL_NUM_FLOAT},
+      {"1e3",     LCL_NUM_FLOAT},
+      {"1e999",   LCL_NUM_FLOAT},
+      {" 42",     LCL_NUM_NONE },
+      {"42 ",     LCL_NUM_NONE },
+      {"0x10",    LCL_NUM_NONE },
+      {"nan",     LCL_NUM_NONE },
+      {"inf",     LCL_NUM_NONE },
+      {"3.14abc", LCL_NUM_NONE },
+      {"",        LCL_NUM_NONE },
+      {"-",       LCL_NUM_NONE },
   };
   size_t i;
   long iv;
@@ -797,11 +817,11 @@ static int test_issue75_float_compact_formatting(void) {
     double in;
     const char *want;
   } cases[] = {
-      {0.1, "0.1"},
-      {1.5, "1.5"},
-      {100.0, "100"},
-      {1e20, "1e+20"},
-      {3.141592653589793, "3.141592653589793"},
+      {0.1,                 "0.1"                },
+      {1.5,                 "1.5"                },
+      {100.0,               "100"                },
+      {1e20,                "1e+20"              },
+      {3.141592653589793,   "3.141592653589793"  },
       /* 0.1 + 0.2 needs all 17 digits; compaction must not round away. */
       {0.30000000000000004, "0.30000000000000004"},
   };
@@ -1273,8 +1293,7 @@ static int test_issue71_step_hook_budget(void) {
 
   /* `catch` must not shield the script from the abort. */
   step_hook_fires = 0;
-  prog = lcl_program_compile("while {1} { catch { let __x71 1 } }",
-                             "test.lcl");
+  prog = lcl_program_compile("while {1} { catch { let __x71 1 } }", "test.lcl");
   ASSERT_TRUE(prog != NULL);
   rc = lcl_eval_program(lcl_test_interp, prog, &result);
   lcl_program_free(prog);
@@ -1384,11 +1403,11 @@ static int test_issue98_bare_spread_is_compile_error(void) {
     const char *src;
     long line;
   } bad[] = {
-      {"puts hi\n@\nputs bye\n", 2},   /* bare @ command head */
+      {"puts hi\n@\nputs bye\n",   2}, /* bare @ command head */
       {"puts hi\n@ x\nputs bye\n", 2}, /* bare @ with trailing words */
-      {"puts @ 1\n", 1},               /* bare @ in argument position */
-      {"puts [list @]\n", 1},          /* bare @ before ']' */
-      {"puts @", 1},                   /* bare @ at EOF */
+      {"puts @ 1\n",               1}, /* bare @ in argument position */
+      {"puts [list @]\n",          1}, /* bare @ before ']' */
+      {"puts @",                   1}, /* bare @ at EOF */
   };
   static const char *good[] = {
       "apply $f @$args\n", /* spread of a variable */
@@ -1455,8 +1474,8 @@ static int test_sub_literal_scan_unification(void) {
     ASSERT_TRUE(buf[end - 1] == ']');
     ASSERT_TRUE(end == 7); /* the ']' inside quotes is not a boundary */
 
-    ASSERT_TRUE(lcl_scan_skip_balanced_span("no close", 8, 0, '[', ']',
-                                            &end) != 0);
+    ASSERT_TRUE(lcl_scan_skip_balanced_span("no close", 8, 0, '[', ']', &end) !=
+                0);
     ASSERT_TRUE(lcl_scan_skip_braces_span("no close", 8, 0, &end) != 0);
   }
 
@@ -1491,6 +1510,60 @@ static int test_span_line_attribution(void) {
   ASSERT_TRUE(lcl_test_interp->err_line == 3);
 
   lcl_clear_error(lcl_test_interp);
+  return 1;
+}
+
+/* lcl_set_error must copy — the idiomatic extension shape is "format
+ * into a stack buffer, set error, return", so a borrowed pointer
+ * dangles by the time the host reads the message. */
+static int test_issue102_set_error_copies(void) {
+  extern lcl_interp *lcl_test_interp;
+  extern void lcl_set_error(lcl_interp * interp, const char *msg);
+  extern const char *lcl_interp_error_msg(lcl_interp * interp);
+  char buf[64];
+
+  strcpy(buf, "arg 2: expected int");
+  lcl_set_error(lcl_test_interp, buf);
+  memset(buf, 'X', sizeof(buf) - 1); /* clobber the caller's buffer */
+  buf[sizeof(buf) - 1] = '\0';
+
+  ASSERT_STREQ(lcl_interp_error_msg(lcl_test_interp), "arg 2: expected int");
+
+  lcl_clear_error(lcl_test_interp);
+  ASSERT_TRUE(lcl_interp_error_msg(lcl_test_interp) == NULL);
+  return 1;
+}
+
+/* lcl_ns_def borrows (namespace takes its own +1); lcl_ns_def_take
+ * consumes the caller's reference. */
+static int test_issue102_ns_def_ownership(void) {
+  lcl_value *ns = lcl_ns_new("t");
+  lcl_value *a = lcl_int_new(1);
+  lcl_value *b = lcl_int_new(2);
+  lcl_value *got = NULL;
+
+  ASSERT_TRUE(a->refc == 1);
+  ASSERT_TRUE(lcl_ns_def(ns, "a", a) == LCL_OK);
+  ASSERT_TRUE(a->refc == 2); /* ns holds one, caller still holds one */
+  lcl_ref_dec(a);            /* caller's */
+
+  ASSERT_TRUE(lcl_ns_def_take(ns, "b", b) == LCL_OK);
+  ASSERT_TRUE(b->refc == 1); /* only the ns holds it now */
+
+  ASSERT_TRUE(lcl_ns_get(ns, "b", &got) == LCL_OK);
+  ASSERT_TRUE(got == b && b->refc == 2);
+  lcl_ref_dec(got);
+
+  /* Non-namespace target: def fails, but _take still consumes. */
+  {
+    lcl_value *not_ns = lcl_int_new(0);
+    lcl_value *c = lcl_int_new(3);
+
+    ASSERT_TRUE(lcl_ns_def_take(not_ns, "c", c) == LCL_ERROR);
+    lcl_ref_dec(not_ns);
+  }
+
+  lcl_ref_dec(ns);
   return 1;
 }
 
@@ -1762,25 +1835,25 @@ static int test_issue67_compile_ex_msg_and_line(void) {
     const char *msg;
     long line;
   } cases[] = {
-      {"let a 1\nlet b [+ 1\nlet c 3\n",               "unmatched '['",                  2},
-      {"let a 1\nlet b 2\nputs \"unclosed\nlet c 3\n", "unmatched '\"'",                 3},
-      {"let x {\n  foo\n",                             "unmatched '{'",                  1},
-      {"puts ]\n",                                     "unmatched ']'",                  1},
-      {"let a 1\nlet l (1 2\n",                        "unmatched '('",                  2},
-      {"let d #{a\n",                                  "unmatched '{'",                  1},
-      {"puts ${\n",                                    "unmatched '${'",                 1},
-      {"puts ${}\n",                                   "empty variable name in '${}'",   1},
+      {"let a 1\nlet b [+ 1\nlet c 3\n",               "unmatched '['",                                2},
+      {"let a 1\nlet b 2\nputs \"unclosed\nlet c 3\n", "unmatched '\"'",                               3},
+      {"let x {\n  foo\n",                             "unmatched '{'",                                1},
+      {"puts ]\n",                                     "unmatched ']'",                                1},
+      {"let a 1\nlet l (1 2\n",                        "unmatched '('",                                2},
+      {"let d #{a\n",                                  "unmatched '{'",                                1},
+      {"puts ${\n",                                    "unmatched '${'",                               1},
+      {"puts ${}\n",                                   "empty variable name in '${}'",                 1},
       {"let x $foo::bar\n",
-       "qualified substitutions require braces: ${name::path}",             1},
+       "qualified substitutions require braces: ${name::path}",                                        1},
       {"let x $foo::1bad\n",
-       "qualified substitutions require braces: ${name::path}",             1},
-      {"let x ${foo::}\n",     "empty segment in qualified variable name",  1},
-      {"let x ${::foo}\n",     "empty segment in qualified variable name",  1},
-      {"let x ${a::::b}\n",    "empty segment in qualified variable name",  1},
-      {"let x ${foo::1bad}\n", "name segment must start with a letter or '_'",
-       1},
-      {"let x ${foo bar}\n",   "invalid character in variable name",        1},
-      {"let x ${fo\no}\n",     "invalid character in variable name",        1},
+       "qualified substitutions require braces: ${name::path}",                                        1},
+      {"let x ${foo::}\n",                             "empty segment in qualified variable name",     1},
+      {"let x ${::foo}\n",                             "empty segment in qualified variable name",     1},
+      {"let x ${a::::b}\n",                            "empty segment in qualified variable name",     1},
+      {"let x ${foo::1bad}\n",                         "name segment must start with a letter or '_'",
+       1                                                                                                },
+      {"let x ${foo bar}\n",                           "invalid character in variable name",           1},
+      {"let x ${fo\no}\n",                             "invalid character in variable name",           1},
   };
   size_t i;
 
@@ -2198,8 +2271,8 @@ static int path_join_case(const char *base, const char *rel,
   int ok = got != NULL && strcmp(got, expect) == 0;
 
   if (!ok) {
-    printf("    join(\"%s\", \"%s\"): got \"%s\", expected \"%s\"\n", base,
-           rel, got ? got : "(null)", expect);
+    printf("    join(\"%s\", \"%s\"): got \"%s\", expected \"%s\"\n", base, rel,
+           got ? got : "(null)", expect);
   }
 
   free(got);
@@ -2277,10 +2350,8 @@ static int test_require_module_key_hook(void) {
   int ok_fallback;
 
   ASSERT_TRUE(mkdtemp(root) != NULL);
-  ASSERT_TRUE(req_write_file(root, "amod.lcl",
-                             "namespace amod { var x 1 }\n"));
-  ASSERT_TRUE(req_write_file(root, "bmod.lcl",
-                             "namespace bmod { var x 2 }\n"));
+  ASSERT_TRUE(req_write_file(root, "amod.lcl", "namespace amod { var x 1 }\n"));
+  ASSERT_TRUE(req_write_file(root, "bmod.lcl", "namespace bmod { var x 2 }\n"));
 
   /* Constant key: amod and bmod share one identity, so requiring
    * bmod after amod is a cache hit — bmod's body never runs. */
@@ -2307,9 +2378,10 @@ static int test_require_module_key_hook(void) {
   lcl_register_core(in2);
   lcl_set_module_key_fn(in2, modkey_null, NULL);
 
-  snprintf(src, sizeof(src),
-           "require %s/amod.lcl\nrequire %s/bmod.lcl\n[+ ${amod::x} ${bmod::x}]",
-           root, root);
+  snprintf(
+      src, sizeof(src),
+      "require %s/amod.lcl\nrequire %s/bmod.lcl\n[+ ${amod::x} ${bmod::x}]",
+      root, root);
   ok_fallback = req_eval_expect(in2, src, "3");
 
   lcl_interp_free(in);
@@ -2382,6 +2454,8 @@ int run_test(void) {
   RUN(test_issue98_bare_spread_is_compile_error);
   RUN(test_sub_literal_scan_unification);
   RUN(test_span_line_attribution);
+  RUN(test_issue102_set_error_copies);
+  RUN(test_issue102_ns_def_ownership);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);

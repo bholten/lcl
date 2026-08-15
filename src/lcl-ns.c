@@ -3,8 +3,7 @@
 
 #include "lcl-values.h"
 
-static lcl_result ns_def_take(lcl_value *ns, const char *name,
-                              lcl_value *value) {
+lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {
   if (!ns || ns->type != LCL_NAMESPACE) {
     return LCL_ERROR;
   }
@@ -61,8 +60,8 @@ lcl_value *lcl_ns_new(const char *qname) {
   return v;
 }
 
-lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {
-  lcl_result r = ns_def_take(ns, name, value);
+lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value) {
+  lcl_result r = lcl_ns_def(ns, name, value);
   lcl_ref_dec(value);
   return r;
 }

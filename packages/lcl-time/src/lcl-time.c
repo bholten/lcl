@@ -88,8 +88,8 @@ static int dict_to_tm(lcl_value *d, struct tm *tm) {
 }
 
 /* time::time -> current Unix timestamp (seconds since epoch) */
-static int c_time(lcl_interp *interp, int argc, lcl_value **argv,
-                  lcl_value **out) {
+static lcl_return_code c_time(lcl_interp *interp, int argc, lcl_value **argv,
+                              lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -99,8 +99,8 @@ static int c_time(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::clock -> CPU time in microseconds */
-static int c_clock(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
+                               lcl_value **out) {
   clock_t c;
   (void)interp;
   (void)argc;
@@ -113,8 +113,8 @@ static int c_clock(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::monotonic_us -> microseconds since arbitrary monotonic point */
-static int c_monotonic_us(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   struct timespec ts;
   unsigned long long usec;
   (void)interp;
@@ -135,8 +135,8 @@ static int c_monotonic_us(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::localtime ?timestamp? -> dict with local time components */
-static int c_localtime(lcl_interp *interp, int argc, lcl_value **argv,
-                       lcl_value **out) {
+static lcl_return_code c_localtime(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
   time_t t;
   struct tm *tm;
   long ts;
@@ -169,8 +169,8 @@ static int c_localtime(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::gmtime ?timestamp? -> dict with UTC time components */
-static int c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
+                                lcl_value **out) {
   time_t t;
   struct tm *tm;
   long ts;
@@ -203,8 +203,8 @@ static int c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::mktime dict -> Unix timestamp from time dict */
-static int c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
-                    lcl_value **out) {
+static lcl_return_code c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
+                                lcl_value **out) {
   struct tm tm;
   time_t t;
 
@@ -231,8 +231,8 @@ static int c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::strftime format ?timestamp? -> formatted time string */
-static int c_strftime(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static lcl_return_code c_strftime(lcl_interp *interp, int argc,
+                                  lcl_value **argv, lcl_value **out) {
   const char *fmt;
   time_t t;
   struct tm *tm;
@@ -280,8 +280,8 @@ static int c_strftime(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::difftime t1 t2 -> difference in seconds (t1 - t2) */
-static int c_difftime(lcl_interp *interp, int argc, lcl_value **argv,
-                      lcl_value **out) {
+static lcl_return_code c_difftime(lcl_interp *interp, int argc,
+                                  lcl_value **argv, lcl_value **out) {
   long t1;
   long t2;
   double diff;
@@ -303,8 +303,8 @@ static int c_difftime(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::sleep seconds -> sleep for given duration (supports fractions) */
-static int c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
+                               lcl_value **out) {
   double secs;
   long isecs;
   struct timespec ts;
@@ -337,8 +337,8 @@ static int c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* time::ctime ?timestamp? -> human-readable time string */
-static int c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
-                   lcl_value **out) {
+static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
+                               lcl_value **out) {
   time_t t;
   char *str;
   char buf[64];
@@ -383,16 +383,18 @@ void lcl_register_time(lcl_interp *interp) {
   lcl_value *time_ns = lcl_ns_new(TIME_NS);
   lcl_define_take(interp, TIME_NS, time_ns);
 
-  lcl_ns_def(time_ns, "time", lcl_c_proc_new("time::time", c_time));
-  lcl_ns_def(time_ns, "clock", lcl_c_proc_new("time::clock", c_clock));
-  lcl_ns_def(time_ns, "monotonic_us",
-             lcl_c_proc_new("time::monotonic_s", c_monotonic_us));
-  lcl_ns_def(time_ns, "localtime",
-             lcl_c_proc_new("time::localtime", c_localtime));
-  lcl_ns_def(time_ns, "gmtime", lcl_c_proc_new("time::gmtime", c_gmtime));
-  lcl_ns_def(time_ns, "mktime", lcl_c_proc_new("time::mktime", c_mktime));
-  lcl_ns_def(time_ns, "strftime", lcl_c_proc_new("time::strftime", c_strftime));
-  lcl_ns_def(time_ns, "difftime", lcl_c_proc_new("time::difftime", c_difftime));
-  lcl_ns_def(time_ns, "sleep", lcl_c_proc_new("time::sleep", c_sleep));
-  lcl_ns_def(time_ns, "ctime", lcl_c_proc_new("time::ctime", c_ctime));
+  lcl_ns_def_take(time_ns, "time", lcl_c_proc_new("time::time", c_time));
+  lcl_ns_def_take(time_ns, "clock", lcl_c_proc_new("time::clock", c_clock));
+  lcl_ns_def_take(time_ns, "monotonic_us",
+                  lcl_c_proc_new("time::monotonic_s", c_monotonic_us));
+  lcl_ns_def_take(time_ns, "localtime",
+                  lcl_c_proc_new("time::localtime", c_localtime));
+  lcl_ns_def_take(time_ns, "gmtime", lcl_c_proc_new("time::gmtime", c_gmtime));
+  lcl_ns_def_take(time_ns, "mktime", lcl_c_proc_new("time::mktime", c_mktime));
+  lcl_ns_def_take(time_ns, "strftime",
+                  lcl_c_proc_new("time::strftime", c_strftime));
+  lcl_ns_def_take(time_ns, "difftime",
+                  lcl_c_proc_new("time::difftime", c_difftime));
+  lcl_ns_def_take(time_ns, "sleep", lcl_c_proc_new("time::sleep", c_sleep));
+  lcl_ns_def_take(time_ns, "ctime", lcl_c_proc_new("time::ctime", c_ctime));
 }

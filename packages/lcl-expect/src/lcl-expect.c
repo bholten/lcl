@@ -74,8 +74,8 @@ static expect_pattern *get_pattern(lcl_value *v) {
  * Options:
  *   nocase - case insensitive matching (1/0)
  */
-static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_expect_pattern(lcl_interp *interp, int argc,
+                                        lcl_value **argv, lcl_value **out) {
   expect_pattern *p;
   const char *str;
   int nocase = 0;
@@ -132,8 +132,8 @@ static int c_expect_pattern(lcl_interp *interp, int argc, lcl_value **argv,
  * Options:
  *   nocase - case insensitive matching (1/0)
  */
-static int c_expect_regex(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_expect_regex(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   expect_pattern *p;
   const char *str;
   int nocase = 0;
@@ -206,8 +206,8 @@ static int c_expect_regex(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Create a timeout sentinel pattern.
  */
-static int c_expect_timeout(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_expect_timeout(lcl_interp *interp, int argc,
+                                        lcl_value **argv, lcl_value **out) {
   expect_pattern *p;
 
   (void)interp;
@@ -233,8 +233,8 @@ static int c_expect_timeout(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Create an EOF sentinel pattern.
  */
-static int c_expect_eof(lcl_interp *interp, int argc, lcl_value **argv,
-                        lcl_value **out) {
+static lcl_return_code c_expect_eof(lcl_interp *interp, int argc,
+                                    lcl_value **argv, lcl_value **out) {
   expect_pattern *p;
 
   (void)interp;
@@ -260,8 +260,8 @@ static int c_expect_eof(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Check if value is a pattern object.
  */
-static int c_expect_is_pattern(lcl_interp *interp, int argc, lcl_value **argv,
-                               lcl_value **out) {
+static lcl_return_code c_expect_is_pattern(lcl_interp *interp, int argc,
+                                           lcl_value **argv, lcl_value **out) {
   (void)interp;
 
   if (argc < 1) {
@@ -278,8 +278,9 @@ static int c_expect_is_pattern(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Get the kind of a pattern as a string.
  */
-static int c_expect_pattern_kind(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_expect_pattern_kind(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   expect_pattern *p;
 
   if (argc < 1) {
@@ -394,8 +395,9 @@ static int match_pattern(const expect_pattern *p, const char *buf,
  * Returns: #{matched 0/1 index N pattern <pat> before "..." match "..." after
  * "..."}
  */
-static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
-                                 lcl_value **out) {
+static lcl_return_code c_expect_match_buffer(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
   const char *buf;
   lcl_value *patterns;
   size_t num_patterns;
@@ -545,8 +547,8 @@ static int c_expect_match_buffer(lcl_interp *interp, int argc, lcl_value **argv,
  *
  * Returns: #{matched 0/1 index N data "..." timeout 0/1 eof 0/1}
  */
-static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
-                               lcl_value **out) {
+static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
+                                           lcl_value **argv, lcl_value **out) {
   lcl_value *handle;
   lcl_value *patterns;
   lcl_value *opts = NULL;
@@ -838,8 +840,8 @@ static int c_expect_read_match(lcl_interp *interp, int argc, lcl_value **argv,
  *     (timeout     [lambda {} { error "timed out" }])
  *   )
  */
-static int c_expect_match(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
   lcl_value *handle;
   lcl_value *pairs;
   lcl_value *opts = NULL;
@@ -1018,8 +1020,8 @@ error:
  *     ("$ "        [lambda {m} { break }])
  *   )
  */
-static int c_expect_loop(lcl_interp *interp, int argc, lcl_value **argv,
-                         lcl_value **out) {
+static lcl_return_code c_expect_loop(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
   int rc;
   lcl_value *result = NULL;
 
@@ -1052,20 +1054,22 @@ void lcl_register_expect(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(EXPECT_NS);
   lcl_define_take(interp, EXPECT_NS, ns);
 
-  lcl_ns_def(ns, "pattern",
-             lcl_c_proc_new("expect::pattern", c_expect_pattern));
-  lcl_ns_def(ns, "regex", lcl_c_proc_new("expect::regex", c_expect_regex));
-  lcl_ns_def(ns, "timeout",
-             lcl_c_proc_new("expect::timeout", c_expect_timeout));
-  lcl_ns_def(ns, "eof", lcl_c_proc_new("expect::eof", c_expect_eof));
-  lcl_ns_def(ns, "pattern?",
-             lcl_c_proc_new("expect::pattern?", c_expect_is_pattern));
-  lcl_ns_def(ns, "pattern-kind",
-             lcl_c_proc_new("expect::pattern-kind", c_expect_pattern_kind));
-  lcl_ns_def(ns, "match-buffer",
-             lcl_c_proc_new("expect::match-buffer", c_expect_match_buffer));
-  lcl_ns_def(ns, "read-match",
-             lcl_c_proc_new("expect::read-match", c_expect_read_match));
-  lcl_ns_def(ns, "match", lcl_c_proc_new("expect::match", c_expect_match));
-  lcl_ns_def(ns, "loop", lcl_c_proc_new("expect::loop", c_expect_loop));
+  lcl_ns_def_take(ns, "pattern",
+                  lcl_c_proc_new("expect::pattern", c_expect_pattern));
+  lcl_ns_def_take(ns, "regex", lcl_c_proc_new("expect::regex", c_expect_regex));
+  lcl_ns_def_take(ns, "timeout",
+                  lcl_c_proc_new("expect::timeout", c_expect_timeout));
+  lcl_ns_def_take(ns, "eof", lcl_c_proc_new("expect::eof", c_expect_eof));
+  lcl_ns_def_take(ns, "pattern?",
+                  lcl_c_proc_new("expect::pattern?", c_expect_is_pattern));
+  lcl_ns_def_take(
+      ns, "pattern-kind",
+      lcl_c_proc_new("expect::pattern-kind", c_expect_pattern_kind));
+  lcl_ns_def_take(
+      ns, "match-buffer",
+      lcl_c_proc_new("expect::match-buffer", c_expect_match_buffer));
+  lcl_ns_def_take(ns, "read-match",
+                  lcl_c_proc_new("expect::read-match", c_expect_read_match));
+  lcl_ns_def_take(ns, "match", lcl_c_proc_new("expect::match", c_expect_match));
+  lcl_ns_def_take(ns, "loop", lcl_c_proc_new("expect::loop", c_expect_loop));
 }

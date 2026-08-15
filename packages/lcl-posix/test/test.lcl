@@ -140,6 +140,24 @@ Test::suite "Glob (posix::glob)" {
         io::remove "/tmp/lcl_glob_test1.txt"
         io::remove "/tmp/lcl_glob_test2.txt"
     }
+
+    Test::case "glob with no matches returns empty list" {
+        let files [posix::glob "asdf.txt"]
+
+        Test::eq [len $files] 0
+    }
+}
+
+;; ============================================================================
+;; realpath
+;; ============================================================================
+
+Test::suite "realpth (posix::realpath)" {
+    Test::case "realpath finds current dir" {
+        let path [posix::realpath "."]
+
+        Test::eq $path [posix::getcwd]
+    }
 }
 
 ;; ============================================================================

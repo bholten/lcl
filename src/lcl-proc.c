@@ -242,8 +242,8 @@ static lcl_result parse_optional_param(const char *token, char **name_out,
   return LCL_OK;
 }
 
-int lcl_parse_params(lcl_interp *interp, const char *param_str,
-                     lcl_param_spec *pspec) {
+lcl_return_code lcl_parse_params(lcl_interp *interp, const char *param_str,
+                                 lcl_param_spec *pspec) {
   const char *p = param_str;
   char *token;
   char **req_names = NULL;
@@ -640,9 +640,10 @@ static int is_param_name(const lcl_param_spec *pspec, const char *name) {
  * nout: receives the count
  * Scans both the body and any default programs in pspec for free variables.
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error (with message set). */
-int lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
-                       const lcl_param_spec *pspec, const char *self_name,
-                       lcl_upvalue **upvals_out, int *nout) {
+lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
+                                   const lcl_param_spec *pspec,
+                                   const char *self_name,
+                                   lcl_upvalue **upvals_out, int *nout) {
   name_set vars;
   lcl_upvalue *upvals = NULL;
   int i;

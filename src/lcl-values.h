@@ -18,9 +18,6 @@ typedef enum lcl_type {
 
 typedef void (*lcl_finalizer)(void *ptr);
 
-typedef int (*lcl_cproc)(lcl_frame *env, int argc, lcl_value **argv,
-                         lcl_value **out);
-
 struct lcl_value {
   lcl_type type;
   int refc;
@@ -110,6 +107,7 @@ int lcl_value_would_cycle(lcl_value *container, lcl_value *value);
 
 lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
+lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
 const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
                          const char **rhs);
@@ -120,8 +118,8 @@ lcl_value *lcl_value_new_string(const char *str);
 
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
                         lcl_param_spec *pspec, lcl_program *body);
-int lcl_parse_params(lcl_interp *interp, const char *param_str,
-                     lcl_param_spec *pspec);
+lcl_return_code lcl_parse_params(lcl_interp *interp, const char *param_str,
+                                 lcl_param_spec *pspec);
 
 lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
 lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn);
