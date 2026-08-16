@@ -1,12 +1,11 @@
 #ifndef LCL_CURL_H
 #define LCL_CURL_H
 
+#include <lcl.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Forward declaration - allows use without pulling in all of lcl.h */
-typedef struct lcl_interp lcl_interp;
 
 /*
  * Register CURL bindings with the interpreter.
