@@ -13,8 +13,6 @@
 
 #define POSIX_NS "posix"
 
-/* TODO dirname, join */
-
 lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   const char *gl;
@@ -337,21 +335,39 @@ lcl_return_code c_posix_realpath(lcl_interp *interp, int argc, lcl_value **argv,
 
 lcl_return_code c_posix_dirname(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
-  char *buf = NULL;
-  ;
+  (void)interp;
+  
   const char *path[PATH_MAX];
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], path) != LCL_OK) {
+  if (lcl_value_get_string(argv[0], path) != LCL_OK) {
+    return LCL_RC_ERR;
   }
 
-  buf = dirname((char *)path);
+  *out = lcl_string_new(dirname((char*)*path));
+ 
+  return LCL_RC_OK;
+}
 
-  *out = lcl_string_new(buf);
+lcl_return_code c_posix_basename(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
+  (void)interp;
+  
+  const char *path[PATH_MAX];
 
+  if (argc < 1) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_get_string(argv[0], path) != LCL_OK) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(basename((char*)*path));
+ 
   return LCL_RC_OK;
 }
 
@@ -381,6 +397,10 @@ void lcl_register_posix(lcl_interp *interp) {
                   lcl_c_proc_new("posix::file_size", c_posix_file_size));
   lcl_ns_def_take(posix_ns, "file_mtime",
                   lcl_c_proc_new("posix::file_mtime", c_posix_file_mtime));
+  lcl_ns_def_take(posix_ns, "dirname",
+                  lcl_c_proc_new("posix::dirname", c_posix_dirname));
+  lcl_ns_def_take(posix_ns, "basename",
+                  lcl_c_proc_new("posix::basename", c_posix_basename));
 
   /* Working directory */
   lcl_ns_def_take(posix_ns, "getcwd",
