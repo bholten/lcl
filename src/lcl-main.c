@@ -200,7 +200,7 @@ static lcl_interp *create_interp(void) {
 int main(int argc, char **argv) {
   lcl_interp *interp;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   if (argc < 2) {
     print_usage(argv[0]);
