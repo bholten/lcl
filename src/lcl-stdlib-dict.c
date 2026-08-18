@@ -77,14 +77,45 @@ static lcl_return_code c_dict_values(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* dict::items d - return list of {key value} pairs */
-static lcl_return_code c_dict_items(lcl_interp *interp, int argc,
-                                    lcl_value **argv, lcl_value **out) {
+/* Build the (key value) pair list for a dict. Shared by Dict::items
+ * and foreach so both walk the same hash order. */
+lcl_result lcl_std_dict_items(lcl_value *dict, lcl_value **out) {
   hash_iter it = {0};
   const char *key;
   lcl_value *val;
-  lcl_value *result;
-  (void)interp;
+  lcl_value *result = lcl_list_new();
+
+  if (!result) {
+    return LCL_ERROR;
+  }
+
+  while (hash_table_iterate(dict->as.dict.dictionary, &it, &key, &val)) {
+    lcl_value *pair = lcl_list_new();
+    lcl_value *key_v = lcl_string_new(key);
+
+    if (!pair || !key_v || lcl_list_push(&pair, key_v) != LCL_OK ||
+        lcl_list_push(&pair, val) != LCL_OK ||
+        lcl_list_push(&result, pair) != LCL_OK) {
+      lcl_ref_dec(key_v);
+      lcl_ref_dec(val);
+      lcl_ref_dec(pair);
+      lcl_ref_dec(result);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(key_v);
+    lcl_ref_dec(val);
+    lcl_ref_dec(pair);
+  }
+
+  *out = result;
+  return LCL_OK;
+}
+
+/* dict::items d - return list of (key value) pairs */
+static lcl_return_code c_dict_items(lcl_interp *interp, int argc,
+                                    lcl_value **argv, lcl_value **out) {
+  lcl_value *result = NULL;
 
   if (!lcl_std_chk_argc(interp, "Dict::items", argc, 1, 1)) {
     return LCL_RC_ERR;
@@ -94,17 +125,9 @@ static lcl_return_code c_dict_items(lcl_interp *interp, int argc,
     return lcl_std_err_expected_got(interp, "Dict::items", "dict", argv[0]);
   }
 
-  result = lcl_list_new();
-
-  while (hash_table_iterate(argv[0]->as.dict.dictionary, &it, &key, &val)) {
-    lcl_value *pair = lcl_list_new();
-    lcl_value *key_v = lcl_string_new(key);
-    lcl_list_push(&pair, key_v);
-    lcl_list_push(&pair, val);
-    lcl_list_push(&result, pair);
-    lcl_ref_dec(key_v);
-    lcl_ref_dec(val);
-    lcl_ref_dec(pair);
+  if (lcl_std_dict_items(argv[0], &result) != LCL_OK) {
+    LCL_ERR_MSG(interp, "Dict::items: out of memory");
+    return LCL_RC_ERR;
   }
 
   *out = result;

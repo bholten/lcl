@@ -8,6 +8,35 @@ Lcl is a Tcl-inspired scripting language with **lexical scoping**. It provides t
 
 Lcl is implemented in **C89** with no dependencies except for a hosted C standard library.
 
+> ⚠️⚠️⚠️ **Coming from Tcl? Read this first.** ⚠️⚠️⚠️
+>
+> Lcl *looks* like Tcl:
+>
+> commands, words, `$var`, `[...]`, braces -- but it is **not** Tcl.
+>
+> - **`{a b c}` is text, not a list.** Lists are `(a b c)`, dicts are
+>   `#{k v}`. `len {a b c}` is 5. `foreach x {a b c}` is an error.
+>   Nothing ever reparses a string as a list -- use `String::split`.
+> - **No `set`.** `let` binds immutably; `var` makes a mutable cell,
+>   `set!` mutates it. No `upvar`, `uplevel`, `global`.
+> - **Lexical scoping and closures.** Procs capture where they were
+>   defined, not who called them.
+> - **No `expr`.** Arithmetic and comparison are prefix commands:
+>   `[+ 1 2]`, `[< $i 10]`. `if [< $i 10] {...}` -- brackets, not
+>   braces, on the condition (a braced condition is a non-empty
+>   string, i.e. always true). `while {[< $i 10]} {...}` is the
+>   exception: braces there mean "re-evaluate each iteration".
+> - **`42` is an int, `"42"` is a string.** Literals are typed at
+>   compile time; interpolation preserves types.
+> - **`$a::b` is invalid.** Qualified names are `${a::b}`.
+> - **`[$x]` does not dispatch.** It yields `$x`; use `[apply $x]`.
+> - **Namespaces are values** built with `namespace name { ... }`;
+>   `proc a::b` outside one is an error. **No** `namespace eval`!
+> - **Comments are `;;` anywhere**; `#` mid-line is literal.
+> - **Reference counting, not GC** -- mutual recursion between procs
+>   is rejected at definition time.
+>
+
 ## Why?
 
 Tcl is woefully unappreciated. It is one of the best languages for creating DSLs and embedding them in C/C++ projects. It's been described as "Lisp for C programmers" and it definitely hits that same itch: homoiconicity ("everything is a string") and simple metaprogramming by passing around literal blocks of code and operating on them as data.
@@ -351,9 +380,19 @@ for {var j 10} {$j} {set! j [- $j 1]} {
     puts $j
 }
 
-;; foreach
+;; foreach iterates values, never text: a list's elements, a dict's
+;; (key value) pairs, or a string's characters. `foreach x {a b c}`
+;; is an error -- write (a b c).
 foreach item $lst {
     puts $item
+}
+
+foreach kv #{a 1 b 2} {
+    puts "[get $kv 0] => [get $kv 1]"
+}
+
+foreach ch "abc" {
+    puts $ch
 }
 
 ;; break and continue work as expected
@@ -411,7 +450,7 @@ namespace math {
 
 ;; Access namespace members with :: syntax. Qualified variable
 ;; substitutions are always braced: ${math::pi}, never $math::pi
-;; (command heads like math::double need no braces — they are
+;; (command heads like math::double need no braces -- they are
 ;; already whole words).
 puts ${math::pi}              ;; 3.14159
 puts [math::double 21]      ;; 42
@@ -489,6 +528,26 @@ puts [counter::inc]    ;; 1
 puts [counter::inc]    ;; 2
 puts [counter::dec]    ;; 1
 ```
+
+7. **Bare namespace qualification in variable susbstitution DOES NOT WORK!**
+
+This is surprising to Tcl'ers and is best shown with an example.
+
+```tcl
+namspace foo {
+  let bar 42
+}
+
+puts $foo::bar   ;; WILL ERROR!
+puts ${foo::bar} ;; works!
+
+let baz 777
+
+puts ${baz}      ;; works!
+puts $baz        ;; still works if single-variable
+```
+
+This was done because it significantly reduces the complexity of the lexer and avoids issues with variable substitution when interoperating with shells.
 
 ### Import
 
@@ -1002,7 +1061,7 @@ framework.
 
 | Package | Namespace | Depends on |
 |---------|-----------|------------|
-| lcl-io | `io::` | ANSI C (`stdio.h`, `getenv`) — portable everywhere core builds |
+| lcl-io | `io::` | ANSI C (`stdio.h`, `getenv`) -- portable everywhere core builds |
 | lcl-posix | `posix::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`, `unistd.h`) |
 | lcl-math | `math::` | libm |
 | lcl-time | `time::` | ISO C `<time.h>`; POSIX for monotonic clock / sleep |
