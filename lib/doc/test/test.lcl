@@ -1,7 +1,4 @@
 ;; Tests for Doc.lcl
-
-load lib/doc/src/Doc.lcl
-
 Test::suite "Doc::extract" {
     Test::case "attaches a ;;; run to the next definition" {
         let src {;;; Doubles a number.

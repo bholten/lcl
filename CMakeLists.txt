@@ -527,7 +527,7 @@ if(LCL_BUILD_TESTS)
       add_test(
         NAME doc-lib
         COMMAND $<TARGET_FILE:lcl-cli>
-                "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/doc_test.lcl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/test.lcl"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
     endif()

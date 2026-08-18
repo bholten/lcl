@@ -1,7 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
+
 #include <dirent.h>
 #include <glob.h>
 #include <libgen.h>
-#include <limits.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -333,42 +335,43 @@ lcl_return_code c_posix_realpath(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_posix_dirname(lcl_interp *interp, int argc, lcl_value **argv,
-                                lcl_value **out) {
-  (void)interp;
-  
-  const char *path[PATH_MAX];
+/* dirname/basename(3) modify their argument in place, so work on a
+ * private copy rather than the value's borrowed string. */
+static lcl_return_code posix_path_part(lcl_interp *interp, int argc,
+                                       lcl_value **argv, lcl_value **out,
+                                       char *(*part)(char *)) {
+  const char *path;
+  char buf[PATH_MAX];
+  size_t n;
 
   if (argc < 1) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_get_string(argv[0], path) != LCL_OK) {
+  if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
     return LCL_RC_ERR;
   }
 
-  *out = lcl_string_new(dirname((char*)*path));
- 
-  return LCL_RC_OK;
+  n = strlen(path);
+
+  if (n >= sizeof buf) {
+    return LCL_RC_ERR;
+  }
+
+  memcpy(buf, path, n + 1);
+  *out = lcl_string_new(part(buf));
+
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
+lcl_return_code c_posix_dirname(lcl_interp *interp, int argc, lcl_value **argv,
+                                lcl_value **out) {
+  return posix_path_part(interp, argc, argv, out, dirname);
 }
 
 lcl_return_code c_posix_basename(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
-  (void)interp;
-  
-  const char *path[PATH_MAX];
-
-  if (argc < 1) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_get_string(argv[0], path) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  *out = lcl_string_new(basename((char*)*path));
- 
-  return LCL_RC_OK;
+  return posix_path_part(interp, argc, argv, out, basename);
 }
 
 void lcl_register_posix(lcl_interp *interp) {
