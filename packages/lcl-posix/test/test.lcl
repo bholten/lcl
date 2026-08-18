@@ -161,6 +161,31 @@ Test::suite "realpth (posix::realpath)" {
 }
 
 ;; ============================================================================
+;; dirname / basename
+;; ============================================================================
+
+Test::suite "path parts (posix::dirname, posix::basename)" {
+    Test::case "dirname strips the last component" {
+        Test::eq [posix::dirname "/usr/local/bin/lcl"] "/usr/local/bin"
+        Test::eq [posix::dirname "lcl"] "."
+        Test::eq [posix::dirname "/"] "/"
+    }
+
+    Test::case "basename keeps the last component" {
+        Test::eq [posix::basename "/usr/local/bin/lcl"] "lcl"
+        Test::eq [posix::basename "lcl"] "lcl"
+        Test::eq [posix::basename "/usr/local/"] "local"
+    }
+
+    Test::case "the argument is left untouched" {
+        let p "/a/b/c"
+        posix::dirname $p
+        posix::basename $p
+        Test::eq $p "/a/b/c"
+    }
+}
+
+;; ============================================================================
 ;; Run Tests
 ;; ============================================================================
 

@@ -28,7 +28,7 @@ if(NOT HAVE_OPENPTY_IN_LIBC)
   target_link_libraries(lcl_process PRIVATE util)
 endif()
 
-lcl_add_package_test(NAME lcl-process COMMAND test/process_test.lcl)
+lcl_add_package_test(NAME lcl-process COMMAND test/test.lcl)
 
 if(LCL_IS_TOP_LEVEL)
   include(GNUInstallDirs)
