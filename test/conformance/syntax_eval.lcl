@@ -122,9 +122,14 @@ Test::suite "Quasiquote" {
         Test::eq [quasiquote {sum is ,[+ 1 2 3]}] {sum is 6}
     }
 
-    Test::case "splice-unquote with string" {
-        let items {a b c}
+    Test::case "splice-unquote with list literal" {
+        let items (a b c)
         Test::eq [quasiquote {list: ,@$items end}] {list: a b c end}
+    }
+
+    Test::case "splice-unquote refuses text (no reparse as list)" {
+        let items {a b c}
+        Test::raises_with { quasiquote {list: ,@$items end} } "expected list"
     }
 
     Test::case "splice-unquote with list value" {
@@ -156,7 +161,7 @@ Test::suite "Quasiquote" {
                 proc ,$name {,@$params} {,$body}
             }]
         }
-        eval [defun add2 {x y} { + $x $y }]
+        eval [defun add2 (x y) { + $x $y }]
         Test::eq [add2 3 4] 7
     }
 

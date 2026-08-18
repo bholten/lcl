@@ -120,7 +120,7 @@ Test::suite "Upvalue Capture Through Braced Literals" {
             let tag X
             proc test {} {
                 var out ""
-                foreach k {a b} {
+                foreach k (a b) {
                     set! out "$out$k:$tag "
                 }
                 $out
@@ -149,7 +149,7 @@ Test::suite "Upvalue Capture Through Braced Literals" {
         namespace _uv5 {
             var counter 0
             proc test {} {
-                foreach k {a b c} {
+                foreach k (a b c) {
                     set! counter [+ $counter 1]
                 }
                 $counter

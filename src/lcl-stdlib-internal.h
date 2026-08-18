@@ -69,7 +69,7 @@ struct eq_cycle_guard {
 int lcl_value_equal_deep(lcl_value *a, lcl_value *b,
                          struct eq_cycle_guard *guard);
 
-lcl_value *lcl_list_new_from_cwords(const char *words);
+lcl_result lcl_std_dict_items(lcl_value *dict, lcl_value **out);
 
 lcl_return_code lcl_std_ns_has(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out);

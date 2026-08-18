@@ -854,7 +854,6 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
     }
 
     if (rc == LCL_RC_RETURN) {
-
       if (test_p) {
         lcl_std_free_if_owned(test_p, test_owned);
       }
@@ -902,10 +901,78 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* foreach varname list body - iterate over list elements */
+/* Turn the evaluated iterable into the list foreach walks. Only
+ * values with structure iterate: a LIST as-is, a DICT as (key value)
+ * pairs, a STRING as one-byte strings. Text is never reparsed as a
+ * list -- that is what (...) literals and String::split are for. */
+static lcl_return_code foreach_source(lcl_interp *interp, lcl_value *v,
+                                      lcl_value **out) {
+  if (v->type == LCL_CELL) {
+    v = v->as.cell.inner;
+    if (!v) {
+      LCL_ERR_MSG(interp, "foreach: expected list, dict, or string, got "
+                          "empty cell");
+      return LCL_RC_ERR;
+    }
+  }
+
+  switch (v->type) {
+  case LCL_LIST:
+    lcl_ref_inc(v);
+    *out = v;
+    return LCL_RC_OK;
+
+  case LCL_DICT:
+    if (lcl_std_dict_items(v, out) != LCL_OK) {
+      LCL_ERR_MSG(interp, "foreach: out of memory");
+      return LCL_RC_ERR;
+    }
+    return LCL_RC_OK;
+
+  case LCL_STRING: {
+    const char *s = lcl_value_to_string(v);
+    lcl_value *chars = lcl_list_new();
+    char buf[2];
+
+    if (!chars) {
+      LCL_ERR_MSG(interp, "foreach: out of memory");
+      return LCL_RC_ERR;
+    }
+
+    buf[1] = '\0';
+
+    for (; s && *s; s++) {
+      lcl_value *c;
+
+      buf[0] = *s;
+      c = lcl_string_new(buf);
+
+      if (!c || lcl_list_push(&chars, c) != LCL_OK) {
+        lcl_ref_dec(c);
+        lcl_ref_dec(chars);
+        LCL_ERR_MSG(interp, "foreach: out of memory");
+        return LCL_RC_ERR;
+      }
+
+      lcl_ref_dec(c);
+    }
+
+    *out = chars;
+    return LCL_RC_OK;
+  }
+
+  default:
+    return lcl_std_err_expected_got(interp, "foreach",
+                                    "list, dict, or string", v);
+  }
+}
+
+/* foreach varname iterable body - iterate a list's elements, a
+ * dict's (key value) pairs, or a string's bytes */
 static lcl_return_code s_foreach(lcl_interp *interp, int argc,
                                  const lcl_word **args, lcl_value **out) {
   lcl_value *varname_v = NULL;
+  lcl_value *iter_v = NULL;
   lcl_value *list_v = NULL;
   lcl_program *body_p = NULL;
   int body_owned = 0;
@@ -919,6 +986,16 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
+  /* A braced word here is the Tcl idiom `foreach x {a b c}`. Text no
+   * longer reparses as a list, so it would silently iterate bytes;
+   * refuse the spelling outright */
+  if (args[1]->braced) {
+    LCL_ERR_MSG(interp, "foreach: {...} is text, not a list; write (a b c) "
+                        "for a list, or \"abc\" / $s to iterate a string's "
+                        "characters");
+    return LCL_RC_ERR;
+  }
+
   if (lcl_eval_word_to_str(interp, args[0], &varname_v) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
@@ -928,34 +1005,19 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[1], &list_v) != LCL_RC_OK) {
-    lcl_ref_dec(list_v);
+  if (lcl_eval_word(interp, args[1], &iter_v) != LCL_RC_OK) {
+    lcl_ref_dec(iter_v);
     lcl_ref_dec(varname_v);
 
     return LCL_RC_ERR;
   }
 
-  if (list_v->type != LCL_LIST) {
-    const char *list_src;
-    lcl_value *parsed;
+  rc = foreach_source(interp, iter_v, &list_v);
+  lcl_ref_dec(iter_v);
 
-    if (lcl_value_to_cstring(interp, list_v, &list_src) != LCL_OK) {
-      lcl_ref_dec(varname_v);
-      lcl_ref_dec(list_v);
-      return LCL_RC_ERR;
-    }
-
-    parsed = lcl_list_new_from_cwords(list_src);
-    lcl_ref_dec(list_v);
-
-    if (!parsed) {
-      LCL_ERR_MSG(interp, "foreach: invalid list");
-      lcl_ref_dec(varname_v);
-
-      return LCL_RC_ERR;
-    }
-
-    list_v = parsed;
+  if (rc != LCL_RC_OK) {
+    lcl_ref_dec(varname_v);
+    return rc;
   }
 
   if (lcl_std_get_body_program(interp, args[2], "<foreach>", &body_p,

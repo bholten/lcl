@@ -883,22 +883,12 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
       if (node->kind == QQ_SPLICE) {
         lcl_value *list_val = val;
 
+        /* ,@ splices a list's elements; text is not reparsed as a
+         * list (build one with (...), List::push, or String::split). */
         if (val->type != LCL_LIST) {
-          const char *val_src;
-
-          if (lcl_value_to_cstring(interp, val, &val_src) != LCL_OK) {
-            lcl_ref_dec(val);
-            return 0;
-          }
-
-          list_val = lcl_list_new_from_cwords(val_src);
+          lcl_std_err_expected_got(interp, "quasiquote: ,@", "list", val);
           lcl_ref_dec(val);
-
-          if (!list_val) {
-            return 0;
-          }
-
-          val = list_val;
+          return 0;
         }
 
         {

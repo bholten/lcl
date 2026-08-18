@@ -288,6 +288,97 @@ Test::suite "Foreach Loop" {
         let result [foreach z [list x y z] { $z }]
         Test::eq $result z
     }
+
+    Test::case "foreach preserves element types" {
+        var types [list]
+        foreach x (1 2.5 (a b) "s") {
+            set! types [List::push $types [type $x]]
+        }
+        Test::eq $types (int float list string)
+    }
+
+    Test::case "foreach over dict yields (key value) pairs" {
+        var seen #{}
+        foreach kv #{a 1 b 2} {
+            Test::eq [len $kv] 2
+            set! seen [put $seen [get $kv 0] [get $kv 1]]
+        }
+        Test::eq $seen #{a 1 b 2}
+    }
+
+    Test::case "foreach over dict walks Dict::items order" {
+        let d #{x 1 y 2 z 3}
+        var pairs [list]
+        foreach kv $d {
+            set! pairs [List::push $pairs $kv]
+        }
+        Test::eq $pairs [Dict::items $d]
+    }
+
+    Test::case "foreach over empty dict runs zero times" {
+        var ran 0
+        foreach kv #{} { set! ran 1 }
+        Test::eq $ran 0
+    }
+
+    Test::case "foreach over string yields one-byte strings" {
+        var chars [list]
+        foreach c "abc" {
+            set! chars [List::push $chars $c]
+        }
+        Test::eq $chars (a b c)
+        Test::eq [type [get $chars 0]] string
+    }
+
+    Test::case "foreach over string agrees with String::index" {
+        let s "hello"
+        var i 0
+        foreach c $s {
+            Test::eq $c [String::index $s $i]
+            set! i [+ $i 1]
+        }
+        Test::eq $i [String::length $s]
+    }
+
+    Test::case "foreach over empty string runs zero times" {
+        var ran 0
+        foreach c "" { set! ran 1 }
+        Test::eq $ran 0
+        Test::eq [foreach c "" { 1 }] ""
+    }
+
+    Test::case "break and continue inside string iteration" {
+        var out ""
+        foreach c "abcde" {
+            if [== $c b] { continue }
+            if [== $c d] { break }
+            set! out "$out$c"
+        }
+        Test::eq $out ac
+    }
+
+    Test::case "foreach derefs a cell value once" {
+        var acc 0
+        foreach x [ref (1 2 3)] { set! acc [+ $acc $x] }
+        Test::eq $acc 6
+    }
+
+    Test::case "braced literal in iterable position is an error" {
+        Test::raises_with { foreach x {a b c} { puts $x } } "is text, not a list"
+    }
+
+    Test::case "string variable iterates characters, not words" {
+        let s {a b}
+        var n 0
+        foreach c $s { set! n [+ $n 1] }
+        Test::eq $n 3
+    }
+
+    Test::case "foreach refuses non-iterable values" {
+        Test::raises_with { foreach x 42 {} } "expected list, dict, or string"
+        Test::raises_with { foreach x [lambda {} {}] {} } "expected list, dict, or string"
+        Test::raises_with { foreach x [namespace {}] {} } "expected list, dict, or string"
+    }
 }
 
 ;; ============================================================================

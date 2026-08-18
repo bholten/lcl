@@ -114,6 +114,10 @@ static enum elem_style choose_element_style(const char *s) {
     return ELEM_BRACED;
   }
 
+  if (s[0] == '(' || (s[0] == '#' && s[1] == '{')) {
+    has_special = 1;
+  }
+
   for (p = s; *p; p++) {
     char c = *p;
 
@@ -267,6 +271,26 @@ static int sbuf_append_styled(sbuf *b, const char *s, enum elem_style style) {
   return 0;
 }
 
+static int sbuf_append_element(sbuf *b, lcl_value *elem) {
+  const char *s = lcl_value_to_string(elem);
+
+  if (!s) {
+    return 0;
+  }
+
+  if (elem->type == LCL_LIST) {
+    return sbuf_putc(b, '(') && sbuf_append(b, s, strlen(s)) &&
+           sbuf_putc(b, ')');
+  }
+
+  if (elem->type == LCL_DICT) {
+    return sbuf_append(b, "#{", 2) && sbuf_append(b, s, strlen(s)) &&
+           sbuf_putc(b, '}');
+  }
+
+  return sbuf_append_styled(b, s, choose_element_style(s));
+}
+
 static void lcl_reify_str_list(lcl_value *value) {
   size_t len = lcl_list_len(value);
   sbuf b;
@@ -278,8 +302,6 @@ static void lcl_reify_str_list(lcl_value *value) {
 
   for (i = 0; i < len; i++) {
     lcl_value *elem = NULL;
-    const char *s;
-    enum elem_style style;
     int ok;
 
     if (i > 0) {
@@ -293,16 +315,7 @@ static void lcl_reify_str_list(lcl_value *value) {
       continue;
     }
 
-    s = lcl_value_to_string(elem);
-
-    if (!s) {
-      lcl_ref_dec(elem);
-      free(b.buf);
-      return;
-    }
-
-    style = choose_element_style(s);
-    ok = sbuf_append_styled(&b, s, style);
+    ok = sbuf_append_element(&b, elem);
     lcl_ref_dec(elem);
 
     if (!ok) {
@@ -327,19 +340,8 @@ static void lcl_reify_str_dict(lcl_value *value) {
   it.i = 0;
 
   while (lcl_dict_iter((const lcl_value **)&value, &it, &key, &val) == LCL_OK) {
-    const char *vs = lcl_value_to_string(val);
-    enum elem_style ks;
-    enum elem_style vst;
+    enum elem_style ks = choose_element_style(key);
     int ok;
-
-    if (!vs) {
-      lcl_ref_dec(val);
-      free(b.buf);
-      return;
-    }
-
-    ks = choose_element_style(key);
-    vst = choose_element_style(vs);
 
     if (!first) {
       if (!sbuf_putc(&b, ' ')) {
@@ -352,7 +354,7 @@ static void lcl_reify_str_dict(lcl_value *value) {
     first = 0;
 
     ok = sbuf_append_styled(&b, key, ks) && sbuf_putc(&b, ' ') &&
-         sbuf_append_styled(&b, vs, vst);
+         sbuf_append_element(&b, val);
     lcl_ref_dec(val);
 
     if (!ok) {

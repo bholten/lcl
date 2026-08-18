@@ -143,6 +143,44 @@ Test::suite "List Operations" {
 ;; Dict Operations
 ;; ============================================================================
 
+Test::suite "Canonical String Rendering" {
+    Test::case "list canonical string is the literal interior" {
+        Test::eq [String::from (a b c)] "a b c"
+    }
+
+    Test::case "nested lists keep (...) shape" {
+        Test::eq [String::from (a (b c) d)] "a (b c) d"
+        Test::eq [String::from ((1 2) (3 4))] "(1 2) (3 4)"
+        Test::eq [String::from (a ())] "a ()"
+    }
+
+    Test::case "nested dicts keep #{...} shape" {
+        Test::eq [String::from (a #{k v})] "a #{k v}"
+        Test::eq [String::from #{a (1 2)}] "a (1 2)"
+    }
+
+    Test::case "string elements with spaces are braced, empty string too" {
+        Test::eq [String::from (a "b c" "")] "a {b c} {}"
+    }
+
+    Test::case "strings that look like containers are braced" {
+        Test::eq [String::from ("(x)" "#{y}" "f(x)")] "{(x)} {#{y}} f(x)"
+    }
+
+    Test::case "dict items render as readable pairs" {
+        let d #{a 1}
+        Test::eq [String::from [Dict::items $d]] "(a 1)"
+    }
+
+    Test::case "canonical string of a nested list reads back structurally" {
+        let l (a (b c) "d e")
+        let back [eval "list [String::from $l]"]
+        Test::eq $back $l
+        Test::eq [type [get $back 1]] list
+        Test::eq [type [get $back 2]] string
+    }
+}
+
 Test::suite "Dict Operations" {
     Test::case "dict create and size" {
         let d [dict a 1 b 2 c 3]
