@@ -195,8 +195,9 @@ puts [get $ns name fallback]   ;; default when key/binding is absent
 let lst2 [put $lst 0 replaced]
 let d2 [put $d newkey value]
 
-;; del - functional delete
-let d3 [del $d key]
+;; del - functional delete (returns new value)
+let d3 [del $d key]            ;; dict: by key; absent key is a no-op
+let lst3 [del $lst 0]          ;; list: by index; out of range is an error
 
 ;; has? - membership test
 puts [has? $lst value]         ;; 1 if value in list (deep equality)
