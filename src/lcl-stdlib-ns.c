@@ -224,7 +224,7 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_get_body_program(interp, args[0], "<isolate>", &prog,
+  if (lcl_std_get_body_program(interp, args[0], "isolate", &prog,
                                &prog_owned) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
@@ -361,7 +361,7 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
   {
     int prog_owned_flag = 0;
 
-    if (lcl_std_get_body_program(interp, body_word, "<namespace>", &prog,
+    if (lcl_std_get_body_program(interp, body_word, "namespace", &prog,
                                  &prog_owned_flag) != LCL_RC_OK) {
       free(ns_name);
       return LCL_RC_ERR;

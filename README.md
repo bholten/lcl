@@ -283,6 +283,19 @@ puts [get $head span]      ;; 0 2
 puts [String::range {ls -lsa} @[get $head span]]  ;; ls
 ```
 
+### Proc Reflection (Proc)
+
+`Proc::name`, `Proc::params` and `Proc::origin` are Lcl's version of
+reflection. Best shown by example:
+
+```tcl
+proc add {a b (c 0) *rest} { + $a $b $c }
+puts [Proc::params add]             ;; a b ?c *rest
+puts [Proc::name add]               ;; add
+puts [Proc::origin add]             ;; file game.lcl line 1
+puts [Proc::origin {+}]             ;; (empty: a C proc)
+```
+
 ### Documentation (Doc)
 
 The optional `Doc` library (`lib/doc`, `-DLCL_BUILD_DOC_LIB=ON`) is

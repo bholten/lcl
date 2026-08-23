@@ -226,6 +226,7 @@ void lcl_scan_init(lcl_scan *sc, const char *src) {
   sc->err_line = 0;
   sc->nest = 0;
   sc->sep_as_ws = 0;
+  sc->file = NULL;
 }
 
 void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
@@ -238,6 +239,7 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
   sc->err_line = 0;
   sc->nest = 0;
   sc->sep_as_ws = 0;
+  sc->file = NULL;
 }
 
 /* Compile the span between a just-consumed opening delimiter and its
@@ -272,8 +274,8 @@ static int scan_sub_literal(lcl_scan *sc, lcl_word *w, const char *prefix,
   memcpy(subsrc + plen, sc->s + begin, content_len);
   subsrc[plen + content_len] = '\0';
 
-  sub = lcl_program_compile_span(subsrc, plen + content_len, &suberr,
-                                 sc->nest + 1, open_line);
+  sub = lcl_program_compile_span(subsrc, plen + content_len, sc->file,
+                                 &suberr, sc->nest + 1, open_line);
   free(subsrc);
 
   if (!sub) {
@@ -313,8 +315,8 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
 
     w->braced = 1;
     w->compiled =
-        lcl_program_compile_depth(w->wp[0].as.lit.s, strlen(w->wp[0].as.lit.s),
-                                  "<braced>", NULL, sc->nest + 1);
+        lcl_program_compile_at(w->wp[0].as.lit.s, strlen(w->wp[0].as.lit.s),
+                               sc->file, NULL, sc->nest + 1, open_line);
 
     return 1;
   }
@@ -730,6 +732,7 @@ int lcl_scan_word(lcl_scan *sc, lcl_word *w) {
   int rc;
 
   w->src_start = sc->i;
+  w->line = sc->line;
   rc = scan_word_pieces(sc, w);
   w->src_end = sc->i;
 

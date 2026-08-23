@@ -233,7 +233,12 @@ static lcl_return_code c_catch(lcl_interp *interp, int argc,
       return LCL_RC_ERR;
     }
 
-    prog = lcl_compile_report(interp, body_src, "<catch>");
+    {
+      char name[256];
+      prog = lcl_compile_report(
+          interp, body_src,
+          lcl_dyn_source_name(interp, "catch", name, sizeof(name)));
+    }
     lcl_ref_dec(body_v);
 
     if (prog) {
@@ -390,7 +395,12 @@ static lcl_return_code s_if(lcl_interp *interp, int argc, const lcl_word **args,
       return LCL_RC_ERR;
     }
 
-    body_p = lcl_compile_report(interp, body_src, "<if>");
+    {
+      char name[256];
+      body_p = lcl_compile_report(
+          interp, body_src,
+          lcl_dyn_source_name(interp, "if", name, sizeof(name)));
+    }
   }
 
   lcl_ref_dec(body_v);
@@ -567,13 +577,13 @@ static lcl_return_code s_while(lcl_interp *interp, int argc,
   test_is_braced = args[0]->braced;
 
   if (test_is_braced) {
-    if (lcl_std_get_body_program(interp, args[0], "<while-test>", &test_p,
+    if (lcl_std_get_body_program(interp, args[0], "while-test", &test_p,
                                  &test_owned) != LCL_RC_OK) {
       return LCL_RC_ERR;
     }
   }
 
-  if (lcl_std_get_body_program(interp, args[1], "<while-body>", &body_p,
+  if (lcl_std_get_body_program(interp, args[1], "while-body", &body_p,
                                &body_owned) != LCL_RC_OK) {
     lcl_std_free_if_owned(test_p, test_owned);
     return LCL_RC_ERR;
@@ -691,20 +701,20 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
 
   test_is_braced = args[1]->braced;
 
-  if (lcl_std_get_body_program(interp, args[0], "<for-start>", &start_p,
+  if (lcl_std_get_body_program(interp, args[0], "for-start", &start_p,
                                &start_owned) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
   if (test_is_braced) {
-    if (lcl_std_get_body_program(interp, args[1], "<for-test>", &test_p,
+    if (lcl_std_get_body_program(interp, args[1], "for-test", &test_p,
                                  &test_owned) != LCL_RC_OK) {
       lcl_std_free_if_owned(start_p, start_owned);
       return LCL_RC_ERR;
     }
   }
 
-  if (lcl_std_get_body_program(interp, args[2], "<for-next>", &next_p,
+  if (lcl_std_get_body_program(interp, args[2], "for-next", &next_p,
                                &next_owned) != LCL_RC_OK) {
     lcl_std_free_if_owned(start_p, start_owned);
 
@@ -715,7 +725,7 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_get_body_program(interp, args[3], "<for-body>", &body_p,
+  if (lcl_std_get_body_program(interp, args[3], "for-body", &body_p,
                                &body_owned) != LCL_RC_OK) {
     lcl_std_free_if_owned(start_p, start_owned);
 
@@ -1020,7 +1030,7 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return rc;
   }
 
-  if (lcl_std_get_body_program(interp, args[2], "<foreach>", &body_p,
+  if (lcl_std_get_body_program(interp, args[2], "foreach", &body_p,
                                &body_owned) != LCL_RC_OK) {
     lcl_ref_dec(varname_v);
     lcl_ref_dec(list_v);

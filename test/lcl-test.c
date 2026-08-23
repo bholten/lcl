@@ -1513,6 +1513,135 @@ static int test_span_line_attribution(void) {
   return 1;
 }
 
+/* Braced bodies compile in the enclosing file at the line their `{`
+ * opened on (lcl_program_compile_at), so a runtime error inside a
+ * proc / if / while body reports the real file and an absolute line,
+ * not "<braced>:N" relative to the body. Runtime text (a non-braced
+ * body, `eval`, a macro template) has no file line: its program is
+ * named for the construction site ("<eval at f.lcl:3>") and keeps
+ * body-relative lines. */
+static int test_body_line_attribution(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  /* proc body -> nested if body: error on file line 5. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "proc f {x} {\n"
+                            "  let a 1\n"
+                            "  if [> $x 0] {\n"
+                            "    let b 2\n"
+                            "    body_no_such_cmd\n"
+                            "  }\n"
+                            "}\n"
+                            "f 1\n",
+                            "body.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  ASSERT_STREQ(lcl_test_interp->err_file, "body.lcl");
+  ASSERT_TRUE(lcl_test_interp->err_line == 5);
+  lcl_clear_error(lcl_test_interp);
+
+  /* lambda body called later: still the definition site. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "let g [lambda {} {\n"
+                            "  lambda_no_such_cmd\n"
+                            "}]\n"
+                            "apply $g\n",
+                            "lam.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "lam.lcl");
+  ASSERT_TRUE(lcl_test_interp->err_line == 2);
+  lcl_clear_error(lcl_test_interp);
+
+  /* while body inside a namespace builder: three brace levels deep. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "namespace N {\n"
+                            "  proc f {} {\n"
+                            "    while {1} {\n"
+                            "      while_no_such_cmd\n"
+                            "    }\n"
+                            "  }\n"
+                            "}\n"
+                            "N::f\n",
+                            "ns.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "ns.lcl");
+  ASSERT_TRUE(lcl_test_interp->err_line == 4);
+  lcl_clear_error(lcl_test_interp);
+
+  /* Runtime text: named for the construction site, relative line. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "let a 1\n"
+                            "eval \"let b 2\\neval_no_such_cmd\"\n",
+                            "ev.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "<eval at ev.lcl:2>");
+  ASSERT_TRUE(lcl_test_interp->err_line == 2);
+  lcl_clear_error(lcl_test_interp);
+
+  /* Non-braced proc body (text held in a variable): same rule. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "let body \"let c 3\\ndyn_no_such_cmd\"\n"
+                            "\n"
+                            "proc h {} $body\n"
+                            "h\n",
+                            "dyn.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "<lambda at dyn.lcl:3>");
+  ASSERT_TRUE(lcl_test_interp->err_line == 2);
+  lcl_clear_error(lcl_test_interp);
+
+  /* eval'd text calling a proc that fails deeper: the innermost site
+   * wins (eval/load/require used to overwrite it with their own). */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "proc deep {} {\n"
+                            "  let a 1\n"
+                            "  deep_no_such_cmd\n"
+                            "}\n"
+                            "eval \"deep\"\n",
+                            "clob.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "clob.lcl");
+  ASSERT_TRUE(lcl_test_interp->err_line == 3);
+  lcl_clear_error(lcl_test_interp);
+
+  return 1;
+}
+
+/* Proc::origin is the file and line of the command that constructed
+ * the proc -- a source location, not an identity: it follows the
+ * value (`let g $f`), a lambda records its own site, and text run
+ * through `eval` reports the eval's name so definitions from
+ * different sources stay distinguishable. */
+static int test_proc_origin(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  const char *s;
+  int rc;
+
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "proc f {} {}\n"
+                            "let g $f\n"
+                            "let l [lambda {} {}]\n"
+                            "eval \"proc e {} {}\"\n"
+                            "String::join ("
+                            "[get [Proc::origin f] file] "
+                            "[get [Proc::origin g] line] "
+                            "[get [Proc::origin $l] line] "
+                            "[get [Proc::origin e] file] "
+                            "[get [Proc::origin e] line] "
+                            "[len [Proc::origin {+}]]) \"|\"\n",
+                            "org.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(out != NULL);
+  ASSERT_TRUE(lcl_value_to_cstring(lcl_test_interp, out, &s) == LCL_OK);
+  ASSERT_STREQ(s, "org.lcl|1|3|<eval at org.lcl:4>|1|0");
+  lcl_ref_dec(out);
+
+  return 1;
+}
+
 /* lcl_set_error must copy — the idiomatic extension shape is "format
  * into a stack buffer, set error, return", so a borrowed pointer
  * dangles by the time the host reads the message. */
@@ -2454,6 +2583,8 @@ int run_test(void) {
   RUN(test_issue98_bare_spread_is_compile_error);
   RUN(test_sub_literal_scan_unification);
   RUN(test_span_line_attribution);
+  RUN(test_body_line_attribution);
+  RUN(test_proc_origin);
   RUN(test_issue102_set_error_copies);
   RUN(test_issue102_ns_def_ownership);
   RUN(test_issue99_step_budget_empty_body_loops);

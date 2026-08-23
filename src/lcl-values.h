@@ -117,7 +117,8 @@ const char *lcl_value_to_string(lcl_value *value);
 lcl_value *lcl_value_new_string(const char *str);
 
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
-                        lcl_param_spec *pspec, lcl_program *body);
+                        lcl_param_spec *pspec, lcl_program *body,
+                        const char *file, int line);
 lcl_return_code lcl_parse_params(lcl_interp *interp, const char *param_str,
                                  lcl_param_spec *pspec);
 

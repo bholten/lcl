@@ -231,7 +231,12 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
         memcpy(subcmd_src, src + start, subcmd_len);
         subcmd_src[subcmd_len] = '\0';
 
-        prog = lcl_compile_report(interp, subcmd_src, "<subst>");
+        {
+          char name[256];
+          prog = lcl_compile_report(
+              interp, subcmd_src,
+              lcl_dyn_source_name(interp, "subst", name, sizeof(name)));
+        }
         free(subcmd_src);
 
         if (!prog) {
@@ -1024,6 +1029,8 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
   int saved_tail_position = interp->in_tail_position;
+  const char *saved_cur_file = interp->cur_file;
+  int saved_cur_line = interp->cur_line;
 
   if (!lcl_std_chk_argc(interp, "eval", argc, 1, -1)) {
     return LCL_RC_ERR;
@@ -1043,7 +1050,12 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
       return LCL_RC_ERR;
     }
 
-    prog = lcl_compile_report(interp, script_src, "<eval>");
+    {
+      char name[256];
+      prog = lcl_compile_report(
+          interp, script_src,
+          lcl_dyn_source_name(interp, "eval", name, sizeof(name)));
+    }
     lcl_ref_dec(script_v);
   } else {
     size_t total_len = 0;
@@ -1157,7 +1169,12 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
 
     free(parts);
 
-    prog = lcl_compile_report(interp, script_str, "<eval>");
+    {
+      char name[256];
+      prog = lcl_compile_report(
+          interp, script_str,
+          lcl_dyn_source_name(interp, "eval", name, sizeof(name)));
+    }
     free(script_str);
   }
 
@@ -1177,6 +1194,9 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
     lcl_command *cmd = &prog->cmd[i];
     int is_last_cmd = (i == prog->ncmd - 1);
 
+    interp->cur_file = prog->file;
+    interp->cur_line = cmd->line;
+
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
@@ -1187,6 +1207,8 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
 
     if (rc == LCL_RC_TAILCALL) {
       interp->in_tail_position = saved_tail_position;
+      interp->cur_file = saved_cur_file;
+      interp->cur_line = saved_cur_line;
       interp->depth--;
       lcl_program_free(prog);
 
@@ -1198,22 +1220,13 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
     }
 
     if (rc != LCL_RC_OK) {
-      if (rc != LCL_RC_RETURN) {
-        interp->err_line = cmd->line;
-
-        if (interp->err_file_owned && interp->err_file) {
-          free((void *)interp->err_file);
-        }
-
-        interp->err_file = prog->file ? strdup(prog->file) : NULL;
-        interp->err_file_owned = prog->file ? 1 : 0;
-      }
-
       break;
     }
   }
 
   interp->in_tail_position = saved_tail_position;
+  interp->cur_file = saved_cur_file;
+  interp->cur_line = saved_cur_line;
   interp->depth--;
   lcl_program_free(prog);
 
