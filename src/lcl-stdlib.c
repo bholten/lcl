@@ -1034,7 +1034,8 @@ static lcl_return_code c_put(lcl_interp *interp, int argc, lcl_value **argv,
   }
 }
 
-/* del x k - return new container without element */
+/* del x k - return new container without element: dict key (lenient)
+ * or list index (strict, like get/put) */
 static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   if (!lcl_std_chk_argc(interp, "del", argc, 2, 2)) {
@@ -1058,9 +1059,63 @@ static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_OK;
   }
 
+  case LCL_LIST: {
+    long idx;
+    size_t len;
+    size_t i;
+    lcl_value *result;
+
+    if (!lcl_std_arg_int(interp, "del", argv[1], &idx)) {
+      return LCL_RC_ERR;
+    }
+
+    len = lcl_list_len(argv[0]);
+
+    if (idx < 0 || (size_t)idx >= len) {
+      char msg[96];
+
+      snprintf(msg, sizeof(msg), "del: index %ld out of range", idx);
+      LCL_ERR_MSG_DUP(interp, msg);
+      return LCL_RC_ERR;
+    }
+
+    result = lcl_list_new();
+
+    if (!result) {
+      LCL_ERR_MSG(interp, "del: out of memory");
+      return LCL_RC_ERR;
+    }
+
+    for (i = 0; i < len; i++) {
+      lcl_value *elem;
+
+      if (i == (size_t)idx) {
+        continue;
+      }
+
+      if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
+        LCL_ERR_MSG(interp, "del: internal error reading list");
+        lcl_ref_dec(result);
+        return LCL_RC_ERR;
+      }
+
+      if (lcl_list_push(&result, elem) != LCL_OK) {
+        lcl_ref_dec(elem);
+        lcl_ref_dec(result);
+        LCL_ERR_MSG(interp, "del: out of memory");
+        return LCL_RC_ERR;
+      }
+
+      lcl_ref_dec(elem);
+    }
+
+    *out = result;
+
+    return LCL_RC_OK;
+  }
+
   default:
-    /* TODO(bjh) del on list not implemented for MVP - could remove by index */
-    return lcl_std_err_expected_got(interp, "del", "dict", argv[0]);
+    return lcl_std_err_expected_got(interp, "del", "list or dict", argv[0]);
   }
 }
 

@@ -241,6 +241,32 @@ Test::suite "Dict Operations" {
         Test::false [has? $md x]
     }
 
+    Test::case "del on dict is lenient for absent keys" {
+        let md [dict x 10]
+        Test::eq [len [del $md nope]] 1
+    }
+
+    Test::case "del on list removes by index, returns new list" {
+        let l (a b c d)
+        Test::eq [repr [del $l 0]] {("b" "c" "d")}
+        Test::eq [repr [del $l 3]] {("a" "b" "c")}
+        Test::eq [repr [del $l 1]] {("a" "c" "d")}
+        Test::eq [repr $l] {("a" "b" "c" "d")}     ;; original untouched
+        Test::eq [repr [del (x) 0]] {()}
+        Test::eq [repr [del (1 (2 3) #{a 1}) 0]] {((2 3) #{"a" 1})}
+    }
+
+    Test::case "del on list is strict about bounds (like get/put)" {
+        let l (a b)
+        var e 0
+        Test::eq [catch {del $l 2} r e] 1
+        Test::eq $e "del: index 2 out of range"
+        Test::eq [catch {del $l -1} r e] 1
+        Test::eq $e "del: index -1 out of range"
+        Test::eq [catch {del 42 0} r e] 1
+        Test::eq $e "del: expected list or dict, got int"
+    }
+
     Test::case "empty dict" {
         let empty [dict]
         Test::eq [len $empty] 0
