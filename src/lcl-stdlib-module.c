@@ -68,6 +68,7 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
   int saved_tail_position = interp->in_tail_position;
   const char *saved_cur_file = interp->cur_file;
   int saved_cur_line = interp->cur_line;
+  int saved_dyn_mode = interp->env.dyn_mode;
 
   if (!lcl_std_chk_argc(interp, "load", argc, 1, 1)) {
     return LCL_RC_ERR;
@@ -111,6 +112,8 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
 
   interp->depth++;
 
+  interp->env.dyn_mode = 1;
+
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
     int is_last_cmd = (i == prog->ncmd - 1);
@@ -130,6 +133,7 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
       interp->in_tail_position = saved_tail_position;
       interp->cur_file = saved_cur_file;
       interp->cur_line = saved_cur_line;
+      interp->env.dyn_mode = saved_dyn_mode;
       interp->depth--;
       lcl_program_free(prog);
 
@@ -148,6 +152,7 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
   interp->in_tail_position = saved_tail_position;
   interp->cur_file = saved_cur_file;
   interp->cur_line = saved_cur_line;
+  interp->env.dyn_mode = saved_dyn_mode;
   interp->depth--;
   lcl_program_free(prog);
 

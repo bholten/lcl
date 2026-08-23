@@ -972,8 +972,8 @@ static lcl_return_code foreach_source(lcl_interp *interp, lcl_value *v,
   }
 
   default:
-    return lcl_std_err_expected_got(interp, "foreach",
-                                    "list, dict, or string", v);
+    return lcl_std_err_expected_got(interp, "foreach", "list, dict, or string",
+                                    v);
   }
 }
 

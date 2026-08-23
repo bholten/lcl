@@ -34,13 +34,24 @@ Test::suite "Tail Call Optimization" {
         Test::eq [sum 10] 55
     }
 
-    Test::case "anonymous lambda no TCO" {
-        ;; Anonymous lambdas have no self_name so can't do TCO
-        ;; This should work for small n but would overflow for large n
+    Test::case "anonymous lambda cannot self-reference by binding name" {
+        ;; `$anon` is unbound while the lambda is being built, and the
+        ;; removed caller-chain lookup no longer papers over it:
+        ;; the recursive call fails when executed. Named lambdas (and
+        ;; proc) self-reference via SELF instead.
         let anon [lambda {n} {
             if [== $n 0] { $n } else { [$anon [- $n 1]] }
         }]
-        Test::eq [$anon 10] 0
+        Test::eq [$anon 0] 0
+        Test::raises { $anon 1 }
+    }
+
+    Test::case "named lambda self-references without TCO" {
+        ;; The named form binds SELF at call time — no capture needed.
+        let named [lambda nrec {n} {
+            if [== $n 0] { $n } else { [nrec [- $n 1]] }
+        }]
+        Test::eq [apply $named 10] 0
     }
 }
 

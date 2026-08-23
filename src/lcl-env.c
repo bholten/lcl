@@ -2,6 +2,7 @@
 #include "lcl-compile.h"
 #include "lcl-values.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 void lcl_env_free(lcl_env *env) {
@@ -11,14 +12,6 @@ void lcl_env_free(lcl_env *env) {
 
   if (env->frame) {
     lcl_frame_ref_dec(env->frame);
-  }
-
-  if (env->current_ns) {
-    lcl_ref_dec(env->current_ns);
-  }
-
-  if (env->global_ns) {
-    lcl_ref_dec(env->global_ns);
   }
 
   free(env);
@@ -35,14 +28,6 @@ lcl_env *lcl_env_new(void) {
 
   if (!env->frame) {
     free(env);
-    return NULL;
-  }
-
-  env->global_ns = lcl_ns_new("global");
-  env->current_ns = lcl_ref_inc(env->global_ns);
-
-  if (!env->global_ns || !env->current_ns) {
-    lcl_env_free(env);
     return NULL;
   }
 
@@ -92,16 +77,8 @@ static lcl_result env_get_simple(lcl_env *env, const char *key,
                                  lcl_value **out) {
   lcl_value *b = NULL;
 
-  if (lcl_frame_get_binding(env->frame, key, &b)) {
+  if (lcl_frame_get_binding(env->frame, key, &b, env->dyn_mode)) {
     *out = b;
-    return LCL_OK;
-  }
-
-  if (env->current_ns && lcl_ns_get(env->current_ns, key, out) == LCL_OK) {
-    return LCL_OK;
-  }
-
-  if (env->global_ns && lcl_ns_get(env->global_ns, key, out) == LCL_OK) {
     return LCL_OK;
   }
 
@@ -159,6 +136,24 @@ static lcl_def_target *find_def_target_for_self(lcl_interp *interp,
   return NULL;
 }
 
+static lcl_frame *env_root_frame(lcl_env *env) {
+  lcl_frame *f = env->frame;
+
+  if (!f) {
+    return NULL;
+  }
+
+  for (;;) {
+    if (f->parent) {
+      f = f->parent;
+    } else if (f->caller) {
+      f = f->caller;
+    } else {
+      return f;
+    }
+  }
+}
+
 lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
                              lcl_value **out) {
   lcl_env *env;
@@ -171,6 +166,29 @@ lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
   }
 
   env = &interp->env;
+
+  if (key[0] == ':' && key[1] == ':') {
+    lcl_frame *g = env_root_frame(env);
+    const char *sub = key + 2;
+    int has_more;
+
+    if (!g || sub[0] == '\0') {
+      return LCL_ERROR;
+    }
+
+    has_more = (lcl_ns_split(sub, first, sizeof(first), &rest) != NULL);
+
+    if (!hash_table_get(g->locals, has_more ? first : sub, &current)) {
+      return LCL_ERROR;
+    }
+
+    if (!has_more) {
+      *out = current;
+      return LCL_OK;
+    }
+
+    goto walk_rest;
+  }
 
   if (env_get_simple(env, key, out) == LCL_OK) {
     return LCL_OK;
@@ -239,6 +257,18 @@ walk_rest:
     char part[256];
     const char *next_rest = NULL;
 
+    if (current->type == LCL_CELL) {
+      lcl_value *inner = NULL;
+
+      if (lcl_cell_get(current, &inner) != LCL_OK) {
+        lcl_ref_dec(current);
+        return LCL_ERROR;
+      }
+
+      lcl_ref_dec(current);
+      current = inner;
+    }
+
     if (current->type != LCL_NAMESPACE) {
       lcl_ref_dec(current);
       return LCL_ERROR;
@@ -287,7 +317,7 @@ static lcl_result env_set_bang_simple(lcl_env *env, const char *name,
       return LCL_ERROR;
     }
 
-    f = f->parent;
+    f = f->parent ? f->parent : (env->dyn_mode ? f->caller : NULL);
   }
 
   return LCL_ERROR;
@@ -302,22 +332,63 @@ lcl_result lcl_env_set_bang(lcl_env *env, const char *name, lcl_value *value) {
     return LCL_ERROR;
   }
 
-  if (env_set_bang_simple(env, name, value) == LCL_OK) {
-    return LCL_OK;
-  }
+  if (name[0] == ':' && name[1] == ':') {
+    /* Rooted set!: resolve from the top-level frame only. */
+    lcl_frame *g = env_root_frame(env);
+    const char *sub = name + 2;
+    int has_more;
 
-  if (!lcl_ns_split(name, first, sizeof(first), &rest)) {
-    return LCL_ERROR;
-  }
+    if (!g || sub[0] == '\0') {
+      return LCL_ERROR;
+    }
 
-  if (env_get_simple(env, first, &current) != LCL_OK) {
-    return LCL_ERROR;
+    has_more = (lcl_ns_split(sub, first, sizeof(first), &rest) != NULL);
+
+    if (!hash_table_get(g->locals, has_more ? first : sub, &current)) {
+      return LCL_ERROR;
+    }
+
+    if (!has_more) {
+      if (current->type == LCL_CELL) {
+        lcl_result r = lcl_cell_set(current, value);
+
+        lcl_ref_dec(current);
+        return r;
+      }
+
+      lcl_ref_dec(current);
+      return LCL_ERROR;
+    }
+  } else {
+    if (env_set_bang_simple(env, name, value) == LCL_OK) {
+      return LCL_OK;
+    }
+
+    if (!lcl_ns_split(name, first, sizeof(first), &rest)) {
+      return LCL_ERROR;
+    }
+
+    if (env_get_simple(env, first, &current) != LCL_OK) {
+      return LCL_ERROR;
+    }
   }
 
   while (rest && *rest) {
     lcl_value *next = NULL;
     char part[256];
     const char *next_rest = NULL;
+
+    if (current->type == LCL_CELL) {
+      lcl_value *inner = NULL;
+
+      if (lcl_cell_get(current, &inner) != LCL_OK) {
+        lcl_ref_dec(current);
+        return LCL_ERROR;
+      }
+
+      lcl_ref_dec(current);
+      current = inner;
+    }
 
     if (current->type != LCL_NAMESPACE) {
       lcl_ref_dec(current);
@@ -398,6 +469,9 @@ lcl_result lcl_def_target_push(lcl_interp *interp, lcl_frame *parent,
 
   target = &interp->def_stack[interp->def_depth];
   target->exports = exports;
+  target->pending = NULL;
+  target->npending = 0;
+  target->pending_cap = 0;
   target->overlay = overlay;
   target->name = name_copy;
   interp->def_depth++;
@@ -428,6 +502,22 @@ lcl_value *lcl_def_target_pop(lcl_interp *interp) {
     free(target->name);
     target->name = NULL;
   }
+
+  if (interp->popped_pending) {
+    int i;
+
+    for (i = 0; i < interp->n_popped_pending; i++) {
+      lcl_ref_dec(interp->popped_pending[i]);
+    }
+
+    free(interp->popped_pending);
+  }
+
+  interp->popped_pending = target->pending;
+  interp->n_popped_pending = target->npending;
+  target->pending = NULL;
+  target->npending = 0;
+  target->pending_cap = 0;
 
   return exports;
 }

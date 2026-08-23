@@ -11,6 +11,7 @@
 
 typedef struct {
   char **names;
+  int *is_root;
   int count;
   int cap;
 } name_set;
@@ -463,6 +464,7 @@ error:
 
 static void name_set_init(name_set *s) {
   s->names = NULL;
+  s->is_root = NULL;
   s->count = 0;
   s->cap = 0;
 }
@@ -475,6 +477,7 @@ static void name_set_free(name_set *s) {
   }
 
   free(s->names);
+  free(s->is_root);
 }
 
 static int name_set_contains(name_set *s, const char *name) {
@@ -489,22 +492,58 @@ static int name_set_contains(name_set *s, const char *name) {
   return 0;
 }
 
-static int name_set_add(name_set *s, const char *name) {
+static int name_set_add_ex(name_set *s, const char *name, int force_root) {
+  char root[256];
+  int is_root;
+  const char *sep;
+  int i;
   char *copy;
 
-  if (name_set_contains(s, name)) {
+  is_root = force_root;
+
+  if (name[0] == ':' && name[1] == ':') {
     return 1;
+  }
+
+  sep = strstr(name, "::");
+
+  if (sep) {
+    size_t n = (size_t)(sep - name);
+
+    if (n == 0 || n >= sizeof(root)) {
+      return 1;
+    }
+
+    memcpy(root, name, n);
+    root[n] = '\0';
+    name = root;
+    is_root = 1;
+  }
+
+  for (i = 0; i < s->count; i++) {
+    if (strcmp(s->names[i], name) == 0) {
+      s->is_root[i] |= is_root;
+      return 1;
+    }
   }
 
   if (s->count >= s->cap) {
     int newcap = s->cap ? s->cap * 2 : 8;
     char **newnames = realloc(s->names, (size_t)newcap * sizeof(char *));
+    int *newroots;
 
     if (!newnames) {
       return 0;
     }
 
     s->names = newnames;
+    newroots = realloc(s->is_root, (size_t)newcap * sizeof(int));
+
+    if (!newroots) {
+      return 0;
+    }
+
+    s->is_root = newroots;
     s->cap = newcap;
   }
 
@@ -514,8 +553,13 @@ static int name_set_add(name_set *s, const char *name) {
     return 0;
   }
 
+  s->is_root[s->count] = is_root;
   s->names[s->count++] = copy;
   return 1;
+}
+
+static int name_set_add(name_set *s, const char *name) {
+  return name_set_add_ex(s, name, 0);
 }
 
 static void collect_free_vars_program(const lcl_program *prog, name_set *vars);
@@ -594,6 +638,28 @@ static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
 
       if (cmd_name) {
         name_set_add(vars, cmd_name);
+
+        if (cmd->argc >= 2) {
+          const char *narg = word_get_literal(&cmd->w[1]);
+
+          if (narg && narg[0] != '\0') {
+            if (strcmp(cmd_name, "set!") == 0 ||
+                strcmp(cmd_name, "macroexpand") == 0) {
+              name_set_add(vars, narg);
+            } else if (strcmp(cmd_name, "import") == 0) {
+              name_set_add_ex(vars, narg, 1);
+            } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3) {
+              name_set_add_ex(vars, narg, 1);
+            }
+          } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3 &&
+                     cmd->w[1].np >= 1 && cmd->w[1].wp[0].kind == LCL_WP_LIT) {
+            const char *lead = cmd->w[1].wp[0].as.lit.s;
+
+            if (lead && strstr(lead, "::") != NULL) {
+              name_set_add_ex(vars, lead, 1);
+            }
+          }
+        }
       }
     }
 
@@ -628,6 +694,82 @@ static int is_param_name(const lcl_param_spec *pspec, const char *name) {
 
   if (pspec->rest_name && strcmp(pspec->rest_name, name) == 0) {
     return 1;
+  }
+
+  return 0;
+}
+
+static lcl_value *resolve_in_frames(lcl_frame *f, const char *name, int dyn) {
+  while (f) {
+    lcl_value *v = NULL;
+
+    if (hash_table_get(f->locals, name, &v)) {
+      return v;
+    }
+
+    f = f->parent ? f->parent : (dyn ? f->caller : NULL);
+  }
+
+  return NULL;
+}
+
+static int root_names_target(const char *root, const char *tname) {
+  size_t n;
+
+  if (!tname) {
+    return 0;
+  }
+
+  n = strlen(root);
+
+  if (strncmp(root, tname, n) != 0) {
+    return 0;
+  }
+
+  return tname[n] == '\0' || (tname[n] == ':' && tname[n + 1] == ':');
+}
+
+static int root_is_home(lcl_interp *interp, const char *name, lcl_value *val) {
+  int i;
+
+  for (i = interp->def_floor; i < interp->def_depth; i++) {
+    lcl_def_target *t = &interp->def_stack[i];
+
+    if (t->name && root_names_target(name, t->name)) {
+      lcl_frame *outer = t->overlay ? t->overlay->parent : NULL;
+      lcl_value *v = resolve_in_frames(outer, name, interp->env.dyn_mode);
+
+      if (v == val) {
+        lcl_ref_dec(v);
+        return 1;
+      }
+
+      lcl_ref_dec(v);
+    }
+  }
+
+  if (interp->current_proc && interp->current_proc->type == LCL_PROC) {
+    lcl_proc *cur = interp->current_proc->as.procedure.proc;
+
+    for (i = 0; i < cur->nhome; i++) {
+      if (cur->home[i]->target == val) {
+        return 1;
+      }
+    }
+  }
+
+  return 0;
+}
+
+static int root_is_pending_home(lcl_interp *interp, const char *name) {
+  int i;
+
+  for (i = interp->def_floor; i < interp->def_depth; i++) {
+    lcl_def_target *t = &interp->def_stack[i];
+
+    if (t->name && root_names_target(name, t->name)) {
+      return 1;
+    }
   }
 
   return 0;
@@ -683,6 +825,10 @@ lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
     const char *name = vars.names[i];
     lcl_value *val = NULL;
 
+    if (name[0] == ':' && name[1] == ':') {
+      continue;
+    }
+
     if (self_name && strcmp(name, self_name) == 0) {
       continue;
     }
@@ -700,13 +846,40 @@ lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
         goto error;
       }
 
-      if (val->type == LCL_CELL) {
+      if (vars.is_root[i] && val->type == LCL_NAMESPACE &&
+          root_is_home(interp, name, val)) {
+        lcl_ns_anchor *a = lcl_ns_anchor_get(val);
+
+        if (!a) {
+          lcl_ref_dec(val);
+          free(upvals[nupvals].name);
+          LCL_ERR_MSG(interp, "out of memory");
+          goto error;
+        }
+
+        upvals[nupvals].is_ns_root = 1;
+        upvals[nupvals].anchor = lcl_ns_anchor_ref(a);
+        upvals[nupvals].value = NULL;
+        lcl_ref_dec(val);
+      } else if (val->type == LCL_CELL) {
         upvals[nupvals].is_cell = 1;
         upvals[nupvals].value = val;
       } else {
         upvals[nupvals].is_cell = 0;
         upvals[nupvals].value = val;
       }
+      nupvals++;
+    } else if (vars.is_root[i] && root_is_pending_home(interp, name)) {
+      upvals[nupvals].name = strdup(name);
+
+      if (!upvals[nupvals].name) {
+        LCL_ERR_MSG(interp, "out of memory");
+        goto error;
+      }
+
+      upvals[nupvals].is_ns_root = 1;
+      upvals[nupvals].anchor = NULL;
+      upvals[nupvals].value = NULL;
       nupvals++;
     } else {
       /* Variable not found in current environment.
@@ -739,6 +912,7 @@ error:
   for (j = 0; j < nupvals; j++) {
     free(upvals[j].name);
     lcl_ref_dec(upvals[j].value);
+    lcl_ns_anchor_unref(upvals[j].anchor);
   }
   free(upvals);
   name_set_free(&vars);
@@ -896,4 +1070,69 @@ lcl_value *lcl_c_spec_new(const char *name, lcl_c_spec_fn fn) {
   proc->as.c_proc.fn = func;
 
   return proc;
+}
+
+lcl_result lcl_proc_attach_context(lcl_interp *interp, lcl_value *proc_val) {
+  lcl_proc *p;
+  int i;
+  int extra;
+
+  if (!proc_val || proc_val->type != LCL_PROC) {
+    return LCL_ERROR;
+  }
+
+  p = proc_val->as.procedure.proc;
+  extra = interp->def_depth - interp->def_floor;
+
+  if (interp->current_proc && interp->current_proc->type == LCL_PROC) {
+    lcl_proc *cur = interp->current_proc->as.procedure.proc;
+
+    if (cur->nhome > 0) {
+      lcl_ns_anchor **h = realloc(
+          p->home, (size_t)(p->nhome + cur->nhome + (extra > 0 ? extra : 0)) *
+                       sizeof(*h));
+
+      if (!h) {
+        return LCL_ERROR;
+      }
+
+      p->home = h;
+
+      for (i = 0; i < cur->nhome; i++) {
+        int j;
+        int dup = 0;
+
+        for (j = 0; j < p->nhome; j++) {
+          if (p->home[j] == cur->home[i]) {
+            dup = 1;
+            break;
+          }
+        }
+
+        if (!dup) {
+          p->home[p->nhome++] = lcl_ns_anchor_ref(cur->home[i]);
+        }
+      }
+    }
+  }
+
+  for (i = interp->def_floor; i < interp->def_depth; i++) {
+    lcl_def_target *t = &interp->def_stack[i];
+
+    if (t->npending >= t->pending_cap) {
+      int newcap = t->pending_cap ? t->pending_cap * 2 : 4;
+      lcl_value **np = realloc(t->pending, (size_t)newcap * sizeof(*np));
+
+      if (!np) {
+        return LCL_ERROR;
+      }
+
+      t->pending = np;
+      t->pending_cap = newcap;
+    }
+
+    t->pending[t->npending++] = lcl_ref_inc(proc_val);
+  }
+
+  return LCL_OK;
 }

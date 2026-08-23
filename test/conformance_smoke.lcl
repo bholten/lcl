@@ -19,5 +19,6 @@ load test/conformance/params_dispatch.lcl
 load test/conformance/numerics_literals.lcl
 load test/conformance/hardening.lcl
 load test/conformance/diagnostics.lcl
+load test/conformance/name_resolution.lcl
 
 Test::run

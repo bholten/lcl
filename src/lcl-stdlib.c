@@ -665,7 +665,8 @@ lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
     {
       char name[256];
       *prog_out = lcl_compile_report(
-          interp, body_src, lcl_dyn_source_name(interp, tag, name, sizeof(name)));
+          interp, body_src,
+          lcl_dyn_source_name(interp, tag, name, sizeof(name)));
     }
     lcl_ref_dec(body_v);
 
@@ -762,11 +763,15 @@ lcl_frame *lcl_std_find_global_frame(lcl_frame *f) {
     return NULL;
   }
 
-  while (f->parent) {
-    f = f->parent;
+  for (;;) {
+    if (f->parent) {
+      f = f->parent;
+    } else if (f->caller) {
+      f = f->caller;
+    } else {
+      return f;
+    }
   }
-
-  return f;
 }
 
 /* len x - returns length of list, dict, or string */

@@ -1,5 +1,61 @@
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
+
+#include <stdio.h>
+
 #include "lcl-name.h"
 #include "lcl-stdlib-internal.h"
+
+static lcl_result resolve_ns_path_at_root(lcl_interp *interp, const char *path,
+                                          lcl_value **out) {
+  char first[256];
+  const char *rest = NULL;
+  lcl_value *current = NULL;
+  lcl_frame *global = lcl_std_find_global_frame(interp->env.frame);
+  int has_more;
+
+  if (!global) {
+    return LCL_ERROR;
+  }
+
+  has_more = (lcl_ns_split(path, first, sizeof(first), &rest) != NULL);
+
+  if (!hash_table_get(global->locals, has_more ? first : path, &current)) {
+    return LCL_ERROR;
+  }
+
+  while (has_more && rest && *rest) {
+    char part[256];
+    const char *next_rest = NULL;
+    const char *part_name;
+    lcl_value *next = NULL;
+
+    if (current->type != LCL_NAMESPACE) {
+      lcl_ref_dec(current);
+      return LCL_ERROR;
+    }
+
+    if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
+      part_name = part;
+    } else {
+      part_name = rest;
+      next_rest = NULL;
+    }
+
+    if (lcl_ns_get(current, part_name, &next) != LCL_OK) {
+      lcl_ref_dec(current);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(current);
+    current = next;
+    rest = next_rest;
+  }
+
+  *out = current;
+  return LCL_OK;
+}
 
 static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
                                             const char *path) {
@@ -11,7 +67,8 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
     lcl_value *ns = NULL;
     lcl_frame *global = NULL;
 
-    if (lcl_env_get_value(interp, path, &ns) == LCL_OK) {
+    if (lcl_env_get_value(interp, path, &ns) == LCL_OK ||
+        resolve_ns_path_at_root(interp, path, &ns) == LCL_OK) {
       if (ns->type != LCL_NAMESPACE) {
         lcl_ref_dec(ns);
         return NULL;
@@ -36,7 +93,8 @@ static lcl_value *resolve_or_create_ns_path(lcl_interp *interp,
     return ns;
   }
 
-  if (lcl_env_get_value(interp, first, &current) != LCL_OK) {
+  if (lcl_env_get_value(interp, first, &current) != LCL_OK &&
+      resolve_ns_path_at_root(interp, first, &current) != LCL_OK) {
     lcl_frame *global = NULL;
 
     current = lcl_ns_new(first);
@@ -295,6 +353,118 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
 }
 
 /* Note: `namespace eval` simplified to `namespace`. */
+#define NS_POP_HOME_MAX 32
+
+static void resolve_popped_pending(lcl_interp *interp, lcl_value *ns,
+                                   const char *qname) {
+  int i;
+  lcl_ns_anchor *chain[NS_POP_HOME_MAX];
+  int nchain = 0;
+
+  if (ns) {
+    lcl_ns_anchor *a = lcl_ns_anchor_get(ns);
+
+    if (a) {
+      chain[nchain++] = a;
+    }
+  }
+
+  if (qname && lcl_name_has_sep(qname)) {
+    char seg[256];
+    const char *rest = NULL;
+
+    if (lcl_ns_split(qname, seg, sizeof(seg), &rest)) {
+      lcl_value *cur = NULL;
+
+      if (lcl_env_get_value(interp, seg, &cur) == LCL_OK) {
+        while (cur) {
+          lcl_value *next = NULL;
+          lcl_ns_anchor *a;
+
+          if (cur->type != LCL_NAMESPACE) {
+            break;
+          }
+
+          a = lcl_ns_anchor_get(cur);
+
+          if (a && nchain < NS_POP_HOME_MAX) {
+            chain[nchain++] = a;
+          }
+
+          if (rest && lcl_name_has_sep(rest) &&
+              lcl_ns_split(rest, seg, sizeof(seg), &rest)) {
+            if (lcl_ns_get(cur, seg, &next) != LCL_OK) {
+              next = NULL;
+            }
+          }
+
+          lcl_ref_dec(cur);
+          cur = next;
+        }
+
+        if (cur) {
+          lcl_ref_dec(cur);
+        }
+      }
+    }
+  }
+
+  for (i = 0; i < interp->n_popped_pending; i++) {
+    lcl_value *pv = interp->popped_pending[i];
+    lcl_proc *p = pv->as.procedure.proc;
+    int u;
+    int c;
+
+    for (c = 0; c < nchain; c++) {
+      int dup = 0;
+      int j;
+
+      for (j = 0; j < p->nhome; j++) {
+        if (p->home[j] == chain[c]) {
+          dup = 1;
+          break;
+        }
+      }
+
+      if (!dup) {
+        lcl_ns_anchor **h =
+            realloc(p->home, (size_t)(p->nhome + 1) * sizeof(*h));
+
+        if (h) {
+          p->home = h;
+          p->home[p->nhome++] = lcl_ns_anchor_ref(chain[c]);
+        }
+      }
+    }
+
+    for (u = 0; u < p->nupvals; u++) {
+      lcl_upvalue *uv = &p->upvals[u];
+
+      if (uv->is_ns_root && !uv->anchor) {
+        lcl_value *v = NULL;
+
+        if (lcl_env_get_value(interp, uv->name, &v) == LCL_OK) {
+          if (v->type == LCL_NAMESPACE) {
+            lcl_ns_anchor *a = lcl_ns_anchor_get(v);
+
+            if (a) {
+              uv->anchor = lcl_ns_anchor_ref(a);
+            }
+          }
+
+          lcl_ref_dec(v);
+        }
+      }
+    }
+
+    lcl_ref_dec(pv);
+  }
+
+  free(interp->popped_pending);
+  interp->popped_pending = NULL;
+  interp->n_popped_pending = 0;
+}
+
 static lcl_return_code s_namespace(lcl_interp *interp, int argc,
                                    const lcl_word **args, lcl_value **out) {
   /* namespace { body }      - anonymous, returns ns value
@@ -396,6 +566,11 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
       have_found = hash_table_get(enclosing->overlay->locals, ns_name, &found);
     } else {
       have_found = (lcl_env_get_value(interp, ns_name, &found) == LCL_OK);
+
+      if (!have_found) {
+        have_found =
+            (resolve_ns_path_at_root(interp, ns_name, &found) == LCL_OK);
+      }
     }
 
     if (have_found) {
@@ -547,10 +722,30 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
       const char *ck;
       lcl_value *cv;
       int cycle_found = 0;
+      char msg[900];
 
       while (hash_table_iterate(exports->as.dict.dictionary, &cit, &ck, &cv)) {
         if (!cycle_found && lcl_value_would_cycle(existing_ns, cv)) {
+          size_t used;
+
           cycle_found = 1;
+          used = (size_t)snprintf(msg, sizeof(msg),
+                                  "namespace: binding member \"%.128s\" "
+                                  "would create a reference cycle",
+                                  ck);
+
+          if (used < sizeof(msg)) {
+            lcl_value_cycle_explain(existing_ns, cv, msg + used,
+                                    sizeof(msg) - used);
+          }
+
+          used = strlen(msg);
+
+          if (used < sizeof(msg)) {
+            snprintf(msg + used, sizeof(msg) - used, "%s",
+                     " (a ::-rooted spelling is non-owning for a "
+                     "top-level-reachable namespace)");
+          }
         }
 
         lcl_ref_dec(cv);
@@ -560,8 +755,7 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
         lcl_ref_dec(exports);
         lcl_ref_dec(existing_ns);
         free(ns_name);
-        LCL_ERR_MSG(interp, "namespace: binding would create a reference "
-                            "cycle (a member contains the namespace itself)");
+        LCL_ERR_MSG_DUP(interp, msg);
         return LCL_RC_ERR;
       }
     }
@@ -586,6 +780,7 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
       return LCL_RC_ERR;
     }
 
+    resolve_popped_pending(interp, existing_ns, ns_name);
     free(ns_name);
     *out = existing_ns;
     return LCL_RC_OK;
@@ -675,9 +870,20 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
           }
 
           if (lcl_value_would_cycle(parent, ns)) {
-            LCL_ERR_MSG(interp, "namespace: binding would create a "
-                                "reference cycle (a member contains an "
-                                "ancestor namespace)");
+            char msg[900];
+            size_t used;
+
+            used = (size_t)snprintf(msg, sizeof(msg),
+                                    "namespace: binding would create a "
+                                    "reference cycle (a member contains an "
+                                    "ancestor namespace)");
+
+            if (used < sizeof(msg)) {
+              lcl_value_cycle_explain(parent, ns, msg + used,
+                                      sizeof(msg) - used);
+            }
+
+            LCL_ERR_MSG_DUP(interp, msg);
             lcl_ref_dec(parent);
             lcl_ref_dec(ns);
             free(ns_name);
@@ -714,10 +920,10 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
         }
       }
     }
-
-    free(ns_name);
   }
 
+  resolve_popped_pending(interp, ns, ns_name);
+  free(ns_name);
   *out = ns;
   return LCL_RC_OK;
 }
@@ -953,8 +1159,27 @@ static lcl_return_code c_ns_set(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_value_would_cycle(argv[0], argv[2])) {
-    LCL_ERR_MSG(interp, "Ns::set: would create a reference cycle "
-                        "(value contains the target namespace)");
+    char msg[900];
+    size_t used;
+
+    used = (size_t)snprintf(msg, sizeof(msg),
+                            "Ns::set: would create a reference cycle "
+                            "(value contains the target namespace)");
+
+    if (used < sizeof(msg)) {
+      lcl_value_cycle_explain(argv[0], argv[2], msg + used, sizeof(msg) - used);
+    }
+
+    used = strlen(msg);
+
+    if (used < sizeof(msg)) {
+      snprintf(msg + used, sizeof(msg) - used, "%s",
+               " (a ::-rooted spelling is non-owning for a "
+               "top-level-reachable namespace; or define the member inside "
+               "the namespace body)");
+    }
+
+    LCL_ERR_MSG_DUP(interp, msg);
     return LCL_RC_ERR;
   }
 

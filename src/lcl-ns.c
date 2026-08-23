@@ -1,7 +1,49 @@
 #include <memory.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "lcl-compile.h"
 #include "lcl-values.h"
+
+lcl_ns_anchor *lcl_ns_anchor_get(lcl_value *ns) {
+  lcl_ns_anchor *a;
+
+  if (!ns || ns->type != LCL_NAMESPACE) {
+    return NULL;
+  }
+
+  a = (lcl_ns_anchor *)ns->as.namespace.anchor;
+
+  if (a) {
+    return a;
+  }
+
+  a = (lcl_ns_anchor *)calloc(1, sizeof(*a));
+
+  if (!a) {
+    return NULL;
+  }
+
+  a->refc = 1;
+  a->target = ns;
+  ns->as.namespace.anchor = a;
+
+  return a;
+}
+
+lcl_ns_anchor *lcl_ns_anchor_ref(lcl_ns_anchor *a) {
+  if (a) {
+    a->refc++;
+  }
+
+  return a;
+}
+
+void lcl_ns_anchor_unref(lcl_ns_anchor *a) {
+  if (a && --a->refc == 0) {
+    free(a);
+  }
+}
 
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {
   if (!ns || ns->type != LCL_NAMESPACE) {

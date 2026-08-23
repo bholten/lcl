@@ -241,14 +241,14 @@ Test::suite "unknown bare identifier at head errors (no self-quote)" {
     Test::case "qualified unknown errors for unresolvable root" {
         let r [catch { i74_nosuch_ns::member } res err]
         Test::eq $r 1
-        Test::eq $err {unknown command: i74_nosuch_ns::member}
+        Test::eq $err {undefined name "i74_nosuch_ns" (in "i74_nosuch_ns::member")}
     }
 
     Test::case "qualified unknown errors for missing member (symmetry)" {
         namespace i74_cfg { let x 1 }
         let r [catch { i74_cfg::nope } res err]
         Test::eq $r 1
-        Test::eq $err {unknown command: i74_cfg::nope}
+        Test::eq $err {namespace "i74_cfg" has no member "nope"}
     }
 
     Test::case "typo'd zero-arg command in proc tail errors" {
@@ -607,9 +607,11 @@ Test::suite "braced qualified substitution" {
         Test::eq $empty_seg 1
         Test::assert [has? $err {empty segment}]
 
-        let lead_seg [catch { eval "puts \${::foo}" } res err]
-        Test::eq $lead_seg 1
-        Test::assert [has? $err {empty segment}]
+        ;; ${::foo} is a valid ROOT reference since the name-resolution
+        ;; redesign; the bare root marker ${::} stays a compile error.
+        let root_only [catch { eval "puts \${::}" } res err]
+        Test::eq $root_only 1
+        Test::assert [has? $err {empty variable name}]
 
         let dbl_seg [catch { eval "puts \${a::::b}" } res err]
         Test::eq $dbl_seg 1

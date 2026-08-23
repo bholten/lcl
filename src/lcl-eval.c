@@ -11,6 +11,144 @@
 #include "lcl-values.h"
 #include "str-compat.h"
 
+static int path_resolves_at_root(lcl_interp *interp, const char *name) {
+  char rooted[300];
+  lcl_value *v = NULL;
+
+  if (!name || name[0] == '\0' || (name[0] == ':' && name[1] == ':')) {
+    return 0;
+  }
+
+  if (strlen(name) + 3 > sizeof(rooted)) {
+    return 0;
+  }
+
+  sprintf(rooted, "::%s", name);
+
+  if (lcl_env_get_value(interp, rooted, &v) != LCL_OK) {
+    return 0;
+  }
+
+  lcl_ref_dec(v);
+  return 1;
+}
+
+static void describe_name_failure(lcl_interp *interp, const char *name,
+                                  int kind, char *msg, size_t msglen) {
+  const char *sep = strstr(name, "::");
+  int hint = path_resolves_at_root(interp, name);
+  size_t used = 0;
+
+  if (!sep || (name[0] == ':' && name[1] == ':')) {
+    if (kind == 1) {
+      used = (size_t)snprintf(msg, msglen, "unknown command: %.200s", name);
+    } else {
+      used =
+          (size_t)snprintf(msg, msglen, "undefined variable \"%.200s\"", name);
+    }
+  } else {
+    char root[256];
+    const char *rest = NULL;
+    lcl_value *current = NULL;
+    size_t n = (size_t)(sep - name);
+
+    if (n >= sizeof(root)) {
+      n = sizeof(root) - 1;
+    }
+
+    memcpy(root, name, n);
+    root[n] = '\0';
+
+    if (lcl_env_get_value(interp, root, &current) != LCL_OK) {
+      used = (size_t)snprintf(
+          msg, msglen, "undefined name \"%.128s\" (in \"%.200s\")", root, name);
+    } else {
+      char sofar[300];
+      char part[256];
+      const char *next_rest = NULL;
+
+      strcpy(sofar, root);
+      rest = sep + 2;
+
+      for (;;) {
+        const char *part_name;
+        lcl_value *next = NULL;
+
+        if (current->type == LCL_CELL) {
+          lcl_value *inner = NULL;
+
+          if (lcl_cell_get(current, &inner) != LCL_OK) {
+            break;
+          }
+
+          lcl_ref_dec(current);
+          current = inner;
+        }
+
+        if (current->type != LCL_NAMESPACE) {
+          used = (size_t)snprintf(
+              msg, msglen,
+              "\"%.128s\" is not a namespace (cannot resolve \"%.200s\")",
+              sofar, name);
+          lcl_ref_dec(current);
+          current = NULL;
+          break;
+        }
+
+        if (lcl_ns_split(rest, part, sizeof(part), &next_rest)) {
+          part_name = part;
+        } else {
+          part_name = rest;
+          next_rest = NULL;
+        }
+
+        if (lcl_ns_get(current, part_name, &next) != LCL_OK) {
+          used = (size_t)snprintf(msg, msglen,
+                                  "namespace \"%.128s\" has no member "
+                                  "\"%.128s\"",
+                                  sofar, part_name);
+          lcl_ref_dec(current);
+          current = NULL;
+          break;
+        }
+
+        lcl_ref_dec(current);
+        current = next;
+
+        if (strlen(sofar) + strlen(part_name) + 3 < sizeof(sofar)) {
+          strcat(sofar, "::");
+          strcat(sofar, part_name);
+        }
+
+        if (!next_rest || !*next_rest) {
+          used = (size_t)snprintf(msg, msglen,
+                                  kind == 1 ? "unknown command: %.200s"
+                                            : "undefined variable \"%.200s\"",
+                                  name);
+          lcl_ref_dec(current);
+          current = NULL;
+          break;
+        }
+
+        rest = next_rest;
+      }
+
+      if (current) {
+        lcl_ref_dec(current);
+      }
+    }
+  }
+
+  if (hint && used < msglen) {
+    snprintf(msg + used, msglen - used,
+             kind == 1 ? " (use ::%.200s for an intentional live top-level "
+                         "reference)"
+                       : " (use ${::%.200s} for an intentional live top-level "
+                         "reference)",
+             name);
+  }
+}
+
 lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *w,
                               lcl_value **out);
 
@@ -181,6 +319,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
    * normally. Restored on every exit path. See spec §6 /
    * def_floor. */
   int saved_def_floor = interp->def_floor;
+  int saved_dyn_mode = interp->env.dyn_mode;
 
   lcl_value **current_argv = argv;
   int current_argc = argc;
@@ -188,6 +327,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
   interp->current_proc = proc_val;
   interp->def_floor = interp->def_depth;
+  interp->env.dyn_mode = 0;
 
   for (;;) {
     /* Bugfix:
@@ -195,7 +335,11 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
      * Use caller's frame as parent for command lookup - no cycle
      * because proc doesn't store a reference to this frame (uses
      * upvalues instead) */
-    lcl_frame *child = lcl_frame_new(saved.frame);
+    lcl_frame *child = lcl_frame_new(NULL);
+
+    if (child) {
+      child->caller = lcl_frame_ref_inc(saved.frame);
+    }
 
     if (!child) {
       if (owns_argv) {
@@ -208,6 +352,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
       interp->current_proc = saved_current_proc;
       interp->def_floor = saved_def_floor;
+      interp->env.dyn_mode = saved_dyn_mode;
       return LCL_RC_ERR;
     }
 
@@ -255,13 +400,32 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
         interp->current_proc = saved_current_proc;
         interp->def_floor = saved_def_floor;
+        interp->env.dyn_mode = saved_dyn_mode;
         return LCL_RC_ERR;
       }
     }
 
     for (i = 0; i < p->nupvals; i++) {
-      if (!hash_table_put(child->locals, p->upvals[i].name,
-                          p->upvals[i].value)) {
+      lcl_value *bindv = p->upvals[i].value;
+
+      if (p->upvals[i].is_ns_root) {
+        if (!p->upvals[i].anchor) {
+          continue;
+        }
+
+        bindv = p->upvals[i].anchor->target;
+
+        if (!bindv) {
+          char msg[300];
+
+          snprintf(msg, sizeof(msg), "%.256s: namespace no longer exists",
+                   p->upvals[i].name);
+          LCL_ERR_MSG_DUP(interp, msg);
+          goto bind_error;
+        }
+      }
+
+      if (!hash_table_put(child->locals, p->upvals[i].name, bindv)) {
         LCL_ERR_MSG(interp, "out of memory binding upvalue");
         goto bind_error;
       }
@@ -320,6 +484,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
             interp->current_proc = saved_current_proc;
             interp->def_floor = saved_def_floor;
+            interp->env.dyn_mode = saved_dyn_mode;
             return def_rc;
           }
 
@@ -375,6 +540,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
         interp->current_proc = saved_current_proc;
         interp->def_floor = saved_def_floor;
+        interp->env.dyn_mode = saved_dyn_mode;
         return LCL_RC_ERR;
       }
     }
@@ -414,6 +580,7 @@ lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
 
   interp->current_proc = saved_current_proc;
   interp->def_floor = saved_def_floor;
+  interp->env.dyn_mode = saved_dyn_mode;
   return rc;
 }
 
@@ -434,7 +601,10 @@ lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *w,
       lcl_value *val = NULL;
 
       if (lcl_env_get_value(interp, wp->as.var.name, &val) != LCL_OK) {
-        LCL_ERR_MSG(interp, "undefined variable");
+        char msg[900];
+
+        describe_name_failure(interp, wp->as.var.name, 0, msg, sizeof(msg));
+        LCL_ERR_MSG_DUP(interp, msg);
         return LCL_RC_ERR;
       }
 
@@ -557,19 +727,10 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     if (lcl_env_get_command(interp, cmd_name, &callee) != LCL_OK) {
       {
-        const size_t cmd_name_len = strlen(cmd_name);
-        const size_t prefix_len = 17;
-        char *buf = (char *)malloc(cmd_name_len + prefix_len + 1);
+        char msg[900];
 
-        if (buf) {
-          memcpy(buf, "unknown command: ", prefix_len);
-          memcpy(buf + prefix_len, cmd_name, cmd_name_len + 1);
-          LCL_ERR_MSG_DUP(interp, buf);
-          free(buf);
-        } else {
-          LCL_ERR_MSG(interp, "unknown command");
-        }
-
+        describe_name_failure(interp, cmd_name, 1, msg, sizeof(msg));
+        LCL_ERR_MSG_DUP(interp, msg);
         lcl_ref_dec(name);
       }
 
@@ -738,7 +899,14 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
             if (!macro_prog) {
               rc = LCL_RC_ERR;
             } else {
+              /* Template evaluation is a dynamic-evaluation operation
+               * (spec D4): like eval, run in the caller's frame with
+               * dyn_mode set. */
+              int saved_dyn = interp->env.dyn_mode;
+
+              interp->env.dyn_mode = 1;
               rc = lcl_eval_program(interp, macro_prog, out);
+              interp->env.dyn_mode = saved_dyn;
               lcl_program_free(macro_prog);
             }
           }
@@ -791,11 +959,10 @@ lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
  * example:
  *
  * "<eval at game.lcl:40>" (or "<eval>" with no current file). */
-const char *lcl_dyn_source_name(lcl_interp *interp, const char *tag,
-                                char *buf, size_t n) {
+const char *lcl_dyn_source_name(lcl_interp *interp, const char *tag, char *buf,
+                                size_t n) {
   if (interp->cur_file) {
-    snprintf(buf, n, "<%s at %s:%d>", tag, interp->cur_file,
-             interp->cur_line);
+    snprintf(buf, n, "<%s at %s:%d>", tag, interp->cur_file, interp->cur_line);
   } else {
     snprintf(buf, n, "<%s>", tag);
   }

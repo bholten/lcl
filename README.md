@@ -1088,16 +1088,20 @@ library actually does, under a namespace named for what it is.
 
 Lcl uses **reference counting** for memory management (no garbage collector). This is a deliberate design choice for embeddability--GC adds complexity, unpredictable pauses, and makes integration with host applications harder.
 
-Sequential `proc` definitions support mutual recursion without issues:
+Lcl does not resolve implicit lexical forward references -- a bare name that didn't exist when a procedure was defined is an error when the call executes, never a search of the caller's environment. Mutual recursion is therefore **explicit**, through a live path:
 
 ```tcl
-;; This works -- no reference cycle:
-proc even? {n} { if [== $n 0] {1} else {odd? [- $n 1]} }
-proc odd? {n} { if [== $n 0] {0} else {even? [- $n 1]} }
+;; Top level: a leading :: resolves live from the interpreter root
+proc even? {n} { if [== $n 0] {1} else {::odd? [- $n 1]} }
+proc odd? {n} { if [== $n 0] {0} else {::even? [- $n 1]} }
 puts [odd? 13]   ;; 1
-```
 
-This is safe because when `even?` is defined, `odd?` doesn't exist yet, so it isn't captured as an upvalue. At runtime, `even?` finds `odd?` through the caller's frame. The reference graph is one-way (a DAG), not a cycle.
+;; Or, the module form: members resolve live through the namespace
+namespace Parity {
+    proc even? {n} { if [== $n 0] {1} else {Parity::odd? [- $n 1]} }
+    proc odd? {n} { if [== $n 0] {0} else {Parity::even? [- $n 1]} }
+}
+```
 
 However, **mutual recursion is not tail-call optimized**. Lcl's TCO only applies to self-recursive calls (where the callee is the same proc as the caller). Mutually recursive procs consume a stack frame per call and will hit the maximum recursion depth (1024) for large inputs:
 

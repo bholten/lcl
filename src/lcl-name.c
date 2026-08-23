@@ -60,6 +60,14 @@ const char *lcl_name_check_ref(const char *s, size_t n) {
     return "empty variable name in '${}'";
   }
 
+  if (n >= 2 && s[0] == ':' && s[1] == ':') {
+    i = 2;
+
+    if (i >= n) {
+      return "empty variable name in '${}'"; /* ${::} */
+    }
+  }
+
   for (;;) {
     /* `i` sits where a segment must start. */
     if (i >= n) {
