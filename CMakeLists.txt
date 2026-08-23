@@ -40,6 +40,7 @@ option(LCL_BUILD_PROCESS "Build Lcl with the Process extension library" OFF)
 option(LCL_BUILD_REGEX "Build Lcl with the Regex extension library" OFF)
 option(LCL_BUILD_TIME "Build Lcl with the Time extension library" OFF)
 option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
+option(LCL_BUILD_RANDOM "Build Lcl with the Random (xoshiro128**) extension library" OFF)
 option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
 
 # Lcl libraries
@@ -369,6 +370,22 @@ if(LCL_BUILD_MATH)
   if(LCL_BUILD_CLI)
     target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_MATH)
     target_link_libraries(lcl-cli PRIVATE lcl_math)
+  endif()
+endif()
+
+if(LCL_BUILD_RANDOM)
+  add_subdirectory(packages/lcl-random)
+
+  if(LCL_BUILD_SHARED)
+    target_compile_definitions(lcl_shared PUBLIC LCL_HAVE_RANDOM)
+  endif()
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_RANDOM)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_RANDOM)
+    target_link_libraries(lcl-cli PRIVATE lcl_random)
   endif()
 endif()
 

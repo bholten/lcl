@@ -1066,12 +1066,7 @@ may require a system library (OpenSSL, libcurl) or bind to a platform
 what it needs in the Requirements section of its own README.
 
 Packages are thin bindings: a package exposes what its underlying
-library actually does, under a namespace named for what it is. The
-regex package provides `regex::` and is POSIX extended `regex.h` and
-nothing else. If, say, we made a new regular expressions package based
-on PCRE2, it would be in `pcre2::` package. Lcl is not trying to ship
-a batteries-included standard library or an engine-agnostic regex
-framework.
+library actually does, under a namespace named for what it is.
 
 | Package | Namespace | Depends on |
 |---------|-----------|------------|
@@ -1079,11 +1074,12 @@ framework.
 | lcl-posix | `posix::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`, `unistd.h`) |
 | lcl-math | `math::` | libm |
 | lcl-time | `time::` | ISO C `<time.h>`; POSIX for monotonic clock / sleep |
+| lcl-random | `xoshiro::` | ISO C; xoshiro128** (seeded, reproducible, **not** cryptographic) |
 | lcl-json | `json::` | cJSON (C99) |
 | lcl-regex | `regex::` | POSIX `regex.h` |
 | lcl-process | `process::` | POSIX (`fork`/`exec`, pipes, PTYs) |
 | lcl-expect | `expect::` | lcl-process, POSIX PTYs |
-| lcl-crypto | `crypto::` | OpenSSL |
+| lcl-crypto | `crypto::` | OpenSSL (hashes, HMAC, signatures, `random_bytes`) |
 | lcl-curl | `curl::` | libcurl |
 
 ## Known Limitations

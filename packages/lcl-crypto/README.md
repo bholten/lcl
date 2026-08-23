@@ -40,6 +40,18 @@ let decoded [crypto::base64_decode $encoded]
 | `crypto::sha256 $data` | SHA-256 hash (returns hex string) |
 | `crypto::sha512 $data` | SHA-512 hash (returns hex string) |
 
+### Random bytes
+
+| Function | Description |
+|----------|-------------|
+| `crypto::random_bytes $n` | `n` cryptographically secure random bytes from OpenSSL `RAND_bytes` (returns hex string, `2n` characters; `n` ≤ 1 MiB) |
+
+This is the generator for keys, tokens, nonces, and salts. For
+simulation, games, and anything that needs a *seeded, reproducible*
+stream, use `xoshiro::` from `lcl-random` instead — the two are
+different engines with different guarantees, deliberately not hidden
+behind a common interface.
+
 ### HMAC
 
 | Function | Description |

@@ -1,0 +1,9 @@
+project lcl_random {
+    arg LCL_BIN lcl
+
+    task test {
+        run {
+            ${lcl_random::LCL_BIN} test/test.lcl
+        }
+    }
+}

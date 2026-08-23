@@ -7,6 +7,7 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/pem.h>
+#include <openssl/rand.h>
 #include <openssl/rsa.h>
 
 #include <lcl.h>
@@ -45,6 +46,56 @@ static const EVP_MD *get_md_by_name(const char *name) {
   }
 
   return NULL;
+}
+
+static lcl_return_code c_crypto_random_bytes(lcl_interp *interp, int argc,
+                                             lcl_value **argv,
+                                             lcl_value **out) {
+  long n;
+  unsigned char *buf;
+  char *hex;
+
+  if (argc != 1) {
+    lcl_set_error(interp, "crypto::random_bytes: expected 1 argument (n)");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_int(argv[0], &n) != LCL_OK || n < 0) {
+    lcl_set_error(interp,
+                  "crypto::random_bytes: n must be a non-negative integer");
+    return LCL_RC_ERR;
+  }
+
+  if (n > 1048576) {
+    lcl_set_error(interp, "crypto::random_bytes: n must be <= 1048576");
+    return LCL_RC_ERR;
+  }
+
+  buf = (unsigned char *)malloc(n > 0 ? (size_t)n : 1);
+
+  if (!buf) {
+    lcl_set_error(interp, "crypto::random_bytes: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  if (n > 0 && RAND_bytes(buf, (int)n) != 1) {
+    free(buf);
+    lcl_set_error(interp, "crypto::random_bytes: RAND_bytes failed");
+    return LCL_RC_ERR;
+  }
+
+  hex = bytes_to_hex(buf, (size_t)n);
+  free(buf);
+
+  if (!hex) {
+    lcl_set_error(interp, "crypto::random_bytes: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_string_new(hex);
+  free(hex);
+
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
 static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
@@ -533,6 +584,8 @@ void lcl_register_crypto(lcl_interp *interp) {
   lcl_value *crypto_ns = lcl_ns_new(CRYPTO_NS);
   lcl_define_take(interp, CRYPTO_NS, crypto_ns);
 
+  lcl_ns_def_take(crypto_ns, "random_bytes",
+                  lcl_c_proc_new("crypto::random_bytes", c_crypto_random_bytes));
   lcl_ns_def_take(crypto_ns, "sha256",
                   lcl_c_proc_new("crypto::sha256", c_crypto_sha256));
   lcl_ns_def_take(crypto_ns, "sha512",
