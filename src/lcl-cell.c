@@ -1,3 +1,9 @@
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
+
+#include <stdio.h>
+
 #include "hash-table.h"
 #include "lcl-compile.h"
 #include "lcl-values.h"
@@ -166,6 +172,224 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
 
   default: return 0;
   }
+}
+
+typedef struct {
+  char *buf;
+  size_t len;
+  size_t used;
+} cycle_path;
+
+static void cycle_path_add(cycle_path *cp, const char *fmt, const char *a,
+                           const char *b, int line) {
+  size_t room;
+
+  if (cp->used >= cp->len) {
+    return;
+  }
+
+  room = cp->len - cp->used;
+
+  if (line >= 0) {
+    cp->used += (size_t)snprintf(cp->buf + cp->used, room, fmt, a, b, line);
+  } else if (b) {
+    cp->used += (size_t)snprintf(cp->buf + cp->used, room, fmt, a, b);
+  } else {
+    cp->used += (size_t)snprintf(cp->buf + cp->used, room, fmt, a);
+  }
+
+  if (cp->used > cp->len) {
+    cp->used = cp->len;
+  }
+}
+
+static int cycle_describe_value(lcl_value *target, lcl_value *val,
+                                cell_set *visited, cycle_path *cp);
+
+static int cycle_describe_proc(lcl_value *target, lcl_proc *proc,
+                               cell_set *visited, cycle_path *cp) {
+  int i;
+
+  if (!proc || !proc->upvals) {
+    return 0;
+  }
+
+  for (i = 0; i < proc->nupvals; i++) {
+    lcl_upvalue *uv = &proc->upvals[i];
+
+    if (uv->value && cycle_check_value(target, uv->value, visited)) {
+      if (proc->self_name) {
+        cycle_path_add(cp, " closure \"%s\"", proc->self_name, NULL, -1);
+      } else {
+        cycle_path_add(cp, " a lambda", NULL, NULL, -1);
+      }
+
+      cycle_path_add(cp, " (%s:%s%d)", proc->file ? proc->file : "?", "",
+                     proc->line);
+      cycle_path_add(cp, " captures \"%s\" owningly", uv->name, NULL, -1);
+
+      if (uv->value != target) {
+        cycle_path_add(cp, ", which contains it:", NULL, NULL, -1);
+
+        {
+          cell_set v2;
+
+          cell_set_init(&v2);
+          cycle_describe_value(target, uv->value, &v2, cp);
+          cell_set_free(&v2);
+        }
+      }
+
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int cycle_describe_value(lcl_value *target, lcl_value *val,
+                                cell_set *visited, cycle_path *cp) {
+  if (!val) {
+    return 0;
+  }
+
+  if (val == target) {
+    cycle_path_add(cp, " the assignment target", NULL, NULL, -1);
+    return 1;
+  }
+
+  switch (val->type) {
+  case LCL_PROC:
+    return cycle_describe_proc(target, val->as.procedure.proc, visited, cp);
+
+  case LCL_LIST: {
+    size_t i;
+    char idx[32];
+
+    for (i = 0; i < val->as.list.len; i++) {
+      cell_set probe;
+      int hit;
+
+      cell_set_init(&probe);
+      hit = cycle_check_value(target, val->as.list.items[i], &probe);
+      cell_set_free(&probe);
+
+      if (hit) {
+        sprintf(idx, "%lu", (unsigned long)i);
+        cycle_path_add(cp, " element %s:", idx, NULL, -1);
+        return cycle_describe_value(target, val->as.list.items[i], visited, cp);
+      }
+    }
+
+    return 0;
+  }
+
+  case LCL_DICT: {
+    hash_iter it;
+    const char *k;
+    lcl_value *v;
+
+    it.i = 0;
+
+    while (hash_table_iterate(val->as.dict.dictionary, &it, &k, &v)) {
+      cell_set probe;
+      int hit;
+
+      cell_set_init(&probe);
+      hit = cycle_check_value(target, v, &probe);
+      cell_set_free(&probe);
+
+      if (hit) {
+        int r;
+
+        cycle_path_add(cp, " key \"%s\":", k, NULL, -1);
+        r = cycle_describe_value(target, v, visited, cp);
+        lcl_ref_dec(v);
+        return r;
+      }
+
+      lcl_ref_dec(v);
+    }
+
+    return 0;
+  }
+
+  case LCL_CELL:
+    if (cell_set_contains(visited, val) || !cell_set_add(visited, val)) {
+      return 0;
+    }
+
+    cycle_path_add(cp, " a cell holding:", NULL, NULL, -1);
+    return cycle_describe_value(target, val->as.cell.inner, visited, cp);
+
+  case LCL_NAMESPACE: {
+    hash_iter it;
+    const char *k;
+    lcl_value *v;
+
+    if (cell_set_contains(visited, val) || !cell_set_add(visited, val)) {
+      return 0;
+    }
+
+    it.i = 0;
+
+    while (hash_table_iterate(val->as.namespace.namespace, &it, &k, &v)) {
+      cell_set probe;
+      int hit;
+
+      cell_set_init(&probe);
+      hit = cycle_check_value(target, v, &probe);
+      cell_set_free(&probe);
+
+      if (hit) {
+        int r;
+
+        cycle_path_add(cp, " member \"%s\":", k, NULL, -1);
+        r = cycle_describe_value(target, v, visited, cp);
+        lcl_ref_dec(v);
+        return r;
+      }
+
+      lcl_ref_dec(v);
+    }
+
+    return 0;
+  }
+
+  default: return 0;
+  }
+}
+
+int lcl_value_cycle_explain(lcl_value *container, lcl_value *value, char *buf,
+                            size_t len) {
+  cell_set visited;
+  cycle_path cp;
+  int found;
+
+  if (!container || !value || !buf || len == 0) {
+    return 0;
+  }
+
+  cp.buf = buf;
+  cp.len = len;
+  cp.used = 0;
+  buf[0] = '\0';
+
+  if (value == container) {
+    snprintf(buf, len, " — the stored value IS the namespace itself");
+    return 1;
+  }
+
+  cell_set_init(&visited);
+  cycle_path_add(&cp, " — via", NULL, NULL, -1);
+  found = cycle_describe_value(container, value, &visited, &cp);
+  cell_set_free(&visited);
+
+  if (!found) {
+    buf[0] = '\0';
+  }
+
+  return found;
 }
 
 int lcl_value_would_cycle(lcl_value *container, lcl_value *value) {

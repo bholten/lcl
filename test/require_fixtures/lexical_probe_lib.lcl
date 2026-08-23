@@ -1,0 +1,11 @@
+;; anti-regression fixture: require is NOT a dynamic operation.
+;; This module's code must not see bindings local to whoever required
+;; it — module procs and loose top-level code resolve lexically
+;; (module frame -> global) only.
+namespace nr_probe {
+    proc try_sneaky {} { $sneaky_local }
+}
+let nr_probe_loose [catch { puts $sneaky_local } nr_r nr_e]
+namespace nr_probe_result {
+    let loose_saw_sneaky $nr_probe_loose
+}

@@ -1,3 +1,7 @@
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -80,6 +84,10 @@ lcl_return_code lcl_eval_file(lcl_interp *interp, const char *path,
   src = api_read_file(path);
 
   if (!src) {
+    char msg[560];
+
+    snprintf(msg, sizeof(msg), "cannot open file: %.512s", path);
+    LCL_ERR_MSG_DUP(interp, msg);
     return LCL_RC_ERR;
   }
 

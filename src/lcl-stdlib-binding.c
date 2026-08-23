@@ -232,8 +232,17 @@ static lcl_return_code c_get(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
-    return lcl_std_err_undefined(interp, "getvar", name);
+  {
+    int saved_dyn = interp->env.dyn_mode;
+    lcl_result r;
+
+    interp->env.dyn_mode = 1;
+    r = lcl_env_get_value(interp, name, &val);
+    interp->env.dyn_mode = saved_dyn;
+
+    if (r != LCL_OK) {
+      return lcl_std_err_undefined(interp, "getvar", name);
+    }
   }
 
   if (val->type == LCL_CELL) {
@@ -280,8 +289,27 @@ static lcl_return_code s_set_bang(lcl_interp *interp, int argc,
 
   if (lcl_env_get_value(interp, name_str, &cell) == LCL_OK) {
     if (cell->type == LCL_CELL && lcl_cell_would_cycle(cell, val_v)) {
-      LCL_ERR_MSG(interp, "assignment would create reference cycle "
-                          "(mutual recursion not allowed)");
+      char msg[900];
+      size_t used;
+
+      used = (size_t)snprintf(
+          msg, sizeof(msg),
+          "set! %.128s: assignment would create a reference cycle", name_str);
+
+      if (used < sizeof(msg)) {
+        lcl_value_cycle_explain(cell, val_v, msg + used, sizeof(msg) - used);
+      }
+
+      used = strlen(msg);
+
+      if (used < sizeof(msg)) {
+        snprintf(msg + used, sizeof(msg) - used, "%s",
+                 " (a ::-rooted spelling is non-owning for a "
+                 "top-level-reachable namespace; or define the closure "
+                 "inside the namespace body)");
+      }
+
+      LCL_ERR_MSG_DUP(interp, msg);
       lcl_ref_dec(cell);
       lcl_ref_dec(name_v);
       lcl_ref_dec(val_v);
@@ -451,6 +479,8 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
     LCL_ERR_MSG(interp, "lambda: out of memory");
     return LCL_RC_ERR;
   }
+
+  (void)lcl_proc_attach_context(interp, *out);
 
   return LCL_RC_OK;
 }
@@ -900,7 +930,8 @@ static lcl_return_code c_proc_origin(lcl_interp *interp, int argc,
     lcl_proc *p = fn->as.procedure.proc;
     lcl_value *file_v = lcl_string_new(p->file);
     lcl_value *line_v = lcl_int_new(p->line);
-    int ok = file_v && line_v && lcl_dict_put(&dict, "file", file_v) == LCL_OK &&
+    int ok = file_v && line_v &&
+             lcl_dict_put(&dict, "file", file_v) == LCL_OK &&
              lcl_dict_put(&dict, "line", line_v) == LCL_OK;
 
     lcl_ref_dec(file_v);

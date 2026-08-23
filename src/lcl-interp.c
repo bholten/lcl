@@ -83,8 +83,16 @@ void lcl_interp_free(lcl_interp *interp) {
   lcl_frame_clear(interp->env.frame);
   lcl_frame_ref_dec(interp->env.frame);
 
-  lcl_ref_dec(interp->env.current_ns);
-  lcl_ref_dec(interp->env.global_ns);
+  if (interp->popped_pending) {
+    int pi;
+
+    for (pi = 0; pi < interp->n_popped_pending; pi++) {
+      lcl_ref_dec(interp->popped_pending[pi]);
+    }
+
+    free(interp->popped_pending);
+  }
+
   lcl_ref_dec(interp->require_cache);
 
   {

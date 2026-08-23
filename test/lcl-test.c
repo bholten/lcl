@@ -1977,7 +1977,7 @@ static int test_issue67_compile_ex_msg_and_line(void) {
       {"let x $foo::1bad\n",
        "qualified substitutions require braces: ${name::path}",                                        1},
       {"let x ${foo::}\n",                             "empty segment in qualified variable name",     1},
-      {"let x ${::foo}\n",                             "empty segment in qualified variable name",     1},
+      {"let x ${::}\n",                                "empty variable name in '${}'",                 1},
       {"let x ${a::::b}\n",                            "empty segment in qualified variable name",     1},
       {"let x ${foo::1bad}\n",                         "name segment must start with a letter or '_'",
        1                                                                                                },
@@ -2526,6 +2526,69 @@ static int test_require_module_key_hook(void) {
   return 1;
 }
 
+
+/* Name-resolution redesign: anchor lifecycle under teardown.
+ *
+ * (a) A builder body that errors mid-definition leaves its pending
+ * anchor list unconsumed (released defensively at the next pop or
+ * interp free) — must not leak or dangle.
+ *
+ * (b) A proc extracted from a namespace that then dies keeps a nulled
+ * anchor and fails cleanly.  (c) Live self-reference through re-entry
+ * (the old M -> f -> M cycle error). Fresh interp so teardown runs
+ * with live anchors. */
+static int test_ns_anchor_lifecycle(void) {
+  lcl_interp *in = lcl_interp_new();
+  lcl_value *out = NULL;
+  int rc;
+
+  ASSERT_TRUE(in != NULL);
+  lcl_register_core(in);
+
+  rc = lcl_eval_string(
+      in, "namespace T { proc f {} { T::g } ; this_does_not_exist }\n", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  lcl_clear_error(in);
+
+  rc = lcl_eval_string(
+      in,
+      "proc mk {} { namespace D { proc f {} { D::g } ; proc g {} { 1 } } ; "
+      "${D::f} }\n"
+      "let f [mk]\n"
+      "catch { apply $f } r e\n"
+      "$e\n",
+      &out);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(out != NULL);
+  {
+    const char *msg = NULL;
+
+    ASSERT_TRUE(lcl_value_get_string(out, &msg) == LCL_OK);
+    ASSERT_STREQ(msg, "D: namespace no longer exists");
+  }
+  lcl_ref_dec(out);
+  out = NULL;
+
+  rc = lcl_eval_string(in,
+                       "namespace S { proc f {} { S::g } ; proc g {} { 7 } }\n"
+                       "namespace S { proc f {} { S::g } }\n"
+                       "S::f\n",
+                       &out);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(out != NULL);
+  {
+    long n = 0;
+
+    ASSERT_TRUE(lcl_value_to_int(out, &n) == LCL_OK);
+    ASSERT_TRUE(n == 7);
+  }
+  lcl_ref_dec(out);
+
+  lcl_interp_free(in);
+  return 1;
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -2598,6 +2661,7 @@ int run_test(void) {
   RUN(test_path_clean_table);
   RUN(test_path_join_and_dirname);
   RUN(test_require_module_key_hook);
+  RUN(test_ns_anchor_lifecycle);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

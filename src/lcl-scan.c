@@ -274,8 +274,8 @@ static int scan_sub_literal(lcl_scan *sc, lcl_word *w, const char *prefix,
   memcpy(subsrc + plen, sc->s + begin, content_len);
   subsrc[plen + content_len] = '\0';
 
-  sub = lcl_program_compile_span(subsrc, plen + content_len, sc->file,
-                                 &suberr, sc->nest + 1, open_line);
+  sub = lcl_program_compile_span(subsrc, plen + content_len, sc->file, &suberr,
+                                 sc->nest + 1, open_line);
   free(subsrc);
 
   if (!sub) {

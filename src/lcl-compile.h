@@ -27,6 +27,7 @@ typedef struct {
 
 struct lcl_frame {
   struct lcl_frame *parent;
+  struct lcl_frame *caller;
   hash_table *locals;
   int refc;
   int owns_locals;
@@ -38,12 +39,16 @@ void lcl_frame_free(lcl_frame *f);
 lcl_frame *lcl_frame_ref_inc(lcl_frame *f);
 void lcl_frame_ref_dec(lcl_frame *f);
 void lcl_frame_clear(lcl_frame *f);
-int lcl_frame_get_binding(lcl_frame *f, const char *name, lcl_value **out);
+int lcl_frame_get_binding(lcl_frame *f, const char *name, lcl_value **out,
+                          int dyn);
 
 typedef struct lcl_env {
   lcl_frame *frame;
-  lcl_value *current_ns;
-  lcl_value *global_ns;
+  /* Nonzero while a dynamic-evaluation operation's program runs:
+   * `eval`, a macro's returned template, `load` (spec D4). Gates
+   * whether name lookup may continue through the dynamic caller
+   * chain; saved-to-zero/restored across user-proc calls. */
+  int dyn_mode;
 } lcl_env;
 
 lcl_env *lcl_env_new(void);
@@ -85,6 +90,9 @@ typedef struct {
    * anonymous targets (e.g. `namespace { ... }` with no name) so the
    * lookup never matches them. */
   char *name;
+  lcl_value **pending;
+  int npending;
+  int pending_cap;
 } lcl_def_target;
 
 #define LCL_DEF_STACK_MAX 16
@@ -129,6 +137,8 @@ struct lcl_interp {
    * scope" for reads even though the helper's own let/var/proc don't
    * leak through). */
   int def_lookup_floor;
+  lcl_value **popped_pending;
+  int n_popped_pending;
   int in_subcmd;
   unsigned long gensym_counter;
   lcl_value *require_cache;
@@ -224,9 +234,20 @@ typedef struct {
   } fn;
 } lcl_c_func;
 
+typedef struct lcl_ns_anchor {
+  int refc;
+  lcl_value *target;
+} lcl_ns_anchor;
+
+lcl_ns_anchor *lcl_ns_anchor_get(lcl_value *ns);
+lcl_ns_anchor *lcl_ns_anchor_ref(lcl_ns_anchor *a);
+void lcl_ns_anchor_unref(lcl_ns_anchor *a);
+
 typedef struct {
   char *name;
   int is_cell;
+  int is_ns_root;
+  lcl_ns_anchor *anchor;
   lcl_value *value;
 } lcl_upvalue;
 
@@ -253,11 +274,15 @@ typedef struct {
   int is_macro;
   char *file;
   int line;
+  lcl_ns_anchor **home;
+  int nhome;
 } lcl_proc;
 
 lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,
                                    const lcl_param_spec *pspec,
                                    const char *self_name,
                                    lcl_upvalue **upvals_out, int *nout);
+
+lcl_result lcl_proc_attach_context(lcl_interp *interp, lcl_value *proc_val);
 
 #endif

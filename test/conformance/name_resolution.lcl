@@ -1,0 +1,521 @@
+;; Name-resolution redesign (`::` root) — conformance.
+
+;; ---- B. `::` root ------------------------------------------------
+
+let NR_WIDTH 600
+proc nr_frozen_width {} { $NR_WIDTH }
+proc nr_live_width {} { ${::NR_WIDTH} }
+let NR_WIDTH 800
+
+namespace NrGame {
+    proc run {} { return running }
+}
+proc nr_main {} { ::NrGame::run }
+
+proc nr_even? {n} { if [== $n 0] {1} else {::nr_odd? [- $n 1]} }
+proc nr_odd? {n} { if [== $n 0] {0} else {::nr_even? [- $n 1]} }
+
+Test::suite "root references (::)" {
+    Test::case "\${::WIDTH} is live, captured \$WIDTH is frozen" {
+        Test::eq [nr_frozen_width] 600
+        Test::eq [nr_live_width] 800
+    }
+
+    Test::case "main-first via ::Game::run" {
+        Test::eq [nr_main] running
+    }
+
+    Test::case "top-level mutual recursion via ::" {
+        Test::eq [nr_odd? 13] 1
+        Test::eq [nr_even? 13] 0
+    }
+
+    Test::case "shadow escape: local shadows, :: reaches root" {
+        let probed [ref ()]
+        let NR_WIDTH 42
+        Test::eq $NR_WIDTH 42
+        Test::eq ${::NR_WIDTH} 800
+    }
+
+    Test::case "grammar: rooted refs and rejects" {
+        Test::eq [catch { eval "puts \${::}" } r e] 1
+        Test::assert [has? $e {empty variable name}]
+        Test::eq [catch { eval "puts \${::::x}" } r e] 1
+        Test::assert [has? $e {empty segment}]
+        ;; unbraced $::x stays literal text (qualified refs need braces)
+        Test::eq "$::x" {$::x}
+        ;; one-word rooted command dispatches
+        Test::eq [::nr_odd? 3] 1
+    }
+
+    Test::case "rooted set! mutates the top-level cell" {
+        Test::eq [catch { eval {set! ::nr_no_such_cell 1} } r e] 1
+    }
+
+    Test::case "lite rooted qualified path walks live members" {
+        Test::eq [::NrGame::run] running
+        Test::eq ${::NR_WIDTH} 800
+    }
+}
+
+var NR_COUNTER 0
+proc nr_bump {} { set! ::NR_COUNTER [+ ${::NR_COUNTER} 1] }
+
+Test::suite "root references: cells" {
+    Test::case "rooted cell read and set!" {
+        nr_bump
+        nr_bump
+        Test::eq ${::NR_COUNTER} 2
+        Test::eq $NR_COUNTER 2
+    }
+}
+
+
+namespace NrM { proc f {} { return old } ; let x 1 }
+proc nr_E {} { NrM::f }
+proc nr_Ex {} { ${NrM::x} }
+let nr_extracted ${NrM::f}
+namespace NrM { proc f {} { return new } ; let x 2 }
+
+Test::suite "live qualified references" {
+    Test::case "M::f and \${M::x} in closures see re-entry" {
+        Test::eq [nr_E] new
+        Test::eq [nr_Ex] 2
+    }
+
+    Test::case "explicit extraction snapshots the value" {
+        Test::eq [apply $nr_extracted] old
+        Test::eq [NrM::f] new
+    }
+
+    Test::case "nested path: replacing N inside M is visible" {
+        namespace NrOuter { namespace NrIn { proc f {} { return one } } }
+        proc nr_nested {} { NrOuter::NrIn::f }
+        Test::eq [nr_nested] one
+        namespace NrOuter { namespace NrIn { proc f {} { return two } } }
+        Test::eq [nr_nested] two
+    }
+
+    Test::case "Ns::del makes the reference fail, not resurrect" {
+        namespace NrDel { proc f {} { return here } }
+        proc nr_delref {} { NrDel::f }
+        Test::eq [nr_delref] here
+        Ns::del $NrDel f
+        Test::eq [catch {nr_delref} r e] 1
+    }
+
+    Test::case "self-reference survives first def AND re-entry (no cycle)" {
+        namespace NrSelf {
+            proc f {} { NrSelf::g }
+            proc g {} { return g1 }
+        }
+        Test::eq [NrSelf::f] g1
+        ;; re-entry: f captures its home as an anchor, not an owning ref —
+        ;; this pop used to be the M -> f -> M cycle error
+        namespace NrSelf {
+            proc f {} { NrSelf::g }
+        }
+        namespace NrSelf {
+            proc g {} { return g2 }
+        }
+        Test::eq [NrSelf::f] g2
+    }
+
+    Test::case "first-definition and re-entry behave identically" {
+        namespace NrFst { proc a {} { NrFst::b } ; proc b {} { return b1 } }
+        Test::eq [NrFst::a] b1
+        namespace NrFst { proc b {} { return b2 } }
+        Test::eq [NrFst::a] b2
+    }
+
+    Test::case "bare sibling names stay frozen; qualified are live" {
+        namespace NrSib {
+            proc a {} { return a1 }
+            proc bare {} { a }
+            proc qual {} { NrSib::a }
+        }
+        namespace NrSib { proc a {} { return a2 } }
+        Test::eq [NrSib::bare] a1
+        Test::eq [NrSib::qual] a2
+    }
+}
+
+;; ---- D. ownership, homes, lifecycle -----------------------------
+
+proc nr_mk_dying {} {
+    namespace NrTmp {
+        proc f {} { NrTmp::g }
+        proc g {} { return alive }
+    }
+    ${NrTmp::f}
+}
+
+proc nr_factory {} {
+    let N [namespace { proc g {} { return 42 } }]
+    lambda {} { N::g }
+}
+
+namespace NrHome {
+    proc make {} { lambda {} { NrHome::g } }
+    proc g {} { return h1 }
+}
+
+namespace NrApp { proc redraw {} { return drawn } }
+
+Test::suite "ownership and homes" {
+    Test::case "extracted proc outliving its home fails cleanly" {
+        let f [nr_mk_dying]
+        Test::eq [catch {apply $f} r e] 1
+        Test::eq $e "NrTmp: namespace no longer exists"
+    }
+
+    Test::case "factory: closure OWNS a non-home namespace" {
+        let c [nr_factory]
+        Test::eq [apply $c] 42
+    }
+
+    Test::case "runtime lambda inherits its maker's home (live)" {
+        let cb [NrHome::make]
+        Test::eq [apply $cb] h1
+        namespace NrHome { proc g {} { return h2 } }
+        Test::eq [apply $cb] h2
+    }
+
+    Test::case "qualified builders record path-ancestor homes" {
+        ;; `namespace a::b {}` must record the same home chain as the
+        ;; nested spelling: a runtime closure referencing the full
+        ;; qualified path (whose ROOT is the path ancestor, not the
+        ;; builder target) anchors it non-owningly, so storing the
+        ;; closure back into the tree is not a cycle.
+        namespace NrQual::sub {
+            proc g {} { return q1 }
+            proc make {} { lambda {} { NrQual::sub::g } }
+        }
+        namespace NrQual::sub { var cb [NrQual::sub::make] }
+        Test::eq [apply ${NrQual::sub::cb}] q1
+        namespace NrQual::sub { proc g {} { return q2 } }
+        Test::eq [apply ${NrQual::sub::cb}] q2
+        ;; intermediate ancestors anchor too, and installing from
+        ;; outside into the ROOT of the path is cycle-free
+        namespace NrQual::deep::er {
+            proc g {} { return d1 }
+            proc make {} { lambda {} { NrQual::deep::er::g } }
+        }
+        Ns::set $NrQual cb2 [NrQual::deep::er::make]
+        Test::eq [apply ${NrQual::cb2}] d1
+    }
+
+    Test::case "storing an owning closure into its target still cycles loudly" {
+        let N [namespace { proc g {} { return x } }]
+        let f [lambda {} { N::g }]
+        var e 0
+        Test::eq [catch {Ns::set $N f $f} r e] 1
+        Test::assert [has? $e {cycle}]
+        ;; the alias is unaffected — f still owns N and still works
+        Test::eq [apply $f] x
+    }
+
+    Test::case "::-rooted handler installs without a cycle" {
+        ;; NrApp is a top-level namespace (fixture above): :: reaches it.
+        ;; A namespace declared in a transient frame is NOT root-reachable —
+        ;; there the fix is defining the member inside the namespace body.
+        Ns::set $NrApp cb [lambda {} { ::NrApp::redraw }]
+        Test::eq [apply ${NrApp::cb}] drawn
+        namespace NrApp { proc redraw {} { return redrawn } }
+        Test::eq [apply ${NrApp::cb}] redrawn
+    }
+
+    Test::case "cell as qualified root follows the cell (D2)" {
+        var CM [namespace { let x 1 }]
+        proc nr_cellread {} { ${CM::x} }
+        Test::eq [nr_cellread] 1
+        set! CM [namespace { let x 2 }]
+        Test::eq [nr_cellread] 2
+    }
+
+    Test::case "home shadowing is by identity, not spelling" {
+        namespace NrShadow {
+            proc f {NrShadow} { ${NrShadow::x} }
+        }
+        let other [namespace { let x 42 }]
+        Test::eq [NrShadow::f $other] 42
+    }
+}
+
+;; ---- A. compiled code is lexical --------------------
+
+proc nrA_hijack_target {} { NRZ }
+proc nrA_hijacker {} {
+    let NRZ [lambda {} { return hijacked }]
+    nrA_hijack_target
+}
+
+namespace NrHij { proc g {} { return real } }
+proc nrA_qual_target {} { NrHij::g }
+proc nrA_qual_hijacker {} {
+    let NrHij [namespace { proc g {} { return hijacked } }]
+    nrA_qual_target
+}
+
+proc nrA_cold {flag} {
+    if $flag { nrA_no_such_command_ever } else { return cold-ok }
+}
+
+proc nrA_self {} { return v1 }
+proc nrA_selfrec {n} {
+    if [== $n 0] { return done }
+    nrA_selfrec [- $n 1]
+}
+
+macro nrA_unless {c b} { quasiquote { if [not ,$c] {,$b} } }
+proc nrA_macro_user {} { nrA_unless 0 { return macro-ok } }
+
+proc nrA_dsl_run {body} { isolate { eval $body } }
+proc nrA_dsl_caller {} {
+    let local_x 5
+    nrA_dsl_run { return "saw $local_x" }
+}
+
+proc nrA_evaldef {} {
+    eval {proc nrA_from_eval {} { nrA_never_defined_anywhere }}
+    catch { nrA_from_eval } r e
+    $e
+}
+
+let NRD8 42
+proc nrA_d8 {} {
+    let d8_local 7
+    eval {proc nrA_d8_child {} { + $d8_local $NRD8 }}
+    nrA_d8_child
+}
+
+let nrA_src {+ $NRD8 1}
+proc nrA_runtime_body {} $nrA_src
+
+proc nrA_fwd {} { NrLateNs::go }
+namespace NrLateNs { proc go {} {1} }
+
+Test::suite "compiled code is lexical" {
+    Test::case "caller cannot supply an unresolved bare name" {
+        Test::eq [catch {nrA_hijacker} r e] 1
+        Test::assert [has? $e {unknown command: NRZ}]
+    }
+
+    Test::case "caller-local namespace cannot hijack a captured root" {
+        Test::eq [nrA_qual_hijacker] real
+    }
+
+    Test::case "unresolved name in a cold branch is fine until taken" {
+        Test::eq [nrA_cold 0] cold-ok
+        Test::eq [catch {nrA_cold 1} r e] 1
+    }
+
+    Test::case "SELF is a snapshot: redefining f does not retarget old f" {
+        proc nrA_f {} { return old-self }
+        let old $nrA_f
+        proc nrA_f {} { return new-self }
+        Test::eq [apply $old] old-self
+        Test::eq [nrA_selfrec 5] done
+    }
+
+    Test::case "macro templates resolve dynamically inside procs" {
+        Test::eq [nrA_macro_user] macro-ok
+    }
+
+    Test::case "eval'd DSL bodies see the dynamic environment" {
+        Test::eq [nrA_dsl_caller] "saw 5"
+    }
+
+    Test::case "procs DEFINED by eval'd text still have lexical bodies" {
+        Test::assert [has? [nrA_evaldef] {unknown command: nrA_never_defined_anywhere}]
+    }
+
+    Test::case "closures built under eval capture what it sees" {
+        Test::eq [nrA_d8] 49
+    }
+
+    Test::case "proc f {} \$src compiles lexically at definition" {
+        Test::eq [nrA_runtime_body] 43
+    }
+
+    Test::case ":: escapes even the dynamic environment" {
+        proc nrA_esc {} {
+            let NR_WIDTH inner
+            eval { ${::NR_WIDTH} }
+        }
+        Test::eq [nrA_esc] 800
+    }
+
+    Test::case "conditional diagnostics" {
+        ;; NrLateNs is a top-level fixture: the hint fires only for
+        ;; root-visible names (a case-local namespace gets no hint).
+        var e 0
+        Test::eq [catch {nrA_fwd} r e] 1
+        Test::assert [has? $e {use ::NrLateNs::go}]
+        proc nrA_typo {} { Gmae_zz::run }
+        Test::eq [catch {nrA_typo} r e] 1
+        Test::false [has? $e {use ::}]
+    }
+}
+
+proc nrA_requirer {} {
+    let sneaky_local 42
+    require test/require_fixtures/lexical_probe_lib.lcl
+    catch { nr_probe::try_sneaky } r e
+    ;; require lifts namespaces into THIS frame; report both findings
+    (($e) (${nr_probe_result::loose_saw_sneaky}))
+}
+
+Test::suite "require stays lexical" {
+    Test::case "module code cannot see the requiring proc's locals" {
+        let res [nrA_requirer]
+        Test::assert [has? [get [get $res 0] 0] {undefined variable "sneaky_local"}]
+        Test::eq [get [get $res 1] 0] 1
+    }
+
+    Test::case "subst inherits mode: lexical in compiled code" {
+        proc nrA_subster {} { subst {x=$nrA_absent_var} }
+        Test::eq [catch {nrA_subster} r e] 1
+    }
+}
+
+namespace NrDiagM { let x 1 }
+let nr_diag_s "hello"
+
+Test::suite "segment diagnostics and gated hints" {
+    Test::case "which segment failed is named" {
+        var e 0
+        Test::eq [catch {puts ${NrDiagM::nope}} r e] 1
+        Test::eq $e {namespace "NrDiagM" has no member "nope"}
+        Test::eq [catch {puts ${nr_diag_s::x}} r e] 1
+        Test::eq $e {"nr_diag_s" is not a namespace (cannot resolve "nr_diag_s::x")}
+        Test::eq [catch {puts ${Nr_gmae::run}} r e] 1
+        Test::eq $e {undefined name "Nr_gmae" (in "Nr_gmae::run")}
+    }
+
+    Test::case "hint fires only when the FULL path resolves at root" {
+        ;; member missing under a real root: ::NrDiagM::nope fails
+        ;; identically, so no circular hint
+        var e 0
+        Test::eq [catch {puts ${NrDiagM::nope}} r e] 1
+        Test::false [has? $e {use }]
+        ;; string root: ::nr_diag_s::x can never work, no hint
+        Test::eq [catch {puts ${nr_diag_s::x}} r e] 1
+        Test::false [has? $e {use }]
+    }
+
+    Test::case "shadowed root gets a correct, working hint" {
+        proc nr_shadowed {} { let NrDiagM "local-string"; ${NrDiagM::x} }
+        var e 0
+        Test::eq [catch {nr_shadowed} r e] 1
+        Test::assert [has? $e {use ${::NrDiagM::x}}]
+        ;; and the hinted spelling actually works from the same shape
+        proc nr_shadowed_fixed {} { let NrDiagM "local-string"; ${::NrDiagM::x} }
+        Test::eq [nr_shadowed_fixed] 1
+    }
+}
+
+;; ---- corpus feedback round (Lk / Dagwood / Weft) ----------------
+
+namespace NrProj { let keep 1 }
+proc nr_mktask {n} { namespace $n { var z 9 } }
+namespace NrFlat { let keep 2 }
+proc nr_extend {n} { namespace $n { let added 3 } }
+
+Test::suite "declarations are absolute (Dagwood clobber)" {
+    Test::case "runtime-named qualified declaration extends, never clobbers" {
+        ;; NrProj/NrFlat are top-level fixtures: a runtime-named
+        ;; declaration resolves lexically, then at the interpreter
+        ;; root — a namespace local to a transient frame is not
+        ;; reachable by a computed name from inside a proc.
+        nr_mktask NrProj::t1
+        nr_mktask NrProj::t2
+        Test::eq ${NrProj::keep} 1
+        Test::eq [Ns::has? $NrProj t1] 1
+        Test::eq [Ns::has? $NrProj t2] 1
+        ;; re-entry of the same sub-namespace preserves its members
+        nr_mktask NrProj::t1
+        Test::eq [len ${NrProj::t1}] 1
+    }
+
+    Test::case "runtime-named single-segment declaration extends the root ns" {
+        nr_extend NrFlat
+        Test::eq ${NrFlat::keep} 2
+        Test::eq ${NrFlat::added} 3
+    }
+}
+
+Test::suite "cycle provenance (Lk/Weft diagnostics)" {
+    Test::case "Ns::set names the key, the closure site, and the captured root" {
+        let N [namespace { proc g {} { return x } }]
+        let f [lambda {} { N::g }]
+        var e 0
+        Test::eq [catch {Ns::set $N handlers #{invoke $f}} r e] 1
+        Test::assert [has? $e {key "invoke"}]
+        Test::assert [has? $e {a lambda (}]
+        Test::assert [has? $e {captures "N" owningly}]
+        Test::assert [has? $e {::-rooted}]
+    }
+
+    Test::case "set! cycle message dropped the mutual-recursion claim" {
+        namespace NrLkDsl { var reveal 0 }
+        let cb [lambda {} { ${NrLkDsl::reveal} }]
+        var e 0
+        Test::eq [catch {set! NrLkDsl::reveal (now $cb)} r e] 1
+        Test::false [has? $e {mutual recursion}]
+        Test::assert [has? $e {captures "NrLkDsl" owningly}]
+        Test::assert [has? $e {member "reveal"}]
+    }
+
+    Test::case "direct self-store says so plainly" {
+        let M2 [namespace { let a 1 }]
+        var e 0
+        Test::eq [catch {Ns::set $M2 self $M2} r e] 1
+        Test::assert [has? $e {IS the namespace itself}]
+    }
+}
+
+;; Weft item 2: the qualified/nested spelling equivalence as an AXIS —
+;; the same home/ownership battery run through both spellings.
+proc nr_ax_probe {root} {
+    ;; returns (live-after-reentry extracted-still-old)
+    let before [apply [get $root make]]
+    ((${before}))
+}
+
+namespace NrAxQ::inner {
+    proc make {} { lambda {} { NrAxQ::inner::val } }
+    proc val {} { return q1 }
+}
+namespace NrAxN {
+    namespace inner {
+        proc make {} { lambda {} { NrAxN::inner::val } }
+        proc val {} { return n1 }
+    }
+}
+
+Test::suite "spelling equivalence axis: qualified == nested" {
+    Test::case "runtime closures inherit ancestor homes in both spellings" {
+        let qcb [NrAxQ::inner::make]
+        let ncb [NrAxN::inner::make]
+        Test::eq [apply $qcb] q1
+        Test::eq [apply $ncb] n1
+        ;; storing back into the ROOT must not cycle in either spelling
+        Ns::set $NrAxQ qcb $qcb
+        Ns::set $NrAxN ncb $ncb
+        ;; liveness through re-entry, both spellings
+        namespace NrAxQ::inner { proc val {} { return q2 } }
+        namespace NrAxN { namespace inner { proc val {} { return n2 } } }
+        Test::eq [apply $qcb] q2
+        Test::eq [apply $ncb] n2
+    }
+
+    Test::case "builder-time self-reference across re-entry, both spellings" {
+        namespace NrBxQ::s { proc f {} { NrBxQ::s::g } ; proc g {} { return a } }
+        namespace NrBxQ::s { proc f {} { NrBxQ::s::g } }
+        Test::eq [NrBxQ::s::f] a
+        namespace NrBxN { namespace s { proc f {} { NrBxN::s::g } ; proc g {} { return b } } }
+        namespace NrBxN { namespace s { proc f {} { NrBxN::s::g } } }
+        Test::eq [NrBxN::s::f] b
+    }
+}
