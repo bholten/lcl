@@ -147,9 +147,9 @@ Test::suite " stdlib errors name the proc" {
     }
 
     Test::case "type mismatch names proc and both types" {
-        let r [catch { del (1 2) 0 } res err]
+        let r [catch { del 42 0 } res err]
         Test::eq $r 1
-        Test::eq $err {del: expected dict, got list}
+        Test::eq $err {del: expected list or dict, got int}
     }
 
     Test::case "callable check names the proc" {

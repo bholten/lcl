@@ -25,4 +25,13 @@ let decoded [crypto::base64_decode $encoded]
 puts "Base64 decoded: $decoded"
 
 puts ""
+puts "Testing crypto::random_bytes..."
+let rb [crypto::random_bytes 16]
+assert [== [String::length $rb] 32]
+assert [== [crypto::random_bytes 0] ""]
+assert [!= [crypto::random_bytes 8] [crypto::random_bytes 8]]
+assert [catch {crypto::random_bytes -1}]
+puts "16 random bytes (hex): $rb"
+
+puts ""
 puts "All basic crypto tests passed!"

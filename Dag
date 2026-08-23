@@ -13,6 +13,7 @@ project lcl {
                   -DLCL_BUILD_PROCESS=ON
                   -DLCL_BUILD_TIME=ON
                   -DLCL_BUILD_MATH=ON
+                  -DLCL_BUILD_RANDOM=ON
                   -DLCL_BUILD_EXPECT=ON)
 
     let ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
