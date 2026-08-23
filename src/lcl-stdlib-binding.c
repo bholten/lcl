@@ -421,7 +421,15 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
     return LCL_RC_ERR;
   }
 
-  body_p = lcl_compile_report(interp, body_str, "<lambda>");
+  if (body_word->braced && body_word->line > 0 && interp->cur_file) {
+    body_p = lcl_compile_report_at(interp, body_str, interp->cur_file,
+                                   body_word->line);
+  } else {
+    char name[256];
+    body_p = lcl_compile_report(
+        interp, body_str,
+        lcl_dyn_source_name(interp, "lambda", name, sizeof(name)));
+  }
   lcl_ref_dec(body_s);
 
   if (!body_p) {
@@ -436,7 +444,8 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p);
+  *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p,
+                      interp->cur_file, interp->cur_line);
 
   if (!*out) {
     LCL_ERR_MSG(interp, "lambda: out of memory");
@@ -728,6 +737,188 @@ static lcl_return_code c_is_proc(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
+/* Resolve a proc-valued argument. */
+static lcl_value *resolve_proc_arg(lcl_interp *interp, const char *who,
+                                   lcl_value *v, lcl_value **held) {
+  *held = NULL;
+
+  if (v->type == LCL_STRING) {
+    const char *name;
+
+    if (lcl_value_to_cstring(interp, v, &name) != LCL_OK) {
+      return NULL;
+    }
+
+    if (lcl_env_get_command(interp, name, held) != LCL_OK) {
+      lcl_std_err_expected_got(interp, who, "proc", v);
+      return NULL;
+    }
+
+    v = *held;
+  }
+
+  if (v->type != LCL_PROC && v->type != LCL_CPROC) {
+    lcl_std_err_expected_got(interp, who, "proc", v);
+    lcl_ref_dec(*held);
+    *held = NULL;
+    return NULL;
+  }
+
+  return v;
+}
+
+/* Proc::name fn -- registered proc name or empty-string for lambda */
+static lcl_return_code c_proc_name(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
+  lcl_value *held;
+  lcl_value *fn;
+  const char *name = "";
+
+  if (!lcl_std_chk_argc(interp, "Proc::name", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  fn = resolve_proc_arg(interp, "Proc::name", argv[0], &held);
+
+  if (!fn) {
+    return LCL_RC_ERR;
+  }
+
+  if (fn->type == LCL_PROC) {
+    lcl_proc *p = fn->as.procedure.proc;
+    name = p->self_name ? p->self_name : "";
+  } else if (fn->str_repr) {
+    name = fn->str_repr;
+  }
+
+  *out = lcl_string_new(name);
+  lcl_ref_dec(held);
+  return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
+/* Proc::params fn - parameter names in order, as a flat list. */
+static lcl_return_code c_proc_params(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
+  lcl_value *held;
+  lcl_value *fn;
+  lcl_value *list;
+
+  if (!lcl_std_chk_argc(interp, "Proc::params", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  fn = resolve_proc_arg(interp, "Proc::params", argv[0], &held);
+
+  if (!fn) {
+    return LCL_RC_ERR;
+  }
+
+  list = lcl_list_new();
+
+  if (!list) {
+    lcl_ref_dec(held);
+    LCL_ERR_MSG(interp, "Proc::params: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  if (fn->type == LCL_PROC) {
+    const lcl_param_spec *ps = &fn->as.procedure.proc->pspec;
+    int n = ps->n_required + ps->n_optional;
+    int i;
+    char buf[256];
+
+    for (i = 0; i <= n; i++) {
+      const char *pname;
+      lcl_value *item;
+      const char *mark;
+
+      if (i < n) {
+        pname = ps->params[i].name;
+        mark = i < ps->n_required ? "" : "?";
+      } else if (ps->rest_name) {
+        pname = ps->rest_name;
+        mark = "*";
+      } else {
+        break;
+      }
+
+      if (strlen(pname) + 2 > sizeof(buf)) {
+        lcl_ref_dec(list);
+        lcl_ref_dec(held);
+        LCL_ERR_MSG(interp, "Proc::params: parameter name too long");
+        return LCL_RC_ERR;
+      }
+
+      strcpy(buf, mark);
+      strcat(buf, pname);
+      item = lcl_string_new(buf);
+
+      if (!item || lcl_list_push(&list, item) != LCL_OK) {
+        lcl_ref_dec(item);
+        lcl_ref_dec(list);
+        lcl_ref_dec(held);
+        LCL_ERR_MSG(interp, "Proc::params: out of memory");
+        return LCL_RC_ERR;
+      }
+
+      lcl_ref_dec(item);
+    }
+  }
+
+  lcl_ref_dec(held);
+  *out = list;
+  return LCL_RC_OK;
+}
+
+/* Proc::origin fn - #{file F line L}: where the proc was
+   constructed. */
+static lcl_return_code c_proc_origin(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
+  lcl_value *held;
+  lcl_value *fn;
+  lcl_value *dict;
+
+  if (!lcl_std_chk_argc(interp, "Proc::origin", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  fn = resolve_proc_arg(interp, "Proc::origin", argv[0], &held);
+
+  if (!fn) {
+    return LCL_RC_ERR;
+  }
+
+  dict = lcl_dict_new();
+
+  if (!dict) {
+    lcl_ref_dec(held);
+    LCL_ERR_MSG(interp, "Proc::origin: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  if (fn->type == LCL_PROC && fn->as.procedure.proc->file) {
+    lcl_proc *p = fn->as.procedure.proc;
+    lcl_value *file_v = lcl_string_new(p->file);
+    lcl_value *line_v = lcl_int_new(p->line);
+    int ok = file_v && line_v && lcl_dict_put(&dict, "file", file_v) == LCL_OK &&
+             lcl_dict_put(&dict, "line", line_v) == LCL_OK;
+
+    lcl_ref_dec(file_v);
+    lcl_ref_dec(line_v);
+
+    if (!ok) {
+      lcl_ref_dec(dict);
+      lcl_ref_dec(held);
+      LCL_ERR_MSG(interp, "Proc::origin: out of memory");
+      return LCL_RC_ERR;
+    }
+  }
+
+  lcl_ref_dec(held);
+  *out = dict;
+  return LCL_RC_OK;
+}
+
 /* arity fn - return (min max) where max is -1 for unbounded */
 static lcl_return_code c_arity(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
@@ -792,6 +983,16 @@ void lcl_std_register_binding(lcl_interp *interp) {
   lcl_register_proc(interp, "cell?", c_is_cell);
   lcl_register_proc(interp, "proc?", c_is_proc);
   lcl_register_proc(interp, "arity", c_arity);
+
+  {
+    lcl_value *proc_ns = lcl_ns_new("Proc");
+    lcl_define_take(interp, "Proc", proc_ns);
+    lcl_ns_def_take(proc_ns, "name", lcl_c_proc_new("Proc::name", c_proc_name));
+    lcl_ns_def_take(proc_ns, "params",
+                    lcl_c_proc_new("Proc::params", c_proc_params));
+    lcl_ns_def_take(proc_ns, "origin",
+                    lcl_c_proc_new("Proc::origin", c_proc_origin));
+  }
   lcl_register_proc(interp, "let", c_let);
   lcl_register_proc(interp, "ref", c_ref);
   lcl_register_proc(interp, "gensym", c_gensym);

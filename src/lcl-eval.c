@@ -724,7 +724,15 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
             lcl_ref_dec(macro_result);
             rc = LCL_RC_ERR;
           } else {
-            macro_prog = lcl_compile_report(interp, macro_src, "<macro>");
+            {
+              char tag[96];
+              char name[256];
+              snprintf(tag, sizeof(tag), "macro %s",
+                       invoked_name ? invoked_name : "");
+              macro_prog = lcl_compile_report(
+                  interp, macro_src,
+                  lcl_dyn_source_name(interp, tag, name, sizeof(name)));
+            }
             lcl_ref_dec(macro_result);
 
             if (!macro_prog) {
@@ -754,10 +762,11 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 /* Compile `src`, recording a compile failure in the interp's error
  * state (message + file + line) the same way runtime errors are
  * recorded. Returns NULL on failure with the error already set. */
-lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
-                                const char *file) {
+lcl_program *lcl_compile_report_at(lcl_interp *interp, const char *src,
+                                   const char *file, long start_line) {
   lcl_compile_err cerr;
-  lcl_program *p = lcl_program_compile_ex(src, file, &cerr);
+  lcl_program *p =
+      lcl_program_compile_at(src, strlen(src), file, &cerr, 0, start_line);
 
   if (!p) {
     const char *saved_file = interp->cur_file;
@@ -771,6 +780,27 @@ lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
   }
 
   return p;
+}
+
+lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
+                                const char *file) {
+  return lcl_compile_report_at(interp, src, file, 1);
+}
+
+/* Name the source of a program compiled from a runtime string, for
+ * example:
+ *
+ * "<eval at game.lcl:40>" (or "<eval>" with no current file). */
+const char *lcl_dyn_source_name(lcl_interp *interp, const char *tag,
+                                char *buf, size_t n) {
+  if (interp->cur_file) {
+    snprintf(buf, n, "<%s at %s:%d>", tag, interp->cur_file,
+             interp->cur_line);
+  } else {
+    snprintf(buf, n, "<%s>", tag);
+  }
+
+  return buf;
 }
 
 lcl_return_code lcl_eval_string_file(lcl_interp *interp, const char *src,

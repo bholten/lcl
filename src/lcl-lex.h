@@ -51,11 +51,20 @@ lcl_program *lcl_program_compile_bytes_ex(const char *src, size_t len,
 /* Internal compile entry carrying the syntactic nesting level.
  * `nest` is 0 for top-level source; the scanner passes `nest + 1`
  * when compiling a nested subprogram. Fails with "nesting too deep"
- * once `nest` exceeds LCL_SCAN_MAX_NEST. The public compile
- * functions are nest-0 wrappers. */
+ * once `nest` exceeds LCL_SCAN_MAX_NEST. The public compile functions
+ * are nest-0 wrappers. */
 lcl_program *lcl_program_compile_depth(const char *src, size_t len,
                                        const char *file, lcl_compile_err *err,
                                        int nest);
+
+/* As lcl_program_compile_depth, with the first line of `src` numbered
+ * `start_line`. This is how a braced body keeps its file-absolute
+ * lines: the scanner compiles `{...}` interiors with the enclosing
+ * file and the line the brace opened on, so runtime errors inside a
+ * proc body name `game.lcl:42`, not `<braced>:3`. */
+lcl_program *lcl_program_compile_at(const char *src, size_t len,
+                                    const char *file, lcl_compile_err *err,
+                                    int nest, long start_line);
 
 /* Compile a delimiter span (the interior of `[...]`, `(...)`,
  * `#{...}`, plus any desugaring prefix) as a single command: newlines
@@ -64,8 +73,8 @@ lcl_program *lcl_program_compile_depth(const char *src, size_t len,
  * span opens on — compiled commands and error reports carry absolute
  * line numbers. */
 lcl_program *lcl_program_compile_span(const char *src, size_t len,
-                                      lcl_compile_err *err, int nest,
-                                      long start_line);
+                                      const char *file, lcl_compile_err *err,
+                                      int nest, long start_line);
 int lcl_program_push_command(lcl_program *p, lcl_command *src);
 
 typedef enum { LCL_WP_LIT, LCL_WP_VAR, LCL_WP_SUBCMD } lcl_word_piece_kind;
@@ -109,6 +118,7 @@ struct lcl_word {
    * by lcl_scan_word; both 0 for words not built by the scanner. */
   long src_start;
   long src_end;
+  long line;
 };
 
 void lcl_word_free_contents(lcl_word *w);
@@ -129,6 +139,7 @@ typedef struct {
   long err_line;
   int nest;
   int sep_as_ws;
+  const char *file;
 } lcl_scan;
 
 void lcl_scan_init(lcl_scan *sc, const char *src);

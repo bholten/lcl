@@ -251,6 +251,8 @@ typedef struct {
   lcl_param_spec pspec;
   lcl_program *body;
   int is_macro;
+  char *file;
+  int line;
 } lcl_proc;
 
 lcl_return_code lcl_build_upvalues(lcl_interp *interp, const lcl_program *body,

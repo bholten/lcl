@@ -662,7 +662,11 @@ lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
       return LCL_RC_ERR;
     }
 
-    *prog_out = lcl_compile_report(interp, body_src, tag);
+    {
+      char name[256];
+      *prog_out = lcl_compile_report(
+          interp, body_src, lcl_dyn_source_name(interp, tag, name, sizeof(name)));
+    }
     lcl_ref_dec(body_v);
 
     if (!*prog_out) {

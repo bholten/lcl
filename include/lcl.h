@@ -242,6 +242,27 @@ lcl_return_code lcl_eval_file(lcl_interp *interp, const char *path,
 lcl_return_code lcl_eval_bytes(lcl_interp *interp, const char *src, size_t len,
                                lcl_value **out);
 
+/*
+ * Evaluate source text under a name of the host's choosing.
+ *
+ * `file` names the source for diagnostics and provenance: runtime
+ * errors report `file:line`, and procs defined by the text answer
+ * `Proc::origin` with it. Use it for text that is not a file on disk
+ * but still *is* something -- an editor buffer ("*scratch*"), a REPL
+ * entry ("<repl:42>"), an embedded script -- so that definitions from
+ * different sources stay
+ * distinguishable. lcl_eval_string/lcl_eval_bytes are these with a
+ * placeholder name ("<string>" / "<bytes>").
+ *
+ * `file` is copied into the compiled program; the caller keeps
+ * ownership of the argument.
+ */
+lcl_return_code lcl_eval_string_file(lcl_interp *interp, const char *src,
+                                     const char *file, lcl_value **out);
+lcl_return_code lcl_eval_bytes_file(lcl_interp *interp, const char *src,
+                                    size_t len, const char *file,
+                                    lcl_value **out);
+
 /* ============================================================================
  * Embedded Libraries
  *

@@ -27,6 +27,10 @@ lcl_return_code lcl_step_tick(lcl_interp *interp);
 
 lcl_program *lcl_compile_report(lcl_interp *interp, const char *src,
                                 const char *file);
+lcl_program *lcl_compile_report_at(lcl_interp *interp, const char *src,
+                                   const char *file, long start_line);
+const char *lcl_dyn_source_name(lcl_interp *interp, const char *tag,
+                                char *buf, size_t n);
 
 lcl_return_code lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
                                      lcl_value **out);

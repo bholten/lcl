@@ -66,6 +66,8 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
   lcl_value *last = NULL;
   int i;
   int saved_tail_position = interp->in_tail_position;
+  const char *saved_cur_file = interp->cur_file;
+  int saved_cur_line = interp->cur_line;
 
   if (!lcl_std_chk_argc(interp, "load", argc, 1, 1)) {
     return LCL_RC_ERR;
@@ -113,6 +115,9 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
     lcl_command *cmd = &prog->cmd[i];
     int is_last_cmd = (i == prog->ncmd - 1);
 
+    interp->cur_file = prog->file;
+    interp->cur_line = cmd->line;
+
     if (last) {
       lcl_ref_dec(last);
       last = NULL;
@@ -123,6 +128,8 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
 
     if (rc == LCL_RC_TAILCALL) {
       interp->in_tail_position = saved_tail_position;
+      interp->cur_file = saved_cur_file;
+      interp->cur_line = saved_cur_line;
       interp->depth--;
       lcl_program_free(prog);
 
@@ -134,22 +141,13 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
     }
 
     if (rc != LCL_RC_OK) {
-      if (rc != LCL_RC_RETURN) {
-        interp->err_line = cmd->line;
-
-        if (interp->err_file_owned && interp->err_file) {
-          free((void *)interp->err_file);
-        }
-
-        interp->err_file = prog->file ? strdup(prog->file) : NULL;
-        interp->err_file_owned = prog->file ? 1 : 0;
-      }
-
       break;
     }
   }
 
   interp->in_tail_position = saved_tail_position;
+  interp->cur_file = saved_cur_file;
+  interp->cur_line = saved_cur_line;
   interp->depth--;
   lcl_program_free(prog);
 
@@ -645,17 +643,6 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
     rc = lcl_call_from_words(interp, cmd, &last);
 
     if (rc != LCL_RC_OK) {
-      if (rc != LCL_RC_RETURN) {
-        interp->err_line = cmd->line;
-
-        if (interp->err_file_owned && interp->err_file) {
-          free((void *)interp->err_file);
-        }
-
-        interp->err_file = prog->file ? strdup(prog->file) : NULL;
-        interp->err_file_owned = prog->file ? 1 : 0;
-      }
-
       break;
     }
   }

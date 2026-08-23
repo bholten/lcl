@@ -355,5 +355,80 @@ Test::suite "Equality with Control Flow" {
 }
 
 ;; ============================================================================
+;; Proc Reflection (Proc::name / params / origin)
+;; ============================================================================
+
+Test::suite "Proc Reflection" {
+    Test::case "params: required, optional, rest as a flat marked list" {
+        proc pr_full {a b (c 3) *rest} { $a }
+        Test::eq [repr [Proc::params pr_full]] {("a" "b" "?c" "*rest")}
+        Test::eq [repr [Proc::params [lambda {x} { $x }]]] {("x")}
+        Test::eq [repr [Proc::params [lambda {} { 1 }]]] {()}
+    }
+
+    Test::case "name: proc name, empty for a lambda, registered name for a C proc" {
+        proc pr_named {} { 1 }
+        Test::eq [Proc::name pr_named] "pr_named"
+        Test::eq [Proc::name $pr_named] "pr_named"
+        Test::eq [Proc::name [lambda {} { 1 }]] ""
+        Test::eq [Proc::name {+}] "+"
+        Test::eq [Proc::name $pr_named] [Proc::name "pr_named"]
+    }
+
+    Test::case "works on macros" {
+        macro pr_mac {x} { $x }
+        Test::eq [Proc::name pr_mac] "pr_mac"
+        Test::eq [repr [Proc::params pr_mac]] {("x")}
+        Test::eq [has? [Proc::origin pr_mac] line] 1
+    }
+
+    Test::case "origin: file and line of the defining command" {
+        ;; Case bodies are eval'd by the framework, so the file here is
+        ;; the eval's name ("<eval at ...>") and lines are body-relative.
+        proc pr_org {} { 1 }
+        let o [Proc::origin pr_org]
+        Test::eq [type $o] dict
+        Test::eq [> [String::length [get $o file]] 0] 1
+        Test::eq [type [get $o line]] int
+        Test::eq [> [get $o line] 0] 1
+    }
+
+    Test::case "origin follows the value, not the name" {
+        proc pr_src {} { 1 }
+        let alias $pr_src
+        Test::eq [Proc::origin $alias] [Proc::origin pr_src]
+        namespace pr_ns { proc inner {} { 1 } }
+        Test::eq [get [Proc::origin pr_ns::inner] line] [+ [get [Proc::origin pr_src] line] 3]
+    }
+
+    Test::case "origin is a source location: factory closures share one" {
+        proc pr_mk {n} { lambda {x} { + $x $n } }
+        Test::eq [Proc::origin [pr_mk 1]] [Proc::origin [pr_mk 2]]
+        Test::eq [!= [get [Proc::origin [pr_mk 1]] line] [get [Proc::origin pr_mk] line]] 0
+    }
+
+    Test::case "origin through eval names the eval site" {
+        eval "proc pr_ev {} { 1 }"
+        Test::eq [has? [get [Proc::origin pr_ev] file] "<eval at "] 1
+        Test::eq [get [Proc::origin pr_ev] line] 1
+    }
+
+    Test::case "C procs: empty origin, empty params" {
+        Test::eq [repr [Proc::origin {+}]] {#{}}
+        Test::eq [repr [Proc::params {+}]] {()}
+        Test::eq [repr [Proc::origin $puts]] {#{}}
+    }
+
+    Test::case "errors: unknown name, non-proc value" {
+        catch { Proc::origin pr_no_such_name } r msg
+        Test::eq $msg {Proc::origin: expected proc, got "pr_no_such_name"}
+        catch { Proc::params 42 } r msg
+        Test::eq $msg {Proc::params: expected proc, got int}
+        catch { Proc::name (1 2) } r msg
+        Test::eq $msg {Proc::name: expected proc, got list}
+    }
+}
+
+;; ============================================================================
 ;; Lexical Scoping
 ;; ============================================================================
