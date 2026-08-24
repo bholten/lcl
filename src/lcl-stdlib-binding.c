@@ -465,11 +465,23 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
     return LCL_RC_ERR;
   }
 
-  if (lcl_build_upvalues(interp, body_p, &pspec, self_name, &upvals,
-                         &nupvals) != LCL_RC_OK) {
-    lcl_param_spec_free(&pspec);
-    lcl_program_free(body_p);
-    return LCL_RC_ERR;
+  {
+    int saved_dyn = interp->env.dyn_mode;
+    lcl_return_code rc;
+
+    if (!body_word->braced) {
+      interp->env.dyn_mode = 1;
+    }
+
+    rc = lcl_build_upvalues(interp, body_p, &pspec, self_name, &upvals,
+                            &nupvals);
+    interp->env.dyn_mode = saved_dyn;
+
+    if (rc != LCL_RC_OK) {
+      lcl_param_spec_free(&pspec);
+      lcl_program_free(body_p);
+      return LCL_RC_ERR;
+    }
   }
 
   *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p,
