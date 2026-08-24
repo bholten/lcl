@@ -1,0 +1,72 @@
+;;; Proc reflection
+;;;
+;;; The core exposes its name, its parameters, and where it was
+;;; constructed.
+;;;
+;;; Examples:
+;;;
+;;; >> proc add {a b (c 0)} { + $a $b $c }
+;;; >> Proc::params add
+;;; ("a" "b" "?c")
+;;; >> Proc::name [lambda {x} { $x }]
+;;; ""
+namespace Proc {
+    ;;; The name a proc was defined with.
+    ;;;
+    ;;; `""` for a lambda. A C proc answers its registered name. The
+    ;;; name is the one given at `proc`/`macro` time and does not
+    ;;; follow rebinding: `let g $f` still names `f`.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> proc greet {who} { "hi $who" }
+    ;;; >> Proc::name greet
+    ;;; "greet"
+    ;;; >> let g $greet
+    ;;; >> Proc::name $g
+    ;;; "greet"
+    ;;; >> Proc::name {+}
+    ;;; "+"
+    ;;; >> Proc::name [lambda {} { 1 }]
+    ;;; ""
+    proc name {p} {}
+
+    ;;; Parameter names in order, as a flat list with markers.
+    ;;;
+    ;;; Required parameters are bare, optional ones carry a leading
+    ;;; `?`, a rest parameter a leading `*` (its native spelling).
+    ;;; `()` for a C proc, whose arity is not declared.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> proc f {a b (c 3) *rest} { $a }
+    ;;; >> Proc::params f
+    ;;; ("a" "b" "?c" "*rest")
+    ;;; >> Proc::params {+}
+    ;;; ()
+    ;;; >> Proc::params 42
+    ;;; !! expected proc
+    proc params {p} {}
+
+    ;;; Where the proc was constructed: `#{file F line L}`.
+    ;;;
+    ;;; The file and line of the `proc`, `lambda` or `macro` command
+    ;;; that built the value. This is a *source location*, not an
+    ;;; identity: it follows the value rather than the name, and every
+    ;;; closure a factory returns shares one. Text evaluated with
+    ;;; `eval` reports the eval's own name (`<eval at game.lcl:40>`)
+    ;;; with lines relative to that text; a host evaluating a buffer
+    ;;; names it via `lcl_eval_string_file`. `#{}` for a C proc.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> proc mk {n} { lambda {x} { + $x $n } }
+    ;;; >> == [Proc::origin [mk 1]] [Proc::origin [mk 2]]
+    ;;; 1
+    ;;; >> let o [Proc::origin mk]
+    ;;; >> type [get $o line]
+    ;;; "int"
+    ;;; >> Proc::origin {+}
+    ;;; #{}
+    proc origin {p} {}
+}
