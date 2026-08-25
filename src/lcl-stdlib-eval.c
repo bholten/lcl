@@ -255,10 +255,15 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
         {
           int j;
           int saved_tail_position = interp->in_tail_position;
+          const char *saved_cur_file = interp->cur_file;
+          int saved_cur_line = interp->cur_line;
           interp->in_tail_position = 0;
 
           for (j = 0; j < prog->ncmd; j++) {
             lcl_command *cmd = &prog->cmd[j];
+
+            interp->cur_file = prog->file;
+            interp->cur_line = cmd->line;
 
             if (subcmd_result) {
               lcl_ref_dec(subcmd_result);
@@ -284,6 +289,8 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
           }
 
           interp->in_tail_position = saved_tail_position;
+          interp->cur_file = saved_cur_file;
+          interp->cur_line = saved_cur_line;
         }
 
         interp->depth--;

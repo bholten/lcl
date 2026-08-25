@@ -274,6 +274,8 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
   int saved_def_floor;
   int saved_def_lookup_floor;
   int saved_tail_position;
+  const char *saved_cur_file;
+  int saved_cur_line;
   lcl_return_code rc;
   lcl_value *last = NULL;
   int i;
@@ -290,6 +292,8 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
   saved_def_floor = interp->def_floor;
   saved_def_lookup_floor = interp->def_lookup_floor;
   saved_tail_position = interp->in_tail_position;
+  saved_cur_file = interp->cur_file;
+  saved_cur_line = interp->cur_line;
   interp->def_floor = interp->def_depth;
   interp->def_lookup_floor = interp->def_depth;
   rc = LCL_RC_OK;
@@ -297,6 +301,9 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
   for (i = 0; i < prog->ncmd; i++) {
     lcl_command *cmd = &prog->cmd[i];
     int is_last_cmd = (i == prog->ncmd - 1);
+
+    interp->cur_file = prog->file;
+    interp->cur_line = cmd->line;
 
     if (last) {
       lcl_ref_dec(last);
@@ -310,6 +317,8 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
       interp->def_floor = saved_def_floor;
       interp->def_lookup_floor = saved_def_lookup_floor;
       interp->in_tail_position = saved_tail_position;
+      interp->cur_file = saved_cur_file;
+      interp->cur_line = saved_cur_line;
       lcl_std_free_if_owned(prog, prog_owned);
 
       if (out) {
@@ -338,6 +347,8 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
   interp->def_floor = saved_def_floor;
   interp->def_lookup_floor = saved_def_lookup_floor;
   interp->in_tail_position = saved_tail_position;
+  interp->cur_file = saved_cur_file;
+  interp->cur_line = saved_cur_line;
   lcl_std_free_if_owned(prog, prog_owned);
 
   if (rc == LCL_RC_OK || rc == LCL_RC_RETURN) {
@@ -655,10 +666,15 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
 
   {
     int saved_tail_position = interp->in_tail_position;
+    const char *saved_cur_file = interp->cur_file;
+    int saved_cur_line = interp->cur_line;
     interp->in_tail_position = 0;
 
     for (i = 0; i < prog->ncmd; i++) {
       lcl_command *cmd = &prog->cmd[i];
+
+      interp->cur_file = prog->file;
+      interp->cur_line = cmd->line;
 
       if (last) {
         lcl_ref_dec(last);
@@ -684,6 +700,8 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
     }
 
     interp->in_tail_position = saved_tail_position;
+    interp->cur_file = saved_cur_file;
+    interp->cur_line = saved_cur_line;
   }
 
   interp->depth--;
