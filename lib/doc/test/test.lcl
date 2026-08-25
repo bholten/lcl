@@ -338,4 +338,89 @@ Test::suite "Doc self-hosting" {
     }
 }
 
+
+Test::suite "Doc::lookup / Doc::describe" {
+    Test::case "register indexes qualified names" {
+        let src {;;; Module.
+
+;;; Adds.
+proc lk_add {a b} { + $a $b }
+
+namespace LkNs {
+    ;;; Inner doc.
+    proc inner {x} { $x }
+
+    namespace Deep {
+        ;;; Deepest.
+        proc d {} { 0 }
+    }
+}}
+        Test::eq [Doc::register $src "lk-src"] 5
+        Test::eq [get [Doc::lookup "LkNs::inner"] doc] "Inner doc."
+        Test::eq [get [Doc::lookup "LkNs::Deep::d"] qname] "LkNs::Deep::d"
+        Test::eq [get [Doc::lookup "LkNs::Deep::d"] file] "lk-src"
+        Test::eq [get [Doc::lookup "LkNs"] kind] "namespace"
+        Test::eq [get [Doc::lookup lk_add] params] "a b"
+        Test::eq [Doc::lookup lk_missing] #{}
+    }
+
+    Test::case "unqualified name falls back to bare-name match" {
+        Doc::register ";;; Q.\nnamespace LkQ { ;;; Bare.\n proc bare_only {} { 1 } }" "lk-q"
+        Test::eq [get [Doc::lookup bare_only] qname] "LkQ::bare_only"
+        Test::eq [Doc::lookup "Other::bare_only"] #{}
+    }
+
+    Test::case "re-registering a source replaces its entries" {
+        Doc::register ";;; First.\nproc lk_re {} { 1 }" "lk-re"
+        Doc::register ";;; Second.\nproc lk_re {} { 1 }" "lk-re"
+        Test::eq [get [Doc::lookup lk_re] doc] "Second."
+    }
+
+    Test::case "a live proc is matched by origin file and line" {
+        let path "/tmp/lcl-doc-lookup-test.lcl"
+        let src {;;; Top doc.
+proc lk_top {a} { $a }
+
+namespace LkLive {
+    ;;; Live inner.
+    ;;;
+    ;;; Examples:
+    ;;; >> LkLive::inner 2
+    ;;; 2
+    proc inner {x} { $x }
+}}
+        io::write_file $path $src
+        load $path
+        let e [Doc::lookup ${LkLive::inner}]
+        Test::eq [get $e qname] "LkLive::inner"
+        Test::eq [get $e line] 10
+        Test::eq [get $e file] $path
+        Test::eq [get [Doc::lookup $lk_top] doc] "Top doc."
+        Test::eq [get [Doc::lookup ${LkLive::inner}] qname] "LkLive::inner"
+    }
+
+    Test::case "describe renders signature, origin, and doc" {
+        Doc::register ";;; Adds.\n;;;\n;;; Slowly.\nproc lk_desc {a b} { + \$a \$b }" "lk-desc"
+        Test::eq [Doc::describe lk_desc] "proc lk_desc {a b}\n  lk-desc:4\n\nAdds.\n\nSlowly."
+        Doc::register "namespace LkD { ;;; Note.\n proc n {} { 1 } }" "lk-d"
+        Test::eq [Doc::describe "LkD::n"] "proc LkD::n {}\n  lk-d:2\n\nNote."
+        Test::eq [Doc::describe "LkD"] "namespace LkD\n  lk-d:1\n\n(undocumented)"
+    }
+
+    Test::case "describe of an undocumented live proc uses Proc::params" {
+        proc lk_plain {x (y 1) *rest} { $x }
+        let s [Doc::describe $lk_plain]
+        Test::eq [String::find $s "proc lk_plain {x ?y *rest}\n  "] 0
+        Test::eq [> [String::find $s "\n\n(undocumented)"] 0] 1
+        Test::eq [Doc::describe +] "proc + {}\n\n(undocumented)"
+        Test::eq [String::find [Doc::describe [lambda {} { 1 }]] "proc lambda {}\n  <eval at "] 0
+    }
+
+    Test::case "describe errors for an unknown name" {
+        let rc [catch {Doc::describe lk_unknown} r e]
+        Test::eq $rc 1
+        Test::eq [String::find $e {nothing known about "lk_unknown"}] 15
+    }
+}
+
 Test::run

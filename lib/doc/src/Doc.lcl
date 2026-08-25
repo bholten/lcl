@@ -586,4 +586,225 @@ namespace Doc {
         puts "doctest: [get $res pass] passed, [get $res fail] failed"
         get $res fail
     }
+
+    ;; ---- live symbols ---------------------------------------------
+
+    ;; Index of extracted docs: source name -> flat entry list. A file
+    ;; that could not be read is stored as () so it is not retried.
+    var _sources #{}
+
+    proc _flat {prefix entries file} {
+        var acc ()
+
+        foreach e $entries {
+            let q "$prefix[get $e name]"
+            let flat #{kind [get $e kind] qname $q name [get $e name] params [get $e params {}] line [get $e line] doc [get $e doc] file $file}
+            set! acc [List::push $acc $flat]
+
+            if [== [get $e kind] "namespace"] {
+                set! acc [List::concat $acc [_flat "$q::" [get $e entries] $file]]
+            }
+        }
+
+        $acc
+    }
+
+    ;;; Register the docs in source text under a source name.
+    ;;;
+    ;;; Indexes the `;;;` docs in `text` so `lookup` and `describe` can
+    ;;; find them. `name` is the file the text came from, or any label
+    ;;; for source the host owns (an editor buffer, an embedded
+    ;;; library). Procs loaded from a file are matched by their
+    ;;; `Proc::origin` line when `name` is that file; everything else,
+    ;;; including companion docs for C procs, is matched by qualified
+    ;;; name. Registering a name again replaces its entries. Returns
+    ;;; the number of entries indexed.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register ";;; Two.\nnamespace Tw { ;;; One.\n proc one {} { 1 } }" "tw"
+    ;;; 2
+    ;;; >> get [Doc::lookup "Tw::one"] doc
+    ;;; "One."
+    proc register {text (name "<registered>")} {
+        let flat [_flat {} [get [extract $text] entries] $name]
+        set! _sources [put $_sources $name $flat]
+        len $flat
+    }
+
+    ;;; Register a file's docs under its path (needs the io package).
+    proc register_file {path} {
+        register [io::read_file $path] $path
+    }
+
+    ;; Entries for a source, reading the file on first use.
+    proc _source {name} {
+        let cur [get $_sources $name "none"]
+
+        if [!= $cur "none"] {
+            return $cur
+        }
+
+        var flat ()
+        catch { set! flat [_flat {} [get [extract_file $name] entries] $name] }
+        set! _sources [put $_sources $name $flat]
+        $flat
+    }
+
+    proc _by_line {flat line} {
+        foreach e $flat {
+            if [== [get $e line] $line] {
+                return $e
+            }
+        }
+
+        #{}
+    }
+
+    proc _by_name {name} {
+        foreach flat [Dict::values $_sources] {
+            foreach e $flat {
+                if [== [get $e qname] $name] {
+                    return $e
+                }
+            }
+        }
+
+        if [< [String::find $name "::"] 0] {
+            foreach flat [Dict::values $_sources] {
+                foreach e $flat {
+                    if [== [get $e name] $name] {
+                        return $e
+                    }
+                }
+            }
+        }
+
+        #{}
+    }
+
+    ;; The live value a proc argument names, or {} when it is a name
+    ;; that does not resolve.
+    proc _live {p} {
+        if [!= [type $p] "string"] {
+            return $p
+        }
+
+        var v {}
+        catch { set! v [getvar $p] }
+        $v
+    }
+
+    ;;; Find the doc entry for a live proc or a name.
+    ;;;
+    ;;; `p` is a proc value or a name, qualified or not. An Lcl proc is
+    ;;; matched by its `Proc::origin` file and line; the file is read
+    ;;; and indexed on first use. A C proc, a name that is not live, or
+    ;;; a proc whose file is unavailable falls back to the registered
+    ;;; docs by qualified name, then (for an unqualified name) by bare
+    ;;; name. Returns the entry,
+    ;;; `#{kind K qname Q name N params P line L doc D file F}`, or `#{}`
+    ;;; when nothing is documented.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register ";;; Adds.\nproc lk_add {a b} { + \$a \$b }" "lk"
+    ;;; 1
+    ;;; >> get [Doc::lookup lk_add] params
+    ;;; "a b"
+    ;;; >> Doc::lookup lk_nothing
+    ;;; #{}
+    proc lookup {p} {
+        let v [_live $p]
+        var hint {}
+
+        if [== [type $p] "string"] {
+            set! hint $p
+        }
+
+        if [== [type $v] "proc"] {
+            let o [Proc::origin $v]
+            let file [get $o file {}]
+
+            if [!= $file {}] {
+                let e [_by_line [_source $file] [get $o line]]
+
+                if [> [len $e] 0] {
+                    return $e
+                }
+            }
+        }
+
+        if [and [== $hint {}] [or [== [type $v] "proc"] [== [type $v] "cproc"]]] {
+            set! hint [Proc::name $v]
+        }
+
+        if [== $hint {}] {
+            return #{}
+        }
+
+        _by_name $hint
+    }
+
+    ;;; Describe a live proc or a name: signature, origin, and doc text.
+    ;;;
+    ;;; The entry comes from `lookup`. A live proc with no docs still
+    ;;; gets its signature from `Proc::params` and its `Proc::origin`.
+    ;;; Errors when `p` is neither live nor documented.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register ";;; Adds.\n;;;\n;;; Slowly.\nproc ds_add {a b} { + \$a \$b }" "ds"
+    ;;; 1
+    ;;; >> String::split [Doc::describe ds_add] "\n"
+    ;;; ("proc ds_add {a b}" "  ds:4" "" "Adds." "" "Slowly.")
+    ;;; >> String::split [Doc::describe +] "\n"
+    ;;; ("proc + {}" "" "(undocumented)")
+    ;;; >> Doc::describe ds_nothing
+    ;;; !! nothing known about "ds_nothing"
+    proc describe {p} {
+        let e [lookup $p]
+        let v [_live $p]
+        let live [or [== [type $v] "proc"] [== [type $v] "cproc"]]
+
+        if [> [len $e] 0] {
+            var head "[get $e kind] [get $e qname]"
+
+            if [or [== [get $e kind] "proc"] [== [get $e kind] "macro"]] {
+                set! head "$head {[get $e params]}"
+            }
+
+            set! head "$head\n  [get $e file]:[get $e line]"
+            let doc [get $e doc]
+
+            if [== $doc {}] {
+                return "$head\n\n(undocumented)"
+            }
+
+            return "$head\n\n$doc"
+        }
+
+        if [not $live] {
+            error "Doc::describe: nothing known about \"$p\""
+        }
+
+        var name [Proc::name $v]
+
+        if [== [type $p] "string"] {
+            set! name $p
+        }
+
+        if [== $name {}] {
+            set! name "lambda"
+        }
+
+        var head "proc $name {[String::join [Proc::params $v] " "]}"
+        let o [Proc::origin $v]
+
+        if [> [len $o] 0] {
+            set! head "$head\n  [get $o file]:[get $o line]"
+        }
+
+        "$head\n\n(undocumented)"
+    }
 }

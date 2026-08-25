@@ -401,6 +401,23 @@ Test::suite "Proc Reflection" {
         Test::eq [get [Proc::origin pr_ns::inner] line] [+ [get [Proc::origin pr_src] line] 3]
     }
 
+    Test::case "origin: a proc inside a namespace body reports its own line" {
+        let base [get [Proc::origin [lambda {} { 1 }]] line]
+        namespace pr_lines {
+            proc first {} { 1 }
+
+            proc second {} { 2 }
+
+            isolate {
+                proc third {} { 3 }
+            }
+            let iso $third
+        }
+        Test::eq [get [Proc::origin pr_lines::first] line] [+ $base 2]
+        Test::eq [get [Proc::origin pr_lines::second] line] [+ $base 4]
+        Test::eq [get [Proc::origin pr_lines::iso] line] [+ $base 7]
+    }
+
     Test::case "origin is a source location: factory closures share one" {
         proc pr_mk {n} { lambda {x} { + $x $n } }
         Test::eq [Proc::origin [pr_mk 1]] [Proc::origin [pr_mk 2]]
