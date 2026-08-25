@@ -364,10 +364,56 @@ namespace LkNs {
         Test::eq [Doc::lookup lk_missing] #{}
     }
 
-    Test::case "unqualified name falls back to bare-name match" {
+    Test::case "unqualified name falls back to a unique bare-name match" {
         Doc::register ";;; Q.\nnamespace LkQ { ;;; Bare.\n proc bare_only {} { 1 } }" "lk-q"
         Test::eq [get [Doc::lookup bare_only] qname] "LkQ::bare_only"
         Test::eq [Doc::lookup "Other::bare_only"] #{}
+        Doc::register "namespace LkQ2 { ;;; Twin.\n proc twin {} { 1 } }" "lk-q2"
+        Doc::register "namespace LkQ3 { ;;; Twin.\n proc twin {} { 1 } }" "lk-q3"
+        Test::eq [Doc::lookup twin] #{}
+        Test::eq [get [Doc::lookup "LkQ3::twin"] file] "lk-q3"
+    }
+
+    Test::case "eval_at fragments resolve against the registered buffer" {
+        let buffer {;;; Buffer top.
+
+;;; Greets.
+proc ea_greet {who} { "hi $who" }
+
+;;; Waves.
+proc ea_wave {} { 1 }}
+        Doc::register $buffer "*scratch*"
+        ;; The REPL evaluates line 7 of the buffer as a one-line fragment.
+        eval_at {proc ea_wave {} { 1 }} "*scratch*" 7
+        Test::eq [get [Doc::lookup $ea_wave] doc] "Waves."
+        Test::eq [get [Doc::lookup ea_wave] file] "*scratch*"
+    }
+
+    Test::case "a line hit with a different name is stale and ignored" {
+        Doc::register ";;; Old.\nproc ea_old {} { 1 }" "lk-stale"
+        eval_at {proc ea_new {} { 1 }} "lk-stale" 2
+        Test::eq [Doc::lookup $ea_new] #{}
+        ;; A documented let binding a lambda still matches (lambda has no name).
+        Doc::register ";;; Bound.\nlet ea_bound [lambda {} { 1 }]" "lk-bound"
+        eval_at {let ea_bound [lambda {} { 1 }]} "lk-bound" 2
+        Test::eq [get [Doc::lookup $ea_bound] doc] "Bound."
+    }
+
+    Test::case "describe prints the name it was asked about" {
+        namespace lk_user {
+            eval_at ";;; G.\nproc greet2 {} { 1 }" "lk-cos"
+        }
+        Test::eq [String::find [Doc::describe "lk_user::greet2"] "proc lk_user::greet2 {}\n"] 0
+        Test::eq [String::find [Doc::describe ${lk_user::greet2}] "proc greet2 {}\n"] 0
+    }
+
+    Test::case "entries and search walk the index" {
+        Doc::register ";;; Finds APPLES.\nproc lk_s1 {} { 1 }\n;;; Pears.\nproc lk_s2 {} { 1 }" "lk-search"
+        let all [Doc::entries]
+        Test::eq [> [len $all] 2] 1
+        Test::eq [List::map [Doc::search "apples"] [lambda {e} { get $e qname }]] ("lk_s1")
+        Test::eq [List::map [Doc::search "LK_S"] [lambda {e} { get $e qname }]] ("lk_s1" "lk_s2")
+        Test::eq [Doc::search "zzz-nothing"] ()
     }
 
     Test::case "re-registering a source replaces its entries" {

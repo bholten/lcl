@@ -342,6 +342,21 @@ file-reading variants (they need the `lcl-io` package). `Doc.lcl`
 documents itself with its own format, and its test suite runs its own
 doctests.
 
+Docs also attach to live symbols, for `help` in a REPL or an editor:
+
+```tcl
+puts [Doc::describe M::sq]          ;; signature, origin, doc text
+Doc::register_file docs/String.lcl  ;; companion docs for C procs...
+puts [Doc::describe String::length] ;; ...now describe finds them
+Doc::search "square"                ;; entries matching name or text
+```
+
+`Doc::lookup` matches an Lcl proc by its `Proc::origin` file and line
+(reading the file on first use) and anything else by qualified name
+against registered sources; `Doc::register text name` indexes source
+the host owns, such as an editor buffer, and `eval_at` gives code
+evaluated from that buffer the matching origin.
+
 ### Control Flow
 
 ```tcl
@@ -745,6 +760,10 @@ value-dispatch instead.
 eval {puts "hello"}
 let code "puts world"
 eval $code
+
+;; eval_at
+eval_at $fragment "*scratch*" 42
+eval_at $buffer_text "/home/me/game/main.lcl"
 
 ;; subst - substitute variables and commands in string
 let x 42

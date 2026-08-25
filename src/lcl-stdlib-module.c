@@ -240,15 +240,67 @@ static int require_str_append(char **buf, size_t *len, size_t *cap,
  * (interp->cur_file), as a malloc'd string. Returns "." for a bare
  * filename (which is CWD-relative anyway), and NULL when evaluation
  * is not file-backed (cur_file unset or the "<bytes>" placeholder
- * from string eval). */
-static char *require_current_dir(const lcl_interp *interp) {
-  const char *file = interp->cur_file;
+ * from string eval).
+ *
+ * Strip `<tag at F:L>` wrappers (nested ones too) from a runtime
+ * source name, returning F as a malloc'd string, or NULL when the
+ * name is not file-backed at all (`<string>`, `<eval>`, `<bytes>`).
+ * A `./` require inside `eval` then resolves against the file the
+ * evaluated text came from, the same as one written in that file. */
+static char *peel_dyn_source(const char *file) {
+  char *buf = strdup(file);
 
-  if (!file || strcmp(file, "<bytes>") == 0) {
+  if (!buf) {
     return NULL;
   }
 
-  return lcl_path_dirname(file);
+  while (buf[0] == '<') {
+    char *inner = strstr(buf, " at ");
+    size_t len = strlen(buf);
+    char *end;
+
+    if (!inner || len < 2 || buf[len - 1] != '>') {
+      free(buf);
+      return NULL;
+    }
+
+    inner += 4;
+    end = buf + len - 2;
+
+    while (end > inner && *end >= '0' && *end <= '9') {
+      end--;
+    }
+
+    if (*end != ':' || end == inner) {
+      free(buf);
+      return NULL;
+    }
+
+    *end = '\0';
+    memmove(buf, inner, (size_t)(end - inner) + 1);
+  }
+
+  return buf;
+}
+
+static char *require_current_dir(const lcl_interp *interp) {
+  const char *file = interp->cur_file;
+  char *peeled;
+  char *dir;
+
+  if (!file) {
+    return NULL;
+  }
+
+  peeled = peel_dyn_source(file);
+
+  if (!peeled) {
+    return NULL;
+  }
+
+  dir = lcl_path_dirname(peeled);
+  free(peeled);
+  return dir;
 }
 
 /* require_resolve

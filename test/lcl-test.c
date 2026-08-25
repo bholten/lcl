@@ -1614,6 +1614,46 @@ static int test_body_line_attribution(void) {
  * value (`let g $f`), a lambda records its own site, and text run
  * through `eval` reports the eval's name so definitions from
  * different sources stay distinguishable. */
+/* `eval_at` names its program for the given file and base line, so
+ * an error inside it reports that provenance. A plain `eval` nested
+ * in it is named for the eval_at source. */
+static int test_eval_at_error_context(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *out = NULL;
+  int rc;
+
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "eval_at {\n"
+                            "  let a 1\n"
+                            "  eval_at_no_such_cmd\n"
+                            "} \"buf\" 10\n",
+                            "host.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(out == NULL);
+  ASSERT_STREQ(lcl_test_interp->err_file, "buf");
+  ASSERT_TRUE(lcl_test_interp->err_line == 12);
+  lcl_clear_error(lcl_test_interp);
+
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "eval_at {eval {eval_at_no_such_cmd}} \"buf\" 3\n",
+                            "host.lcl", &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "<eval at buf:3>");
+  ASSERT_TRUE(lcl_test_interp->err_line == 1);
+  lcl_clear_error(lcl_test_interp);
+
+  /* A compile error in the text is reported at the base-offset line. */
+  rc = lcl_eval_string_file(lcl_test_interp,
+                            "eval_at {let a 1\n[} \"buf\" 20\n", "host.lcl",
+                            &out);
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_STREQ(lcl_test_interp->err_file, "buf");
+  ASSERT_TRUE(lcl_test_interp->err_line == 21);
+  lcl_clear_error(lcl_test_interp);
+
+  return 1;
+}
+
 static int test_proc_origin(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
@@ -2526,7 +2566,6 @@ static int test_require_module_key_hook(void) {
   return 1;
 }
 
-
 /* Name-resolution redesign: anchor lifecycle under teardown.
  *
  * (a) A builder body that errors mid-definition leaves its pending
@@ -2648,6 +2687,7 @@ int run_test(void) {
   RUN(test_span_line_attribution);
   RUN(test_body_line_attribution);
   RUN(test_proc_origin);
+  RUN(test_eval_at_error_context);
   RUN(test_issue102_set_error_copies);
   RUN(test_issue102_ns_def_ownership);
   RUN(test_issue99_step_budget_empty_body_loops);

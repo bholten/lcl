@@ -671,12 +671,20 @@ namespace Doc {
         }
 
         if [< [String::find $name "::"] 0] {
+            var found #{}
+            var hits 0
+
             foreach flat [Dict::values $_sources] {
                 foreach e $flat {
                     if [== [get $e name] $name] {
-                        return $e
+                        set! found $e
+                        set! hits [+ $hits 1]
                     }
                 }
+            }
+
+            if [== $hits 1] {
+                return $found
             }
         }
 
@@ -702,9 +710,11 @@ namespace Doc {
     ;;; and indexed on first use. A C proc, a name that is not live, or
     ;;; a proc whose file is unavailable falls back to the registered
     ;;; docs by qualified name, then (for an unqualified name) by bare
-    ;;; name. Returns the entry,
-    ;;; `#{kind K qname Q name N params P line L doc D file F}`, or `#{}`
-    ;;; when nothing is documented.
+    ;;; name, which must be unique across the index. A line hit whose
+    ;;; entry name differs from the proc's own name is treated as stale
+    ;;; (the source changed since it was loaded) and ignored. Returns
+    ;;; the entry, `#{kind K qname Q name N params P line L doc D file F}`,
+    ;;; or `#{}` when nothing is documented.
     ;;;
     ;;; Examples:
     ;;;
@@ -728,8 +738,9 @@ namespace Doc {
 
             if [!= $file {}] {
                 let e [_by_line [_source $file] [get $o line]]
+                let own [Proc::name $v]
 
-                if [> [len $e] 0] {
+                if [and [> [len $e] 0] [or [== $own {}] [== $own [get $e name]]]] {
                     return $e
                 }
             }
@@ -748,9 +759,11 @@ namespace Doc {
 
     ;;; Describe a live proc or a name: signature, origin, and doc text.
     ;;;
-    ;;; The entry comes from `lookup`. A live proc with no docs still
-    ;;; gets its signature from `Proc::params` and its `Proc::origin`.
-    ;;; Errors when `p` is neither live nor documented.
+    ;;; The entry comes from `lookup`. When `p` is a name, that name is
+    ;;; the one printed (the index may know the same proc under a
+    ;;; shorter one). A live proc with no docs still gets its signature
+    ;;; from `Proc::params` and its `Proc::origin`. Errors when `p` is
+    ;;; neither live nor documented.
     ;;;
     ;;; Examples:
     ;;;
@@ -768,7 +781,13 @@ namespace Doc {
         let live [or [== [type $v] "proc"] [== [type $v] "cproc"]]
 
         if [> [len $e] 0] {
-            var head "[get $e kind] [get $e qname]"
+            var shown [get $e qname]
+
+            if [== [type $p] "string"] {
+                set! shown $p
+            }
+
+            var head "[get $e kind] $shown"
 
             if [or [== [get $e kind] "proc"] [== [get $e kind] "macro"]] {
                 set! head "$head {[get $e params]}"
@@ -806,5 +825,37 @@ namespace Doc {
         }
 
         "$head\n\n(undocumented)"
+    }
+
+    ;;; Every indexed doc entry, as a flat list.
+    ;;;
+    ;;; Covers the sources seen so far: registered explicitly, or read
+    ;;; on demand by `lookup`. It is not a walk of the live interpreter;
+    ;;; `register_file` the files you want covered.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register ";;; A.\nproc en_a {} { 1 }\n;;; B.\nproc en_b {} { 2 }" "en"
+    ;;; 2
+    ;;; >> List::map [Doc::search "en_"] [lambda {e} { get $e qname }]
+    ;;; ("en_a" "en_b")
+    proc entries {} {
+        var acc ()
+
+        foreach flat [Dict::values $_sources] {
+            set! acc [List::concat $acc $flat]
+        }
+
+        $acc
+    }
+
+    ;;; Search the index: entries whose qualified name or doc text
+    ;;; contains `sub`, case-insensitively.
+    proc search {sub} {
+        let needle [String::lower $sub]
+
+        List::filter [entries] [lambda {e} {
+            or [>= [String::find [String::lower [get $e qname]] $needle] 0] [>= [String::find [String::lower [get $e doc]] $needle] 0]
+        }]
     }
 }

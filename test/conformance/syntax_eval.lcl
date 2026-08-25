@@ -388,3 +388,46 @@ line2"
 ;; ============================================================================
 ;; Optional Parameters
 ;; ============================================================================
+
+Test::suite "eval_at" {
+    Test::case "procs report the given file and base line" {
+        eval_at {proc ea_one {} { 1 }
+proc ea_two {} { 2 }} "*buf*" 40
+        Test::eq [Proc::origin ea_one] #{file "*buf*" line 40}
+        Test::eq [Proc::origin ea_two] #{file "*buf*" line 41}
+    }
+
+    Test::case "line defaults to 1" {
+        eval_at {proc ea_first {} { 1 }} "*buf*"
+        Test::eq [get [Proc::origin ea_first] line] 1
+    }
+
+    Test::case "scoping is eval's: sees and binds in the caller frame" {
+        let ea_x 5
+        Test::eq [eval_at {+ $ea_x 1} "*buf*"] 6
+        eval_at {let ea_y 7} "*buf*"
+        Test::eq $ea_y 7
+        Test::eq [eval_at {} "*buf*"] ""
+    }
+
+    Test::case "a nested plain eval is named for the eval_at source" {
+        let f [eval_at {eval {lambda {} { 1 }}} "*buf*" 7]
+        Test::eq [get [Proc::origin $f] file] "<eval at *buf*:7>"
+    }
+
+    Test::case "argument validation" {
+        Test::raises { eval_at {1} }
+        Test::raises { eval_at {1} "" }
+        Test::raises { eval_at {1} "*buf*" 0 }
+        Test::raises { eval_at {1} "*buf*" -3 }
+        Test::raises { eval_at {1} "*buf*" abc }
+        Test::raises { eval_at {1} "*buf*" 1 extra }
+        Test::raises { eval_at "[" "*buf*" }
+    }
+
+    Test::case "errors propagate with the source's message" {
+        let rc [catch {eval_at {ea_no_such_cmd} "*buf*" 3} r e]
+        Test::eq $rc 1
+        Test::eq $e {unknown command: ea_no_such_cmd}
+    }
+}
