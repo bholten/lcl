@@ -1029,16 +1029,83 @@ static lcl_return_code s_quasiquote(lcl_interp *interp, int argc,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-static lcl_return_code s_eval(lcl_interp *interp, int argc,
-                              const lcl_word **args, lcl_value **out) {
+static lcl_return_code run_dynamic_program(lcl_interp *interp, const char *who,
+                                           lcl_program *prog, lcl_value **out) {
   int i;
-  lcl_program *prog = NULL;
   lcl_return_code rc = LCL_RC_OK;
   lcl_value *last = NULL;
   int saved_tail_position = interp->in_tail_position;
   const char *saved_cur_file = interp->cur_file;
   int saved_cur_line = interp->cur_line;
   int saved_dyn_mode = interp->env.dyn_mode;
+
+  if (interp->max_depth && interp->depth >= interp->max_depth) {
+    LCL_ERR_MSG(interp, who);
+    lcl_program_free(prog);
+    return LCL_RC_ERR;
+  }
+
+  interp->depth++;
+
+  interp->env.dyn_mode = 1;
+
+  for (i = 0; i < prog->ncmd; i++) {
+    lcl_command *cmd = &prog->cmd[i];
+    int is_last_cmd = (i == prog->ncmd - 1);
+
+    interp->cur_file = prog->file;
+    interp->cur_line = cmd->line;
+
+    if (last) {
+      lcl_ref_dec(last);
+      last = NULL;
+    }
+
+    interp->in_tail_position = saved_tail_position && is_last_cmd;
+    rc = lcl_call_from_words(interp, cmd, &last);
+
+    if (rc == LCL_RC_TAILCALL) {
+      interp->in_tail_position = saved_tail_position;
+      interp->cur_file = saved_cur_file;
+      interp->cur_line = saved_cur_line;
+      interp->env.dyn_mode = saved_dyn_mode;
+      interp->depth--;
+      lcl_program_free(prog);
+
+      if (out) {
+        *out = NULL;
+      }
+
+      return rc;
+    }
+
+    if (rc != LCL_RC_OK) {
+      break;
+    }
+  }
+
+  interp->in_tail_position = saved_tail_position;
+  interp->cur_file = saved_cur_file;
+  interp->cur_line = saved_cur_line;
+  interp->env.dyn_mode = saved_dyn_mode;
+  interp->depth--;
+  lcl_program_free(prog);
+
+  if (rc == LCL_RC_OK || rc == LCL_RC_RETURN) {
+    *out = last ? last : lcl_string_new("");
+  } else {
+    if (last) {
+      lcl_ref_dec(last);
+    }
+  }
+
+  return rc;
+}
+
+static lcl_return_code s_eval(lcl_interp *interp, int argc,
+                              const lcl_word **args, lcl_value **out) {
+  int i;
+  lcl_program *prog = NULL;
 
   if (!lcl_std_chk_argc(interp, "eval", argc, 1, -1)) {
     return LCL_RC_ERR;
@@ -1190,67 +1257,77 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (interp->max_depth && interp->depth >= interp->max_depth) {
-    LCL_ERR_MSG(interp, "eval: max recursion depth exceeded");
-    lcl_program_free(prog);
+  return run_dynamic_program(interp, "eval: max recursion depth exceeded", prog,
+                             out);
+}
+
+/* eval_at text file (line 1) */
+static lcl_return_code s_eval_at(lcl_interp *interp, int argc,
+                                 const lcl_word **args, lcl_value **out) {
+  lcl_value *text_v = NULL;
+  lcl_value *file_v = NULL;
+  lcl_value *line_v = NULL;
+  const char *text;
+  const char *file;
+  long line = 1;
+  lcl_program *prog;
+
+  if (!lcl_std_chk_argc(interp, "eval_at", argc, 2, 3)) {
     return LCL_RC_ERR;
   }
 
-  interp->depth++;
+  if (lcl_eval_word_to_str(interp, args[0], &text_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
 
-  interp->env.dyn_mode = 1;
+  if (lcl_eval_word_to_str(interp, args[1], &file_v) != LCL_RC_OK) {
+    lcl_ref_dec(text_v);
+    return LCL_RC_ERR;
+  }
 
-  for (i = 0; i < prog->ncmd; i++) {
-    lcl_command *cmd = &prog->cmd[i];
-    int is_last_cmd = (i == prog->ncmd - 1);
-
-    interp->cur_file = prog->file;
-    interp->cur_line = cmd->line;
-
-    if (last) {
-      lcl_ref_dec(last);
-      last = NULL;
+  if (argc == 3) {
+    if (lcl_eval_word(interp, args[2], &line_v) != LCL_RC_OK ||
+        !lcl_std_arg_int(interp, "eval_at", line_v, &line)) {
+      lcl_ref_dec(line_v);
+      lcl_ref_dec(file_v);
+      lcl_ref_dec(text_v);
+      return LCL_RC_ERR;
     }
 
-    interp->in_tail_position = saved_tail_position && is_last_cmd;
-    rc = lcl_call_from_words(interp, cmd, &last);
+    lcl_ref_dec(line_v);
 
-    if (rc == LCL_RC_TAILCALL) {
-      interp->in_tail_position = saved_tail_position;
-      interp->cur_file = saved_cur_file;
-      interp->cur_line = saved_cur_line;
-      interp->env.dyn_mode = saved_dyn_mode;
-      interp->depth--;
-      lcl_program_free(prog);
-
-      if (out) {
-        *out = NULL;
-      }
-
-      return rc;
-    }
-
-    if (rc != LCL_RC_OK) {
-      break;
+    if (line < 1 || line > INT_MAX) {
+      LCL_ERR_MSG(interp, "eval_at: line must be a positive int");
+      lcl_ref_dec(file_v);
+      lcl_ref_dec(text_v);
+      return LCL_RC_ERR;
     }
   }
 
-  interp->in_tail_position = saved_tail_position;
-  interp->cur_file = saved_cur_file;
-  interp->cur_line = saved_cur_line;
-  interp->env.dyn_mode = saved_dyn_mode;
-  interp->depth--;
-  lcl_program_free(prog);
-
-  if (rc == LCL_RC_OK || rc == LCL_RC_RETURN) {
-    *out = last ? last : lcl_string_new("");
-  } else {
-    if (last) {
-      lcl_ref_dec(last);
-    }
+  if (lcl_value_to_cstring(interp, text_v, &text) != LCL_OK ||
+      lcl_value_to_cstring(interp, file_v, &file) != LCL_OK) {
+    lcl_ref_dec(file_v);
+    lcl_ref_dec(text_v);
+    return LCL_RC_ERR;
   }
 
-  return rc;
+  if (file[0] == '\0') {
+    LCL_ERR_MSG(interp, "eval_at: file name must not be empty");
+    lcl_ref_dec(file_v);
+    lcl_ref_dec(text_v);
+    return LCL_RC_ERR;
+  }
+
+  prog = lcl_compile_report_at(interp, text, file, line);
+  lcl_ref_dec(file_v);
+  lcl_ref_dec(text_v);
+
+  if (!prog) {
+    return LCL_RC_ERR;
+  }
+
+  return run_dynamic_program(interp, "eval_at: max recursion depth exceeded",
+                             prog, out);
 }
 
 /* apply callable arg1 arg2 ... argN
@@ -1659,6 +1736,7 @@ static lcl_return_code s_thread_last(lcl_interp *interp, int argc,
 
 void lcl_std_register_eval(lcl_interp *interp) {
   lcl_register_spec(interp, "eval", s_eval);
+  lcl_register_spec(interp, "eval_at", s_eval_at);
   lcl_register_proc(interp, "apply", c_apply);
   lcl_register_spec(interp, "subst", s_subst);
   lcl_register_spec(interp, "quasiquote", s_quasiquote);

@@ -121,6 +121,20 @@ Test::suite "Require" {
         Test::eq [rel_b::c_val] 7
     }
 
+    Test::case "./ inside eval resolves against the evaluating file" {
+        require test/require_fixtures/rel/rel_eval.lcl
+        Test::eq ${rel_eval::seen} 7
+    }
+
+    Test::case "./ inside eval_at resolves against the named file" {
+        eval_at {require ./rel_b.lcl} "test/require_fixtures/rel/buffer.lcl"
+        Test::eq ${rel_b::tag} "b"
+        Test::eq [eval_at {eval {require ./sub/rel_c.lcl; ${rel_c::val}}} "test/require_fixtures/rel/buffer.lcl"] 7
+        ;; A path-less name has no directory: "./" is CWD-relative, like
+        ;; a bare filename, and this one does not exist there.
+        Test::raises { eval_at {require ./rel_b.lcl} "*scratch*" }
+    }
+
     Test::case "require cycle is a clear error, not runaway recursion" {
         Test::raises_with { require test/require_fixtures/cyc_a.lcl } \
             "dependency cycle"

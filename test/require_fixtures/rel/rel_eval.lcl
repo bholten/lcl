@@ -1,0 +1,7 @@
+;; Fixture: a "./" require inside a runtime `eval` still resolves
+;; against THIS file's directory, not the process CWD.
+eval {require ./sub/rel_c.lcl}
+
+namespace rel_eval {
+    var seen ${rel_c::val}
+}
