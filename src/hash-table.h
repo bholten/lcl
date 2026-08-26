@@ -20,8 +20,10 @@ typedef struct lcl_value lcl_value;
 typedef unsigned long lcl_u64;
 #define LCL_U64_C(x) x##UL
 #else
-typedef unsigned long long lcl_u64;
-#define LCL_U64_C(x) x##ULL
+/* `__extension__` marks the C99-ism as deliberate so -Wpedantic stays
+ * quiet on ILP32/LLP64 targets (wasm32, Win64). */
+__extension__ typedef unsigned long long lcl_u64;
+#define LCL_U64_C(x) (__extension__ x##ULL)
 #endif
 
 enum { H_EMPTY = 0, H_FULL = 1, H_TOMB = 2 };

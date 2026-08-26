@@ -3,6 +3,8 @@
 #define _XOPEN_SOURCE 700
 #endif
 
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1737,6 +1739,24 @@ static int test_issue102_ns_def_ownership(void) {
   return 1;
 }
 
+/* lcl_double_to_long rejects NaN via `f != f` (no C99 isnan) and
+ * relies on the range check for infinities. HUGE_VAL is C89. */
+static int test_double_to_long_rejects_non_finite(void) {
+  double inf = HUGE_VAL;
+  double nan = inf - inf;
+  long out = 123;
+
+  ASSERT_TRUE(lcl_double_to_long(nan, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_long(inf, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_long(-inf, &out) == LCL_ERROR);
+  ASSERT_TRUE(out == 123);
+  ASSERT_TRUE(lcl_double_to_long(-3.7, &out) == LCL_OK && out == -3);
+  ASSERT_TRUE(lcl_double_to_long((double)LONG_MIN, &out) == LCL_OK &&
+              out == LONG_MIN);
+  ASSERT_TRUE(lcl_double_to_long(-(double)LONG_MIN, &out) == LCL_ERROR);
+  return 1;
+}
+
 /* The _peek accessors hand back the container's own reference:
  * same pointer as _get, refcount untouched, NULL for absent /
  * out-of-range / wrong type. */
@@ -2747,6 +2767,7 @@ int run_test(void) {
   RUN(test_issue102_set_error_copies);
   RUN(test_issue102_ns_def_ownership);
   RUN(test_peek_accessors_borrow);
+  RUN(test_double_to_long_rejects_non_finite);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);

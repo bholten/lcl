@@ -297,7 +297,9 @@ lcl_value *lcl_float_new(const double f) {
  * Casting (long)f is defined for any finite f in this half-open
  * range. */
 lcl_result lcl_double_to_long(double f, long *out) {
-  if (isnan(f) || isinf(f)) {
+  /* C89 has no isnan(). Infinities need no special case: they fail
+   * the range check below. */
+  if (f != f) {
     return LCL_ERROR;
   }
 
