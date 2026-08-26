@@ -1084,6 +1084,10 @@ lcl_return_code lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       size_t need;
 
       if (lcl_env_get_value(interp, wp->as.var.name, &val) != LCL_OK) {
+        char msg[900];
+
+        describe_name_failure(interp, wp->as.var.name, 0, msg, sizeof(msg));
+        LCL_ERR_MSG_DUP(interp, msg);
         free(buf);
         return LCL_RC_ERR;
       }

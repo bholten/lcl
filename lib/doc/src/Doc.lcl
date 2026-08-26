@@ -858,4 +858,88 @@ namespace Doc {
             or [>= [String::find [String::lower [get $e qname]] $needle] 0] [>= [String::find [String::lower [get $e doc]] $needle] 0]
         }]
     }
+
+    ;;; Run the doctests of one documented symbol.
+    ;;;
+    ;;; `p` is anything `lookup` accepts. Returns
+    ;;; `#{pass N fail N failures (...)}` as `doctest` does, and errors
+    ;;; when nothing is documented for `p`. Examples run in the
+    ;;; doctest's own scope, so the names they use must be live.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register ";;; Adds.\n;;;\n;;; Examples:\n;;; >> + 1 2\n;;; 3\nproc rv_add {a b} { + \$a \$b }" "rv"
+    ;;; 1
+    ;;; >> get [Doc::run_value rv_add] pass
+    ;;; 1
+    ;;; >> Doc::run_value rv_nothing
+    ;;; !! nothing documented
+    proc run_value {p} {
+        let e [lookup $p]
+
+        if [== [len $e] 0] {
+            error "Doc::run_value: nothing documented for \"$p\""
+        }
+
+        _dt_doc [get $e qname] [get $e doc]
+    }
+
+    ;; Look up every proc under a live namespace so file-backed docs
+    ;; are read into the index before a prefix walk.
+    proc _warm {name v} {
+        foreach k [Ns::keys $v] {
+            let q "${name}::${k}"
+            let m [_live $q]
+
+            if [== [type $m] "namespace"] {
+                _warm $q $m
+            } else {
+                lookup $q
+            }
+        }
+    }
+
+    ;;; Run the doctests of a namespace and everything under it.
+    ;;;
+    ;;; `ns` is a namespace name or value. When it is live, its members
+    ;;; are looked up first so file-backed docs are read on demand;
+    ;;; then every indexed entry whose qualified name is `ns` or starts
+    ;;; with `ns::` runs, the namespace's own doc included. Returns the
+    ;;; merged `#{pass N fail N failures (...)}`.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> Doc::register "namespace Rn { ;;; Examples:\n ;;; >> + 1 1\n ;;; 2\n proc a {} { 1 }\n ;;; Examples:\n ;;; >> + 1 1\n ;;; 3\n proc b {} { 1 } }" "rn"
+    ;;; 3
+    ;;; >> let r [Doc::run_ns Rn]
+    ;;; >> list [get $r pass] [get $r fail] [get [get [get $r failures] 0] name]
+    ;;; (1 1 "Rn::b")
+    ;;; >> list [get [Doc::run_ns Rn_nothing] pass] [get [Doc::run_ns Rn_nothing] fail]
+    ;;; (0 0)
+    proc run_ns {ns} {
+        var name $ns
+
+        if [!= [type $ns] "string"] {
+            set! name [Ns::name $ns]
+        }
+
+        let v [_live $name]
+
+        if [== [type $v] "namespace"] {
+            _warm $name $v
+        }
+
+        var acc #{pass 0 fail 0 failures ()}
+        let prefix "${name}::"
+
+        foreach e [entries] {
+            let q [get $e qname]
+
+            if [and [!= [get $e doc] {}] [or [== $q $name] [== [String::find $q $prefix] 0]]] {
+                set! acc [_dt_merge $acc [_dt_doc $q [get $e doc]]]
+            }
+        }
+
+        $acc
+    }
 }

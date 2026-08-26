@@ -58,7 +58,10 @@ Test::suite "File Operations" {
     }
 
     Test::case "read_file on missing file errors" {
-        Test::eq [catch { io::read_file "/tmp/nonexistent_lcl_test_xyz" }] 1
+        Test::eq [catch { io::read_file "/tmp/nonexistent_lcl_test_xyz" } r e] 1
+        Test::eq [>= [String::find $e {io::read_file: could not read "/tmp/nonexistent_lcl_test_xyz"}] 0] 1
+        Test::eq [catch { io::write_file "/nonexistent_lcl_dir/x" hi } r e] 1
+        Test::eq [>= [String::find $e {io::write_file: could not open}] 0] 1
     }
 
     Test::case "copy creates destination file" {

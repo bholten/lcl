@@ -682,3 +682,19 @@ Test::suite "braced qualified substitution" {
         Test::assert [has? $err {qualified substitutions require braces}]
     }
 }
+
+Test::suite "Error messages survive string interpolation" {
+    Test::case "undefined variable inside a quoted string" {
+        let rc [catch {"x $dg_nope"} r e]
+        Test::eq $rc 1
+        Test::eq $e {undefined variable "dg_nope"}
+        Test::eq [catch {let y "a${dg_nope}b"} r e] 1
+        Test::eq $e {undefined variable "dg_nope"}
+    }
+
+    Test::case "undefined qualified name inside a quoted string" {
+        Test::eq [catch {"x ${Dg_no::such}"} r e] 1
+        Test::eq [>= [String::find $e {undefined name "Dg_no"}] 0] 1
+    }
+}
+

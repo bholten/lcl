@@ -228,19 +228,22 @@ lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
   char *contents = NULL;
   const char *path;
 
-  (void)out;
-
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "io::read_file: expected 1 argument");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
     return LCL_RC_ERR;
   }
+
   contents = read_file(path);
 
   if (!contents) {
-    free(contents);
+    char msg[512];
+    snprintf(msg, sizeof(msg), "io::read_file: could not read \"%.400s\"",
+             path);
+    lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
 
@@ -257,7 +260,8 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   size_t len;
   FILE *f;
 
-  if (argc < 2) {
+  if (argc != 2) {
+    lcl_set_error(interp, "io::write_file: expected 2 arguments");
     return LCL_RC_ERR;
   }
 
@@ -274,11 +278,19 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   f = fopen(path, "wb");
 
   if (!f) {
+    char msg[512];
+    snprintf(msg, sizeof(msg), "io::write_file: could not open \"%.400s\"",
+             path);
+    lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
 
   if (fwrite(contents, 1, len, f) != len) {
+    char msg[512];
     fclose(f);
+    snprintf(msg, sizeof(msg), "io::write_file: short write to \"%.400s\"",
+             path);
+    lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
 
