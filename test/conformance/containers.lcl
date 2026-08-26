@@ -59,6 +59,27 @@ Test::suite "List Operations" {
         Test::eq [get $combined 3] 4
     }
 
+    Test::case "List::concat is variadic" {
+        Test::eq [List::concat (1 2) (3) (4 5 6)] (1 2 3 4 5 6)
+        Test::eq [List::concat (1 2)] (1 2)
+        Test::eq [List::concat () (1) ()] (1)
+        Test::eq [len [List::concat () ()]] 0
+    }
+
+    Test::case "List::concat rejects non-lists and no arguments" {
+        Test::eq [catch {List::concat} r e] 1
+        Test::eq [catch {List::concat (1) 2} r e] 1
+        Test::eq [catch {List::concat "a b" (1)} r e] 1
+    }
+
+    Test::case "spread in a list literal concatenates" {
+        let a (1 2)
+        let b (3 4)
+        Test::eq (@$a @$b) (1 2 3 4)
+        Test::eq (@$a 0 @$b) (1 2 0 3 4)
+        Test::eq (@$a @$b) [List::concat $a $b]
+    }
+
     Test::case "String::join" {
         let mylist [list a b c d e]
         Test::eq [String::join $mylist -] {a-b-c-d-e}

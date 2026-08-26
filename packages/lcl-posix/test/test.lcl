@@ -146,6 +146,28 @@ Test::suite "Glob (posix::glob)" {
 
         Test::eq [len $files] 0
     }
+
+    Test::case "glob accepts multiple patterns, grouped in argument order" {
+        io::write_file "/tmp/lcl_glob_multi_a.txt" "a"
+        io::write_file "/tmp/lcl_glob_multi_b.log" "b"
+
+        let files [posix::glob "/tmp/lcl_glob_multi_*.log" "/tmp/lcl_glob_multi_*.txt"]
+        Test::eq $files ("/tmp/lcl_glob_multi_b.log" "/tmp/lcl_glob_multi_a.txt")
+
+        ;; a non-matching pattern in the middle contributes nothing
+        let files2 [posix::glob "/tmp/lcl_glob_multi_*.txt" "asdf.txt" "/tmp/lcl_glob_multi_*.log"]
+        Test::eq $files2 ("/tmp/lcl_glob_multi_a.txt" "/tmp/lcl_glob_multi_b.log")
+
+        ;; all patterns non-matching
+        Test::eq [len [posix::glob "asdf.txt" "qwer.txt"]] 0
+
+        io::remove "/tmp/lcl_glob_multi_a.txt"
+        io::remove "/tmp/lcl_glob_multi_b.log"
+    }
+
+    Test::case "glob requires at least one pattern" {
+        Test::eq [catch {posix::glob} r e] 1
+    }
 }
 
 ;; ============================================================================

@@ -54,7 +54,7 @@ if [posix::dir? build] {
 
 | Function | Description |
 |----------|-------------|
-| `posix::glob $pattern` | Match files by glob pattern |
+| `posix::glob $pattern ...` | Match files by one or more glob patterns; results are grouped per pattern, each group sorted |
 
 ### File Information
 
