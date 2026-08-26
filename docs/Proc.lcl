@@ -1,7 +1,8 @@
 ;;; Proc reflection
 ;;;
-;;; The core exposes its name, its parameters, and where it was
-;;; constructed.
+;;; The core exposes its name, its parameters, its body text, and
+;;; where it was constructed. `proc`, `lambda` and `macro` all return
+;;; the value they build, so a definition can be passed on directly.
 ;;;
 ;;; Examples:
 ;;;
@@ -47,6 +48,24 @@ namespace Proc {
     ;;; >> Proc::params 42
     ;;; !! expected proc
     proc params {p} {}
+
+    ;;; The body text exactly as written at `proc`, `lambda` or
+    ;;; `macro` time: the contents of the braces, comments included.
+    ;;; `""` for a C proc.
+    ;;;
+    ;;; This is source for display and editing, not the closure:
+    ;;; re-evaluating it captures whatever is in scope at that point.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> proc sq {x} { * $x $x }
+    ;;; >> Proc::body sq
+    ;;; " * \$x \$x "
+    ;;; >> Proc::body [lambda {y} {+ $y 1}]
+    ;;; "+ \$y 1"
+    ;;; >> Proc::body {+}
+    ;;; ""
+    proc body {p} {}
 
     ;;; Where the proc was constructed: `#{file F line L}`.
     ;;;

@@ -286,16 +286,23 @@ puts [String::range {ls -lsa} @[get $head span]]  ;; ls
 
 ### Proc Reflection (Proc)
 
-`Proc::name`, `Proc::params` and `Proc::origin` are Lcl's version of
-reflection. Best shown by example:
+`Proc::name`, `Proc::params`, `Proc::body` and `Proc::origin` are Lcl's
+version of reflection. Best shown by example:
 
 ```tcl
 proc add {a b (c 0) *rest} { + $a $b $c }
 puts [Proc::params add]             ;; a b ?c *rest
 puts [Proc::name add]               ;; add
+puts [Proc::body add]               ;;  + $a $b $c
 puts [Proc::origin add]             ;; file game.lcl line 1
 puts [Proc::origin {+}]             ;; (empty: a C proc)
 ```
+
+`proc`, `lambda` and `macro` return the value they build, and a proc
+value prints as `<proc add>`, `<lambda>` or `<macro m>` — a label, not
+re-parseable code. A REPL can therefore hand a fresh definition
+straight to the next command: `List::map $_1 [proc sq {x} { * $x $x
+}]`.
 
 ### Documentation (Doc)
 

@@ -921,7 +921,7 @@ error:
 
 lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
                         lcl_param_spec *pspec, lcl_program *body,
-                        const char *file, int line) {
+                        const char *body_src, const char *file, int line) {
   lcl_proc *p = (lcl_proc *)calloc(1, sizeof(*p));
   lcl_value *v;
 
@@ -944,6 +944,17 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
     p->file = strdup(file);
 
     if (!p->file) {
+      free(p->self_name);
+      free(p);
+      goto error_early;
+    }
+  }
+
+  if (body_src) {
+    p->body_src = strdup(body_src);
+
+    if (!p->body_src) {
+      free(p->file);
       free(p->self_name);
       free(p);
       goto error_early;
@@ -975,6 +986,7 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
     free(upvals);
     free(p->self_name);
     free(p->file);
+    free(p->body_src);
     lcl_param_spec_free(&p->pspec);
     lcl_program_free(p->body);
     free(p);

@@ -118,6 +118,31 @@ Test::suite "User Procs" {
         Test::eq [add 20 22] 42
     }
 
+    Test::case "proc returns the proc value it bound" {
+        let p [proc pr_ret {x} { + $x 1 }]
+        Test::eq [type $p] proc
+        Test::eq [apply $p 41] 42
+        Test::eq [pr_ret 1] 2
+        Test::eq [== $p $pr_ret] 1
+        Test::eq [List::map (1 2) [proc pr_dbl {x} { * $x 2 }]] (2 4)
+    }
+
+    Test::case "macro returns the macro value it bound" {
+        let m [macro pr_mret {x} { $x }]
+        Test::eq [type $m] proc
+        Test::eq [Proc::name $m] pr_mret
+    }
+
+    Test::case "proc values stringify as a label" {
+        proc pr_lbl {} { 1 }
+        macro pr_mlbl {x} { $x }
+        Test::eq [String::from $pr_lbl] "<proc pr_lbl>"
+        Test::eq [String::from [lambda {} { 1 }]] "<lambda>"
+        Test::eq [String::from $pr_mlbl] "<macro pr_mlbl>"
+        Test::eq "fn: $pr_lbl" "fn: <proc pr_lbl>"
+        Test::eq [String::from $pr_lbl] [repr $pr_lbl]
+    }
+
     Test::case "closure counter" {
         proc makeCounter {start} {
             var n $start

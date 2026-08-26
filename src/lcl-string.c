@@ -378,6 +378,9 @@ const char *lcl_value_to_string(lcl_value *value) {
     case LCL_STRING: break;
     case LCL_LIST: lcl_reify_str_list(value); break;
     case LCL_DICT: lcl_reify_str_dict(value); break;
+    case LCL_PROC:
+      value->str_repr = lcl_value_repr(value);
+      break;
     case LCL_OPAQUE: {
       const char *tag = value->as.opaque.type_tag;
 
