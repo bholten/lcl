@@ -453,6 +453,15 @@ lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out) {
   return LCL_OK;
 }
 
+lcl_value *lcl_cell_peek(const lcl_value *cell) {
+  if (!cell || cell->type != LCL_CELL) {
+    return NULL;
+  }
+
+  /* A cleared cell (see lcl_cell_get) has no contents to borrow. */
+  return cell->as.cell.inner;
+}
+
 lcl_result lcl_cell_set(lcl_value *cell, lcl_value *v) {
   if (!cell || cell->type != LCL_CELL || !v) {
     return LCL_ERROR;

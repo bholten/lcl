@@ -1062,7 +1062,14 @@ int main(void) {
 For a fuller tour -- registering a C function as a Lcl command,
 defining a Lcl variable from C, extracting the result, and
 surfacing error location -- see [`examples/embed_example.c`](examples/embed_example.c).
-Build it from the project's CMake with:
+
+Ownership is refcounted and spelled out per function in `lcl.h`: every
+`**out` accessor (`lcl_dict_get`, `lcl_list_get`, ...) hands you a +1
+reference you must `lcl_ref_dec`. When you only need to read a
+container element during a call, the `_peek` twins (`lcl_dict_peek`,
+`lcl_list_peek`, `lcl_cell_peek`, `lcl_ns_peek`) return the
+container's own reference with nothing to release.  Build it from the
+project's CMake with:
 
 ```bash
 cmake -S . -B build -DLCL_BUILD_EXAMPLES=ON

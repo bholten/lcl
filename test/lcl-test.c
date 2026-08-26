@@ -1737,6 +1737,57 @@ static int test_issue102_ns_def_ownership(void) {
   return 1;
 }
 
+/* The _peek accessors hand back the container's own reference:
+ * same pointer as _get, refcount untouched, NULL for absent /
+ * out-of-range / wrong type. */
+static int test_peek_accessors_borrow(void) {
+  lcl_value *l = lcl_list_new();
+  lcl_value *d = lcl_dict_new();
+  lcl_value *ns = lcl_ns_new("pk");
+  lcl_value *a = lcl_int_new(1);
+  lcl_value *cell;
+  lcl_value *got = NULL;
+
+  ASSERT_TRUE(lcl_list_push(&l, a) == LCL_OK);
+  ASSERT_TRUE(lcl_dict_put(&d, "k", a) == LCL_OK);
+  ASSERT_TRUE(lcl_ns_def(ns, "m", a) == LCL_OK);
+  cell = lcl_cell_new(a);
+  ASSERT_TRUE(cell != NULL);
+  ASSERT_TRUE(a->refc == 5); /* caller + list + dict + ns + cell */
+
+  ASSERT_TRUE(lcl_list_peek(l, 0) == a && a->refc == 5);
+  ASSERT_TRUE(lcl_dict_peek(d, "k") == a && a->refc == 5);
+  ASSERT_TRUE(lcl_ns_peek(ns, "m") == a && a->refc == 5);
+  ASSERT_TRUE(lcl_cell_peek(cell) == a && a->refc == 5);
+
+  /* Agrees with the owning accessor, which does take +1. */
+  ASSERT_TRUE(lcl_dict_get(d, "k", &got) == LCL_OK);
+  ASSERT_TRUE(got == lcl_dict_peek(d, "k") && a->refc == 6);
+  lcl_ref_dec(got);
+  ASSERT_TRUE(a->refc == 5);
+
+  /* Absent / out of range / wrong type. */
+  ASSERT_TRUE(lcl_list_peek(l, 1) == NULL);
+  ASSERT_TRUE(lcl_dict_peek(d, "nope") == NULL);
+  ASSERT_TRUE(lcl_ns_peek(ns, "nope") == NULL);
+  ASSERT_TRUE(lcl_list_peek(d, 0) == NULL);
+  ASSERT_TRUE(lcl_dict_peek(l, "k") == NULL);
+  ASSERT_TRUE(lcl_cell_peek(a) == NULL);
+  ASSERT_TRUE(lcl_ns_peek(d, "m") == NULL);
+  ASSERT_TRUE(lcl_list_peek(NULL, 0) == NULL);
+  ASSERT_TRUE(lcl_dict_peek(NULL, "k") == NULL);
+  ASSERT_TRUE(lcl_cell_peek(NULL) == NULL);
+  ASSERT_TRUE(lcl_ns_peek(NULL, "m") == NULL);
+
+  lcl_ref_dec(cell);
+  lcl_ref_dec(ns);
+  lcl_ref_dec(d);
+  lcl_ref_dec(l);
+  ASSERT_TRUE(a->refc == 1);
+  lcl_ref_dec(a);
+  return 1;
+}
+
 /* `lcl_dict_clone_shallow` ignores `hash_table_put` return.  On OOM
  * the clone is silently truncated. We force the first put inside the
  * clone iteration to fail, trigger COW on a shared dict, and verify:
@@ -2695,6 +2746,7 @@ int run_test(void) {
   RUN(test_eval_at_error_context);
   RUN(test_issue102_set_error_copies);
   RUN(test_issue102_ns_def_ownership);
+  RUN(test_peek_accessors_borrow);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);
