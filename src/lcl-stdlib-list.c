@@ -379,49 +379,41 @@ static lcl_return_code c_list_slice(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* list::concat a b - return new list with elements from both */
+/* list::concat a b ... - return new list with the elements of every
+ * argument, in order */
 static lcl_return_code c_list_concat(lcl_interp *interp, int argc,
                                      lcl_value **argv, lcl_value **out) {
   lcl_value *result;
+  int a;
   size_t i;
-  (void)interp;
 
-  if (!lcl_std_chk_argc(interp, "List::concat", argc, 2, 2)) {
+  if (!lcl_std_chk_argc(interp, "List::concat", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
-  if (argv[0]->type != LCL_LIST || argv[1]->type != LCL_LIST) {
-    return LCL_RC_ERR;
+  for (a = 0; a < argc; a++) {
+    if (argv[a]->type != LCL_LIST) {
+      LCL_ERR_MSG(interp, "List::concat: expected list arguments");
+      return LCL_RC_ERR;
+    }
   }
 
   result = lcl_list_new();
 
-  for (i = 0; i < lcl_list_len(argv[0]); i++) {
-    lcl_value *elem;
+  for (a = 0; a < argc; a++) {
+    for (i = 0; i < lcl_list_len(argv[a]); i++) {
+      lcl_value *elem;
 
-    if (lcl_list_get(argv[0], i, &elem) != LCL_OK) {
-      LCL_ERR_MSG(interp, "List::concat: internal error reading list");
-      lcl_ref_dec(result);
+      if (lcl_list_get(argv[a], i, &elem) != LCL_OK) {
+        LCL_ERR_MSG(interp, "List::concat: internal error reading list");
+        lcl_ref_dec(result);
 
-      return LCL_RC_ERR;
+        return LCL_RC_ERR;
+      }
+
+      lcl_list_push(&result, elem);
+      lcl_ref_dec(elem);
     }
-
-    lcl_list_push(&result, elem);
-    lcl_ref_dec(elem);
-  }
-
-  for (i = 0; i < lcl_list_len(argv[1]); i++) {
-    lcl_value *elem;
-
-    if (lcl_list_get(argv[1], i, &elem) != LCL_OK) {
-      LCL_ERR_MSG(interp, "List::concat: internal error reading list");
-      lcl_ref_dec(result);
-
-      return LCL_RC_ERR;
-    }
-
-    lcl_list_push(&result, elem);
-    lcl_ref_dec(elem);
   }
 
   *out = result;

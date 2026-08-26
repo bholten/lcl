@@ -46,12 +46,22 @@ namespace List {
     ;;; ("a" "b" "c")
     proc slice {lst start end} {}
 
-    ;;; Concatenates two lists together. Returns a new list.
+    ;;; Concatenates one or more lists, in order. Returns a new list.
+    ;;;
+    ;;; Spreading with `@` inside a list literal does the same thing
+    ;;; and also lets you interleave literal elements:
+    ;;; `(@$a @$b "extra")`.
     ;;;
     ;;; Examples:
     ;;; >> List::concat ("a" "b") ("c" "d")
     ;;; ("a" "b" "c" "d")
-    proc concat {lst other} {}
+    ;;; >> List::concat ("a") ("b") ("c")
+    ;;; ("a" "b" "c")
+    ;;; >> let a ("a" "b")
+    ;;; >> let b ("c")
+    ;;; >> List::new @$a @$b "d"
+    ;;; ("a" "b" "c" "d")
+    proc concat {lst *rest} {}
 
     ;;; Reverses a list. Returns a new list.
     ;;;

@@ -20,42 +20,48 @@ lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
   const char *gl;
   glob_t glob_buf;
   int glob_result;
+  int flags = 0;
+  int a;
   size_t i;
   lcl_value *result;
   lcl_value *item;
 
   if (argc < 1) {
+    lcl_set_error(interp, "posix::glob: expected at least 1 pattern");
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_cstring(interp, argv[0], &gl) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  glob_result = glob(gl, 0, NULL, &glob_buf);
-
-  if (glob_result == 0) {
-    result = lcl_list_new();
-
-    for (i = 0; i < glob_buf.gl_pathc; i++) {
-      item = lcl_string_new(glob_buf.gl_pathv[i]);
-      lcl_list_push(&result, item);
-      lcl_ref_dec(item);
+  for (a = 0; a < argc; a++) {
+    if (lcl_value_to_cstring(interp, argv[a], &gl) != LCL_OK) {
+      if (flags & GLOB_APPEND) {
+        globfree(&glob_buf);
+      }
+      return LCL_RC_ERR;
     }
 
-    globfree(&glob_buf);
-    *out = result;
+    glob_result = glob(gl, flags, NULL, &glob_buf);
 
-    return LCL_RC_OK;
+    if (glob_result != 0 && glob_result != GLOB_NOMATCH) {
+      globfree(&glob_buf);
+      lcl_set_error(interp, "posix::glob: glob failed");
+      return LCL_RC_ERR;
+    }
+
+    flags |= GLOB_APPEND;
   }
 
-  if (glob_result == GLOB_NOMATCH) {
-    *out = lcl_list_new();
+  result = lcl_list_new();
 
-    return LCL_RC_OK;
+  for (i = 0; i < glob_buf.gl_pathc; i++) {
+    item = lcl_string_new(glob_buf.gl_pathv[i]);
+    lcl_list_push(&result, item);
+    lcl_ref_dec(item);
   }
 
-  return LCL_RC_ERR;
+  globfree(&glob_buf);
+  *out = result;
+
+  return LCL_RC_OK;
 }
 
 /* posix::mkdir path ?mode? - create directory with optional mode (default 0755)
