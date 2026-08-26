@@ -407,6 +407,45 @@ proc ea_wave {} { 1 }}
         Test::eq [String::find [Doc::describe ${lk_user::greet2}] "proc greet2 {}\n"] 0
     }
 
+    Test::case "run_value runs one symbol's examples" {
+        Doc::register ";;; Adds.\n;;;\n;;; Examples:\n;;; >> + 1 2\n;;; 3\n;;; >> + 1 2\n;;; 4\nproc lk_rv {} { 1 }" "lk-rv"
+        let r [Doc::run_value lk_rv]
+        Test::eq [get $r pass] 1
+        Test::eq [get $r fail] 1
+        Test::eq [get [get [get $r failures] 0] name] "lk_rv"
+        Test::raises { Doc::run_value lk_rv_nothing }
+    }
+
+    Test::case "run_ns runs a namespace's examples, reading files on demand" {
+        let path "/tmp/lcl-doc-run-ns-test.lcl"
+        let src {;;; Examples:
+;;; >> LkRun::twice 2
+;;; 4
+namespace LkRun {
+    ;;; Examples:
+    ;;; >> LkRun::twice 3
+    ;;; 6
+    proc twice {x} { * $x 2 }
+
+    namespace Deep {
+        ;;; Examples:
+        ;;; >> LkRun::Deep::one
+        ;;; 2
+        proc one {} { 1 }
+    }
+}}
+        io::write_file $path $src
+        load $path
+        ;; Nothing registered for this file yet: run_ns warms the index
+        ;; from the live namespace's origins.
+        let r [Doc::run_ns LkRun]
+        Test::eq [get $r pass] 2
+        Test::eq [get $r fail] 1
+        Test::eq [get [get [get $r failures] 0] name] "LkRun::Deep::one"
+        Test::eq [get [Doc::run_ns $LkRun] pass] 2
+        Test::eq [Doc::run_ns "LkRun::Deep"] #{pass 0 fail 1 failures (#{name "LkRun::Deep::one" cmd "LkRun::Deep::one" expect 2 got 1})}
+    }
+
     Test::case "entries and search walk the index" {
         Doc::register ";;; Finds APPLES.\nproc lk_s1 {} { 1 }\n;;; Pears.\nproc lk_s2 {} { 1 }" "lk-search"
         let all [Doc::entries]
