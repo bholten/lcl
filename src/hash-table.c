@@ -234,23 +234,33 @@ int hash_table_put(hash_table *ht, const char *key, lcl_value *value) {
   return 1;
 }
 
-int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
+lcl_value *hash_table_peek(hash_table *ht, const char *key) {
   lcl_u64 hk = lcl_hash_fnv1a(key);
   size_t first_tomb;
   size_t idx = hash_find(ht, key, hk, &first_tomb);
   hash_entry *e = NULL;
 
   if (idx == HASH_NPOS) {
-    return 0;
+    return NULL;
   }
 
   e = &ht->slots[idx];
 
   if (e->state != H_FULL) {
+    return NULL;
+  }
+
+  return e->value;
+}
+
+int hash_table_get(hash_table *ht, const char *key, lcl_value **out) {
+  lcl_value *v = hash_table_peek(ht, key);
+
+  if (!v) {
     return 0;
   }
 
-  *out = lcl_ref_inc(e->value);
+  *out = lcl_ref_inc(v);
 
   return 1;
 }

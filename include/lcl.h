@@ -371,6 +371,11 @@ void lcl_clear_error(lcl_interp *interp);
  *                            lcl_eval_word, lcl_list_get, lcl_dict_get,
  *                            lcl_dict_keys, lcl_cell_get, lcl_ns_get,
  *                            lcl_get
+ *   Borrowed value           lcl_list_peek, lcl_dict_peek, lcl_cell_peek,
+ *                            lcl_ns_peek: the container's own reference,
+ *                            refcount untouched. Valid until the container
+ *                            is mutated or released; lcl_ref_inc it to keep
+ *                            it longer. Never lcl_ref_dec a peeked value.
  *   Borrows the argument     lcl_list_push, lcl_dict_put, lcl_ns_def,
  *                            lcl_define, lcl_call_proc (argv),
  *                            lcl_value_to_*, lcl_opaque_get
@@ -524,6 +529,15 @@ size_t lcl_list_len(const lcl_value *list);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
 
 /*
+ * Borrow an item from a list by index: the list's own reference,
+ * refcount untouched. Returns NULL if `list` is not a list or `i` is
+ * out of bounds. Valid until the list is mutated or released; do not
+ * lcl_ref_dec it. Prefer this over lcl_list_get when you only read
+ * the element during the call.
+ */
+lcl_value *lcl_list_peek(const lcl_value *list, size_t i);
+
+/*
  * Push a value onto the end of a list. Does not take ownership of
  * `value`; the list takes its own +1 reference, leaving the caller's
  * reference unchanged.
@@ -555,6 +569,14 @@ size_t lcl_dict_len(const lcl_value *dict);
  */
 lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
                         lcl_value **out);
+
+/*
+ * Borrow an item from a dictionary by key: the dictionary's own
+ * reference, refcount untouched. Returns NULL if `dict` is not a
+ * dictionary or the key is absent. Valid until the dictionary is
+ * mutated or released; do not lcl_ref_dec it.
+ */
+lcl_value *lcl_dict_peek(const lcl_value *dict, const char *key);
 
 /*
  * Put a value into a dictionary under `key`. Does not take ownership
@@ -589,6 +611,14 @@ lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
  * Returns the value with +1 refcount.
  */
 lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
+
+/*
+ * Borrow the contents of a cell: the cell's own reference, refcount
+ * untouched. Returns NULL if `cell` is not a cell or has been
+ * cleared.  Valid until the cell is set or released; do not
+ * lcl_ref_dec it.
+ */
+lcl_value *lcl_cell_peek(const lcl_value *cell);
 
 /* ============================================================================
  * Namespace Operations
@@ -625,6 +655,15 @@ lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value);
  * (not dereferenced).
  */
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
+
+/*
+ * Borrow member `name` of namespace `ns`: the namespace's own
+ * reference, refcount untouched. Returns NULL if `ns` is not a
+ * namespace or the member is absent. Cells are returned as cells.
+ * Valid until the namespace is mutated or released; do not
+ * lcl_ref_dec it.
+ */
+lcl_value *lcl_ns_peek(const lcl_value *ns, const char *name);
 
 /* ============================================================================
  * Variable/Definition Access

@@ -120,6 +120,14 @@ lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out) {
   return LCL_OK;
 }
 
+lcl_value *lcl_ns_peek(const lcl_value *ns, const char *name) {
+  if (!ns || ns->type != LCL_NAMESPACE || !name) {
+    return NULL;
+  }
+
+  return hash_table_peek(ns->as.namespace.namespace, name);
+}
+
 const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
                          const char **rhs) {
   size_t n;

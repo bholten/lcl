@@ -34,6 +34,14 @@ lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out) {
   return LCL_OK;
 }
 
+lcl_value *lcl_list_peek(const lcl_value *list, size_t i) {
+  if (!list || list->type != LCL_LIST || i >= (size_t)list->as.list.len) {
+    return NULL;
+  }
+
+  return list->as.list.items[i];
+}
+
 static lcl_result lcl_list_ensure_cap(lcl_value *list, size_t need) {
   size_t newcap;
   lcl_value **newitems;

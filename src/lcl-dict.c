@@ -40,6 +40,14 @@ lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
   return LCL_OK;
 }
 
+lcl_value *lcl_dict_peek(const lcl_value *dict, const char *key) {
+  if (!dict || dict->type != LCL_DICT || !key) {
+    return NULL;
+  }
+
+  return hash_table_peek(dict->as.dict.dictionary, key);
+}
+
 static lcl_value *lcl_dict_clone_shallow(lcl_value *dict) {
   hash_iter it = {0};
   const char *k;

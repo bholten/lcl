@@ -49,6 +49,7 @@ void hash_table_free(hash_table *ht);
 void hash_table_clear(hash_table *ht);
 int hash_table_put(hash_table *ht, const char *key, lcl_value *value);
 int hash_table_get(hash_table *ht, const char *key, lcl_value **out);
+lcl_value *hash_table_peek(hash_table *ht, const char *key);
 int hash_table_delete(hash_table *ht, const char *key);
 int hash_table_iterate(hash_table *ht, hash_iter *it, const char **key,
                        lcl_value **value);

@@ -87,6 +87,7 @@ lcl_num_class lcl_num_text_classify(const char *s, size_t n);
 
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
+lcl_value *lcl_list_peek(const lcl_value *list, size_t i);
 lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
 lcl_result lcl_list_set(lcl_value **list_io, size_t i, lcl_value *value);
 size_t lcl_list_len(const lcl_value *list);
@@ -95,6 +96,7 @@ lcl_value *lcl_dict_new(void);
 size_t lcl_dict_len(const lcl_value *dict);
 lcl_result lcl_dict_get(const lcl_value *dict, const char *key,
                         lcl_value **out);
+lcl_value *lcl_dict_peek(const lcl_value *dict, const char *key);
 lcl_result lcl_dict_put(lcl_value **dict_io, const char *key, lcl_value *value);
 lcl_result lcl_dict_del(lcl_value **dict_io, const char *key);
 lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
@@ -102,6 +104,7 @@ lcl_result lcl_dict_iter(const lcl_value **dict_io, lcl_dict_it *it,
 
 lcl_value *lcl_cell_new(lcl_value *init);
 lcl_result lcl_cell_get(lcl_value *cell, lcl_value **out);
+lcl_value *lcl_cell_peek(const lcl_value *cell);
 lcl_result lcl_cell_set(lcl_value *cell, lcl_value *v);
 int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value);
 int lcl_value_would_cycle(lcl_value *container, lcl_value *value);
@@ -112,6 +115,7 @@ lcl_value *lcl_ns_new(const char *qname);
 lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value);
 lcl_result lcl_ns_get(lcl_value *ns, const char *name, lcl_value **out);
+lcl_value *lcl_ns_peek(const lcl_value *ns, const char *name);
 const char *lcl_ns_split(const char *q, char *lhs, size_t nlhs,
                          const char **rhs);
 lcl_value *lcl_ns_from_dict(lcl_value *dict, const char *qname);
