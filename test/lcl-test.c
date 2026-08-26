@@ -355,10 +355,11 @@ void lcl_program_free(lcl_program *P);
 
 #define ASSERT_STREQ(a, b)                                                     \
   do {                                                                         \
-    if (((a) == NULL && (b) != NULL) || ((a) != NULL && (b) == NULL) ||        \
-        strcmp((a), (b)) != 0) {                                               \
+    const char *a_ = (a);                                                      \
+    const char *b_ = (b);                                                      \
+    if ((a_ == NULL) != (b_ == NULL) || (a_ && strcmp(a_, b_) != 0)) {         \
       printf("    assert failed: strings not equal\n    A: %s\n    B: %s\n",   \
-             (a) ? (a) : "(null)", (b) ? (b) : "(null)");                      \
+             a_ ? a_ : "(null)", b_ ? b_ : "(null)");                          \
       return 0;                                                                \
     }                                                                          \
   } while (0)
@@ -679,7 +680,7 @@ static int test_issue75_literal_grammar(void) {
 static int test_issue75_literal_typing(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   rc = lcl_eval_string(lcl_test_interp, "42", &out);
   ASSERT_TRUE(rc == LCL_RC_OK && out != NULL);
@@ -927,7 +928,7 @@ static int test_issue59_eval_program_cur_file_uaf(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   /* Start from a known cur_file. */
   lcl_test_interp->cur_file = NULL;
@@ -1014,7 +1015,7 @@ static int test_issue33_catch_strdup_oom(void) {
   extern lcl_interp *lcl_test_interp; /* set by main */
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   prog = lcl_program_compile("catch { + 1 1 } __i33_resvar", "test.lcl");
   ASSERT_TRUE(prog != NULL);
@@ -1046,8 +1047,8 @@ static int test_issue33_catch_strdup_oom(void) {
 static int test_issue27_fnv1a_known_vector(void) {
   /* Standard FNV-1a 64-bit hashes
    * (https://datatracker.ietf.org/doc/html/draft-eastlake-fnv) */
-  ASSERT_TRUE(lcl_hash_fnv1a("foo") == 0xDCB27518FED9D577ULL);
-  ASSERT_TRUE(lcl_hash_fnv1a("a") == 0xAF63DC4C8601EC8CULL);
+  ASSERT_TRUE(lcl_hash_fnv1a("foo") == LCL_U64_C(0xDCB27518FED9D577));
+  ASSERT_TRUE(lcl_hash_fnv1a("a") == LCL_U64_C(0xAF63DC4C8601EC8C));
   return 1;
 }
 
@@ -1112,7 +1113,7 @@ static int test_issue47_param_bind_oom(void) {
   lcl_program *prog;
   lcl_value *result = NULL;
   const char *err;
-  int rc;
+  lcl_return_code rc;
 
   /* Use lambda (no self_name) so the FIRST hash_table_put inside
    * lcl_call_user_proc is the param-bind via lcl_env_let. */
@@ -1268,7 +1269,7 @@ static int test_issue71_step_hook_budget(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   lcl_set_step_hook(lcl_test_interp, step_hook_abort, NULL, 1000);
   step_hook_fires = 0;
@@ -1333,7 +1334,7 @@ static int test_issue99_step_budget_empty_body_loops(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   lcl_set_step_hook(lcl_test_interp, step_hook_abort, NULL, 1000);
 
@@ -1447,7 +1448,7 @@ static int test_issue98_bare_spread_is_compile_error(void) {
 static int test_sub_literal_scan_unification(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   /* "len (a \0 b)" — the NUL byte is an ordinary 1-byte word, so the
    * list has three elements. Pre-fix the program truncated at the
@@ -1490,7 +1491,7 @@ static int test_sub_literal_scan_unification(void) {
 static int test_span_line_attribution(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   /* Compile error on line 3 (bare `@` inside the bracket span). */
   {
@@ -1523,7 +1524,7 @@ static int test_span_line_attribution(void) {
 static int test_body_line_attribution(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   /* proc body -> nested if body: error on file line 5. */
   rc = lcl_eval_string_file(lcl_test_interp,
@@ -1620,7 +1621,7 @@ static int test_body_line_attribution(void) {
 static int test_eval_at_error_context(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   rc = lcl_eval_string_file(lcl_test_interp,
                             "eval_at {\n"
@@ -1658,7 +1659,7 @@ static int test_proc_origin(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
   const char *s;
-  int rc;
+  lcl_return_code rc;
 
   rc = lcl_eval_string_file(lcl_test_interp,
                             "proc f {} {}\n"
@@ -1800,7 +1801,7 @@ static int test_issue41_namespace_reentry_oom(void) {
   lcl_program *setup;
   lcl_program *reentry;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   setup = lcl_program_compile("namespace __i41_ns { let x 1 }", "test.lcl");
   ASSERT_TRUE(setup != NULL);
@@ -1847,7 +1848,7 @@ static int test_issue40_namespace_max_depth_leak(void) {
   int saved_depth = lcl_test_interp->depth;
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   lcl_test_interp->max_depth = saved_depth + 1;
 
@@ -1877,7 +1878,7 @@ static int test_issue39_import_cleared_cell(void) {
   lcl_value *cell;
   lcl_program *prog;
   lcl_value *result = NULL;
-  int rc;
+  lcl_return_code rc;
 
   cell = lcl_cell_new(NULL);
   ASSERT_TRUE(cell != NULL);
@@ -1915,7 +1916,7 @@ static int test_issue58_cleared_cell_returns_error(void) {
   lcl_program *prog;
   lcl_value *result = NULL;
   const char *err;
-  int rc;
+  lcl_return_code rc;
 
   cell = lcl_cell_new(NULL);
   ASSERT_TRUE(cell != NULL);
@@ -2056,7 +2057,7 @@ static int test_issue67_compile_ex_msg_and_line(void) {
 static int test_issue67_eval_string_sets_error_state(void) {
   extern lcl_interp *lcl_test_interp;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   rc = lcl_eval_string_file(lcl_test_interp, "let a 1\nlet b [+ 1\n", "i67.lcl",
                             &out);
@@ -2087,6 +2088,10 @@ static int req_write_file(const char *dir, const char *name, const char *text) {
   char path[1024];
   FILE *f;
 
+  if (strlen(dir) + strlen(name) + 2 > sizeof(path)) {
+    return 0;
+  }
+
   snprintf(path, sizeof(path), "%s/%s", dir, name);
   f = fopen(path, "w");
 
@@ -2110,7 +2115,7 @@ static void req_remove(const char *dir, const char *name) {
 static int req_eval_expect(lcl_interp *in, const char *src,
                            const char *expect) {
   lcl_value *out = NULL;
-  int rc = lcl_eval_string_file(in, src, "req-test.lcl", &out);
+  lcl_return_code rc = lcl_eval_string_file(in, src, "req-test.lcl", &out);
   int ok;
 
   if (rc != LCL_RC_OK || !out) {
@@ -2513,7 +2518,7 @@ static int test_require_module_key_hook(void) {
   lcl_interp *in = NULL;
   lcl_interp *in2 = NULL;
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
   int ok_first;
   int ok_dedup;
   int ok_fallback;
@@ -2579,7 +2584,7 @@ static int test_require_module_key_hook(void) {
 static int test_ns_anchor_lifecycle(void) {
   lcl_interp *in = lcl_interp_new();
   lcl_value *out = NULL;
-  int rc;
+  lcl_return_code rc;
 
   ASSERT_TRUE(in != NULL);
   lcl_register_core(in);

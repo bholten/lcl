@@ -73,6 +73,7 @@ jobs:
             < <(./ci/package-set.sh flags "${{ matrix.package_set }}")
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DLCL_WERROR=ON \
             "${FLAGS[@]}"
 
       - name: Build
@@ -110,7 +111,8 @@ jobs:
             -DLCL_BUILD_EXPECT=ON \
             -DLCL_BUILD_CRYPTO=ON \
             -DLCL_BUILD_TESTS=OFF \
-            -DLCL_ENABLE_ASAN=OFF
+            -DLCL_ENABLE_ASAN=OFF \
+            -DLCL_WERROR=ON
 
       - name: Build
         run: cmake --build build-install --parallel

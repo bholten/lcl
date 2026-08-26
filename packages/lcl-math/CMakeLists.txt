@@ -15,7 +15,7 @@ target_include_directories(lcl_math
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_math PRIVATE -Wall -Wextra)
+target_compile_options(lcl_math PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_math PRIVATE lcl::lcl m)
 
 if(LCL_IS_TOP_LEVEL)

@@ -523,7 +523,7 @@ static lcl_return_code c_curl_set_header(lcl_interp *interp, int argc,
   struct curl_context *ctx;
   const char *header;
   int i;
-  int rc;
+  CURLcode rc;
   (void)out;
 
   if (argc < 2) {
@@ -555,7 +555,7 @@ static lcl_return_code c_curl_set_body(lcl_interp *interp, int argc,
                                        lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
   const char *body;
-  int rc;
+  CURLcode rc;
   (void)out;
 
   if (argc < 2) {

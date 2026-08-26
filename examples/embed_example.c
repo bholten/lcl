@@ -52,7 +52,7 @@ int main(void) {
     lcl_interp *interp = lcl_interp_new();
     lcl_value *result = NULL;
     const char *result_str = NULL;
-    int rc;
+    lcl_return_code rc;
 
     if (!interp) {
         fprintf(stderr, "lcl: failed to allocate interpreter\n");

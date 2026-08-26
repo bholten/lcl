@@ -21,7 +21,13 @@ set(USE_LIBIDN2   OFF CACHE BOOL "" FORCE)
 set(USE_APPLE_IDN OFF CACHE BOOL "" FORCE)
 set(USE_WIN32_IDN OFF CACHE BOOL "" FORCE)
 
+set(LCL_CURL_SAVED_C_STANDARD "${CMAKE_C_STANDARD}")
+set(LCL_CURL_SAVED_C_EXTENSIONS "${CMAKE_C_EXTENSIONS}")
+unset(CMAKE_C_STANDARD)
+unset(CMAKE_C_EXTENSIONS)
 FetchContent_MakeAvailable(curl)
+set(CMAKE_C_STANDARD "${LCL_CURL_SAVED_C_STANDARD}")
+set(CMAKE_C_EXTENSIONS "${LCL_CURL_SAVED_C_EXTENSIONS}")
 
 set(LCL_CURL_SOURCES
   src/lcl-curl.c
@@ -37,7 +43,7 @@ target_include_directories(lcl_curl
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_curl PRIVATE -Wall -Wextra)
+target_compile_options(lcl_curl PRIVATE ${LCL_COMPILE_OPTIONS})
 
 target_link_libraries(lcl_curl
   PUBLIC lcl::lcl

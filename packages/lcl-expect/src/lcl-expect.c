@@ -5,6 +5,9 @@
  * leveraging LCL's lexical scoping for clean handler closures.
  */
 
+#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 600
+
 #include <errno.h>
 #include <regex.h>
 #include <stdio.h>
@@ -552,6 +555,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
   lcl_value *handle;
   lcl_value *patterns;
   lcl_value *opts = NULL;
+  lcl_value *v = NULL;
   int timeout_ms = 10000;
   char *buf = NULL;
   size_t buf_len = 0;
@@ -578,7 +582,6 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
 
   if (argc >= 3) {
     opts = argv[2];
-    lcl_value *v = NULL;
 
     if (lcl_dict_get(opts, "timeout", &v) == LCL_OK) {
       long n;
@@ -631,7 +634,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
     lcl_value *read_result = NULL;
     const char *chunk;
     int wait_ms;
-    int rc;
+    lcl_return_code rc;
 
     for (i = 0; i < num_patterns; i++) {
       lcl_value *pat_val = NULL;
@@ -845,6 +848,7 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
   lcl_value *handle;
   lcl_value *pairs;
   lcl_value *opts = NULL;
+  lcl_value *v = NULL;
   lcl_value *patterns;
   lcl_value **handlers = NULL;
   size_t num_pairs;
@@ -855,7 +859,7 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
   long matched_idx;
   lcl_value *handler;
   lcl_value *handler_args[1];
-  int rc;
+  lcl_return_code rc;
   lcl_value *tmp;
 
   if (argc < 2) {
@@ -868,7 +872,6 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
 
   if (argc >= 3) {
     opts = argv[2];
-    lcl_value *v = NULL;
 
     if (lcl_dict_get(opts, "timeout", &v) == LCL_OK) {
       long n;
@@ -1022,7 +1025,7 @@ error:
  */
 static lcl_return_code c_expect_loop(lcl_interp *interp, int argc,
                                      lcl_value **argv, lcl_value **out) {
-  int rc;
+  lcl_return_code rc;
   lcl_value *result = NULL;
 
   while (1) {

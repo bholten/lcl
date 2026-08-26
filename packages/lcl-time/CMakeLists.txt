@@ -15,7 +15,7 @@ target_include_directories(lcl_time
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_time PRIVATE -Wall -Wextra)
+target_compile_options(lcl_time PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_time PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-time COMMAND test/test.lcl)

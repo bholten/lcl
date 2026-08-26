@@ -15,7 +15,7 @@ target_include_directories(lcl_process
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_process PRIVATE -Wall -Wextra)
+target_compile_options(lcl_process PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_process PRIVATE lcl::lcl)
 
 # Link util library for PTY support (openpty)

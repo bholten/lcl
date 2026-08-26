@@ -9,11 +9,11 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 
-/* PTY support - platform specific headers */
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) ||      \
     defined(__NetBSD__)
 #include <util.h>
@@ -289,7 +289,7 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
   int do_throw;
   int use_shell;
   size_t limit;
-  int rc = LCL_RC_OK;
+  lcl_return_code rc = LCL_RC_OK;
 
   if (argc < 1) {
     return LCL_RC_ERR;
@@ -990,7 +990,7 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
     FD_ZERO(&rfds);
     FD_SET(fd, &rfds);
     tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (long)(timeout_ms % 1000) * 1000;
+    tv.tv_usec = (suseconds_t)(long)(timeout_ms % 1000) * 1000;
 
     ret = select(fd + 1, &rfds, NULL, NULL, &tv);
 
@@ -1188,7 +1188,7 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
     }
 
     tv.tv_sec = wait_ms / 1000;
-    tv.tv_usec = (long)(wait_ms % 1000) * 1000;
+    tv.tv_usec = (suseconds_t)(long)(wait_ms % 1000) * 1000;
 
     ret = select(fd + 1, &rfds, NULL, NULL, &tv);
     elapsed_ms += wait_ms;
@@ -1345,7 +1345,7 @@ static lcl_return_code c_process_wait(lcl_interp *interp, int argc,
       {
         struct timeval tv;
         tv.tv_sec = 0;
-        tv.tv_usec = (long)interval * 1000;
+        tv.tv_usec = (suseconds_t)(long)interval * 1000;
         select(0, NULL, NULL, NULL, &tv);
       }
 

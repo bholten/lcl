@@ -15,7 +15,7 @@ target_include_directories(lcl_random
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_random PRIVATE -Wall -Wextra)
+target_compile_options(lcl_random PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_random PRIVATE lcl::lcl)
 
 if(LCL_IS_TOP_LEVEL)
