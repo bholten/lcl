@@ -458,10 +458,10 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
         interp, body_str,
         lcl_dyn_source_name(interp, "lambda", name, sizeof(name)));
   }
-  lcl_ref_dec(body_s);
 
   if (!body_p) {
     lcl_param_spec_free(&pspec);
+    lcl_ref_dec(body_s);
     return LCL_RC_ERR;
   }
 
@@ -480,12 +480,14 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
     if (rc != LCL_RC_OK) {
       lcl_param_spec_free(&pspec);
       lcl_program_free(body_p);
+      lcl_ref_dec(body_s);
       return LCL_RC_ERR;
     }
   }
 
-  *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p,
+  *out = lcl_proc_new(self_name, upvals, nupvals, &pspec, body_p, body_str,
                       interp->cur_file, interp->cur_line);
+  lcl_ref_dec(body_s);
 
   if (!*out) {
     LCL_ERR_MSG(interp, "lambda: out of memory");
@@ -591,8 +593,7 @@ static lcl_return_code s_proc(lcl_interp *interp, int argc,
   }
 
   lcl_ref_dec(name_v);
-  lcl_ref_dec(lam);
-  *out = lcl_string_new("");
+  *out = lam;
   return LCL_RC_OK;
 }
 
@@ -658,8 +659,7 @@ static lcl_return_code s_macro(lcl_interp *interp, int argc,
   }
 
   lcl_ref_dec(name_v);
-  lcl_ref_dec(lam);
-  *out = lcl_string_new("");
+  *out = lam;
   return LCL_RC_OK;
 }
 
@@ -836,6 +836,38 @@ static lcl_return_code c_proc_name(lcl_interp *interp, int argc,
   *out = lcl_string_new(name);
   lcl_ref_dec(held);
   return *out ? LCL_RC_OK : LCL_RC_ERR;
+}
+
+/* Proc::body fn - body text as written; empty for a C proc. */
+static lcl_return_code c_proc_body(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
+  lcl_value *held;
+  lcl_value *fn;
+  const char *body = "";
+
+  if (!lcl_std_chk_argc(interp, "Proc::body", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  fn = resolve_proc_arg(interp, "Proc::body", argv[0], &held);
+
+  if (!fn) {
+    return LCL_RC_ERR;
+  }
+
+  if (fn->type == LCL_PROC && fn->as.procedure.proc->body_src) {
+    body = fn->as.procedure.proc->body_src;
+  }
+
+  *out = lcl_string_new(body);
+  lcl_ref_dec(held);
+
+  if (!*out) {
+    LCL_ERR_MSG(interp, "Proc::body: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 /* Proc::params fn - parameter names in order, as a flat list. */
@@ -1033,6 +1065,7 @@ void lcl_std_register_binding(lcl_interp *interp) {
     lcl_ns_def_take(proc_ns, "name", lcl_c_proc_new("Proc::name", c_proc_name));
     lcl_ns_def_take(proc_ns, "params",
                     lcl_c_proc_new("Proc::params", c_proc_params));
+    lcl_ns_def_take(proc_ns, "body", lcl_c_proc_new("Proc::body", c_proc_body));
     lcl_ns_def_take(proc_ns, "origin",
                     lcl_c_proc_new("Proc::origin", c_proc_origin));
   }

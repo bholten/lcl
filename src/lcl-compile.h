@@ -271,6 +271,7 @@ typedef struct {
   int nupvals;
   lcl_param_spec pspec;
   lcl_program *body;
+  char *body_src;
   int is_macro;
   char *file;
   int line;

@@ -380,6 +380,16 @@ Test::suite "Proc Reflection" {
         Test::eq [Proc::name pr_mac] "pr_mac"
         Test::eq [repr [Proc::params pr_mac]] {("x")}
         Test::eq [has? [Proc::origin pr_mac] line] 1
+        Test::eq [Proc::body pr_mac] { $x }
+    }
+
+    Test::case "body: the body text as written, empty for a C proc" {
+        proc pr_body {x} { * $x $x ;; square }
+        Test::eq [Proc::body pr_body] { * $x $x ;; square }
+        Test::eq [Proc::body $pr_body] [Proc::body pr_body]
+        Test::eq [Proc::body [lambda {y} {+ $y 1}]] {+ $y 1}
+        Test::eq [Proc::body {+}] ""
+        Test::eq [catch {Proc::body 42} r e] 1
     }
 
     Test::case "origin: file and line of the defining command" {
