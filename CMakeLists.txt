@@ -29,6 +29,7 @@ option(LCL_BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
 option(LCL_ENABLE_CLANG_TIDY "Run clang-tidy alongside compilation" OFF)
 option(LCL_DEBUG_REFC "Enable debug reference counting" OFF)
 option(LCL_STATIC_BINARY "Build fully static CLI binary (requires static libs)" OFF)
+option(LCL_WERROR "Treat compiler warnings as errors (CI and maintainer builds)" OFF)
 
 # Optional packages
 option(LCL_BUILD_CURL "Build CURL bindings" OFF)
@@ -97,10 +98,14 @@ set(LCL_SOURCES
 
 set(CMAKE_C_STANDARD 90)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 set(LCL_COMPILE_OPTIONS
-  -Wall -Wextra -Wdeclaration-after-statement
+  -Wall -Wextra -Wpedantic -Wdeclaration-after-statement
   -Wconversion -Wsign-conversion
 )
+if(LCL_WERROR)
+  list(APPEND LCL_COMPILE_OPTIONS -Werror)
+endif()
 
 # Set default build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

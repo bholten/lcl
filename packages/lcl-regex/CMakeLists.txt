@@ -15,7 +15,7 @@ target_include_directories(lcl_regex
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_regex PRIVATE -Wall -Wextra)
+target_compile_options(lcl_regex PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_regex PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-regex COMMAND test/test.lcl)

@@ -38,9 +38,11 @@ ctest --test-dir build --output-on-failure
 
 ## Code style
 
-The whole codebase targets **C89** (`-std=c90` with
+The whole codebase targets **C89** (`-std=c90 -Wpedantic` with
 `-Wdeclaration-after-statement`).  No VLAs, no `//` comments, no mixed
-declarations after statements.
+declarations after statements.  Configure with `-DLCL_WERROR=ON` (what
+CI does) so a warning can't scroll past unnoticed in an incremental
+build.
 
 Please mimic the hybrid Allman-style.
 

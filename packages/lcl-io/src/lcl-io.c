@@ -81,7 +81,7 @@ lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  handle_value = lcl_opaque_new(handle, FILE_HANDLE_TYPE_TAG, (void *)NULL);
+  handle_value = lcl_opaque_new(handle, FILE_HANDLE_TYPE_TAG, NULL);
 
   *out = handle_value;
 
@@ -240,9 +240,8 @@ lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
   contents = read_file(path);
 
   if (!contents) {
-    char msg[512];
-    snprintf(msg, sizeof(msg), "io::read_file: could not read \"%.400s\"",
-             path);
+    char msg[433];
+    sprintf(msg, "io::read_file: could not read \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
@@ -278,18 +277,16 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   f = fopen(path, "wb");
 
   if (!f) {
-    char msg[512];
-    snprintf(msg, sizeof(msg), "io::write_file: could not open \"%.400s\"",
-             path);
+    char msg[434];
+    sprintf(msg, "io::write_file: could not open \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
 
   if (fwrite(contents, 1, len, f) != len) {
-    char msg[512];
+    char msg[434];
     fclose(f);
-    snprintf(msg, sizeof(msg), "io::write_file: short write to \"%.400s\"",
-             path);
+    sprintf(msg, "io::write_file: short write to \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }

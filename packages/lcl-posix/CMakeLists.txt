@@ -15,7 +15,7 @@ target_include_directories(lcl_posix
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_posix PRIVATE -Wall -Wextra)
+target_compile_options(lcl_posix PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_posix PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-posix COMMAND test/test.lcl)

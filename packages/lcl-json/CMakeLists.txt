@@ -32,7 +32,7 @@ target_include_directories(lcl_json
     ${cjson_SOURCE_DIR}
 )
 
-target_compile_options(lcl_json PRIVATE -Wall -Wextra)
+target_compile_options(lcl_json PRIVATE ${LCL_COMPILE_OPTIONS})
 
 target_link_libraries(lcl_json
   PRIVATE lcl::lcl cjson

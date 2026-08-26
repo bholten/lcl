@@ -116,7 +116,7 @@ static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   struct timespec ts;
-  unsigned long long usec;
+  unsigned long usec;
   (void)interp;
   (void)argc;
   (void)argv;
@@ -127,8 +127,10 @@ static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
 
   /* On 64-bit platforms `long` is wide enough to hold microseconds
    * since boot for any realistic uptime. On 32-bit it wraps after ~35
-   * minutes — acceptable since lcl_int_new takes long. */
-  usec = (unsigned long long)ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000;
+   * minutes — acceptable since lcl_int_new takes long. Unsigned
+   * arithmetic keeps the wrap well-defined. */
+  usec =
+      (unsigned long)ts.tv_sec * 1000000UL + (unsigned long)(ts.tv_nsec / 1000);
 
   *out = lcl_int_new((long)usec);
   return LCL_RC_OK;
@@ -328,7 +330,7 @@ static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   ts.tv_sec = (time_t)secs;
-  ts.tv_nsec = (long)((secs - ts.tv_sec) * 1000000000);
+  ts.tv_nsec = (long)((secs - (double)ts.tv_sec) * 1000000000.0);
 
   nanosleep(&ts, NULL);
 

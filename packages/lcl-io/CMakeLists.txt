@@ -15,7 +15,7 @@ target_include_directories(lcl_io
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_io PRIVATE -Wall -Wextra)
+target_compile_options(lcl_io PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_io PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-io COMMAND test/test.lcl)

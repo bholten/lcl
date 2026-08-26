@@ -249,7 +249,7 @@ static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
   unsigned char *sig = NULL;
   size_t sig_len = 0;
   char *hex = NULL;
-  int result = LCL_RC_ERR;
+  lcl_return_code result = LCL_RC_ERR;
 
   if (argc != 3) {
     return LCL_RC_ERR;
@@ -359,7 +359,7 @@ static lcl_return_code c_crypto_sign_ecdsa(lcl_interp *interp, int argc,
   unsigned char *sig = NULL;
   size_t sig_len = 0;
   char *hex = NULL;
-  int result = LCL_RC_ERR;
+  lcl_return_code result = LCL_RC_ERR;
 
   if (argc != 3) {
     return LCL_RC_ERR;
@@ -461,7 +461,7 @@ static lcl_return_code c_crypto_base64_encode(lcl_interp *interp, int argc,
   BIO *b64 = NULL;
   BUF_MEM *buf = NULL;
   char *result_str = NULL;
-  int rc = LCL_RC_ERR;
+  lcl_return_code rc = LCL_RC_ERR;
 
   if (argc != 1) {
     return LCL_RC_ERR;
@@ -528,7 +528,7 @@ static lcl_return_code c_crypto_base64_decode(lcl_interp *interp, int argc,
   BIO *b64 = NULL;
   char *decoded = NULL;
   int decoded_len;
-  int rc = LCL_RC_ERR;
+  lcl_return_code rc = LCL_RC_ERR;
 
   if (argc != 1) {
     return LCL_RC_ERR;

@@ -17,7 +17,7 @@ target_include_directories(lcl_crypto
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_options(lcl_crypto PRIVATE -Wall -Wextra)
+target_compile_options(lcl_crypto PRIVATE ${LCL_COMPILE_OPTIONS})
 
 target_link_libraries(lcl_crypto
   PRIVATE lcl::lcl
