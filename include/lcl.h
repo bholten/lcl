@@ -747,6 +747,13 @@ lcl_result lcl_define_take(lcl_interp *interp, const char *name,
  * Get a value from the interpreter by name.
  * Supports qualified names like "ns::name".
  * The returned value has +1 refcount.
+ *
+ * Resolution is exactly what script code at the call site would see:
+ * lexical from the current scope. A C procedure invoked from inside a
+ * proc body therefore does not see interpreter-root bindings by bare
+ * name -- proc bodies are closed over what they capture, not over the
+ * global frame. To reach a root binding regardless of where you are
+ * called from, use the `::`-rooted spelling: "::process::read".
  */
 lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
 

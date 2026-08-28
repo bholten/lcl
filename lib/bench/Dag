@@ -1,0 +1,23 @@
+;; Build the Lcl bench library
+;; Requires lcl-time at runtime (time::monotonic_us)
+
+project Bench {
+    def SOURCE src/Bench.lcl
+    def BUILD  build/bench.h
+
+    task pre_reqs {
+        outputs build/
+        run {
+          mkdir -p build/
+        }
+    }
+
+    task build {
+        inputs  ${Bench::SOURCE}
+        outputs ${Bench::BUILD}
+        depends_on Bench::pre_reqs
+        run {
+            xxd -i ${Bench::SOURCE} >> ${Bench::BUILD}
+        }
+    }
+}

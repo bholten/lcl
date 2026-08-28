@@ -1,0 +1,285 @@
+;;; Micro-benchmark harness for Lcl
+;;;
+;;; Register suites and cases, then `Bench::run` times every case.
+;;; Each body is compiled once and run in batches through `repeat`;
+;;; the batch size calibrates itself (doubling) until one batch takes
+;;; at least `min_ms`, and the row reports the median and minimum
+;;; ns/iteration over `batches` batches, the copy-on-write clones per
+;;; iteration and the live-value delta per batch (both from
+;;; `Interp::stats`), and the change against a recorded baseline.
+;;; Needs lcl-time for the monotonic clock.
+;;;
+;;; Each batch runs the body inside a lambda created after the
+;;; suite's `Bench::setup` body, so setup bindings (`let items ...`,
+;;; helper procs) are captured and visible, and everything the body
+;;; itself binds dies with the batch -- the live-value column only
+;;; sees what the body leaks. A body that accumulates should start
+;;; from a fresh `var` each iteration, as in the example.
+;;;
+;;; Examples:
+;;; >> Bench::reset
+;;; >> Bench::suite "lists" { Bench::case "push!" { var l (); List::push! l 1 } }
+;;; >> Bench::run #{min_ms 1 batches 1 quiet 1}
+;;; 0
+;;; >> has? [Bench::results] "lists/push!"
+;;; 1
+namespace Bench {
+    var _suites ()
+    var _cur_name {}
+    var _cur_cases ()
+    var _cur_setup {}
+    var _cur_expects ()
+    var _baseline #{}
+    var _results #{}
+
+    ;;; Register a suite. `body` calls `Bench::setup`, `Bench::case`
+    ;;; and `Bench::expect_faster`.
+    proc suite {name body} {
+        set! _cur_name $name
+        set! _cur_cases ()
+        set! _cur_setup {}
+        set! _cur_expects ()
+        eval $body
+        set! _suites [List::push $_suites [dict name $name cases $_cur_cases expects $_cur_expects]]
+    }
+
+    ;;; Code evaluated once before each case of the current suite (and
+    ;;; outside the timed region); its bindings are visible to bodies.
+    proc setup {body} {
+        set! _cur_setup $body
+    }
+
+    ;;; Register a timed case in the current suite.
+    proc case {name body} {
+        set! _cur_cases [List::push $_cur_cases [dict name $name body $body setup $_cur_setup]]
+    }
+
+    ;;; Assert, after measuring, that case `fast` runs at least
+    ;;; `factor` times faster than case `slow` (same suite, median
+    ;;; ns/iter). Failures make `Bench::run` return 1.
+    proc expect_faster {fast slow (factor 1)} {
+        set! _cur_expects [List::push $_cur_expects [dict fast $fast slow $slow factor $factor]]
+    }
+
+    ;;; Register baseline numbers: a dict of "suite/case" -> #{ns N}.
+    ;;; A baseline file is a script that calls this; load it before
+    ;;; `Bench::run` and rows show their change against it.
+    proc baseline {d} {
+        set! _baseline [Dict::merge $_baseline $d]
+    }
+
+    ;;; Results of the last `Bench::run`: "suite/case" ->
+    ;;; #{ns median min clones_x10 live n}.
+    proc results {} {
+        $_results
+    }
+
+    proc _pad {s w} {
+        var r [String::from $s]
+        while {< [String::length $r] $w} { set! r " $r" }
+        $r
+    }
+
+    proc _padr {s w} {
+        var r [String::from $s]
+        while {< [String::length $r] $w} { set! r "$r " }
+        $r
+    }
+
+    ;; x / div with one decimal, integer arithmetic only
+    proc _dec1 {x div} {
+        if [== $div 0] { return "?" }
+        let t [int [/ [* $x 10] $div]]
+        let whole [int [/ $t 10]]
+        let frac [- $t [* $whole 10]]
+        "$whole.$frac"
+    }
+
+    proc _fmt_ns {ns} {
+        if [< $ns 10000] { return "[int $ns] ns" }
+        if [< $ns 10000000] { return "[_dec1 $ns 1000] us" }
+        if [< $ns 10000000000] { return "[_dec1 $ns 1000000] ms" }
+        "[_dec1 $ns 1000000000] s"
+    }
+
+    proc _pct {ns base} {
+        if [== $base 0] { return "?" }
+        let d [- $ns $base]
+        let neg [< $d 0]
+        let a [if $neg { [- 0 $d] } else { $d }]
+        let sign [if $neg { "-" } else { "+" }]
+        "$sign[_dec1 [* $a 100] $base]%"
+    }
+
+    ;;; Time every registered case and print one row each.
+    ;;;
+    ;;; `opts` keys: `filter` (substring of "suite/case"), `min_ms`
+    ;;; (per-batch target, default 200), `batches` (default 5),
+    ;;; `profile` (print a `time::profile` table under each row),
+    ;;; `save` (write a baseline file for the results), `quiet`.
+    ;;; Returns 0, or 1 when an `expect_faster` assertion failed.
+    proc run {(opts #{})} {
+        let filter [get $opts filter ""]
+        let min_ms [get $opts min_ms 200]
+        let batches [get $opts batches 5]
+        let do_profile [get $opts profile 0]
+        let save [get $opts save ""]
+        let quiet [get $opts quiet 0]
+        let _b_min_us [* $min_ms 1000]
+        set! _results #{}
+        var _b_fails ()
+        var _b_n 1
+        var _b_ts ()
+        var _b_clones 0
+        var _b_live 0
+
+        ;; One batch = one call of a lambda wrapping `repeat n body`,
+        ;; built in this frame so it closes over the setup bindings and
+        ;; so everything the body binds dies with the batch. The same
+        ;; block measures the empty body first, giving the harness's
+        ;; own overhead and live-value residue to report/subtract.
+        let _b_measure {
+            set! _b_ts ()
+            set! _b_clones 0
+            set! _b_live 0
+            let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
+            repeat $batches {
+                let _b_s0 [Interp::stats]
+                let _b_t0 [time::monotonic_us]
+                apply $_b_fn
+                let _b_dt [- [time::monotonic_us] $_b_t0]
+                let _b_s1 [Interp::stats]
+                List::push! _b_ts [int [/ [* $_b_dt 1000] $_b_n]]
+                set! _b_clones [+ $_b_clones [- [+ [get $_b_s1 list_clones] [get $_b_s1 dict_clones]] [+ [get $_b_s0 list_clones] [get $_b_s0 dict_clones]]]]
+                set! _b_live [+ $_b_live [- [get $_b_s1 values_live] [get $_b_s0 values_live]]]
+            }
+        }
+
+        ;; Two hidden empty cases go first through exactly the path a
+        ;; real case takes; the second (steady-state) one gives the
+        ;; harness overhead row and the live-value residue real rows
+        ;; subtract.
+        var _b_live_null 0
+        let _b_null_case [dict name {} body {} setup {}]
+        let _b_null_suite [dict name {} cases ($_b_null_case $_b_null_case) expects ()]
+        let _b_all [List::concat ($_b_null_suite) $_suites]
+
+        foreach _b_s $_b_all {
+            let _b_sname [get $_b_s name]
+            let _b_null [== [String::length $_b_sname] 0]
+            var _b_shown 0
+
+            foreach _b_c [get $_b_s cases] {
+                let _b_cname [get $_b_c name]
+                let _b_key "$_b_sname/$_b_cname"
+                if [and [not $_b_null] [and [!= $filter ""] [== [String::find $_b_key $filter] -1]]] { continue }
+                if [and [not $quiet] [and [not $_b_null] [not $_b_shown]]] {
+                    puts ""
+                    puts "Bench: $_b_sname"
+                    set! _b_shown 1
+                }
+
+                eval [get $_b_c setup]
+                let _b_body [get $_b_c body]
+
+                ;; calibrate: double the batch until it takes min_ms
+                set! _b_n [if $_b_null { 100000 } else { 1 }]
+                var _b_go 1
+                while {$_b_go} {
+                    let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
+                    let _b_t0 [time::monotonic_us]
+                    apply $_b_fn
+                    let _b_dt [- [time::monotonic_us] $_b_t0]
+                    if [>= $_b_dt $_b_min_us] { set! _b_go 0 } else { set! _b_n [* $_b_n 2] }
+                }
+
+                eval $_b_measure
+
+                let _b_sorted [List::sort $_b_ts]
+                let _b_med [get $_b_sorted [int [/ [len $_b_sorted] 2]]]
+                let _b_min [get $_b_sorted 0]
+                if $_b_null {
+                    let _b_first [== $_b_live_null 0]
+                    set! _b_live_null $_b_live
+                    if [and [not $quiet] [not $_b_first]] {
+                        puts "Bench: harness overhead [int $_b_med] ns/iter (repeat of an empty body; not subtracted)"
+                    }
+                    continue
+                }
+                let _b_iters [* $batches $_b_n]
+                let _b_cx10 [int [/ [* $_b_clones 10] $_b_iters]]
+                let _b_lpb [int [/ [- $_b_live $_b_live_null] $batches]]
+                set! _results [put $_results $_b_key [dict ns $_b_med min $_b_min clones_x10 $_b_cx10 live $_b_lpb n $_b_n]]
+
+                if [not $quiet] {
+                    var _b_row "  [_padr $_b_cname 40] [_pad [_fmt_ns $_b_med] 10]  min [_pad [_fmt_ns $_b_min] 9]  clones/iter [_pad [_dec1 $_b_clones $_b_iters] 8]  live [_pad $_b_lpb 6]"
+                    if [has? $_baseline $_b_key] {
+                        set! _b_row "$_b_row  [_pad [_pct $_b_med [get [get $_baseline $_b_key] ns]] 8] vs baseline"
+                    }
+                    puts $_b_row
+                    if $do_profile {
+                        let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
+                        puts [time::profile_format [time::profile { apply $_b_fn }]]
+                    }
+                }
+            }
+
+            foreach _b_e [get $_b_s expects] {
+                let _b_fk "$_b_sname/[get $_b_e fast]"
+                let _b_sk "$_b_sname/[get $_b_e slow]"
+                if [not [and [has? $_results $_b_fk] [has? $_results $_b_sk]]] { continue }
+                let _b_f [get [get $_results $_b_fk] ns]
+                let _b_sl [get [get $_results $_b_sk] ns]
+                let _b_factor [get $_b_e factor]
+                if [> [* $_b_f $_b_factor] $_b_sl] {
+                    puts "  EXPECT FAIL: [get $_b_e fast] ([_fmt_ns $_b_f]) is not [String::from $_b_factor]x faster than [get $_b_e slow] ([_fmt_ns $_b_sl])"
+                    List::push! _b_fails $_b_fk
+                } else {
+                    if [not $quiet] {
+                        puts "  ok: [get $_b_e fast] ([_fmt_ns $_b_f]) vs [get $_b_e slow] ([_fmt_ns $_b_sl])"
+                    }
+                }
+            }
+        }
+
+        if [!= $save ""] {
+            ;; braced pieces: the file text contains brackets, which a
+            ;; double-quoted string would try to evaluate
+            let _b_nl "\n"
+            let _b_head {;; Generated by Bench::run (save); load before Bench::run to compare.}
+            let _b_open {Bench::baseline [dict}
+            let _b_row_open {[dict ns }
+            let _b_close {]}
+            var _b_out [String::join ($_b_head $_b_nl $_b_open) ""]
+            foreach _b_k [Dict::keys $_results] {
+                let _b_r [get $_results $_b_k]
+                set! _b_out [String::join ($_b_out $_b_nl "    {" $_b_k "} " $_b_row_open [get $_b_r ns] " n " [get $_b_r n] $_b_close) ""]
+            }
+            set! _b_out [String::join ($_b_out $_b_nl $_b_close $_b_nl) ""]
+            if [catch { io::write_file $save $_b_out } _b_r _b_e] {
+                puts "Bench: could not write $save ($_b_e); baseline follows:"
+                puts $_b_out
+            } else {
+                if [not $quiet] { puts ""; puts "Bench: baseline saved to $save" }
+            }
+        }
+
+        if [not $quiet] {
+            puts ""
+            puts "Bench: [len [Dict::keys $_results]] cases, [len $_b_fails] expectation failures"
+        }
+        if [> [len $_b_fails] 0] { return 1 }
+        0
+    }
+
+    ;;; Forget every registered suite, baseline and result.
+    proc reset {} {
+        set! _suites ()
+        set! _cur_name {}
+        set! _cur_cases ()
+        set! _cur_setup {}
+        set! _cur_expects ()
+        set! _baseline #{}
+        set! _results #{}
+    }
+}

@@ -1,9 +1,38 @@
 ;; curl:: Package Tests
-;; Requires the mock server to be running: docker-compose up -d
-;; Run with an LCL interpreter that has the curl extension loaded
 ;;
-;; Test framework (Test::suite, Test::case, etc.) is embedded when built
-;; with LCL_EMBED_TEST_FRAMEWORK=ON (the default).
+proc env_or {name default} {
+    let v [io::getenv $name]
+    if [String::eq? $v ""] { $default } else { $v }
+}
+
+let BASE [env_or LCL_CURL_TEST_URL "http://localhost:8080"]
+
+;; 1 when a GET of `url` answers 200 within 3 s, else 0 (reason in the
+;; message printed when the server is required).
+proc probe {what url} {
+    let c [curl::new]
+    curl::set_url $c $url
+    curl::set_timeout_ms $c 3000
+    curl::set_write_callback $c [lambda {r} {}]
+    let ok [== [catch {
+        curl::perform $c
+        if [!= [curl::get_response_code $c] 200] { error "HTTP [curl::get_response_code $c]" }
+    } res err] 0]
+    if [and [not $ok] [not [String::eq? [io::getenv LCL_CURL_REQUIRE_SERVER] ""]]] {
+        puts "lcl-curl: $what at $url is unreachable ([curl::error_string $c]) and LCL_CURL_REQUIRE_SERVER is set"
+        exit 1
+    }
+    $ok
+}
+
+let _server_up [probe "echo server" "$BASE/test"]
+
+;; Call first in every case that performs a request.
+proc need_server {} {
+    if [not ${::_server_up}] {
+        error "SKIP: no echo server at ${::BASE} (docker compose -f lib/curl-dsl/docker-compose.yml up -d)"
+    }
+}
 
 ;; ============================================================================
 ;; CURL Initialization
@@ -53,7 +82,7 @@ Test::suite "CURL Options" {
 
     Test::case "set_url accepts URL" {
         let c [curl::new]
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
         Test::assert 1
     }
 }
@@ -67,10 +96,11 @@ var _response_body {}
 
 Test::suite "CURL Request Execution" {
     Test::case "GET request returns 200" {
+        need_server
         let c [curl::new]
         curl::set_verbose $c 0
         curl::set_verb $c GET
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
 
         curl::set_write_callback $c [lambda {response} {
             set! _response_received 1
@@ -83,21 +113,24 @@ Test::suite "CURL Request Execution" {
     }
 
     Test::case "write_callback is invoked" {
+        need_server
         ;; Uses state from previous test
         Test::eq $_response_received 1
     }
 
     Test::case "response body is non-empty" {
+        need_server
         Test::not_empty $_response_body
     }
 
     Test::case "POST request returns 200" {
+        need_server
         let c [curl::new]
         curl::set_verbose $c 0
         curl::set_verb $c POST
         curl::set_header $c "Content-Type: application/json"
         curl::set_body $c {{"user": "test", "value": 42}}
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
 
         var post_response {}
         curl::set_write_callback $c [lambda {response} {
@@ -117,33 +150,39 @@ Test::suite "CURL Request Execution" {
 
 var _sse_event_count 0
 var _sse_headers_count 0
+var _sse_last_data {}
+var _sse_last_event {}
 
 Test::suite "CURL SSE and Header Callbacks" {
     Test::case "should receive SSE events from stream" {
+        need_server
         let c [curl::new]
-        curl::set_timeout_ms $c 5000
-        curl::set_verbose $c 1
+        curl::set_timeout_ms $c 3500
+        curl::set_verbose $c 0
         curl::set_verb $c GET
-        curl::set_url $c http://sse.dev/test
+        curl::set_url $c "$BASE/.sse"
 
-        curl::set_sse_callback $c [lambda {response} {
+        curl::set_sse_callback $c [lambda {ev} {
             set! _sse_event_count [+ $_sse_event_count 1]
+            set! _sse_last_data [get $ev data]
+            set! _sse_last_event [get $ev event]
         }]
 
         curl::set_header_callback $c [lambda {hs} {
             set! _sse_headers_count [+ $_sse_headers_count 1]
         }]
 
-        catch {curl::perform $c}
-
-        if [curl::is_timeout $c] {
-            puts "SSE timed out (expected)"
-        } else {
+        ;; the stream never ends (`server`, `request`, then `time`
+        ;; once a second), so the timeout is its normal end
+        let ok [== [catch {curl::perform $c}] 0]
+        if [not [or $ok [curl::is_timeout $c]]] {
             error "SSE error [curl::error_string $c]"
         }
-
-        assert [> $_sse_event_count 0]
-        assert [> $_sse_headers_count 0]
+        Test::eq [curl::get_response_code $c] 200
+        Test::gte $_sse_event_count 3
+        Test::eq [String::trim $_sse_last_event] time
+        Test::not_empty [String::trim $_sse_last_data]
+        Test::gt $_sse_headers_count 0
     }
 }
 
@@ -153,16 +192,18 @@ Test::suite "CURL SSE and Header Callbacks" {
 
 Test::suite "CURL Response Info" {
     Test::case "get_total_time returns positive" {
+        need_server
         let c [curl::new]
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
         curl::perform $c
         let time [curl::get_total_time $c]
         Test::gt $time 0
     }
 
     Test::case "get_response_code returns HTTP status" {
+        need_server
         let c [curl::new]
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
         curl::perform $c
         let code [curl::get_response_code $c]
         Test::gte $code 100
@@ -170,8 +211,9 @@ Test::suite "CURL Response Info" {
     }
 
     Test::case "get_content_type returns content type" {
+        need_server
         let c [curl::new]
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
         curl::perform $c
         let ctype [curl::get_content_type $c]
         Test::not_empty $ctype
@@ -185,11 +227,11 @@ Test::suite "CURL Response Info" {
 Test::suite "CURL Handle Management" {
     Test::case "reset clears handle state" {
         let c [curl::new]
-        curl::set_url $c http://localhost:8080/test
+        curl::set_url $c $BASE/test
         curl::set_header $c "X-Custom: value"
         curl::reset $c
         ;; After reset, should be able to set new options
-        curl::set_url $c http://localhost:8080/other
+        curl::set_url $c $BASE/other
         Test::assert 1
     }
 }

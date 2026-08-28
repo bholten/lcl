@@ -710,7 +710,8 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
 
     {
       lcl_value *read_proc = NULL;
-      if (lcl_get(interp, "process::read", &read_proc) != LCL_OK) {
+
+      if (lcl_get(interp, "::process::read", &read_proc) != LCL_OK) {
         lcl_ref_dec(read_opts);
         free(buf);
         lcl_set_error(interp, "process::read not found");
@@ -741,7 +742,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
       lcl_value *alive_result = NULL;
       long is_alive = 1;
 
-      if (lcl_get(interp, "process::alive?", &alive_proc) == LCL_OK) {
+      if (lcl_get(interp, "::process::alive?", &alive_proc) == LCL_OK) {
         read_args[0] = handle;
 
         if (lcl_call_proc(interp, alive_proc, 1, read_args, &alive_result) ==

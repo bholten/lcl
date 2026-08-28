@@ -1,0 +1,59 @@
+Test::suite "Bench library" {
+    Test::case "runs cases, records results, checks expectations" {
+        Bench::reset
+        Bench::suite "s" {
+            Bench::setup { let items [List::range 0 50] }
+            Bench::case "fast" { var l (); foreach x $items { List::push! l $x } }
+            Bench::case "slow" { var l (); foreach x $items { set! l [List::push $l $x] }; repeat 200 { + 1 1 } }
+            Bench::expect_faster "fast" "slow"
+        }
+        Test::eq [Bench::run #{min_ms 1 batches 1 quiet 1}] 0
+        let r [Bench::results]
+        Test::true [has? $r "s/fast"]
+        Test::true [has? $r "s/slow"]
+        Test::true [> [get [get $r "s/fast"] ns] 0]
+        Test::eq [get [get $r "s/fast"] clones_x10] 0
+        Test::true [> [get [get $r "s/slow"] clones_x10] 0]
+    }
+
+    Test::case "a failed expectation returns 1" {
+        Bench::reset
+        Bench::suite "s2" {
+            Bench::case "a" { repeat 300 { + 1 1 } }
+            Bench::case "b" { + 1 1 }
+            Bench::expect_faster "a" "b"
+        }
+        Test::eq [Bench::run #{min_ms 1 batches 1 quiet 1}] 1
+    }
+
+    Test::case "baseline and filter" {
+        Bench::reset
+        Bench::baseline [dict s3/x [dict ns 1]]
+        Bench::suite "s3" {
+            Bench::case "x" { + 1 1 }
+            Bench::case "y" { + 1 1 }
+        }
+        Test::eq [Bench::run #{min_ms 1 batches 1 quiet 1 filter x}] 0
+        Test::true [has? [Bench::results] "s3/x"]
+        Test::false [has? [Bench::results] "s3/y"]
+    }
+
+    Test::case "the body sees setup bindings and leaves nothing live" {
+        Bench::reset
+        Bench::suite "s4" {
+            Bench::setup { let base 40; proc bench_t_helper {x} { [+ $x 2] } }
+            Bench::case "z" { var acc (); List::push! acc [bench_t_helper $base]; $acc }
+        }
+        Test::eq [Bench::run #{min_ms 1 batches 1 quiet 1}] 0
+        Test::true [< [get [get [Bench::results] "s4/z"] live] 8]
+    }
+
+    Test::case "an error in a body propagates" {
+        Bench::reset
+        Bench::suite "s5" { Bench::case "boom" { error "bench boom" } }
+        Test::eq [catch { Bench::run #{min_ms 1 batches 1 quiet 1} } r err] 1
+        Test::eq $err "bench boom"
+    }
+}
+
+exit [Test::run]

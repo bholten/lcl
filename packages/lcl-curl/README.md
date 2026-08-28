@@ -176,4 +176,26 @@ cmake --build build
 ctest --test-dir build -R lcl-curl
 ```
 
-The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because the test suite uses `puts` (lcl-io) and the `Test::suite` framework (Test lib).
+The `LCL_BUILD_IO` and `LCL_BUILD_TEST_LIB` flags are required because
+the test suite uses `io::getenv` (lcl-io) and the `Test::suite`
+framework (Test lib).
+
+The request cases (GET/POST, SSE, response info) talk to a local
+`jmalloc/echo-server` from `lib/curl-dsl/docker-compose.yml` (port
+8080; it echoes requests and streams Server-Sent Events at `/.sse`):
+
+```bash
+docker compose -f lib/curl-dsl/docker-compose.yml up -d
+ctest --test-dir build -R lcl-curl
+docker compose -f lib/curl-dsl/docker-compose.yml down
+```
+
+Without it those cases `SKIP` (visible in the output, still a passing
+run), so a checkout without Docker is fine. Environment variables:
+
+| Variable | Effect |
+|----------|--------|
+| `LCL_CURL_REQUIRE_SERVER=1` | An unreachable server fails the run instead of skipping -- CI sets this on the Linux rows, where it starts the compose service first |
+| `LCL_CURL_TEST_URL` | Base URL of the server (default `http://localhost:8080`) |
+
+None of the tests leave the machine.
