@@ -679,6 +679,83 @@ static lcl_return_code s_while(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
+/* repeat n body - run body n times in the current scope. The body is
+ * compiled once; break/continue/return behave as in while. Returns
+ * the last body value (or "" when n is 0). */
+static lcl_return_code s_repeat(lcl_interp *interp, int argc,
+                                const lcl_word **args, lcl_value **out) {
+  lcl_program *body_p = NULL;
+  int body_owned = 0;
+  lcl_value *n_v = NULL;
+  lcl_value *last = NULL;
+  long n;
+  long i;
+  lcl_return_code rc;
+
+  if (!lcl_std_chk_argc(interp, "repeat", argc, 2, 2)) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word(interp, args[0], &n_v) != LCL_RC_OK) {
+    lcl_ref_dec(n_v);
+    return LCL_RC_ERR;
+  }
+
+  if (!lcl_std_arg_int(interp, "repeat", n_v, &n)) {
+    lcl_ref_dec(n_v);
+    return LCL_RC_ERR;
+  }
+
+  lcl_ref_dec(n_v);
+
+  if (n < 0) {
+    LCL_ERR_MSG(interp, "repeat: count must be non-negative");
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_std_get_body_program(interp, args[1], "repeat-body", &body_p,
+                               &body_owned) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  for (i = 0; i < n; i++) {
+    if (lcl_step_tick(interp) != LCL_RC_OK) {
+      lcl_std_free_if_owned(body_p, body_owned);
+      lcl_ref_dec(last);
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(last);
+    last = NULL;
+
+    rc = lcl_eval_program(interp, body_p, &last);
+
+    if (rc == LCL_RC_BREAK) {
+      break;
+    }
+
+    if (rc == LCL_RC_CONTINUE) {
+      continue;
+    }
+
+    if (rc == LCL_RC_RETURN) {
+      lcl_std_free_if_owned(body_p, body_owned);
+      *out = last;
+      return LCL_RC_RETURN;
+    }
+
+    if (rc != LCL_RC_OK) {
+      lcl_std_free_if_owned(body_p, body_owned);
+      lcl_ref_dec(last);
+      return rc;
+    }
+  }
+
+  lcl_std_free_if_owned(body_p, body_owned);
+  *out = last ? last : lcl_string_new("");
+  return LCL_RC_OK;
+}
+
 /* for start test next body - Tcl-style for loop */
 static lcl_return_code s_for(lcl_interp *interp, int argc,
                              const lcl_word **args, lcl_value **out) {
@@ -1129,6 +1206,7 @@ void lcl_std_register_control(lcl_interp *interp) {
   lcl_register_spec(interp, "case", s_case);
   lcl_register_spec(interp, "while", s_while);
   lcl_register_spec(interp, "for", s_for);
+  lcl_register_spec(interp, "repeat", s_repeat);
   lcl_register_spec(interp, "foreach", s_foreach);
   lcl_register_spec(interp, "break", s_break);
   lcl_register_spec(interp, "continue", s_continue);

@@ -61,4 +61,4 @@ Test::suite "Load JSON" {
     }
 }
 
-Test::run
+exit [Test::run]

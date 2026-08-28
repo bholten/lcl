@@ -565,3 +565,47 @@ Test::suite "Error Handling" {
 ;; ============================================================================
 ;; Type Inspection (type / repr / String::from)
 ;; ============================================================================
+
+Test::suite "repeat" {
+    Test::case "runs the body n times in the current scope" {
+        var n 0
+        repeat 5 { set! n [+ $n 1] }
+        Test::eq $n 5
+        repeat 0 { set! n 99 }
+        Test::eq $n 5
+        Test::eq [repeat 0 { 1 }] ""
+        Test::eq [repeat 3 { $n }] 5
+    }
+
+    Test::case "bindings made in the body are visible afterwards" {
+        repeat 2 { var seen 1 }
+        Test::eq $seen 1
+    }
+
+    Test::case "break, continue and return work" {
+        var n 0
+        repeat 10 { set! n [+ $n 1]; if [== $n 3] { break } }
+        Test::eq $n 3
+        var evens 0
+        var i 0
+        repeat 6 { set! i [+ $i 1]; if [!= [% $i 2] 0] { continue }; set! evens [+ $evens 1] }
+        Test::eq $evens 3
+        proc first_hit {} { var k 0; repeat 100 { set! k [+ $k 1]; if [== $k 7] { return $k } }; -1 }
+        Test::eq [first_hit] 7
+    }
+
+    Test::case "the body can be a string compiled once" {
+        let body {set! total [+ $total 2]}
+        var total 0
+        repeat 4 $body
+        Test::eq $total 8
+    }
+
+    Test::case "errors" {
+        Test::eq [catch { repeat -1 { 1 } } r err] 1
+        Test::eq $err {repeat: count must be non-negative}
+        Test::eq [catch { repeat x { 1 } } r err] 1
+        Test::eq [catch { repeat 2 { error boom } } r err] 1
+        Test::eq $err boom
+    }
+}

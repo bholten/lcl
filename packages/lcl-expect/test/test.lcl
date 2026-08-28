@@ -64,4 +64,4 @@ Test::suite "expect library" {
 }
 
 
-Test::run
+exit [Test::run]

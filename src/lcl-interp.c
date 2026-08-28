@@ -168,6 +168,12 @@ void lcl_set_step_hook(lcl_interp *interp,
   interp->step_countdown = interp->step_interval;
 }
 
+void lcl_interp_abort(lcl_interp *interp) {
+  if (interp) {
+    interp->interrupted = 1;
+  }
+}
+
 void lcl_set_call_hook(lcl_interp *interp,
                        void (*fn)(lcl_interp *interp, lcl_value *proc,
                                   const char *name, int argc, lcl_value **argv,

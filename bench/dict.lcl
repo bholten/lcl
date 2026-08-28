@@ -1,0 +1,31 @@
+;; 76.4 + the dict-stress workloads: small-dict churn, put at three
+;; sizes (copying vs in place), counters and whole-dict traversal.
+Bench::suite "dict" {
+    Bench::setup {
+        var big #{}
+        var i 0
+        repeat 5000 { put! big "k$i" $i; set! i [+ $i 1] }
+        let d5000 $big
+        var mid #{}
+        set! i 0
+        repeat 500 { put! mid "k$i" $i; set! i [+ $i 1] }
+        let d500 $mid
+        let d5 #{a 1 b 2 c 3 d 4 e 5}
+        let keys100 [List::map [List::range 0 100] [lambda {i} { "k$i" }]]
+    }
+
+    Bench::case "build+discard 5-key dict x1000" { repeat 1000 { let d [dict speed 140 hp 1 r 10 x 0.0 y 0.0]; get $d hp } }
+    Bench::case "put copying 5 keys x1000" { var d $d5; repeat 1000 { set! d [put $d z 1] } }
+    Bench::case "put! 5 keys x1000" { var d $d5; repeat 1000 { put! d z 1 } }
+    Bench::case "put copying 500 keys x100" { var d $d500; repeat 100 { set! d [put $d z 1] } }
+    Bench::case "put! 500 keys x100" { var d $d500; repeat 100 { put! d z 1 } }
+    Bench::case "put copying 5000 keys x20" { var d $d5000; repeat 20 { set! d [put $d z 1] } }
+    Bench::case "put! 5000 keys x20" { var d $d5000; repeat 20 { put! d z 1 } }
+    Bench::case "get in 5000 keys x1000" { repeat 1000 { get $d5000 k4999 } }
+    Bench::case "counter idiom 100 keys x10" { var c #{}; foreach k $keys100 { repeat 10 { put! c $k [+ [get $c $k 0] 1] } } }
+    Bench::case "Dict::map 500" { Dict::map $d500 [lambda {k v} { [+ $v 1] }] }
+    Bench::case "Dict::items 5000 + foreach" { var s 0; foreach kv [Dict::items $d5000] { set! s [+ $s [get $kv 1]] }; $s }
+
+    Bench::expect_faster "put! 500 keys x100" "put copying 500 keys x100" 5
+    Bench::expect_faster "put! 5000 keys x20" "put copying 5000 keys x20" 5
+}

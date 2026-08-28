@@ -1,0 +1,26 @@
+;; The tiny-list functional idiom (lambda + range + map) against
+;; unrolled 2D code, plus the primitives underneath.
+Bench::suite "vec2" {
+    Bench::setup {
+        let a (1.5 2.5)
+        let b (0.5 0.25)
+        proc bench_vadd {a b} { List::map [List::range 0 [len $a]] [lambda {i} { [+ [get $a $i] [get $b $i]] }] }
+        proc bench_vscale {a s} { List::map $a [lambda {x} { [* $x $s] }] }
+        proc bench_vdot {a b} { List::reduce [List::range 0 [len $a]] 0.0 [lambda {acc i} { [+ $acc [* [get $a $i] [get $b $i]]] }] }
+        proc bench_vadd2 {a b} { ([+ [get $a 0] [get $b 0]] [+ [get $a 1] [get $b 1]]) }
+        proc bench_vscale2 {a s} { ([* [get $a 0] $s] [* [get $a 1] $s]) }
+        proc bench_vdot2 {a b} { [+ [* [get $a 0] [get $b 0]] [* [get $a 1] [get $b 1]]] }
+        let id [lambda {x} { $x }]
+    }
+
+    Bench::case "add generic x1000" { repeat 1000 { bench_vadd $a $b } }
+    Bench::case "add unrolled x1000" { repeat 1000 { bench_vadd2 $a $b } }
+    Bench::case "scale generic x1000" { repeat 1000 { bench_vscale $a 2.0 } }
+    Bench::case "scale unrolled x1000" { repeat 1000 { bench_vscale2 $a 2.0 } }
+    Bench::case "dot generic x1000" { repeat 1000 { bench_vdot $a $b } }
+    Bench::case "dot unrolled x1000" { repeat 1000 { bench_vdot2 $a $b } }
+    Bench::case "lambda creation x1000" { repeat 1000 { lambda {x} { $x } } }
+    Bench::case "apply x1000" { repeat 1000 { apply $id 1 } }
+    Bench::case "List::range 0 2 x1000" { repeat 1000 { List::range 0 2 } }
+    Bench::case "get + put on a 2-list x1000" { repeat 1000 { put $a 0 [get $a 1] } }
+}

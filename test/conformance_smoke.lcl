@@ -21,4 +21,4 @@ load test/conformance/hardening.lcl
 load test/conformance/diagnostics.lcl
 load test/conformance/name_resolution.lcl
 
-Test::run
+exit [Test::run]

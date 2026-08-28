@@ -19,7 +19,8 @@ project lcl {
     let ALL_LIBS (-DLCL_BUILD_TEST_LIB=ON
                   -DLCL_BUILD_SH_LIB=ON
                   -DLCL_BUILD_CURL_DSL_LIB=ON
-                  -DLCL_BUILD_DOC_LIB=ON)
+                  -DLCL_BUILD_DOC_LIB=ON
+                  -DLCL_BUILD_BENCH_LIB=ON)
 
     let DEBUG_OPTS (-DLCL_ENABLE_ASAN=ON
                     -DLCL_WERROR=ON
@@ -94,6 +95,16 @@ project lcl {
             set -e
             ctest --test-dir ${lcl::build::outputs} --output-on-failure --parallel 8
             touch ${lcl::test::outputs}
+        }
+    }
+
+    ;; Baselines are recorded from the Release build: the ASan debug
+    ;; build inflates every number roughly tenfold.
+    task bench {
+        inputs $SOURCES
+        depends_on lcl::release
+        run {
+            ${lcl::release::outputs}/lcl bench/run.lcl --baseline bench/baseline.lcl
         }
     }
 

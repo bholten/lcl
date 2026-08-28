@@ -1,0 +1,18 @@
+;; Nested update ergonomics and cost: the status-effects shape.
+Bench::suite "nested" {
+    Bench::setup { let e #{id 1 hp 3 effects #{burn #{ttl 2.0 dps 5} slow #{ttl 1.0 f 0.5}}} }
+
+    Bench::case "3-level get x1000" { repeat 1000 { get [get [get $e effects] burn] ttl } }
+    Bench::case "3-level put chain x1000" { repeat 1000 { put $e effects [put [get $e effects] burn [put [get [get $e effects] burn] ttl 1.5]] } }
+    Bench::case "tick every effect (items + put!) x1000" {
+        repeat 1000 {
+            var fx [get $e effects]
+            foreach kv [Dict::items $fx] {
+                let k [get $kv 0]
+                let v [get $kv 1]
+                put! fx $k [put $v ttl [- [get $v ttl] 0.016]]
+            }
+            put $e effects $fx
+        }
+    }
+}

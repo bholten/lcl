@@ -1,0 +1,30 @@
+;; The spatial-hash tax: building a cell key per entity per frame,
+;; then the grid itself, copying vs in place.
+Bench::suite "keys" {
+    Bench::setup {
+        let cell 32.0
+        var ps ()
+        var i 0
+        repeat 1000 { List::push! ps [dict x [* $i 3.7] y [* $i 1.3]]; set! i [+ $i 1] }
+        let points $ps
+    }
+
+    Bench::case "string key cx,cy x1000" { foreach p $points { let cx [int [/ [get $p x] $cell]]; let cy [int [/ [get $p y] $cell]]; let k "$cx,$cy" } }
+    Bench::case "list key (cx cy) x1000" { foreach p $points { let k ([int [/ [get $p x] $cell]] [int [/ [get $p y] $cell]]) } }
+    Bench::case "spatial hash build 1000 (put! + push)" {
+        var grid #{}
+        foreach p $points {
+            let k "[int [/ [get $p x] $cell]],[int [/ [get $p y] $cell]]"
+            put! grid $k [List::push [get $grid $k ()] $p]
+        }
+    }
+    Bench::case "spatial hash build 1000 (copying)" {
+        var grid #{}
+        foreach p $points {
+            let k "[int [/ [get $p x] $cell]],[int [/ [get $p y] $cell]]"
+            set! grid [put $grid $k [List::push [get $grid $k ()] $p]]
+        }
+    }
+
+    Bench::expect_faster "spatial hash build 1000 (put! + push)" "spatial hash build 1000 (copying)" 2
+}

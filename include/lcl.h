@@ -190,6 +190,18 @@ void lcl_set_module_key_fn(lcl_interp *interp, lcl_module_key_fn fn,
  */
 typedef int (*lcl_step_fn)(lcl_interp *interp, void *userdata);
 
+/*
+ * Request the same sticky abort from inside a C procedure: the
+ * current top-level evaluation fails at the next command with
+ * "evaluation aborted by host", `catch` cannot trap it, and the next
+ * top-level evaluation starts fresh. The calling procedure should
+ * return LCL_RC_ERR itself (with whatever message it likes) so that
+ * the abort is immediate rather than one command late. This is how a
+ * host implements `exit`: record the status, abort, and read the
+ * status back once evaluation has unwound.
+ */
+void lcl_interp_abort(lcl_interp *interp);
+
 void lcl_set_step_hook(lcl_interp *interp, lcl_step_fn fn, void *userdata,
                        unsigned long interval);
 

@@ -508,4 +508,4 @@ namespace LkLive {
     }
 }
 
-Test::run
+exit [Test::run]

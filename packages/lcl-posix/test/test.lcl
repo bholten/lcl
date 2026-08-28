@@ -211,4 +211,4 @@ Test::suite "path parts (posix::dirname, posix::basename)" {
 ;; Run Tests
 ;; ============================================================================
 
-Test::run
+exit [Test::run]

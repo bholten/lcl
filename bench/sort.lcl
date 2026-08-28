@@ -1,0 +1,14 @@
+;; 76.2 -- sort 2,000 span records by an int field through a lambda.
+Bench::suite "sort" {
+    Bench::setup {
+        var rows ()
+        var i 0
+        repeat 2000 { List::push! rows [dict start [% [* $i 7919] 10007] end $i kind span]; set! i [+ $i 1] }
+        let spans $rows
+        let starts [List::map $spans [lambda {r} { get $r start }]]
+    }
+
+    Bench::case "sort_by int field 2000 (lambda)" { List::sort_by $spans [lambda {r} { get $r start }] }
+    Bench::case "sort 2000 ints" { List::sort $starts }
+    Bench::case "sort 2000 numeric strings" { List::sort [List::map $starts [lambda {n} { String::from $n }]] }
+}

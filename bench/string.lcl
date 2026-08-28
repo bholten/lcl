@@ -1,0 +1,23 @@
+;; 76.3 -- substring scans over a ~500-line document.
+Bench::suite "string" {
+    Bench::setup {
+        let doc [String::join [List::map [List::range 0 500] [lambda {i} { "$i: the quick brown fox jumps over the lazy dog" }]] " "]
+        let needles [List::map [List::range 0 50] [lambda {i} { "[* $i 10]: the" }]]
+    }
+
+    Bench::case "find 50 needles" { foreach w $needles { String::find $doc $w } }
+    Bench::case "scan all fox via range slicing" {
+        var rest $doc
+        var count 0
+        while {1} {
+            let i [String::find $rest "fox"]
+            if [== $i -1] { break }
+            set! count [+ $count 1]
+            set! rest [String::range $rest [+ $i 3] [String::length $rest]]
+        }
+        $count
+    }
+    Bench::case "split + join" { String::join [String::split $doc " "] "_" }
+    Bench::case "length x1000" { repeat 1000 { String::length $doc } }
+    Bench::case "concat 1000 pieces" { var s ""; repeat 1000 { set! s "$s." }; String::length $s }
+}
