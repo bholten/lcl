@@ -12,4 +12,56 @@ Test::suite "Time Test Suite" {
     }
 }
 
+Test::suite "Profiler" {
+    Test::case "time::profile reports calls and times per proc" {
+        proc tp_leaf {n} { var i 0; while {< $i $n} { set! i [+ $i 1] }; $i }
+        proc tp_root {} { tp_leaf 200; tp_leaf 300 }
+        let rows [time::profile { tp_root; tp_root }]
+        Test::eq [len $rows] 2
+        var by_name #{}
+        foreach r $rows { set! by_name [put $by_name [get $r name] $r] }
+        Test::eq [get [get $by_name tp_root] calls] 2
+        Test::eq [get [get $by_name tp_leaf] calls] 4
+        ;; the root's inclusive time covers its leaves; its exclusive
+        ;; time does not
+        let root [get $by_name tp_root]
+        let leaf [get $by_name tp_leaf]
+        Test::true [>= [get $root incl_us] [get $leaf incl_us]]
+        Test::true [<= [get $root excl_us] [get $root incl_us]]
+        ;; rows come sorted by exclusive time
+        Test::eq [get [get $rows 0] name] tp_leaf
+        let text [time::profile_format $rows]
+        Test::eq [String::find $text "calls"] [String::find $text "calls"]
+        Test::true [>= [String::find $text "tp_leaf"] 0]
+    }
+
+    Test::case "the body runs in the caller's scope and keeps its error" {
+        let x 41
+        proc tp_id {v} { $v }
+        var seen 0
+        let rows [time::profile { set! seen [tp_id [+ $x 1]] }]
+        Test::eq $seen 42
+        Test::eq [catch { time::profile { tp_id 1; error boom } } r err] 1
+        Test::eq $err boom
+        ;; the failed run released the profiler
+        Test::eq [len [time::profile { tp_id 1 }]] 1
+    }
+
+    Test::case "profile_start!/profile_stop! bracket a region" {
+        proc tp_a {} { 1 }
+        time::profile_start!
+        tp_a
+        tp_a
+        tp_a
+        let rows [time::profile_stop!]
+        Test::eq [get [get $rows 0] calls] 3
+        Test::eq [catch { time::profile_stop! } r err] 1
+        Test::eq $err {profiler is not running}
+        time::profile_start!
+        Test::eq [catch { time::profile_start! } r err] 1
+        Test::eq $err {profiler is already running}
+        time::profile_stop!
+    }
+}
+
 Test::run

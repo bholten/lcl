@@ -88,7 +88,14 @@ lcl_num_class lcl_num_text_classify(const char *s, size_t n);
 lcl_value *lcl_list_new(void);
 lcl_result lcl_list_get(const lcl_value *list, size_t i, lcl_value **out);
 lcl_value *lcl_list_peek(const lcl_value *list, size_t i);
+lcl_value *lcl_value_alloc(void);
+void lcl_stats_note_clone(int is_dict);
+void lcl_stats_read(unsigned long *allocated, unsigned long *freed,
+                    unsigned long *list_clones, unsigned long *dict_clones);
+
 lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value);
+lcl_result lcl_list_pop(lcl_value **list_io, lcl_value **out);
+lcl_result lcl_list_del(lcl_value **list_io, size_t i);
 lcl_result lcl_list_set(lcl_value **list_io, size_t i, lcl_value *value);
 size_t lcl_list_len(const lcl_value *list);
 

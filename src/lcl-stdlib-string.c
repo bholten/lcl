@@ -225,6 +225,25 @@ static lcl_return_code c_is_string(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
+/* String::eq? a b - bytewise string equality (no numeric coercion) */
+static lcl_return_code c_string_eq(lcl_interp *interp, int argc,
+                                   lcl_value **argv, lcl_value **out) {
+  const char *a;
+  const char *b;
+
+  if (!lcl_std_chk_argc(interp, "String::eq?", argc, 2, 2)) {
+    return LCL_RC_ERR;
+  }
+
+  if (!lcl_std_arg_str(interp, "String::eq?", argv[0], &a) ||
+      !lcl_std_arg_str(interp, "String::eq?", argv[1], &b)) {
+    return LCL_RC_ERR;
+  }
+
+  *out = lcl_int_new(strcmp(a, b) == 0 ? 1 : 0);
+  return LCL_RC_OK;
+}
+
 /* string::upper s - return uppercase string */
 static lcl_return_code c_string_upper(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
@@ -626,6 +645,7 @@ void lcl_std_register_string(lcl_interp *interp) {
   lcl_define_take(interp, "String", string_ns);
   lcl_ns_def_take(string_ns, "from",
                   lcl_c_proc_new("String::from", c_string_from));
+  lcl_ns_def_take(string_ns, "eq?", lcl_c_proc_new("String::eq?", c_string_eq));
   lcl_ns_def_take(string_ns, "upper",
                   lcl_c_proc_new("String::upper", c_string_upper));
   lcl_ns_def_take(string_ns, "lower",

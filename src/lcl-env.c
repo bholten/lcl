@@ -154,6 +154,109 @@ static lcl_frame *env_root_frame(lcl_env *env) {
   }
 }
 
+static int def_target_root_path(lcl_interp *interp, int i, lcl_frame *root,
+                                char *buf, size_t cap) {
+  lcl_def_target *t = &interp->def_stack[i];
+  size_t used;
+
+  if (!t->name || !t->overlay) {
+    return 0;
+  }
+
+  if (strstr(t->name, "::") != NULL || t->overlay->parent == root) {
+    if (strlen(t->name) >= cap) {
+      return 0;
+    }
+
+    strcpy(buf, t->name);
+    return 1;
+  }
+
+  if (i == 0 || t->overlay->parent != interp->def_stack[i - 1].overlay) {
+    return 0;
+  }
+
+  if (!def_target_root_path(interp, i - 1, root, buf, cap)) {
+    return 0;
+  }
+
+  used = strlen(buf);
+
+  if (used + 2 + strlen(t->name) >= cap) {
+    return 0;
+  }
+
+  strcpy(buf + used, "::");
+  strcpy(buf + used + 2, t->name);
+  return 1;
+}
+
+static lcl_def_target *find_def_target_for_root(lcl_interp *interp,
+                                                const char *sub,
+                                                const char **suffix_out) {
+  lcl_frame *root = env_root_frame(&interp->env);
+  int i;
+
+  if (!root) {
+    return NULL;
+  }
+
+  for (i = interp->def_depth - 1; i >= interp->def_lookup_floor; i--) {
+    char path[512];
+    size_t n;
+
+    if (!def_target_root_path(interp, i, root, path, sizeof(path))) {
+      continue;
+    }
+
+    n = strlen(path);
+
+    if (strncmp(sub, path, n) == 0 && sub[n] == ':' && sub[n + 1] == ':') {
+      *suffix_out = sub + n + 2;
+      return &interp->def_stack[i];
+    }
+  }
+
+  return NULL;
+}
+
+static lcl_result env_get_from_target(lcl_def_target *target,
+                                      const char *suffix, lcl_value **out,
+                                      lcl_value **walk_start,
+                                      const char **walk_rest) {
+  char part[256];
+  const char *next_rest = NULL;
+  const char *has_more = lcl_ns_split(suffix, part, sizeof(part), &next_rest);
+  const char *part_name = has_more ? part : suffix;
+  lcl_value *first_val = NULL;
+
+  if (!hash_table_get(target->overlay->locals, part_name, &first_val)) {
+    return LCL_ERROR;
+  }
+
+  if (!has_more) {
+    if (first_val->type == LCL_CELL) {
+      lcl_value *inner = NULL;
+
+      if (lcl_cell_get(first_val, &inner) != LCL_OK) {
+        lcl_ref_dec(first_val);
+        return LCL_ERROR;
+      }
+
+      lcl_ref_dec(first_val);
+      *out = inner;
+      return LCL_OK;
+    }
+
+    *out = first_val;
+    return LCL_OK;
+  }
+
+  *walk_start = first_val;
+  *walk_rest = next_rest;
+  return LCL_OK;
+}
+
 lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
                              lcl_value **out) {
   lcl_env *env;
@@ -174,6 +277,28 @@ lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
 
     if (!g || sub[0] == '\0') {
       return LCL_ERROR;
+    }
+
+    {
+      const char *suffix = NULL;
+      lcl_def_target *target = find_def_target_for_root(interp, sub, &suffix);
+
+      if (target) {
+        lcl_value *start = NULL;
+        const char *walk = NULL;
+
+        if (env_get_from_target(target, suffix, out, &start, &walk) != LCL_OK) {
+          return LCL_ERROR;
+        }
+
+        if (!start) {
+          return LCL_OK;
+        }
+
+        current = start;
+        rest = walk;
+        goto walk_rest;
+      }
     }
 
     has_more = (lcl_ns_split(sub, first, sizeof(first), &rest) != NULL);
@@ -205,40 +330,19 @@ lcl_result lcl_env_get_value(lcl_interp *interp, const char *key,
     lcl_def_target *target = find_def_target_for_self(interp, key, &suffix);
 
     if (target) {
-      char part[256];
-      const char *next_rest = NULL;
-      const char *has_more =
-          lcl_ns_split(suffix, part, sizeof(part), &next_rest);
-      const char *part_name = has_more ? part : suffix;
-      lcl_value *first_val = NULL;
+      lcl_value *start = NULL;
+      const char *walk = NULL;
 
-      if (!hash_table_get(target->overlay->locals, part_name, &first_val)) {
+      if (env_get_from_target(target, suffix, out, &start, &walk) != LCL_OK) {
         return LCL_ERROR;
       }
 
-      if (!has_more) {
-        /* If the overlay binding is a cell (created via `var`), follow
-         * to the inner value so `$foo::counter` matches non-builder
-         * semantics where `$foo::counter` dereferences the cell. */
-        if (first_val->type == LCL_CELL) {
-          lcl_value *inner = NULL;
-
-          if (lcl_cell_get(first_val, &inner) != LCL_OK) {
-            lcl_ref_dec(first_val);
-            return LCL_ERROR;
-          }
-
-          lcl_ref_dec(first_val);
-          *out = inner;
-          return LCL_OK;
-        }
-
-        *out = first_val;
+      if (!start) {
         return LCL_OK;
       }
 
-      current = first_val;
-      rest = next_rest;
+      current = start;
+      rest = walk;
       goto walk_rest;
     }
   }

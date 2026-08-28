@@ -52,6 +52,17 @@ lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
 void lcl_std_free_if_owned(lcl_program *p, int owned);
 
 lcl_frame *lcl_std_find_global_frame(lcl_frame *f);
+
+/* In-place mutation forms (`List::push!`, `put!`, ...). */
+lcl_return_code lcl_std_mut_cell(lcl_interp *interp, const char *cmd,
+                                 const lcl_word *name_w, lcl_value **cell_out,
+                                 lcl_value **name_out);
+void lcl_std_mut_begin(lcl_value *cell, lcl_value **work, int *owned);
+void lcl_std_mut_commit(lcl_value *cell, lcl_value *work, int owned);
+void lcl_std_mut_abort(lcl_value *work, int owned);
+int lcl_std_mut_check_cycle(lcl_interp *interp, const char *cmd,
+                            const char *name, lcl_value *cell,
+                            lcl_value *value);
 int lcl_std_all_args_integral(int argc, lcl_value **argv);
 
 int lcl_std_value_to_double(lcl_value *v, double *out);

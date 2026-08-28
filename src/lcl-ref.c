@@ -1,9 +1,42 @@
+#include <stdlib.h>
+
 #include "lcl-compile.h"
 #include "lcl-values.h"
 
 #ifdef DEBUG_REFC
 #include <stdio.h>
 #endif
+
+static unsigned long stats_values_allocated;
+static unsigned long stats_values_freed;
+static unsigned long stats_list_clones;
+static unsigned long stats_dict_clones;
+
+lcl_value *lcl_value_alloc(void) {
+  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+
+  if (v) {
+    stats_values_allocated++;
+  }
+
+  return v;
+}
+
+void lcl_stats_note_clone(int is_dict) {
+  if (is_dict) {
+    stats_dict_clones++;
+  } else {
+    stats_list_clones++;
+  }
+}
+
+void lcl_stats_read(unsigned long *allocated, unsigned long *freed,
+                    unsigned long *list_clones, unsigned long *dict_clones) {
+  *allocated = stats_values_allocated;
+  *freed = stats_values_freed;
+  *list_clones = stats_list_clones;
+  *dict_clones = stats_dict_clones;
+}
 
 lcl_value *lcl_ref_inc(lcl_value *value) {
   if (value) {
@@ -29,6 +62,7 @@ void lcl_ref_dec(lcl_value *value) {
   fprintf(stderr, "DEC %s rc = %d\n", value->str_repr, value->refc);
 #endif
 
+  stats_values_freed++;
   free(value->str_repr);
 
   switch (value->type) {

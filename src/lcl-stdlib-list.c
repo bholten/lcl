@@ -1,3 +1,4 @@
+#include "lcl-eval.h"
 #include "lcl-stdlib-internal.h"
 
 /* list ?value ...? - construct a list from arguments */
@@ -242,6 +243,7 @@ static lcl_return_code c_is_list(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_list_push(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
   lcl_value *copy;
+  int borrowed;
 
   if (!lcl_std_chk_argc(interp, "List::push", argc, 2, 2)) {
     return LCL_RC_ERR;
@@ -251,18 +253,134 @@ static lcl_return_code c_list_push(lcl_interp *interp, int argc,
     return lcl_std_err_expected_got(interp, "List::push", "list", argv[0]);
   }
 
-  copy = lcl_ref_inc(argv[0]);
+  borrowed = (argv[0]->refc == 1);
+  copy = borrowed ? argv[0] : lcl_ref_inc(argv[0]);
 
   if (lcl_list_push(&copy, argv[1]) != LCL_OK) {
     LCL_ERR_MSG(interp, "List::push: out of memory");
-    lcl_ref_dec(copy);
+
+    if (!borrowed) {
+      lcl_ref_dec(copy);
+    }
 
     return LCL_RC_ERR;
   }
 
-  *out = copy;
+  *out = borrowed ? lcl_ref_inc(copy) : copy;
 
   return LCL_RC_OK;
+}
+
+/* List::push! name value - append in place to the list held by var
+ * `name`; returns the list. */
+static lcl_return_code s_list_push_bang(lcl_interp *interp, int argc,
+                                        const lcl_word **args,
+                                        lcl_value **out) {
+  lcl_value *cell = NULL;
+  lcl_value *name_v = NULL;
+  lcl_value *val_v = NULL;
+  lcl_value *work = NULL;
+  lcl_value *inner;
+  const char *name_str;
+  int owned = 0;
+  lcl_return_code rc = LCL_RC_ERR;
+
+  if (!lcl_std_chk_argc(interp, "List::push!", argc, 2, 2)) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_std_mut_cell(interp, "List::push!", args[0], &cell, &name_v) !=
+      LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word(interp, args[1], &val_v) != LCL_RC_OK) {
+    goto done;
+  }
+
+  if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
+    goto done;
+  }
+
+  inner = lcl_cell_peek(cell);
+
+  if (inner->type != LCL_LIST) {
+    lcl_std_err_expected_got(interp, "List::push!", "list", inner);
+    goto done;
+  }
+
+  if (!lcl_std_mut_check_cycle(interp, "List::push!", name_str, cell, val_v)) {
+    goto done;
+  }
+
+  lcl_std_mut_begin(cell, &work, &owned);
+
+  if (lcl_list_push(&work, val_v) != LCL_OK) {
+    lcl_std_mut_abort(work, owned);
+    LCL_ERR_MSG(interp, "List::push!: out of memory");
+    goto done;
+  }
+
+  lcl_std_mut_commit(cell, work, owned);
+  *out = lcl_ref_inc(lcl_cell_peek(cell));
+  rc = LCL_RC_OK;
+
+done:
+  lcl_ref_dec(val_v);
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(cell);
+  return rc;
+}
+
+/* List::pop! name - remove the last element of the list held by var
+ * `name` in place; returns the removed element. */
+static lcl_return_code s_list_pop_bang(lcl_interp *interp, int argc,
+                                       const lcl_word **args, lcl_value **out) {
+  lcl_value *cell = NULL;
+  lcl_value *name_v = NULL;
+  lcl_value *work = NULL;
+  lcl_value *popped = NULL;
+  lcl_value *inner;
+  int owned = 0;
+  lcl_return_code rc = LCL_RC_ERR;
+
+  if (!lcl_std_chk_argc(interp, "List::pop!", argc, 1, 1)) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_std_mut_cell(interp, "List::pop!", args[0], &cell, &name_v) !=
+      LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  inner = lcl_cell_peek(cell);
+
+  if (inner->type != LCL_LIST) {
+    lcl_std_err_expected_got(interp, "List::pop!", "list", inner);
+    goto done;
+  }
+
+  if (lcl_list_len(inner) == 0) {
+    LCL_ERR_MSG(interp, "List::pop!: list is empty");
+    goto done;
+  }
+
+  lcl_std_mut_begin(cell, &work, &owned);
+
+  if (lcl_list_pop(&work, &popped) != LCL_OK) {
+    lcl_std_mut_abort(work, owned);
+    LCL_ERR_MSG(interp, "List::pop!: out of memory");
+    goto done;
+  }
+
+  lcl_std_mut_commit(cell, work, owned);
+  *out = popped;
+  rc = LCL_RC_OK;
+
+done:
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(cell);
+  return rc;
 }
 
 /* list::pop x - return new list without last element */
@@ -1275,6 +1393,10 @@ void lcl_std_register_list(lcl_interp *interp) {
   lcl_ns_def_take(list_ns, "new", lcl_c_proc_new("List::new", c_list));
   lcl_ns_def_take(list_ns, "push", lcl_c_proc_new("List::push", c_list_push));
   lcl_ns_def_take(list_ns, "pop", lcl_c_proc_new("List::pop", c_list_pop));
+  lcl_ns_def_take(list_ns, "push!",
+                  lcl_c_spec_new("List::push!", s_list_push_bang));
+  lcl_ns_def_take(list_ns, "pop!",
+                  lcl_c_spec_new("List::pop!", s_list_pop_bang));
   lcl_ns_def_take(list_ns, "slice",
                   lcl_c_proc_new("List::slice", c_list_slice));
   lcl_ns_def_take(list_ns, "concat",

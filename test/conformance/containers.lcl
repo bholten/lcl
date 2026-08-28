@@ -327,3 +327,115 @@ Test::suite "Dict Operations" {
 ;; ============================================================================
 ;; Control Flow: if/else
 ;; ============================================================================
+
+Test::suite "In-place mutation (! forms)" {
+    Test::case "List::push! appends to the var and returns the list" {
+        var acc ()
+        Test::eq [List::push! acc 1] (1)
+        List::push! acc 2
+        Test::eq $acc (1 2)
+    }
+
+    Test::case "List::pop! returns the element and shrinks the var" {
+        var acc (1 2 3)
+        Test::eq [List::pop! acc] 3
+        Test::eq $acc (1 2)
+        Test::eq [catch { List::pop! acc; List::pop! acc; List::pop! acc } r err] 1
+        Test::eq $err {List::pop!: list is empty}
+        Test::eq $acc ()
+    }
+
+    Test::case "an alias taken before the update is untouched" {
+        var acc (1 2)
+        let snap $acc
+        List::push! acc 3
+        Test::eq $snap (1 2)
+        Test::eq $acc (1 2 3)
+        List::push! acc 4
+        Test::eq $snap (1 2)
+        Test::eq $acc (1 2 3 4)
+        var d #{a 1}
+        let dsnap $d
+        put! d b 2
+        del! d a
+        Test::eq $dsnap #{a 1}
+        Test::eq $d #{b 2}
+    }
+
+    Test::case "put!/del! on a list by index and a dict by key" {
+        var l (1 2 3)
+        Test::eq [put! l 0 x] (x 2 3)
+        Test::eq [del! l 2] (x 2)
+        Test::eq $l (x 2)
+        var d #{}
+        put! d k v
+        Test::eq $d #{k v}
+        del! d missing
+        Test::eq $d #{k v}
+        Test::eq [del! d k] #{}
+    }
+
+    Test::case "the interpolated rendering follows the mutation" {
+        var acc (1)
+        Test::eq [String::from $acc] "1"
+        List::push! acc 2
+        Test::eq [String::from $acc] "1 2"
+        Test::eq "items: $acc" "items: 1 2"
+    }
+
+    Test::case "errors: name must be a var holding the right container" {
+        let frozen ()
+        Test::eq [catch { List::push! frozen 1 } r err] 1
+        Test::eq $err {List::push!: expected cell (declare with 'var'), got list}
+        Test::eq [catch { List::push! nope 1 } r err] 1
+        Test::eq $err {List::push!: undefined variable "nope"}
+        var d #{}
+        Test::eq [catch { List::push! d 1 } r err] 1
+        Test::eq $err {List::push!: expected list, got dict}
+        var n 5
+        Test::eq [catch { put! n 0 x } r err] 1
+        Test::eq $err {put!: expected list or dict, got int}
+        var l (1)
+        Test::eq [catch { put! l 5 x } r err] 1
+        Test::eq $err {put!: index 5 out of range}
+        Test::eq [catch { del! l -1 } r err] 1
+        Test::eq $err {del!: index -1 out of range}
+    }
+
+    Test::case "a value that reaches the var is rejected as a cycle" {
+        var acc ()
+        Test::eq [catch { List::push! acc [lambda {} { $acc }] } r err] 1
+        Test::eq [String::find $err "List::push! acc: update would create a reference cycle"] 0
+        Test::eq $acc ()
+        var d #{}
+        Test::eq [catch { put! d f [lambda {} { $d }] } r err] 1
+        Test::eq $d #{}
+    }
+
+    Test::case "the form works on a var captured by a closure" {
+        var log ()
+        proc record {x} { List::push! log $x }
+        record a
+        record b
+        Test::eq $log (a b)
+    }
+
+    Test::case "accumulating a large list stays cheap" {
+        var acc ()
+        var i 0
+        while {< $i 20000} { List::push! acc $i; set! i [+ $i 1] }
+        Test::eq [len $acc] 20000
+        Test::eq [get $acc 19999] 19999
+        var d #{}
+        set! i 0
+        while {< $i 5000} { put! d "k$i" $i; set! i [+ $i 1] }
+        Test::eq [len $d] 5000
+    }
+
+    Test::case "value-returning forms extend a temporary in place" {
+        Test::eq [List::push [List::push (1) 2] 3] (1 2 3)
+        Test::eq [put [put #{} a 1] b 2] #{a 1 b 2}
+        Test::eq [del [put #{} a 1] a] #{}
+        Test::eq [put [put (0 0) 0 x] 1 y] (x y)
+    }
+}

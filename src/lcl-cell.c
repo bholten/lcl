@@ -419,7 +419,7 @@ int lcl_cell_would_cycle(lcl_value *cell, lcl_value *value) {
 }
 
 lcl_value *lcl_cell_new(lcl_value *init) {
-  lcl_value *c = (lcl_value *)calloc(1, sizeof(*c));
+  lcl_value *c = lcl_value_alloc();
 
   if (!c) {
     return NULL;

@@ -15,7 +15,7 @@
  */
 lcl_value *lcl_opaque_new(void *ptr, const char *type_tag,
                           lcl_finalizer finalizer) {
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
   char *tag_copy = NULL;
 
   if (!v) {

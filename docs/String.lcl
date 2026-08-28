@@ -27,6 +27,20 @@ namespace String {
     ;;; "string"
     proc from {v} {}
 
+    ;;; Return 1 if `a` and `b` are the same bytes, else 0.
+    ;;;
+    ;;; `==` treats numeric text numerically (`"007"` equals `7`);
+    ;;; this is the bytewise comparison for when spelling matters.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::eq? "007" "7"
+    ;;; 0
+    ;;; >> == "007" "7"
+    ;;; 1
+    ;;; >> String::eq? "abc" "abc"
+    ;;; 1
+    proc eq? {a b} {}
+
     ;;; Return `s` uppercased (ASCII).
     ;;;
     ;;; Examples:

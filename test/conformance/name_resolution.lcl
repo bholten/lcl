@@ -519,3 +519,52 @@ Test::suite "spelling equivalence axis: qualified == nested" {
         Test::eq [NrBxN::s::f] b
     }
 }
+
+Test::suite "root references inside the builder" {
+    Test::case "::-rooted member reference resolves while the namespace is being built" {
+        namespace NrRb::cap {
+            proc g {} { return g }
+            proc f {} { ::NrRb::cap::g }
+            var k 1
+            let j 2
+            Test::eq [f] g
+            Test::eq ${::NrRb::cap::k} 1
+            Test::eq ${::NrRb::cap::j} 2
+        }
+        Test::eq [NrRb::cap::f] g
+    }
+
+    Test::case "nested unqualified builders extend the root path" {
+        namespace NrRbN::x {
+            namespace cap {
+                proc g {} { return n }
+                Test::eq [::NrRbN::x::cap::g] n
+            }
+            Test::eq [::NrRbN::x::cap::g] n
+            namespace inner { let z 3 }
+            Test::eq ${::NrRbN::x::inner::z} 3
+        }
+        Test::eq [NrRbN::x::cap::g] n
+    }
+
+    Test::case "re-entry: the builder shadows the stale member" {
+        namespace NrRbR::s { proc g {} { return old } }
+        namespace NrRbR::s {
+            proc g {} { return new }
+            Test::eq [::NrRbR::s::g] new
+        }
+        Test::eq [NrRbR::s::g] new
+    }
+
+    Test::case "an unqualified builder in a proc frame is not root-reachable" {
+        proc p {} {
+            namespace NrRbP { let k 1; Test::eq [catch { ${::NrRbP::k} }] 1 }
+            return done
+        }
+        Test::eq [p] done
+    }
+
+    Test::case "the in-progress namespace itself is not a value" {
+        namespace NrRbV { let k 1; Test::eq [catch { ${::NrRbV} }] 1 }
+    }
+}

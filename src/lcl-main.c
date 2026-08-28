@@ -123,6 +123,71 @@ static void print_version(void) {
   printf("lcl %s\n", lcl_version());
 }
 
+static const char *trace_filter;
+static int trace_depth;
+
+static int trace_wants(const char *name) {
+  const char *p = trace_filter;
+  size_t n = strlen(name);
+
+  if (!p || strcmp(p, "1") == 0 || strcmp(p, "*") == 0) {
+    return 1;
+  }
+
+  while (*p) {
+    const char *end = strchr(p, ',');
+    size_t seg = end ? (size_t)(end - p) : strlen(p);
+
+    if (seg == n && strncmp(p, name, n) == 0) {
+      return 1;
+    }
+
+    if (!end) {
+      break;
+    }
+
+    p = end + 1;
+  }
+
+  return 0;
+}
+
+static void trace_hook(lcl_interp *interp, lcl_value *proc, const char *name,
+                       int argc, lcl_value **argv, int entering,
+                       void *userdata) {
+  int i;
+  (void)interp;
+  (void)proc;
+  (void)userdata;
+
+  if (!trace_wants(name)) {
+    return;
+  }
+
+  if (entering) {
+    fprintf(stderr, "%*s> %s", trace_depth * 2, "", name);
+
+    for (i = 0; i < argc; i++) {
+      const char *a = lcl_value_to_string(argv[i]);
+
+      if (a && strlen(a) > 60) {
+        fprintf(stderr, " %.57s...", a);
+      } else {
+        fprintf(stderr, " %s", a ? a : "?");
+      }
+    }
+
+    fputc('\n', stderr);
+    trace_depth++;
+  } else {
+    if (trace_depth > 0) {
+      trace_depth--;
+    }
+
+    fprintf(stderr, "%*s< %s\n", trace_depth * 2, "", name);
+  }
+}
+
 static lcl_interp *create_interp(void) {
   lcl_interp *interp = lcl_interp_new();
   if (!interp) {
@@ -130,6 +195,13 @@ static lcl_interp *create_interp(void) {
   }
 
   lcl_register_core(interp);
+
+  trace_filter = getenv("LCL_TRACE");
+
+  if (trace_filter && trace_filter[0] != '\0' &&
+      strcmp(trace_filter, "0") != 0) {
+    lcl_set_call_hook(interp, trace_hook, NULL);
+  }
 
 #ifdef LCL_HAVE_CURL
   lcl_register_curl(interp);

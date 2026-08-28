@@ -59,7 +59,7 @@ lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value) {
 
 lcl_value *lcl_ns_new(const char *qname) {
   hash_table *h;
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
 
   if (!v) {
     return NULL;

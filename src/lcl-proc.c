@@ -562,39 +562,6 @@ static int name_set_add(name_set *s, const char *name) {
   return name_set_add_ex(s, name, 0);
 }
 
-static void collect_free_vars_program(const lcl_program *prog, name_set *vars);
-
-static void collect_free_vars_word(const lcl_word *w, name_set *vars) {
-  int i;
-
-  if (!w) {
-    return;
-  }
-
-  for (i = 0; i < w->np; i++) {
-    lcl_word_piece *wp = &w->wp[i];
-    switch (wp->kind) {
-    case LCL_WP_VAR: name_set_add(vars, wp->as.var.name); break;
-    case LCL_WP_SUBCMD:
-      collect_free_vars_program(wp->as.sub.program, vars);
-      break;
-    case LCL_WP_LIT: break;
-    }
-  }
-}
-
-static int word_is_literal(const lcl_word *w, const char *s) {
-  if (!w || w->np != 1) {
-    return 0;
-  }
-
-  if (w->wp[0].kind != LCL_WP_LIT) {
-    return 0;
-  }
-
-  return strcmp(w->wp[0].as.lit.s, s) == 0;
-}
-
 static const char *word_get_literal(const lcl_word *w) {
   if (!w || w->np != 1) {
     return NULL;
@@ -607,74 +574,276 @@ static const char *word_get_literal(const lcl_word *w) {
   return w->wp[0].as.lit.s;
 }
 
-static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
+typedef struct {
+  name_set *vars;
+  name_set bound;
+} scan_ctx;
+
+enum { SCAN_CODE, SCAN_DATA };
+
+static void scan_program(const lcl_program *prog, scan_ctx *ctx, int mode);
+
+static void bound_truncate(scan_ctx *ctx, int mark) {
+  while (ctx->bound.count > mark) {
+    free(ctx->bound.names[--ctx->bound.count]);
+  }
+}
+
+static void bound_add(scan_ctx *ctx, const char *name) {
+  if (name && name[0] != '\0') {
+    name_set_add(&ctx->bound, name);
+  }
+}
+
+/* Add `name` as a free variable unless its root segment is bound
+ * locally at this point of the scan. */
+static void free_add(scan_ctx *ctx, const char *name, int force_root) {
+  char root[256];
+  const char *sep;
+
+  if (!name || name[0] == '\0') {
+    return;
+  }
+
+  if (name[0] == ':' && name[1] == ':') {
+    return;
+  }
+
+  sep = strstr(name, "::");
+
+  if (sep) {
+    size_t n = (size_t)(sep - name);
+
+    if (n == 0 || n >= sizeof(root)) {
+      return;
+    }
+
+    memcpy(root, name, n);
+    root[n] = '\0';
+
+    if (name_set_contains(&ctx->bound, root)) {
+      return;
+    }
+  } else if (name_set_contains(&ctx->bound, name)) {
+    return;
+  }
+
+  name_set_add_ex(ctx->vars, name, force_root);
+}
+
+static void scan_word(const lcl_word *w, scan_ctx *ctx, int mode) {
   int i;
+
+  if (!w) {
+    return;
+  }
+
+  for (i = 0; i < w->np; i++) {
+    lcl_word_piece *wp = &w->wp[i];
+
+    switch (wp->kind) {
+    case LCL_WP_VAR: free_add(ctx, wp->as.var.name, 0); break;
+    case LCL_WP_SUBCMD: scan_program(wp->as.sub.program, ctx, SCAN_CODE); break;
+    case LCL_WP_LIT: break;
+    }
+  }
+
+  if (w->compiled) {
+    scan_program(w->compiled, ctx, mode);
+  }
+}
+
+static void bind_param_names(scan_ctx *ctx, const char *text) {
+  const char *p = text;
+
+  while (*p) {
+    char name[256];
+    size_t n = 0;
+
+    while (*p && isspace((unsigned char)*p)) {
+      p++;
+    }
+
+    if (!*p) {
+      break;
+    }
+
+    if (*p == '(') {
+      int depth = 1;
+      const char *q = p + 1;
+
+      while (*q && isspace((unsigned char)*q)) {
+        q++;
+      }
+
+      while (*q && !isspace((unsigned char)*q) && *q != ')' &&
+             n + 1 < sizeof(name)) {
+        name[n++] = *q++;
+      }
+
+      p++;
+
+      while (*p && depth > 0) {
+        if (*p == '(') {
+          depth++;
+        } else if (*p == ')') {
+          depth--;
+        }
+        p++;
+      }
+    } else {
+      if (*p == '*') {
+        p++;
+      }
+
+      while (*p && !isspace((unsigned char)*p) && n + 1 < sizeof(name)) {
+        name[n++] = *p++;
+      }
+    }
+
+    name[n] = '\0';
+    bound_add(ctx, name);
+  }
+}
+
+static void scan_body_with_names(scan_ctx *ctx, const lcl_word *names_word,
+                                 int params_grammar, const lcl_word *body) {
+  int mark = ctx->bound.count;
+  const char *text = word_get_literal(names_word);
+
+  if (names_word) {
+    scan_word(names_word, ctx, SCAN_DATA);
+  }
+
+  if (text) {
+    if (params_grammar) {
+      bind_param_names(ctx, text);
+    } else {
+      bound_add(ctx, text);
+    }
+  }
+
+  scan_word(body, ctx, SCAN_CODE);
+  bound_truncate(ctx, mark);
+}
+
+static void scan_command(const lcl_command *cmd, scan_ctx *ctx) {
+  const char *cmd_name = cmd->argc >= 1 ? word_get_literal(&cmd->w[0]) : NULL;
   int j;
+
+  if (cmd_name) {
+    if ((strcmp(cmd_name, "let") == 0 || strcmp(cmd_name, "var") == 0) &&
+        cmd->argc >= 3) {
+      free_add(ctx, cmd_name, 0);
+
+      for (j = 2; j < cmd->argc; j++) {
+        scan_word(&cmd->w[j], ctx, SCAN_CODE);
+      }
+
+      bound_add(ctx, word_get_literal(&cmd->w[1]));
+      return;
+    }
+
+    if ((strcmp(cmd_name, "proc") == 0 || strcmp(cmd_name, "macro") == 0) &&
+        cmd->argc == 4) {
+      free_add(ctx, cmd_name, 0);
+      bound_add(ctx, word_get_literal(&cmd->w[1]));
+      scan_body_with_names(ctx, &cmd->w[2], 1, &cmd->w[3]);
+      return;
+    }
+
+    if (strcmp(cmd_name, "lambda") == 0 && cmd->argc == 3) {
+      free_add(ctx, cmd_name, 0);
+      scan_body_with_names(ctx, &cmd->w[1], 1, &cmd->w[2]);
+      return;
+    }
+
+    if (strcmp(cmd_name, "foreach") == 0 && cmd->argc == 4) {
+      free_add(ctx, cmd_name, 0);
+      scan_word(&cmd->w[2], ctx, SCAN_CODE);
+      scan_body_with_names(ctx, &cmd->w[1], 0, &cmd->w[3]);
+      return;
+    }
+
+    if (strcmp(cmd_name, "catch") == 0 && cmd->argc >= 2) {
+      free_add(ctx, cmd_name, 0);
+      scan_word(&cmd->w[1], ctx, SCAN_CODE);
+
+      for (j = 2; j < cmd->argc; j++) {
+        bound_add(ctx, word_get_literal(&cmd->w[j]));
+      }
+
+      return;
+    }
+
+    free_add(ctx, cmd_name, 0);
+
+    if (cmd->argc >= 2) {
+      const char *narg = word_get_literal(&cmd->w[1]);
+
+      if (narg && narg[0] != '\0') {
+        if (strcmp(cmd_name, "set!") == 0 ||
+            strcmp(cmd_name, "macroexpand") == 0 ||
+            strcmp(cmd_name, "put!") == 0 || strcmp(cmd_name, "del!") == 0 ||
+            strcmp(cmd_name, "List::push!") == 0 ||
+            strcmp(cmd_name, "List::pop!") == 0) {
+          /* forms whose first argument names a binding */
+          free_add(ctx, narg, 0);
+        } else if (strcmp(cmd_name, "import") == 0) {
+          free_add(ctx, narg, 1);
+        } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3) {
+          free_add(ctx, narg, 1);
+        }
+      } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3 &&
+                 cmd->w[1].np >= 1 && cmd->w[1].wp[0].kind == LCL_WP_LIT) {
+        const char *lead = cmd->w[1].wp[0].as.lit.s;
+
+        if (lead && strstr(lead, "::") != NULL) {
+          free_add(ctx, lead, 1);
+        }
+      }
+    }
+  }
+
+  for (j = 0; j < cmd->argc; j++) {
+    scan_word(&cmd->w[j], ctx, SCAN_CODE);
+  }
+}
+
+static void scan_program(const lcl_program *prog, scan_ctx *ctx, int mode) {
+  int mark;
+  int i;
 
   if (!prog) {
     return;
   }
 
+  mark = ctx->bound.count;
+
   for (i = 0; i < prog->ncmd; i++) {
-    lcl_command *cmd = &prog->cmd[i];
+    const lcl_command *cmd = &prog->cmd[i];
 
-    /* Bugfix: Special case: set! command - capture the variable name
-       being set */
-    if (cmd->argc >= 2 && word_is_literal(&cmd->w[0], "set!")) {
-      const char *var_name = word_get_literal(&cmd->w[1]);
-      if (var_name) {
-        name_set_add(vars, var_name);
+    if (mode == SCAN_DATA) {
+      int j;
+
+      for (j = 0; j < cmd->argc; j++) {
+        scan_word(&cmd->w[j], ctx, SCAN_DATA);
       }
-    }
-
-    /* Bugfix:
-     *
-     * Capture command names (first word) - this allows procs to call
-     * other procs by name within namespaces. If the name isn't in the
-     * environment, the capture will simply be skipped later in
-     * lcl_build_upvalues. */
-    if (cmd->argc >= 1) {
-      const char *cmd_name = word_get_literal(&cmd->w[0]);
-
-      if (cmd_name) {
-        name_set_add(vars, cmd_name);
-
-        if (cmd->argc >= 2) {
-          const char *narg = word_get_literal(&cmd->w[1]);
-
-          if (narg && narg[0] != '\0') {
-            if (strcmp(cmd_name, "set!") == 0 ||
-                strcmp(cmd_name, "macroexpand") == 0) {
-              name_set_add(vars, narg);
-            } else if (strcmp(cmd_name, "import") == 0) {
-              name_set_add_ex(vars, narg, 1);
-            } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3) {
-              name_set_add_ex(vars, narg, 1);
-            }
-          } else if (strcmp(cmd_name, "namespace") == 0 && cmd->argc >= 3 &&
-                     cmd->w[1].np >= 1 && cmd->w[1].wp[0].kind == LCL_WP_LIT) {
-            const char *lead = cmd->w[1].wp[0].as.lit.s;
-
-            if (lead && strstr(lead, "::") != NULL) {
-              name_set_add_ex(vars, lead, 1);
-            }
-          }
-        }
-      }
-    }
-
-    for (j = 0; j < cmd->argc; j++) {
-      lcl_word *w = &cmd->w[j];
-      collect_free_vars_word(w, vars);
-
-      /* Scan pre-compiled braced bodies for variables. Braced words
-       * are pre-compiled at parse time so the upvalue scanner can see
-       * variables inside code bodies (eval, foreach, while, etc.). */
-      if (w->compiled) {
-        collect_free_vars_program(w->compiled, vars);
-      }
+    } else {
+      scan_command(cmd, ctx);
     }
   }
+
+  bound_truncate(ctx, mark);
+}
+
+static void collect_free_vars_program(const lcl_program *prog, name_set *vars) {
+  scan_ctx ctx;
+
+  ctx.vars = vars;
+  name_set_init(&ctx.bound);
+  scan_program(prog, &ctx, SCAN_CODE);
+  name_set_free(&ctx.bound);
 }
 
 static int is_param_name(const lcl_param_spec *pspec, const char *name) {
@@ -973,7 +1142,7 @@ lcl_value *lcl_proc_new(const char *self_name, lcl_upvalue *upvals, int nupvals,
 
   p->body = body;
 
-  v = (lcl_value *)calloc(1, sizeof(*v));
+  v = lcl_value_alloc();
 
   if (!v) {
     int i;
