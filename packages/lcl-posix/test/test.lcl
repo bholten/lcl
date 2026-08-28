@@ -19,7 +19,7 @@ Test::suite "Working Directory" {
     Test::case "chdir and getcwd round-trip" {
         let original [posix::getcwd]
         posix::chdir /tmp
-        Test::eq [posix::getcwd] /tmp
+        Test::eq [posix::getcwd] [posix::realpath /tmp] ;; realpath for mac, which symlinks /tmp
         posix::chdir $original
         Test::eq [posix::getcwd] $original
     }

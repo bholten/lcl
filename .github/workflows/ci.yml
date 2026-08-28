@@ -79,9 +79,31 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Start lcl-curl echo server (Linux)
+        if: runner.os == 'Linux' && matrix.package_set == 'linux-full'
+        run: |
+          docker compose -f lib/curl-dsl/docker-compose.yml up -d
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/test >/dev/null; then
+              echo "echo server up after ${i}s"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "echo server did not come up"
+              docker compose -f lib/curl-dsl/docker-compose.yml logs
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "LCL_CURL_REQUIRE_SERVER=1" >> "$GITHUB_ENV"
+
       - name: Run tests (ctest)
         working-directory: build
         run: ctest --output-on-failure
+
+      - name: Stop lcl-curl echo server (Linux)
+        if: always() && runner.os == 'Linux' && matrix.package_set == 'linux-full'
+        run: docker compose -f lib/curl-dsl/docker-compose.yml down
 
   install-verify:
     name: install / consume via find_package

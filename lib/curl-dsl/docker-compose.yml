@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   echo-server:
     image: jmalloc/echo-server:0.3.4

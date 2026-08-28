@@ -43,8 +43,10 @@ Test::suite "process::run" {
     }
 
     Test::case "working directory" {
-        let r [process::run (pwd) #{cwd /tmp}]
-        Test::eq [get $r stdout] "/tmp\n"
+        ;; `/`, not `/tmp`: on macOS /tmp is a symlink to /private/tmp,
+        ;; so pwd would report the resolved path
+        let r [process::run (pwd) #{cwd /}]
+        Test::eq [get $r stdout] "/\n"
     }
 }
 
