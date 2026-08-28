@@ -96,7 +96,17 @@ lcl -c 'puts [+ 1 2 3]'
 # Read script from stdin
 echo 'puts hello' | lcl -
 cat script.lcl | lcl -
+
+# Arguments after the script (or after the -c code) are the list $argv;
+# `exit ?status?` ends the script with that status (0 by default)
+lcl tool.lcl --verbose input.txt      # $argv = (--verbose input.txt)
+lcl -c 'exit [len $argv]' a b         # exit status 2
 ```
+
+`exit` is provided by the CLI, not the core: it aborts evaluation the
+way a host budget does (`catch` cannot resume the script), frees the
+interpreter normally, and returns the status. Test runners end with
+`exit [Test::run]` so a failing suite fails the process.
 
 ## Quick Start
 
@@ -365,6 +375,42 @@ LCL_TRACE=Vec::norm,update lcl ...  # only these names
 Both are built on `lcl_set_call_hook` (see Embedding), so a host can
 install its own profiler or tracer.
 
+### Benchmarks (Bench)
+
+The optional `Bench` library (`lib/bench`, `-DLCL_BUILD_BENCH_LIB=ON`,
+needs `lcl-time`) is the Test library's shape applied to timing:
+
+```tcl
+Bench::suite "list" {
+    Bench::setup { let items [List::range 0 1000] }          ;; once per case, untimed
+    Bench::case "push copying" { var out (); foreach x $items { set! out [List::push $out $x] } }
+    Bench::case "push!"        { var out (); foreach x $items { List::push! out $x } }
+    Bench::expect_faster "push!" "push copying" 5           ;; checked after measuring
+}
+exit [Bench::run]      ;; or Bench::run #{filter push min_ms 200 batches 5 profile 1 save bench/baseline.lcl}
+```
+
+Each body is compiled once and run in batches through `repeat`, in a
+fresh frame that closes over the setup bindings; batch sizes double
+until a batch takes `min_ms`. A row reports the median and minimum
+ns/iteration over the batches, the copy-on-write clones per iteration
+and the live values a batch leaves behind (both from `Interp::stats`),
+and the change against a baseline loaded with `Bench::baseline`:
+
+```
+Bench: list
+  push copying x1000       1543.2 us  min 1520.1 us  clones/iter   1000.0  live      0   +2.1% vs baseline
+  push! x1000               101.7 us  min   99.8 us  clones/iter      0.0  live      0  -98.1% vs baseline
+  ok: push! x1000 (101.7 us) vs push copying x1000 (1543.2 us)
+```
+
+The repo's workloads live in `bench/` (`lcl bench/run.lcl --baseline
+bench/baseline.lcl`, `--smoke` for a quick pass, `--profile` for a
+`time::profile` table under each row, `--save file` to record a new
+baseline); `bench/BASELINE.md` keeps the history. `ctest` runs the
+workloads once in smoke mode so they cannot bit-rot; only the
+copy-vs-in-place ratios are asserted, never absolute times.
+
 ### Documentation (Doc)
 
 The optional `Doc` library (`lib/doc`, `-DLCL_BUILD_DOC_LIB=ON`) is
@@ -446,6 +492,11 @@ if [< $x 0] {
         puts "positive"
     }
 }
+
+;; repeat - run a body n times (compiled once; break/continue/return
+;; work as in while; the last body value is returned)
+var hits 0
+repeat 3 { set! hits [+ $hits 1] }
 
 ;; cond - multi-branch conditional (like Scheme/Lisp)
 ;; Evaluates conditions in order, runs first truthy branch
@@ -1145,7 +1196,9 @@ every user-proc entry and exit with the invoked name and evaluated
 arguments -- `time::profile` and the CLI's `LCL_TRACE` are both
 clients of it, and `lcl_get_call_hook` lets a temporary installer
 restore the previous one. `lcl_get_stats` returns the process-wide
-value/clone counters behind `Interp::stats`.
+value/clone counters behind `Interp::stats`. `lcl_interp_abort`
+triggers the same sticky abort from inside a C procedure -- it is how
+the CLI implements `exit`.
 
 To consume Lcl from your own CMake project after `cmake --install`:
 

@@ -49,6 +49,7 @@ option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
 option(LCL_BUILD_DOC_LIB "Build Lcl with the Doc library" OFF)
+option(LCL_BUILD_BENCH_LIB "Build Lcl with the Bench library (needs LCL_BUILD_TIME)" OFF)
 
 # True when Lcl is the top-level CMake project (i.e. the user invoked
 # cmake on this directory directly, not as a subproject). Package
@@ -485,6 +486,25 @@ if(LCL_BUILD_DOC_LIB)
   endif()
 endif()
 
+if(LCL_BUILD_BENCH_LIB)
+  if(NOT LCL_BUILD_TIME)
+    message(FATAL_ERROR "LCL_BUILD_BENCH_LIB requires LCL_BUILD_TIME=ON (Bench uses time::monotonic_us)")
+  endif()
+
+  lcl_embed_file(
+    INPUT  lib/bench/src/Bench.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/bench-lib-data.h
+    SYMBOL lib_bench_src_Bench_lcl
+    TARGET generate_bench_lib_data
+  )
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_bench_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_BENCH_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
 if(LCL_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
@@ -550,6 +570,34 @@ if(LCL_BUILD_TESTS)
         NAME doc-lib
         COMMAND $<TARGET_FILE:lcl-cli>
                 "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/test.lcl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      )
+    endif()
+
+    add_test(
+      NAME cli-argv
+      COMMAND $<TARGET_FILE:lcl-cli> -c "puts $argv" a b
+    )
+    set_tests_properties(cli-argv PROPERTIES PASS_REGULAR_EXPRESSION "^a b")
+    add_test(
+      NAME cli-exit-status
+      COMMAND sh -c "$<TARGET_FILE:lcl-cli> -c 'catch { exit 7 }; puts unreachable'; test $? -eq 7"
+    )
+
+    if(LCL_BUILD_BENCH_LIB)
+      add_test(
+        NAME bench-lib
+        COMMAND $<TARGET_FILE:lcl-cli>
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/bench/test/test.lcl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      )
+
+      # Runs every workload briefly so they cannot bit-rot; timing
+      # numbers are not asserted, only the copy-vs-in-place ratios.
+      add_test(
+        NAME bench-smoke
+        COMMAND $<TARGET_FILE:lcl-cli>
+                "${CMAKE_CURRENT_SOURCE_DIR}/bench/run.lcl" --smoke
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
     endif()

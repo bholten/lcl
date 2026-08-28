@@ -249,4 +249,4 @@ Test::suite "sh::sleep" {
     }
 }
 
-Test::run
+exit [Test::run]

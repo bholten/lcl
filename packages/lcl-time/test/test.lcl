@@ -64,4 +64,4 @@ Test::suite "Profiler" {
     }
 }
 
-Test::run
+exit [Test::run]

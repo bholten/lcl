@@ -178,4 +178,4 @@ Test::suite "File Handle Operations" {
 ;; Run Tests
 ;; ============================================================================
 
-Test::run
+exit [Test::run]

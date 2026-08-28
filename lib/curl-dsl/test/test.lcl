@@ -42,4 +42,4 @@ Test::suite "curl dsl" {
     }
 }
 
-Test::run
+exit [Test::run]

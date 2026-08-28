@@ -140,4 +140,4 @@ Test::suite "process::spawn" {
     }
 }
 
-Test::run
+exit [Test::run]

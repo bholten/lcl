@@ -198,4 +198,4 @@ Test::suite "CURL Handle Management" {
 ;; Run Tests
 ;; ============================================================================
 
-Test::run
+exit [Test::run]

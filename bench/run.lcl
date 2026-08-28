@@ -1,0 +1,48 @@
+;; Lcl benchmark runner. Run from the repo root:
+;;   ./build/lcl bench/run.lcl [--filter text] [--baseline file] [--save file]
+;;                             [--smoke] [--profile] [--min-ms N] [--batches N]
+;; Needs a CLI built with LCL_BUILD_BENCH_LIB (and so LCL_BUILD_TIME);
+;; --save needs LCL_BUILD_IO.
+
+var opts #{}
+var i 0
+let n [len $argv]
+while {< $i $n} {
+    let a [get $argv $i]
+    if [String::eq? $a "--smoke"] {
+        put! opts min_ms 20
+        put! opts batches 2
+    } else { if [String::eq? $a "--profile"] {
+        put! opts profile 1
+    } else { if [String::eq? $a "--filter"] {
+        set! i [+ $i 1]
+        put! opts filter [get $argv $i]
+    } else { if [String::eq? $a "--baseline"] {
+        set! i [+ $i 1]
+        load [get $argv $i]
+    } else { if [String::eq? $a "--save"] {
+        set! i [+ $i 1]
+        put! opts save [get $argv $i]
+    } else { if [String::eq? $a "--min-ms"] {
+        set! i [+ $i 1]
+        put! opts min_ms [int [get $argv $i]]
+    } else { if [String::eq? $a "--batches"] {
+        set! i [+ $i 1]
+        put! opts batches [int [get $argv $i]]
+    } else {
+        puts {usage: lcl bench/run.lcl [--filter text] [--baseline file] [--save file] [--smoke] [--profile] [--min-ms N] [--batches N]}
+        exit 2
+    }}}}}}}
+    set! i [+ $i 1]
+}
+
+load bench/list.lcl
+load bench/dict.lcl
+load bench/records.lcl
+load bench/nested.lcl
+load bench/keys.lcl
+load bench/sort.lcl
+load bench/string.lcl
+load bench/vec.lcl
+
+exit [Bench::run $opts]

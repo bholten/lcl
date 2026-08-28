@@ -76,6 +76,14 @@ static const lcl_embedded_lib curl_dsl_lib = {
     sizeof(lib_curl_dsl_src_curl_dsl_lcl)};
 #endif
 
+#ifdef LCL_HAVE_BENCH_LIB
+#include "bench-lib-data.h"
+
+static const lcl_embedded_lib bench_lib = {"lib/bench/src/Bench.lcl",
+                                           lib_bench_src_Bench_lcl,
+                                           sizeof(lib_bench_src_Bench_lcl)};
+#endif
+
 #ifdef LCL_HAVE_DOC_LIB
 #include "doc-lib-data.h"
 
@@ -188,6 +196,52 @@ static void trace_hook(lcl_interp *interp, lcl_value *proc, const char *name,
   }
 }
 
+static int exit_requested;
+static int exit_status;
+
+static lcl_return_code c_exit(lcl_interp *interp, int argc, lcl_value **argv,
+                              lcl_value **out) {
+  long code = 0;
+  (void)out;
+
+  if (argc > 1) {
+    lcl_set_error(interp, "exit: expected at most 1 argument");
+    return LCL_RC_ERR;
+  }
+
+  if (argc == 1 && lcl_value_to_int(argv[0], &code) != LCL_OK) {
+    lcl_set_error(interp, "exit: expected integer status");
+    return LCL_RC_ERR;
+  }
+
+  exit_requested = 1;
+  exit_status = (int)(code & 0xff);
+  lcl_interp_abort(interp);
+  lcl_set_error(interp, "exit");
+  return LCL_RC_ERR;
+}
+
+/* `argv`: the arguments after the script (or after the -c code). */
+static void define_argv(lcl_interp *interp, int argc, char **argv, int from) {
+  lcl_value *list = lcl_list_new();
+  int i;
+
+  if (!list) {
+    return;
+  }
+
+  for (i = from; i < argc; i++) {
+    lcl_value *s = lcl_string_new(argv[i]);
+
+    if (s) {
+      lcl_list_push(&list, s);
+      lcl_ref_dec(s);
+    }
+  }
+
+  lcl_define_take(interp, "argv", list);
+}
+
 static lcl_interp *create_interp(void) {
   lcl_interp *interp = lcl_interp_new();
   if (!interp) {
@@ -195,6 +249,7 @@ static lcl_interp *create_interp(void) {
   }
 
   lcl_register_core(interp);
+  lcl_register_proc(interp, "exit", c_exit);
 
   trace_filter = getenv("LCL_TRACE");
 
@@ -274,6 +329,12 @@ static lcl_interp *create_interp(void) {
   }
 #endif
 
+#ifdef LCL_HAVE_BENCH_LIB
+  if (lcl_register_embedded_lib(interp, &bench_lib) != LCL_OK) {
+    fprintf(stderr, "Warning: Failed to load bench library\n");
+  }
+#endif
+
   return interp;
 }
 
@@ -307,6 +368,7 @@ int main(int argc, char **argv) {
       return 1;
     }
 
+    define_argv(interp, argc, argv, 3);
     rc = lcl_eval_string(interp, argv[2], &result);
   }
 
@@ -319,13 +381,15 @@ int main(int argc, char **argv) {
       return 1;
     }
 
+    define_argv(interp, argc, argv, 2);
     rc = lcl_eval_string(interp, src, &result);
     free(src);
   } else {
+    define_argv(interp, argc, argv, 2);
     rc = lcl_eval_file(interp, argv[1], &result);
   }
 
-  if (rc != LCL_RC_OK) {
+  if (rc != LCL_RC_OK && !exit_requested) {
     const char *err_file = lcl_interp_error_file(interp);
     const char *err_msg = lcl_interp_error_msg(interp);
     fprintf(stderr, "Error at %s:%d", err_file ? err_file : "<unknown>",
@@ -343,6 +407,10 @@ int main(int argc, char **argv) {
   }
 
   lcl_interp_free(interp);
+
+  if (exit_requested) {
+    return exit_status;
+  }
 
   return rc == LCL_RC_OK ? 0 : 1;
 }

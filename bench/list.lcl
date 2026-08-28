@@ -1,0 +1,19 @@
+;; 76.1 -- accumulation: the copying idiom against the in-place forms.
+Bench::suite "list" {
+    Bench::setup { let items [List::range 0 1000] }
+
+    Bench::case "push copying x1000" { var out (); foreach x $items { set! out [List::push $out $x] } }
+    Bench::case "push! x1000" { var out (); foreach x $items { List::push! out $x } }
+    Bench::case "pop copying x1000" { var l $items; repeat 1000 { set! l [List::pop $l] } }
+    Bench::case "pop! x1000" { var l $items; repeat 1000 { List::pop! l } }
+    Bench::case "del copying index 0 x200" { var l [List::range 0 200]; repeat 200 { set! l [del $l 0] } }
+    Bench::case "del! index 0 x200" { var l [List::range 0 200]; repeat 200 { del! l 0 } }
+    Bench::case "List::map 1000" { List::map $items [lambda {x} { [+ $x 1] }] }
+    Bench::case "List::filter 1000" { List::filter $items [lambda {x} { [> $x 500] }] }
+    Bench::case "foreach sum 1000" { var s 0; foreach x $items { set! s [+ $s $x] }; $s }
+    Bench::case "spread concat 1000+1000" { (@$items @$items) }
+
+    Bench::expect_faster "push! x1000" "push copying x1000" 5
+    Bench::expect_faster "pop! x1000" "pop copying x1000" 5
+    Bench::expect_faster "del! index 0 x200" "del copying index 0 x200" 2
+}

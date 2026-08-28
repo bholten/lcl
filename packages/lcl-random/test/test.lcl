@@ -155,4 +155,4 @@ Test::suite "xoshiro: handles" {
     }
 }
 
-Test::run
+exit [Test::run]
