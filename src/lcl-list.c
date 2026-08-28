@@ -1,7 +1,8 @@
 #include "lcl-values.h"
+#include <string.h>
 
 lcl_value *lcl_list_new(void) {
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
 
   if (!v) {
     return NULL;
@@ -90,6 +91,7 @@ static lcl_value *lcl_list_clone_shallow(lcl_value *src) {
     return NULL;
   }
 
+  lcl_stats_note_clone(0);
   n = src->as.list.len;
 
   if (n) {
@@ -135,6 +137,70 @@ lcl_result lcl_list_push(lcl_value **list_io, lcl_value *value) {
   }
 
   list->as.list.items[list->as.list.len++] = lcl_ref_inc(value);
+  free(list->str_repr);
+  list->str_repr = NULL;
+
+  return LCL_OK;
+}
+
+lcl_result lcl_list_pop(lcl_value **list_io, lcl_value **out) {
+  lcl_value *list = *list_io;
+
+  if (!list || list->type != LCL_LIST || list->as.list.len == 0) {
+    return LCL_ERROR;
+  }
+
+  if (list->refc > 1) {
+    lcl_value *dup = lcl_list_clone_shallow(list);
+
+    if (!dup) {
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(list);
+    *list_io = list = dup;
+  }
+
+  *out = list->as.list.items[--list->as.list.len];
+  free(list->str_repr);
+  list->str_repr = NULL;
+
+  return LCL_OK;
+}
+
+lcl_result lcl_list_del(lcl_value **list_io, size_t i) {
+  lcl_value *list = *list_io;
+  size_t n;
+
+  if (!list || list->type != LCL_LIST) {
+    return LCL_ERROR;
+  }
+
+  n = list->as.list.len;
+
+  if (i >= n) {
+    return LCL_ERROR;
+  }
+
+  if (list->refc > 1) {
+    lcl_value *dup = lcl_list_clone_shallow(list);
+
+    if (!dup) {
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(list);
+    *list_io = list = dup;
+  }
+
+  lcl_ref_dec(list->as.list.items[i]);
+
+  if (i + 1 < n) {
+    memmove(&list->as.list.items[i], &list->as.list.items[i + 1],
+            (n - i - 1) * sizeof(*list->as.list.items));
+  }
+
+  list->as.list.len = n - 1;
   free(list->str_repr);
   list->str_repr = NULL;
 

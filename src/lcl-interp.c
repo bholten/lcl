@@ -168,6 +168,50 @@ void lcl_set_step_hook(lcl_interp *interp,
   interp->step_countdown = interp->step_interval;
 }
 
+void lcl_set_call_hook(lcl_interp *interp,
+                       void (*fn)(lcl_interp *interp, lcl_value *proc,
+                                  const char *name, int argc, lcl_value **argv,
+                                  int entering, void *userdata),
+                       void *userdata) {
+  if (!interp) {
+    return;
+  }
+
+  interp->call_fn = fn;
+  interp->call_ud = userdata;
+}
+
+void lcl_get_call_hook(lcl_interp *interp,
+                       void (**fn_out)(lcl_interp *interp, lcl_value *proc,
+                                       const char *name, int argc,
+                                       lcl_value **argv, int entering,
+                                       void *userdata),
+                       void **userdata_out) {
+  if (fn_out) {
+    *fn_out = interp ? interp->call_fn : NULL;
+  }
+
+  if (userdata_out) {
+    *userdata_out = interp ? interp->call_ud : NULL;
+  }
+}
+
+struct lcl_stats {
+  unsigned long values_allocated;
+  unsigned long values_freed;
+  unsigned long list_clones;
+  unsigned long dict_clones;
+};
+
+void lcl_get_stats(struct lcl_stats *out) {
+  if (!out) {
+    return;
+  }
+
+  lcl_stats_read(&out->values_allocated, &out->values_freed, &out->list_clones,
+                 &out->dict_clones);
+}
+
 void lcl_set_module_key_fn(lcl_interp *interp,
                            char *(*fn)(const char *lexical_path,
                                        void *userdata),

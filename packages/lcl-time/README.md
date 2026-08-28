@@ -38,6 +38,30 @@ puts "elapsed: $elapsed us"
 time::sleep 0.25     ;; 250 ms
 ```
 
+## Profiling
+
+```tcl
+proc update {e} { ... }
+let rows [time::profile { foreach e $enemies { update $e } }]
+puts [time::profile_format $rows]
+;;      calls      incl_us      excl_us  name
+;;       1492        61230        61230  update
+```
+
+`time::profile {body}` runs `body` in the caller's scope and returns
+one `#{name calls incl_us excl_us}` row per user proc that ran, sorted
+by exclusive time (body's own value is dropped; an error in the body
+propagates). `time::profile_start!` / `time::profile_stop!`  bracket a
+region from outside -- e.g. around a game loop -- and `profile_stop!`
+returns the same rows. `time::profile_format $rows` renders them as an
+aligned table.
+
+Inclusive time is wall time between a proc's entry and exit; exclusive
+subtracts the inclusive time of the user procs it called, so the cost
+of C builtins is attributed to the proc that called them.  Tail
+self-calls count as a single call. Timing uses the monotonic clock;
+the hook itself costs well under a microsecond per call.
+
 ## API Reference
 
 All functions live in the `time::` namespace.
@@ -49,6 +73,15 @@ All functions live in the `time::` namespace.
 | `time::time` | Current Unix timestamp (seconds since epoch, integer) |
 | `time::clock` | Process CPU clock ticks since program start |
 | `time::monotonic_us` | Monotonic clock reading in microseconds (POSIX `CLOCK_MONOTONIC`) |
+
+### Profiling
+
+| Function | Description |
+|----------|-------------|
+| `time::profile {body}` | Run `body`, return per-proc `#{name calls incl_us excl_us}` rows sorted by exclusive time |
+| `time::profile_start!` | Start collecting (error if already running) |
+| `time::profile_stop!` | Stop and return the rows (error if not running) |
+| `time::profile_format $rows` | Render rows as an aligned text table |
 
 ### Calendar conversion
 

@@ -193,6 +193,54 @@ typedef int (*lcl_step_fn)(lcl_interp *interp, void *userdata);
 void lcl_set_step_hook(lcl_interp *interp, lcl_step_fn fn, void *userdata,
                        unsigned long interval);
 
+/*
+ * Install a call hook: a host callback invoked when a user-defined
+ * procedure (proc/lambda, not a C builtin) is entered and again when
+ * it exits, whether normally or by error.
+ *
+ *   proc     - the procedure value being called
+ *   name     - the name it was invoked by (or its own name, or
+ *              "<lambda>"), valid for the duration of the call
+ *   argc/argv- the evaluated arguments, valid on both events
+ *   entering - 1 on entry, 0 on exit
+ *
+ * Tail self-calls (which re-enter the body without a new C frame)
+ * report as a single call. The hook runs with the interpreter
+ * mid-evaluation: it must not evaluate code on this interp or free
+ * it; reading state (lcl_value_to_string on arguments, timers,
+ * counters) is safe. Profilers and tracers are the intended users;
+ * there is no cost when no hook is installed.
+ *
+ * Pass fn = NULL to remove the hook. lcl_get_call_hook reads the
+ * current hook so a temporary installer can restore it.
+ */
+typedef void (*lcl_call_fn)(lcl_interp *interp, lcl_value *proc,
+                            const char *name, int argc, lcl_value **argv,
+                            int entering, void *userdata);
+
+void lcl_set_call_hook(lcl_interp *interp, lcl_call_fn fn, void *userdata);
+void lcl_get_call_hook(lcl_interp *interp, lcl_call_fn *fn_out,
+                       void **userdata_out);
+
+/*
+ * Process-wide allocation counters, always on (an increment each).
+ * `values_allocated` / `values_freed` count lcl_value nodes over the
+ * life of the process; their difference is the number currently live,
+ * which makes leak checks trivial. `list_clones` and `dict_clones`
+ * count copy-on-write copies of shared containers -- a number that
+ * grows with the size of your data is the signature of an
+ * accumulation loop that should use the in-place `!` forms. Exposed
+ * to scripts as `Interp::stats`.
+ */
+typedef struct lcl_stats {
+  unsigned long values_allocated;
+  unsigned long values_freed;
+  unsigned long list_clones;
+  unsigned long dict_clones;
+} lcl_stats;
+
+void lcl_get_stats(lcl_stats *out);
+
 /* ============================================================================
  * Evaluation
  * ============================================================================

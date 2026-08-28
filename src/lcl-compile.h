@@ -166,6 +166,9 @@ struct lcl_interp {
   unsigned long step_interval;
   unsigned long step_countdown;
   int interrupted;
+  void (*call_fn)(lcl_interp *interp, lcl_value *proc, const char *name,
+                  int argc, lcl_value **argv, int entering, void *userdata);
+  void *call_ud;
 };
 
 #define LCL_ERR_CLEAR(interp)                                                  \

@@ -25,6 +25,41 @@ namespace List {
     ;;; ("a" "b" "c" "d")
     proc push {lst values} {}
 
+    ;;; Append `value` in place to the list held by the `var` named
+    ;;; `name`, and return the list. `name` is a bare name, not a
+    ;;; value: this is a special form, like `set!`.
+    ;;;
+    ;;; Equivalent to `set! name [List::push $name value]` but O(1)
+    ;;; amortised: a value-returning push must copy whenever the
+    ;;; source binding still owns the list, so accumulating in a loop
+    ;;; that way is O(n^2). Anything that aliased the old list keeps
+    ;;; seeing the old list; the var alone sees the new element.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> var acc ()
+    ;;; >> List::push! acc 1
+    ;;; (1)
+    ;;; >> List::push! acc 2
+    ;;; (1 2)
+    ;;; >> $acc
+    ;;; (1 2)
+    proc push! {name value} {}
+
+    ;;; Remove the last element of the list held by the `var` named
+    ;;; `name` in place, and return that element. Errors on an empty
+    ;;; list. The mutating counterpart of `pop`: note that `pop`
+    ;;; returns the shortened list, `pop!` returns the element.
+    ;;;
+    ;;; Examples:
+    ;;;
+    ;;; >> var stack ("a" "b" "c")
+    ;;; >> List::pop! stack
+    ;;; "c"
+    ;;; >> $stack
+    ;;; ("a" "b")
+    proc pop! {name} {}
+
     ;;; Pop a value off a list. Does not mutate the original list
     ;;;
     ;;; Examples:

@@ -17,7 +17,7 @@ lcl_value *lcl_string_new(const char *str) {
    * construction time; callers like `io::getenv` of an unset variable
    * used to silently get "" out of this path and we want to preserve
    * that behavior. */
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
   size_t n;
 
   if (!v) {
@@ -378,9 +378,7 @@ const char *lcl_value_to_string(lcl_value *value) {
     case LCL_STRING: break;
     case LCL_LIST: lcl_reify_str_list(value); break;
     case LCL_DICT: lcl_reify_str_dict(value); break;
-    case LCL_PROC:
-      value->str_repr = lcl_value_repr(value);
-      break;
+    case LCL_PROC: value->str_repr = lcl_value_repr(value); break;
     case LCL_OPAQUE: {
       const char *tag = value->as.opaque.type_tag;
 

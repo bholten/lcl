@@ -1,7 +1,7 @@
 #include "lcl-values.h"
 
 lcl_value *lcl_dict_new(void) {
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
 
   if (!v) {
     return NULL;
@@ -66,6 +66,8 @@ static lcl_value *lcl_dict_clone_shallow(lcl_value *dict) {
   if (!new_dict) {
     return NULL;
   }
+
+  lcl_stats_note_clone(1);
 
   while (hash_table_iterate(dict->as.dict.dictionary, &it, &k, &value)) {
     int put_ok = hash_table_put(new_dict->as.dict.dictionary, k, value);

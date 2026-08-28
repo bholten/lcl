@@ -72,7 +72,7 @@ Lcl uses a more unified API, does not use the ensemble pattern for dictionaries,
 | dict get d k   | get d k        |
 | lindex x i     | get x i        |
 | dict set d k v | put d k v      |
-| lappend x v    | List::push x v |
+| lappend x v    | List::push! x v (in place) / List::push x v (copy) |
 | dict keys d    | Dict::keys d   |
 
 And many others.
@@ -199,6 +199,16 @@ let d2 [put $d newkey value]
 let d3 [del $d key]            ;; dict: by key; absent key is a no-op
 let lst3 [del $lst 0]          ;; list: by index; out of range is an error
 
+;; put! / del! - the same updates in place, on a `var` (special forms:
+;; the first word is the variable's name, not its value). O(1)-ish
+;; instead of copying the container, so use them when accumulating.
+var d #{}
+put! d k v                     ;; $d is now #{k v}
+del! d k                       ;; $d is now #{}
+var l (1 2 3)
+put! l 0 x                     ;; $l is now (x 2 3)
+del! l 2                       ;; $l is now (x 2)
+
 ;; has? - membership test
 puts [has? $lst value]         ;; 1 if value in list (deep equality)
 puts [has? $d key]             ;; 1 if key exists
@@ -209,6 +219,15 @@ puts [has? $ns name]           ;; 1 if namespace binding exists
 puts [empty? ()]               ;; 1
 puts [empty? $lst]             ;; 0
 ```
+
+Values are copy-on-write, so `set! x [List::push $x v]` copies the list on
+every iteration — the variable still owns the old list while `List::push`
+runs, and a value-returning operation cannot mutate what someone else
+owns. The `!` forms (`List::push!`, `List::pop!`, `put!`, `del!`) resolve
+the name to its `var` cell and update the container in place when the cell
+is its sole owner (cloning once if it was aliased). The result is exactly
+what the copying form would have produced; only the cost differs. Like
+`set!`, they reject a value that would make the cell reference itself.
 
 ### Type Predicates
 
@@ -233,8 +252,11 @@ Type-specific operations are organized into namespaces:
 
 ```tcl
 ;; List operations
-puts [List::push $lst newitem]     ;; append item
+puts [List::push $lst newitem]     ;; append item (returns new list)
 puts [List::pop $lst]              ;; remove last (returns list)
+var acc ()
+List::push! acc newitem            ;; append in place to the var `acc`
+puts [List::pop! acc]              ;; remove last in place, returns the item
 puts [List::reverse $lst]          ;; reverse
 puts [List::slice $lst 1 3]        ;; slice [1,3)
 puts [List::concat $lst1 $lst2]    ;; concatenate
@@ -303,6 +325,45 @@ value prints as `<proc add>`, `<lambda>` or `<macro m>` — a label, not
 re-parseable code. A REPL can therefore hand a fresh definition
 straight to the next command: `List::map $_1 [proc sq {x} { * $x $x
 }]`.
+
+### Diagnostics
+
+Three tools for finding out where the time and the copies go:
+
+```tcl
+;; Interp::stats - process-wide counters (always on, one increment each)
+let s [Interp::stats]
+puts [get $s values_live]      ;; lcl values currently allocated
+puts [get $s list_clones]      ;; copy-on-write copies of shared lists
+puts [get $s dict_clones]      ;; ... and dicts
+
+;; time::profile (lcl-time) - per-proc calls / inclusive / exclusive time
+let rows [time::profile { run_frame }]
+puts [time::profile_format $rows]
+;;      calls      incl_us      excl_us  name
+;;       1492        61230        61230  update_enemy
+;;          1        66310         2100  run_frame
+time::profile_start!            ;; or bracket a region from outside
+step
+let rows [time::profile_stop!]
+```
+
+A `list_clones` count that grows with your data is an accumulation
+loop that should use `List::push!`/`put!`; `values_live` climbing
+between two identical frames is a leak. Exclusive time is inclusive
+time minus the time spent in user procs called from the body, so C
+builtins land in the proc that called them; tail self-calls count as
+one call.
+
+Every proc call can also be traced from the command line:
+
+```sh
+LCL_TRACE=1 lcl game.lcl            # every user proc, entry with args + exit
+LCL_TRACE=Vec::norm,update lcl ...  # only these names
+```
+
+Both are built on `lcl_set_call_hook` (see Embedding), so a host can
+install its own profiler or tracer.
 
 ### Documentation (Doc)
 
@@ -1076,6 +1137,15 @@ cmake -S . -B build -DLCL_BUILD_EXAMPLES=ON
 cmake --build build
 ./build/examples/embed_example
 ```
+
+Two host hooks cover budgets and observability. `lcl_set_step_hook`
+runs a callback every N commands and can abort a runaway script
+(sticky: `catch` cannot swallow it). `lcl_set_call_hook` fires on
+every user-proc entry and exit with the invoked name and evaluated
+arguments -- `time::profile` and the CLI's `LCL_TRACE` are both
+clients of it, and `lcl_get_call_hook` lets a temporary installer
+restore the previous one. `lcl_get_stats` returns the process-wide
+value/clone counters behind `Interp::stats`.
 
 To consume Lcl from your own CMake project after `cmake --install`:
 

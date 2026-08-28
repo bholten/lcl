@@ -29,6 +29,12 @@ extern lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
 extern void lcl_set_step_hook(lcl_interp *interp,
                               int (*fn)(lcl_interp *, void *), void *userdata,
                               unsigned long interval);
+extern void lcl_set_call_hook(lcl_interp *interp,
+                              void (*fn)(lcl_interp *, lcl_value *,
+                                         const char *, int, lcl_value **, int,
+                                         void *),
+                              void *userdata);
+extern void lcl_clear_error(lcl_interp *interp);
 
 /* ---------------------------------------------------------------------------
  * OOM injection (linked via -Wl,--wrap=calloc,--wrap=strndup).
@@ -1646,9 +1652,8 @@ static int test_eval_at_error_context(void) {
   lcl_clear_error(lcl_test_interp);
 
   /* A compile error in the text is reported at the base-offset line. */
-  rc = lcl_eval_string_file(lcl_test_interp,
-                            "eval_at {let a 1\n[} \"buf\" 20\n", "host.lcl",
-                            &out);
+  rc = lcl_eval_string_file(
+      lcl_test_interp, "eval_at {let a 1\n[} \"buf\" 20\n", "host.lcl", &out);
   ASSERT_TRUE(rc == LCL_RC_ERR);
   ASSERT_STREQ(lcl_test_interp->err_file, "buf");
   ASSERT_TRUE(lcl_test_interp->err_line == 21);
@@ -2642,6 +2647,193 @@ static int test_require_module_key_hook(void) {
   return 1;
 }
 
+/*  Call hook (lcl_set_call_hook): one entry and one exit per user-proc
+ * call, on the normal and the error path, with the invoked name and
+ * the evaluated arguments; lambdas report as "<lambda>". */
+static int call_hook_enters = 0;
+static int call_hook_exits = 0;
+static char call_hook_last[64];
+static long call_hook_last_arg = -1;
+
+static void call_hook_count(lcl_interp *interp, lcl_value *proc,
+                            const char *name, int argc, lcl_value **argv,
+                            int entering, void *userdata) {
+  (void)interp;
+  (void)proc;
+  (void)userdata;
+
+  if (entering) {
+    call_hook_enters++;
+    snprintf(call_hook_last, sizeof(call_hook_last), "%s", name);
+
+    if (argc > 0) {
+      lcl_value_to_int(argv[0], &call_hook_last_arg);
+    }
+  } else {
+    call_hook_exits++;
+  }
+}
+
+static int test_call_hook(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_value *result = NULL;
+  lcl_return_code rc;
+
+  lcl_set_call_hook(lcl_test_interp, call_hook_count, NULL);
+  call_hook_enters = 0;
+  call_hook_exits = 0;
+  call_hook_last[0] = '\0';
+
+  rc = lcl_eval_string(lcl_test_interp, "proc __ch {x} { $x }\n__ch 1\n__ch 2",
+                       &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(call_hook_enters == 2);
+  ASSERT_TRUE(call_hook_exits == 2);
+  ASSERT_STREQ(call_hook_last, "__ch");
+  ASSERT_TRUE(call_hook_last_arg == 2);
+  lcl_ref_dec(result);
+  result = NULL;
+
+  /* exit still fires when the body errors */
+  rc = lcl_eval_string(lcl_test_interp,
+                       "proc __ch_err {} { error boom }\ncatch { __ch_err }",
+                       &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(call_hook_enters == 3);
+  ASSERT_TRUE(call_hook_exits == 3);
+  lcl_ref_dec(result);
+  result = NULL;
+
+  rc = lcl_eval_string(lcl_test_interp, "apply [lambda {} { 1 }]", &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_STREQ(call_hook_last, "<lambda>");
+  lcl_ref_dec(result);
+  result = NULL;
+
+  /* removed: no more events */
+  lcl_set_call_hook(lcl_test_interp, NULL, NULL);
+  rc = lcl_eval_string(lcl_test_interp, "__ch 3", &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(call_hook_enters == 4);
+  lcl_ref_dec(result);
+
+  return 1;
+}
+
+/*  Allocation counters: a copy-on-write clone of a shared list counts
+ * once; the in-place forms don't clone; every value allocated is
+ * eventually freed (live count returns to its baseline). */
+static int test_stats_counters(void) {
+  extern lcl_interp *lcl_test_interp;
+  unsigned long a0, f0, l0, d0;
+  unsigned long a1, f1, l1, d1;
+  lcl_value *result = NULL;
+  lcl_return_code rc;
+
+  lcl_stats_read(&a0, &f0, &l0, &d0);
+  rc = lcl_eval_string(lcl_test_interp,
+                       "let __sa (1 2)\nlet __sb [List::push $__sa 3]\n"
+                       "let __sd #{a 1}\nlet __se [put $__sd b 2]",
+                       &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  lcl_ref_dec(result);
+  result = NULL;
+  lcl_stats_read(&a1, &f1, &l1, &d1);
+  ASSERT_TRUE(l1 - l0 == 1);
+  ASSERT_TRUE(d1 - d0 == 1);
+  ASSERT_TRUE(a1 > a0);
+
+  lcl_stats_read(&a0, &f0, &l0, &d0);
+  rc = lcl_eval_string(lcl_test_interp,
+                       "var __sc ()\nList::push! __sc 1\nList::push! __sc 2\n"
+                       "var __sf #{}\nput! __sf k v\nput! __sf k2 v2",
+                       &result);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  lcl_ref_dec(result);
+  lcl_stats_read(&a1, &f1, &l1, &d1);
+  ASSERT_TRUE(l1 == l0);
+  ASSERT_TRUE(d1 == d0);
+
+  {
+    lcl_value *tmp = lcl_int_new(7);
+    unsigned long a2, f2, l2, d2;
+
+    lcl_stats_read(&a2, &f2, &l2, &d2);
+    ASSERT_TRUE(a2 == a1 + 1);
+    lcl_ref_dec(tmp);
+    lcl_stats_read(&a2, &f2, &l2, &d2);
+    ASSERT_TRUE(f2 == f1 + 1);
+  }
+
+  return 1;
+}
+
+/*  lcl_list_pop / lcl_list_del: copy-on-write when shared, in place
+ * when unshared, the original untouched on the OOM path. */
+static int test_list_pop_del_cow(void) {
+  lcl_value *list = lcl_list_new();
+  lcl_value *original;
+  lcl_value *a = lcl_string_new("a");
+  lcl_value *b = lcl_string_new("b");
+  lcl_value *c = lcl_string_new("c");
+  lcl_value *popped = NULL;
+  lcl_value *elem = NULL;
+
+  ASSERT_TRUE(list != NULL);
+  ASSERT_TRUE(lcl_list_push(&list, a) == LCL_OK);
+  ASSERT_TRUE(lcl_list_push(&list, b) == LCL_OK);
+  ASSERT_TRUE(lcl_list_push(&list, c) == LCL_OK);
+
+  /* shared: pop clones, the original keeps 3 */
+  original = lcl_ref_inc(list);
+  ASSERT_TRUE(lcl_list_pop(&list, &popped) == LCL_OK);
+  ASSERT_TRUE(popped == c);
+  ASSERT_TRUE(list != original);
+  ASSERT_TRUE(lcl_list_len(list) == 2);
+  ASSERT_TRUE(lcl_list_len(original) == 3);
+  lcl_ref_dec(popped);
+  popped = NULL;
+
+  /* unshared: del is in place */
+  {
+    lcl_value *before = list;
+
+    ASSERT_TRUE(lcl_list_del(&list, 0) == LCL_OK);
+    ASSERT_TRUE(list == before);
+    ASSERT_TRUE(lcl_list_len(list) == 1);
+    ASSERT_TRUE(lcl_list_get(list, 0, &elem) == LCL_OK);
+    ASSERT_TRUE(elem == b);
+    lcl_ref_dec(elem);
+  }
+
+  /* out of range / empty */
+  ASSERT_TRUE(lcl_list_del(&list, 5) == LCL_ERROR);
+  ASSERT_TRUE(lcl_list_pop(&list, &popped) == LCL_OK);
+  lcl_ref_dec(popped);
+  ASSERT_TRUE(lcl_list_pop(&list, &popped) == LCL_ERROR);
+  ASSERT_TRUE(lcl_list_len(list) == 0);
+  lcl_ref_dec(list);
+
+  /* OOM while cloning a shared list: nothing changes */
+  list = lcl_ref_inc(original);
+  oom_calloc_fail_at = 0;
+  ASSERT_TRUE(lcl_list_pop(&list, &popped) == LCL_ERROR);
+  ASSERT_TRUE(list == original);
+  ASSERT_TRUE(lcl_list_len(original) == 3);
+  oom_calloc_fail_at = 0;
+  ASSERT_TRUE(lcl_list_del(&list, 0) == LCL_ERROR);
+  ASSERT_TRUE(list == original);
+  ASSERT_TRUE(lcl_list_len(original) == 3);
+  oom_calloc_fail_at = -1;
+  lcl_ref_dec(list);
+  lcl_ref_dec(original);
+
+  lcl_ref_dec(a);
+  lcl_ref_dec(b);
+  lcl_ref_dec(c);
+  return 1;
+}
+
 /* Name-resolution redesign: anchor lifecycle under teardown.
  *
  * (a) A builder body that errors mid-definition leaves its pending
@@ -2758,6 +2950,9 @@ int run_test(void) {
   RUN(test_issue45_skip_balanced_depth_limit);
   RUN(test_issue71_compile_nesting_cap);
   RUN(test_issue71_step_hook_budget);
+  RUN(test_call_hook);
+  RUN(test_stats_counters);
+  RUN(test_list_pop_del_cow);
   RUN(test_issue98_bare_spread_is_compile_error);
   RUN(test_sub_literal_scan_unification);
   RUN(test_span_line_attribution);

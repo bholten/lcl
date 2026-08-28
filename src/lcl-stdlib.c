@@ -2,6 +2,7 @@
 #define _XOPEN_SOURCE 600
 #endif
 
+#include "lcl-eval.h"
 #include "lcl-stdlib-internal.h"
 
 /* Bugfix: portable C89 overflow-checked arithmetic on long.  Each
@@ -992,23 +993,29 @@ static lcl_return_code c_put(lcl_interp *interp, int argc, lcl_value **argv,
   case LCL_LIST: {
     long idx;
     lcl_value *copy;
+    int borrowed;
 
     if (!lcl_std_arg_int(interp, "put", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
-    copy = lcl_ref_inc(argv[0]);
+    borrowed = (argv[0]->refc == 1);
+    copy = borrowed ? argv[0] : lcl_ref_inc(argv[0]);
 
     if (lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
       char msg[96];
 
       snprintf(msg, sizeof(msg), "put: index %ld out of range", idx);
       LCL_ERR_MSG_DUP(interp, msg);
-      lcl_ref_dec(copy);
+
+      if (!borrowed) {
+        lcl_ref_dec(copy);
+      }
+
       return LCL_RC_ERR;
     }
 
-    *out = copy;
+    *out = borrowed ? lcl_ref_inc(copy) : copy;
 
     return LCL_RC_OK;
   }
@@ -1016,20 +1023,26 @@ static lcl_return_code c_put(lcl_interp *interp, int argc, lcl_value **argv,
   case LCL_DICT: {
     const char *key;
     lcl_value *copy;
+    int borrowed;
 
     if (lcl_value_to_cstring(interp, argv[1], &key) != LCL_OK) {
       return LCL_RC_ERR;
     }
 
-    copy = lcl_ref_inc(argv[0]);
+    borrowed = (argv[0]->refc == 1);
+    copy = borrowed ? argv[0] : lcl_ref_inc(argv[0]);
 
     if (lcl_dict_put(&copy, key, argv[2]) != LCL_OK) {
       LCL_ERR_MSG(interp, "put: out of memory");
-      lcl_ref_dec(copy);
+
+      if (!borrowed) {
+        lcl_ref_dec(copy);
+      }
+
       return LCL_RC_ERR;
     }
 
-    *out = copy;
+    *out = borrowed ? lcl_ref_inc(copy) : copy;
 
     return LCL_RC_OK;
   }
@@ -1056,10 +1069,15 @@ static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
       return LCL_RC_ERR;
     }
 
-    copy = lcl_ref_inc(argv[0]);
-    lcl_dict_del(&copy, key);
-
-    *out = copy;
+    if (argv[0]->refc == 1) {
+      copy = argv[0];
+      lcl_dict_del(&copy, key);
+      *out = lcl_ref_inc(copy);
+    } else {
+      copy = lcl_ref_inc(argv[0]);
+      lcl_dict_del(&copy, key);
+      *out = copy;
+    }
 
     return LCL_RC_OK;
   }
@@ -1122,6 +1140,268 @@ static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
   default:
     return lcl_std_err_expected_got(interp, "del", "list or dict", argv[0]);
   }
+}
+
+lcl_return_code lcl_std_mut_cell(lcl_interp *interp, const char *cmd,
+                                 const lcl_word *name_w, lcl_value **cell_out,
+                                 lcl_value **name_out) {
+  lcl_value *name_v = NULL;
+  lcl_value *cell = NULL;
+  const char *name_str;
+
+  if (lcl_eval_word_to_str(interp, name_w, &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_env_get_value(interp, name_str, &cell) != LCL_OK) {
+    lcl_std_err_undefined(interp, cmd, name_str);
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  if (cell->type != LCL_CELL) {
+    lcl_std_err_expected_got(interp, cmd, "cell (declare with 'var')", cell);
+    lcl_ref_dec(cell);
+    lcl_ref_dec(name_v);
+    return LCL_RC_ERR;
+  }
+
+  *cell_out = cell;
+  *name_out = name_v;
+  return LCL_RC_OK;
+}
+
+void lcl_std_mut_begin(lcl_value *cell, lcl_value **work, int *owned) {
+  lcl_value *inner = lcl_cell_peek(cell);
+
+  if (inner->refc == 1) {
+    *work = inner;
+    *owned = 0;
+  } else {
+    *work = lcl_ref_inc(inner);
+    *owned = 1;
+  }
+}
+
+void lcl_std_mut_commit(lcl_value *cell, lcl_value *work, int owned) {
+  if (owned) {
+    if (work != lcl_cell_peek(cell)) {
+      lcl_cell_set(cell, work);
+    }
+
+    lcl_ref_dec(work);
+  }
+
+  /* In-place edits bypass lcl_cell_set, so drop the cached rendering
+   * here in both cases. */
+  free(cell->str_repr);
+  cell->str_repr = NULL;
+}
+
+void lcl_std_mut_abort(lcl_value *work, int owned) {
+  if (owned) {
+    lcl_ref_dec(work);
+  }
+}
+
+int lcl_std_mut_check_cycle(lcl_interp *interp, const char *cmd,
+                            const char *name, lcl_value *cell,
+                            lcl_value *value) {
+  char msg[900];
+  size_t used;
+
+  if (!lcl_cell_would_cycle(cell, value)) {
+    return 1;
+  }
+
+  used = (size_t)snprintf(msg, sizeof(msg),
+                          "%s %.128s: update would create a reference cycle",
+                          cmd, name);
+
+  if (used < sizeof(msg)) {
+    lcl_value_cycle_explain(cell, value, msg + used, sizeof(msg) - used);
+  }
+
+  LCL_ERR_MSG_DUP(interp, msg);
+  return 0;
+}
+
+/* Shared body of `put!` and `del!`: `key_w` and (for put!) `val_w`
+ * are evaluated, then the cell's container is updated in place. */
+static lcl_return_code mut_put_del(lcl_interp *interp, const char *cmd,
+                                   int is_put, int argc, const lcl_word **args,
+                                   lcl_value **out) {
+  lcl_value *cell = NULL;
+  lcl_value *name_v = NULL;
+  lcl_value *key_v = NULL;
+  lcl_value *val_v = NULL;
+  lcl_value *work = NULL;
+  lcl_value *inner;
+  const char *name_str;
+  int owned = 0;
+  lcl_return_code rc = LCL_RC_ERR;
+
+  if (!lcl_std_chk_argc(interp, cmd, argc, is_put ? 3 : 2, is_put ? 3 : 2)) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_std_mut_cell(interp, cmd, args[0], &cell, &name_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_eval_word(interp, args[1], &key_v) != LCL_RC_OK) {
+    goto done;
+  }
+
+  if (is_put && lcl_eval_word(interp, args[2], &val_v) != LCL_RC_OK) {
+    goto done;
+  }
+
+  if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
+    goto done;
+  }
+
+  inner = lcl_cell_peek(cell);
+
+  if (inner->type != LCL_LIST && inner->type != LCL_DICT) {
+    lcl_std_err_expected_got(interp, cmd, "list or dict", inner);
+    goto done;
+  }
+
+  if (is_put && !lcl_std_mut_check_cycle(interp, cmd, name_str, cell, val_v)) {
+    goto done;
+  }
+
+  if (inner->type == LCL_LIST) {
+    long idx;
+    size_t len = lcl_list_len(inner);
+    lcl_result r;
+
+    if (!lcl_std_arg_int(interp, cmd, key_v, &idx)) {
+      goto done;
+    }
+
+    if (idx < 0 || (size_t)idx >= len) {
+      char msg[96];
+
+      snprintf(msg, sizeof(msg), "%s: index %ld out of range", cmd, idx);
+      LCL_ERR_MSG_DUP(interp, msg);
+      goto done;
+    }
+
+    lcl_std_mut_begin(cell, &work, &owned);
+    r = is_put ? lcl_list_set(&work, (size_t)idx, val_v)
+               : lcl_list_del(&work, (size_t)idx);
+
+    if (r != LCL_OK) {
+      lcl_std_mut_abort(work, owned);
+      LCL_ERR_MSG(interp, "out of memory");
+      goto done;
+    }
+  } else {
+    const char *key;
+    lcl_result r;
+
+    if (lcl_value_to_cstring(interp, key_v, &key) != LCL_OK) {
+      goto done;
+    }
+
+    if (!is_put && !lcl_dict_peek(inner, key)) {
+      *out = lcl_ref_inc(inner);
+      rc = LCL_RC_OK;
+      goto done;
+    }
+
+    lcl_std_mut_begin(cell, &work, &owned);
+    r = is_put ? lcl_dict_put(&work, key, val_v) : lcl_dict_del(&work, key);
+
+    if (r != LCL_OK) {
+      lcl_std_mut_abort(work, owned);
+      LCL_ERR_MSG(interp, "out of memory");
+      goto done;
+    }
+  }
+
+  lcl_std_mut_commit(cell, work, owned);
+  *out = lcl_ref_inc(lcl_cell_peek(cell));
+  rc = LCL_RC_OK;
+
+done:
+  lcl_ref_dec(val_v);
+  lcl_ref_dec(key_v);
+  lcl_ref_dec(name_v);
+  lcl_ref_dec(cell);
+  return rc;
+}
+
+/* put! name k v - in-place `put` on the list or dict held by var `name` */
+static lcl_return_code s_put_bang(lcl_interp *interp, int argc,
+                                  const lcl_word **args, lcl_value **out) {
+  return mut_put_del(interp, "put!", 1, argc, args, out);
+}
+
+/* del! name k - in-place `del` on the list or dict held by var `name` */
+static lcl_return_code s_del_bang(lcl_interp *interp, int argc,
+                                  const lcl_word **args, lcl_value **out) {
+  return mut_put_del(interp, "del!", 0, argc, args, out);
+}
+
+/* Interp::stats - process-wide allocation counters as a dict */
+static lcl_return_code c_interp_stats(lcl_interp *interp, int argc,
+                                      lcl_value **argv, lcl_value **out) {
+  unsigned long allocated;
+  unsigned long freed;
+  unsigned long list_clones;
+  unsigned long dict_clones;
+  lcl_value *d;
+  const char *keys[5];
+  unsigned long vals[5];
+  int i;
+  (void)argv;
+
+  if (!lcl_std_chk_argc(interp, "Interp::stats", argc, 0, 0)) {
+    return LCL_RC_ERR;
+  }
+
+  lcl_stats_read(&allocated, &freed, &list_clones, &dict_clones);
+  keys[0] = "values_allocated";
+  vals[0] = allocated;
+  keys[1] = "values_freed";
+  vals[1] = freed;
+  keys[2] = "values_live";
+  vals[2] = allocated - freed;
+  keys[3] = "list_clones";
+  vals[3] = list_clones;
+  keys[4] = "dict_clones";
+  vals[4] = dict_clones;
+
+  d = lcl_dict_new();
+
+  if (!d) {
+    LCL_ERR_MSG(interp, "Interp::stats: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  for (i = 0; i < 5; i++) {
+    lcl_value *v = lcl_int_new((long)vals[i]);
+
+    if (!v || lcl_dict_put(&d, keys[i], v) != LCL_OK) {
+      lcl_ref_dec(v);
+      lcl_ref_dec(d);
+      LCL_ERR_MSG(interp, "Interp::stats: out of memory");
+      return LCL_RC_ERR;
+    }
+
+    lcl_ref_dec(v);
+  }
+
+  *out = d;
+  return LCL_RC_OK;
 }
 
 /* has? x k - membership test: list element, dict key, substring, or
@@ -1223,6 +1503,16 @@ void lcl_register_core(lcl_interp *interp) {
   lcl_register_proc(interp, "get", c_generic_get);
   lcl_register_proc(interp, "put", c_put);
   lcl_register_proc(interp, "del", c_del);
+  lcl_register_spec(interp, "put!", s_put_bang);
+  lcl_register_spec(interp, "del!", s_del_bang);
+
+  {
+    lcl_value *interp_ns = lcl_ns_new("Interp");
+
+    lcl_ns_def_take(interp_ns, "stats",
+                    lcl_c_proc_new("Interp::stats", c_interp_stats));
+    lcl_define_take(interp, "Interp", interp_ns);
+  }
   lcl_register_proc(interp, "has?", c_has);
   lcl_register_proc(interp, "opaque?", c_is_opaque);
   lcl_register_proc(interp, "type", c_type);

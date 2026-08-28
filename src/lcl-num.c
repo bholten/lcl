@@ -256,7 +256,7 @@ lcl_num_class lcl_num_text_classify(const char *s, size_t n) {
 }
 
 lcl_value *lcl_int_new(const long n) {
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
 
   if (!v) {
     return NULL;
@@ -272,7 +272,7 @@ lcl_value *lcl_int_new(const long n) {
 }
 
 lcl_value *lcl_float_new(const double f) {
-  lcl_value *v = (lcl_value *)calloc(1, sizeof(*v));
+  lcl_value *v = lcl_value_alloc();
 
   if (!v) {
     return NULL;

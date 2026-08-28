@@ -146,6 +146,15 @@ Test::suite "Numeric text & string domains" {
     Test::case "equality falls back to bytewise for non-numeric text" {
         Test::eq [== "0x10" 16] 0
         Test::eq [== "007" 7] 1
+        Test::eq [== "007" "7"] 1
+    }
+
+    Test::case "String::eq? is bytewise and strings-only" {
+        Test::eq [String::eq? "007" "7"] 0
+        Test::eq [String::eq? "007" "007"] 1
+        Test::eq [String::eq? "" ""] 1
+        Test::eq [catch { String::eq? 7 "7" }] 1
+        Test::eq [String::eq? [String::from 7] "7"] 1
     }
 
     Test::case "string operators require strings" {

@@ -280,3 +280,78 @@ Test::suite "Functional Primitives" {
 ;; ============================================================================
 ;; List:: Namespace Functions
 ;; ============================================================================
+
+;; ============================================================================
+;; Closure capture is scope-aware
+;; ============================================================================
+
+Test::suite "Closure capture is scope-aware" {
+    Test::case "a name bound by let inside the body is not captured" {
+        ;; the lambda's `acc` is its own local, so storing the lambda
+        ;; into the outer `acc` cell is not a reference cycle
+        var acc ()
+        let f [lambda {} { let acc (1 2); $acc }]
+        set! acc (3 $f)
+        Test::eq [apply [get $acc 1]] (1 2)
+    }
+
+    Test::case "a name bound by var/set! inside the body is not captured" {
+        var n ()
+        let f [lambda {} { var n 0; set! n [+ $n 5]; $n }]
+        set! n ($f)
+        Test::eq [apply [get $n 0]] 5
+    }
+
+    Test::case "use before the local binding still captures the outer value" {
+        let x 1
+        proc mk {} { lambda {} { let x [* $x 2]; $x } }
+        let f [mk]
+        Test::eq [apply $f] 2
+    }
+
+    Test::case "nested lambda and proc parameters are not captured" {
+        var a ()
+        var b ()
+        let f [lambda {} {
+            proc twice {b} { [* $b 2] }
+            [+ [apply [lambda {a} { $a }] 7] [twice 4]]
+        }]
+        set! a ($f)
+        set! b ($f)
+        Test::eq [apply $f] 15
+    }
+
+    Test::case "foreach loop variable is not captured" {
+        var i ()
+        let f [lambda {} { var r 0; foreach i (1 2 3) { set! r [+ $r $i] }; $r }]
+        set! i ($f)
+        Test::eq [apply $f] 6
+    }
+
+    Test::case "catch result names are not captured" {
+        var err ()
+        let f [lambda {} { catch { error boom } r err; $err }]
+        set! err ($f)
+        Test::eq [apply $f] boom
+    }
+
+    Test::case "a binding inside an if body does not hide a later outer use" {
+        let f [isolate {
+            let y 5
+            let x 1
+            lambda {} { if 1 { let x 2 }; [+ $x $y] }
+        }]
+        Test::eq [apply $f] 7
+    }
+
+    Test::case "a proc defined in the body is callable after the frame dies" {
+        proc mk {} { proc h {} {"h"}; lambda {} { h } }
+        Test::eq [apply [mk]] h
+    }
+
+    Test::case "optional parameter defaults still see the defining scope" {
+        let base 10
+        proc mk {} { lambda {} { apply [lambda {(n $base)} { $n }] } }
+        Test::eq [apply [mk]] 10
+    }
+}

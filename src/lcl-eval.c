@@ -302,10 +302,40 @@ cleanup:
   return rc;
 }
 
+static lcl_return_code call_user_proc_body(lcl_interp *interp,
+                                           lcl_value *proc_val, lcl_proc *p,
+                                           const char *invoked_name, int argc,
+                                           lcl_value **argv, lcl_value **out);
+
+/* Entry point for every user-proc call; the call hook brackets the
+ * body so profilers see one entry/exit pair per call on every path. */
 lcl_return_code lcl_call_user_proc(lcl_interp *interp, lcl_value *proc_val,
                                    lcl_proc *p, const char *invoked_name,
                                    int argc, lcl_value **argv,
                                    lcl_value **out) {
+  const char *name;
+  lcl_return_code rc;
+
+  if (!interp->call_fn) {
+    return call_user_proc_body(interp, proc_val, p, invoked_name, argc, argv,
+                               out);
+  }
+
+  name = invoked_name ? invoked_name : p->self_name ? p->self_name : "<lambda>";
+  interp->call_fn(interp, proc_val, name, argc, argv, 1, interp->call_ud);
+  rc = call_user_proc_body(interp, proc_val, p, invoked_name, argc, argv, out);
+
+  if (interp->call_fn) {
+    interp->call_fn(interp, proc_val, name, argc, argv, 0, interp->call_ud);
+  }
+
+  return rc;
+}
+
+static lcl_return_code call_user_proc_body(lcl_interp *interp,
+                                           lcl_value *proc_val, lcl_proc *p,
+                                           const char *invoked_name, int argc,
+                                           lcl_value **argv, lcl_value **out) {
   int i;
   lcl_return_code rc;
   lcl_env saved = interp->env;
