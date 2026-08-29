@@ -17,9 +17,9 @@ int main(void) {
     lcl_register_core(interp);
     lcl_register_crypto(interp);
 
-    if (lcl_eval_string(interp, "crypto::sha256 hello", &result) != LCL_OK ||
+    if (lcl_eval_string(interp, "Crypto::sha256 hello", &result) != LCL_OK ||
         lcl_value_to_cstring(interp, result, &as_str) != LCL_OK) {
-        fprintf(stderr, "crypto::sha256 failed\n");
+        fprintf(stderr, "Crypto::sha256 failed\n");
         lcl_ref_dec(result);
         lcl_interp_free(interp);
         return 1;
@@ -30,7 +30,7 @@ int main(void) {
         lcl_interp_free(interp);
         return 1;
     }
-    printf("ok: crypto::sha256 hello = %s\n", as_str);
+    printf("ok: Crypto::sha256 hello = %s\n", as_str);
     lcl_ref_dec(result);
     lcl_interp_free(interp);
     return 0;

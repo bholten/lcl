@@ -1,0 +1,224 @@
+;;; # lcl-crypto
+;;;
+;;; Hashing, HMAC, digital signatures, base64 and CSPRNG bytes for Lcl via OpenSSL.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - OpenSSL 1.1+ (`libssl-dev` on Debian/Ubuntu, `openssl` via Homebrew on macOS)
+;;; - **Portability**: wherever OpenSSL builds -- Linux, macOS, BSD, Windows.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_CRYPTO=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; ;; Hashing
+;;; let hash [Crypto::sha256 "Hello, World!"]
+;;; puts "SHA256: $hash"
+;;;
+;;; ;; HMAC
+;;; let mac [Crypto::hmac "secret-key" "message" sha256]
+;;; puts "HMAC: $mac"
+;;;
+;;; ;; Base64
+;;; let encoded [Crypto::base64_encode "Hello"]
+;;; let decoded [Crypto::base64_decode $encoded]
+;;;
+;;; ;; Tokens, nonces, salts
+;;; let nonce [Crypto::random_bytes 16]
+;;; ```
+;;;
+;;; ## Signing
+;;;
+;;; Both signers take a PEM-encoded *private* key as text (a braced
+;;; multi-line literal works well) and return the raw signature as
+;;; hex. Signatures are randomized (PSS salt, ECDSA nonce), so two
+;;; signatures of the same message differ; verification is not
+;;; provided by this package.
+;;;
+;;; ```tcl
+;;; ;; RSA-PSS signing
+;;; let rsa_key {-----BEGIN PRIVATE KEY-----
+;;; ...
+;;; -----END PRIVATE KEY-----}
+;;; let sig [Crypto::sign_rsa_pss $rsa_key "message" sha256]
+;;;
+;;; ;; ECDSA signing
+;;; let ec_key {-----BEGIN EC PRIVATE KEY-----
+;;; ...
+;;; -----END EC PRIVATE KEY-----}
+;;; let sig [Crypto::sign_ecdsa $ec_key "message" p256]
+;;; ```
+;;;
+;;; ## Conventions
+;;;
+;;; Every input is rendered to its string form and consumed as a C
+;;; string, so data is hashed up to its first NUL byte; a number is
+;;; hashed as its decimal text. Digests, MACs, signatures and random
+;;; bytes come back as lowercase hex strings (two characters per byte).
+;;;
+;;; Most failures in this package -- wrong argument count, unknown
+;;; algorithm, unparsable key, key of the wrong type -- raise an error
+;;; whose message is empty: `catch` returns 1 and the message variable
+;;; is `""`. Only [Crypto::random_bytes] reports a reason.
+
+namespace Crypto {
+
+    ;;; Procs are listed in groups: hashing ([Crypto::sha256],
+    ;;; [Crypto::sha512], [Crypto::hmac]), random bytes, signing
+    ;;; ([Crypto::sign_rsa_pss], [Crypto::sign_ecdsa]) and base64.
+
+    ;;; Return the SHA-256 digest of `data` as 64 hex characters.
+    ;;;
+    ;;; Examples:
+    ;;; >> Crypto::sha256 "abc"
+    ;;; "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    ;;; >> Crypto::sha256 ""
+    ;;; "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    ;;; >> String::length [Crypto::sha256 "anything"]
+    ;;; 64
+    ;;; >> Crypto::sha256 "a" "b"
+    ;;; !!
+    proc sha256 {data} {}
+
+    ;;; Return the SHA-512 digest of `data` as 128 hex characters.
+    ;;;
+    ;;; Examples:
+    ;;; >> Crypto::sha512 "abc"
+    ;;; "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+    ;;; >> String::length [Crypto::sha512 ""]
+    ;;; 128
+    proc sha512 {data} {}
+
+    ;;; Return the HMAC of `data` under `key` as a hex string.
+    ;;;
+    ;;; `algo` is one of `sha256`, `sha384` or `sha512`; anything else
+    ;;; is an error. The key and data are ordinary strings (an empty
+    ;;; key is allowed).
+    ;;;
+    ;;; Examples:
+    ;;; >> Crypto::hmac "key" "The quick brown fox jumps over the lazy dog" sha256
+    ;;; "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+    ;;; >> Crypto::hmac "key" "The quick brown fox jumps over the lazy dog" sha384
+    ;;; "d7f4727e2c0b39ae0f1e40cc96f60242d5b7801841cea6fc592c5d3e1ae50700582a96cf35e1e554995fe4e03381c237"
+    ;;; >> Crypto::hmac "key" "The quick brown fox jumps over the lazy dog" sha512
+    ;;; "b42af09057bac1e2d41708e48a902e09b5ff7f12ab428a4fe86653c73dd248fb82f948a549f7b791a5b41915ee4d1ec3935357e4e2317250d0372afa2ebeeb3a"
+    ;;; >> Crypto::hmac "" "" sha256
+    ;;; "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
+    ;;; >> Crypto::hmac "key" "data" md5
+    ;;; !!
+    proc hmac {key data algo} {}
+
+    ;;; Return `n` cryptographically secure random bytes as `2n` hex characters.
+    ;;;
+    ;;; Bytes come from OpenSSL `RAND_bytes`. `n` must be an integer
+    ;;; from 0 to 1048576 (1 MiB). This is the generator for keys,
+    ;;; tokens, nonces and salts. For simulation, games and anything
+    ;;; that needs a *seeded, reproducible* stream use `Xoshiro::` from
+    ;;; `lcl-random` instead -- the two are different engines with
+    ;;; different guarantees, deliberately not hidden behind a common
+    ;;; interface.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::length [Crypto::random_bytes 16]
+    ;;; 32
+    ;;; >> Crypto::random_bytes 0
+    ;;; ""
+    ;;; >> Crypto::random_bytes -1
+    ;;; !! non-negative integer
+    ;;; >> Crypto::random_bytes 1048577
+    ;;; !! must be <= 1048576
+    ;;; >> Crypto::random_bytes
+    ;;; !! expected 1 argument
+    proc random_bytes {n} {}
+
+    ;;; Sign `data` with an RSA private key using RSA-PSS; return the signature as hex.
+    ;;;
+    ;;; `key_pem` must parse as a PEM private key whose type is RSA
+    ;;; (`BEGIN PRIVATE KEY` or `BEGIN RSA PRIVATE KEY`). `algo` selects
+    ;;; the digest: `sha256`, `sha384` or `sha512`. Padding is PKCS#1
+    ;;; PSS with the salt length equal to the digest length. The
+    ;;; signature has the modulus size, so a 2048-bit key yields 256
+    ;;; bytes (512 hex characters).
+    ;;;
+    ;;; Errors (empty message): unknown `algo`, unparsable PEM, or a
+    ;;; key that is not RSA.
+    ;;;
+    ;;; ```tcl
+    ;;; let sig [Crypto::sign_rsa_pss $rsa_key "Hello, HTTP Signatures!" sha256]
+    ;;; String::length $sig    ;; 512 for a 2048-bit key
+    ;;; ```
+    proc sign_rsa_pss {key_pem data algo} {}
+
+    ;;; Sign `data` with an EC private key using ECDSA; return the DER signature as hex.
+    ;;;
+    ;;; `key_pem` must parse as a PEM private key whose type is EC.
+    ;;; `curve` names the curve the key is expected to be on and picks
+    ;;; the digest: `p256` uses SHA-256, `p384` SHA-384, `p521` SHA-512.
+    ;;; The curve name is not checked against the key itself. The
+    ;;; result is DER-encoded, so its length varies by a byte or two
+    ;;; between signatures.
+    ;;;
+    ;;; Errors (empty message): unknown `curve`, unparsable PEM, or a
+    ;;; key that is not EC.
+    ;;;
+    ;;; Examples:
+    ;;; >> let ec_key {-----BEGIN EC PRIVATE KEY-----
+    ;;; >> MHcCAQEEIET4joyIKlAHzkDXcxINb1X2cG0VQLvXBn+w7VOTtCiOoAoGCCqGSM49
+    ;;; >> AwEHoUQDQgAEARnCR7Af/nXPFHsyfrLgS8FtjrYTLIcGp3diMwelG37z0DFXpyuD
+    ;;; >> BJb7kzjgwMkuSw+00zlw027XYYfnarbz7Q==
+    ;;; >> -----END EC PRIVATE KEY-----}
+    ;;; >> type [Crypto::sign_ecdsa $ec_key "Hello, HTTP Signatures!" p256]
+    ;;; "string"
+    ;;; >> Crypto::sign_ecdsa $ec_key "message" p999
+    ;;; !!
+    ;;; >> Crypto::sign_ecdsa "not a key" "message" p256
+    ;;; !!
+    ;;; >> Crypto::sign_rsa_pss $ec_key "message" sha256
+    ;;; !!
+    proc sign_ecdsa {key_pem data curve} {}
+
+    ;;; Return `data` encoded as standard base64 (with `=` padding, no line breaks).
+    ;;;
+    ;;; The empty string encodes to the empty string.
+    ;;;
+    ;;; Examples:
+    ;;; >> Crypto::base64_encode "Hello, World!"
+    ;;; "SGVsbG8sIFdvcmxkIQ=="
+    ;;; >> Crypto::base64_encode "f"
+    ;;; "Zg=="
+    ;;; >> Crypto::base64_encode ""
+    ;;; ""
+    proc base64_encode {data} {}
+
+    ;;; Decode standard base64 `data` and return the bytes as a string.
+    ;;;
+    ;;; Decoding is strict, so the result never depends on the OpenSSL
+    ;;; version: the input must use the standard alphabet
+    ;;; (`A-Z a-z 0-9 + /`), have a length that is a multiple of four,
+    ;;; and carry `=` padding only as its last one or two characters.
+    ;;; Anything else -- unpadded, URL-safe, line-wrapped, or plain
+    ;;; garbage -- is an error. The result is truncated at the first
+    ;;; NUL byte.
+    ;;;
+    ;;; Examples:
+    ;;; >> Crypto::base64_decode "SGVsbG8sIFdvcmxkIQ=="
+    ;;; "Hello, World!"
+    ;;; >> Crypto::base64_decode [Crypto::base64_encode "round trip"]
+    ;;; "round trip"
+    ;;; >> Crypto::base64_decode ""
+    ;;; ""
+    ;;; >> Crypto::base64_decode "not base64!"
+    ;;; !! invalid base64
+    ;;; >> Crypto::base64_decode "SGVsbG8"
+    ;;; !! invalid base64
+    ;;; >> Crypto::base64_decode "Zg==Zg=="
+    ;;; !! invalid base64
+    proc base64_decode {data} {}
+}

@@ -9,7 +9,7 @@
 #include <string.h>
 
 #define CURL_CONTEXT_TYPE "curl_context"
-#define CURL_NS "curl"
+#define CURL_NS "Curl"
 
 #define CURL_STRING_OPTION(fn_name, curl_opt)                                  \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
@@ -989,249 +989,249 @@ void lcl_register_curl(lcl_interp *interp) {
   lcl_define_take(interp, CURL_NS, curl_ns);
 
   /* Lifecycle */
-  lcl_ns_def_take(curl_ns, "new", lcl_c_proc_new("curl::new", c_curl_new));
-  lcl_ns_def_take(curl_ns, "init", lcl_c_proc_new("curl::init", c_curl_init));
+  lcl_ns_def_take(curl_ns, "new", lcl_c_proc_new("Curl::new", c_curl_new));
+  lcl_ns_def_take(curl_ns, "init", lcl_c_proc_new("Curl::init", c_curl_init));
   lcl_ns_def_take(curl_ns, "reset",
-                  lcl_c_proc_new("curl::reset", c_curl_reset));
+                  lcl_c_proc_new("Curl::reset", c_curl_reset));
   lcl_ns_def_take(curl_ns, "perform",
-                  lcl_c_proc_new("curl::perform", c_curl_perform));
+                  lcl_c_proc_new("Curl::perform", c_curl_perform));
 
   /* Main request attributes */
   lcl_ns_def_take(curl_ns, "set_url",
-                  lcl_c_proc_new("curl::set_url", c_curl_set_url));
+                  lcl_c_proc_new("Curl::set_url", c_curl_set_url));
   lcl_ns_def_take(curl_ns, "set_verb",
-                  lcl_c_proc_new("curl::set_verb", c_curl_set_verb));
+                  lcl_c_proc_new("Curl::set_verb", c_curl_set_verb));
   lcl_ns_def_take(curl_ns, "set_header",
-                  lcl_c_proc_new("curl::set_header", c_curl_set_header));
+                  lcl_c_proc_new("Curl::set_header", c_curl_set_header));
   lcl_ns_def_take(curl_ns, "set_body",
-                  lcl_c_proc_new("curl::set_body", c_curl_set_body));
+                  lcl_c_proc_new("Curl::set_body", c_curl_set_body));
   lcl_ns_def_take(curl_ns, "set_nobody",
-                  lcl_c_proc_new("curl::set_nobody", c_curl_set_nobody));
+                  lcl_c_proc_new("Curl::set_nobody", c_curl_set_nobody));
   lcl_ns_def_take(
       curl_ns, "set_user_agent",
-      lcl_c_proc_new("curl::set_user_agent", c_curl_set_option_user_agent));
+      lcl_c_proc_new("Curl::set_user_agent", c_curl_set_option_user_agent));
 
   /* Timeouts and connection settings */
   lcl_ns_def_take(
       curl_ns, "set_timeout_ms",
-      lcl_c_proc_new("curl::set_timeout_ms", c_curl_set_option_timeout_ms));
+      lcl_c_proc_new("Curl::set_timeout_ms", c_curl_set_option_timeout_ms));
   lcl_ns_def_take(curl_ns, "set_accept_timeout_ms",
-                  lcl_c_proc_new("curl::set_accept_timeout_ms",
+                  lcl_c_proc_new("Curl::set_accept_timeout_ms",
                                  c_curl_set_option_accept_timeout_ms));
   lcl_ns_def_take(curl_ns, "set_connection_timeout_ms",
-                  lcl_c_proc_new("curl::set_connection_timeout_ms",
+                  lcl_c_proc_new("Curl::set_connection_timeout_ms",
                                  c_curl_set_option_connection_timeout_ms));
   lcl_ns_def_take(curl_ns, "set_expect_100_timeout_ms",
-                  lcl_c_proc_new("curl::set_expect_100_timeout_ms",
+                  lcl_c_proc_new("Curl::set_expect_100_timeout_ms",
                                  c_curl_set_option_expect_100_timeout_ms));
   lcl_ns_def_take(
       curl_ns, "set_interface",
-      lcl_c_proc_new("curl::set_interface", c_curl_set_option_interface));
+      lcl_c_proc_new("Curl::set_interface", c_curl_set_option_interface));
   lcl_ns_def_take(curl_ns, "set_low_speed_limit",
-                  lcl_c_proc_new("curl::set_low_speed_limit",
+                  lcl_c_proc_new("Curl::set_low_speed_limit",
                                  c_curl_set_option_low_speed_limit));
   lcl_ns_def_take(curl_ns, "set_low_speed_time",
-                  lcl_c_proc_new("curl::set_low_speed_time",
+                  lcl_c_proc_new("Curl::set_low_speed_time",
                                  c_curl_set_option_low_speed_time));
   lcl_ns_def_take(curl_ns, "set_tcp_keep_alive",
-                  lcl_c_proc_new("curl::set_tcp_keep_alive",
+                  lcl_c_proc_new("Curl::set_tcp_keep_alive",
                                  c_curl_set_option_tcp_keep_alive));
   lcl_ns_def_take(curl_ns, "set_tcp_keep_idle",
-                  lcl_c_proc_new("curl::set_tcp_keep_idle",
+                  lcl_c_proc_new("Curl::set_tcp_keep_idle",
                                  c_curl_set_option_tcp_keep_idle));
   lcl_ns_def_take(curl_ns, "set_tcp_keep_intvl",
-                  lcl_c_proc_new("curl::set_tcp_keep_intvl",
+                  lcl_c_proc_new("Curl::set_tcp_keep_intvl",
                                  c_curl_set_option_tcp_keep_intvl));
 
   /* HTTP settings */
   lcl_ns_def_take(curl_ns, "set_accept_encoding",
-                  lcl_c_proc_new("curl::set_accept_encoding",
+                  lcl_c_proc_new("Curl::set_accept_encoding",
                                  c_curl_set_option_accept_encoding));
   lcl_ns_def_take(
       curl_ns, "set_http_version",
-      lcl_c_proc_new("curl::set_http_version", c_curl_set_option_http_version));
+      lcl_c_proc_new("Curl::set_http_version", c_curl_set_option_http_version));
 
   /* Redirects */
   lcl_ns_def_take(curl_ns, "set_follow_location",
-                  lcl_c_proc_new("curl::set_follow_location",
+                  lcl_c_proc_new("Curl::set_follow_location",
                                  c_curl_set_option_follow_location));
   lcl_ns_def_take(curl_ns, "set_max_redirects",
-                  lcl_c_proc_new("curl::set_max_redirects",
+                  lcl_c_proc_new("Curl::set_max_redirects",
                                  c_curl_set_option_max_redirects));
   lcl_ns_def_take(curl_ns, "set_post_redirect",
-                  lcl_c_proc_new("curl::set_post_redirect",
+                  lcl_c_proc_new("Curl::set_post_redirect",
                                  c_curl_set_option_post_redirect));
 
   /* Authentication */
   lcl_ns_def_take(
       curl_ns, "set_httpauth",
-      lcl_c_proc_new("curl::set_httpauth", c_curl_set_option_httpauth));
+      lcl_c_proc_new("Curl::set_httpauth", c_curl_set_option_httpauth));
   lcl_ns_def_take(
       curl_ns, "set_username",
-      lcl_c_proc_new("curl::set_username", c_curl_set_option_username));
+      lcl_c_proc_new("Curl::set_username", c_curl_set_option_username));
   lcl_ns_def_take(
       curl_ns, "set_password",
-      lcl_c_proc_new("curl::set_password", c_curl_set_option_password));
+      lcl_c_proc_new("Curl::set_password", c_curl_set_option_password));
   lcl_ns_def_take(curl_ns, "set_xoauth2_bearer",
-                  lcl_c_proc_new("curl::set_xoauth2_bearer",
+                  lcl_c_proc_new("Curl::set_xoauth2_bearer",
                                  c_curl_set_option_xoauth2_bearer));
 
   /* TLS/SSL */
   lcl_ns_def_take(curl_ns, "set_ssl_verify_peer",
-                  lcl_c_proc_new("curl::set_ssl_verify_peer",
+                  lcl_c_proc_new("Curl::set_ssl_verify_peer",
                                  c_curl_set_option_ssl_verify_peer));
   lcl_ns_def_take(curl_ns, "set_ssl_verify_host",
-                  lcl_c_proc_new("curl::set_ssl_verify_host",
+                  lcl_c_proc_new("Curl::set_ssl_verify_host",
                                  c_curl_set_option_ssl_verify_host));
   lcl_ns_def_take(
       curl_ns, "set_ca_info",
-      lcl_c_proc_new("curl::set_ca_info", c_curl_set_option_ca_info));
+      lcl_c_proc_new("Curl::set_ca_info", c_curl_set_option_ca_info));
   lcl_ns_def_take(
       curl_ns, "set_ca_path",
-      lcl_c_proc_new("curl::set_ca_path", c_curl_set_option_ca_path));
+      lcl_c_proc_new("Curl::set_ca_path", c_curl_set_option_ca_path));
   lcl_ns_def_take(
       curl_ns, "set_ssl_cert",
-      lcl_c_proc_new("curl::set_ssl_cert", c_curl_set_option_ssl_cert));
+      lcl_c_proc_new("Curl::set_ssl_cert", c_curl_set_option_ssl_cert));
   lcl_ns_def_take(curl_ns, "set_ssl_cert_type",
-                  lcl_c_proc_new("curl::set_ssl_cert_type",
+                  lcl_c_proc_new("Curl::set_ssl_cert_type",
                                  c_curl_set_option_ssl_cert_type));
   lcl_ns_def_take(
       curl_ns, "set_ssl_key",
-      lcl_c_proc_new("curl::set_ssl_key", c_curl_set_option_ssl_key));
+      lcl_c_proc_new("Curl::set_ssl_key", c_curl_set_option_ssl_key));
   lcl_ns_def_take(
       curl_ns, "set_ssl_key_type",
-      lcl_c_proc_new("curl::set_ssl_key_type", c_curl_set_option_ssl_key_type));
+      lcl_c_proc_new("Curl::set_ssl_key_type", c_curl_set_option_ssl_key_type));
   lcl_ns_def_take(
       curl_ns, "set_key_password",
-      lcl_c_proc_new("curl::set_key_password", c_curl_set_option_key_password));
+      lcl_c_proc_new("Curl::set_key_password", c_curl_set_option_key_password));
   lcl_ns_def_take(
       curl_ns, "set_ssl_version",
-      lcl_c_proc_new("curl::set_ssl_version", c_curl_set_option_ssl_version));
+      lcl_c_proc_new("Curl::set_ssl_version", c_curl_set_option_ssl_version));
   lcl_ns_def_take(curl_ns, "set_ssl_cipher_list",
-                  lcl_c_proc_new("curl::set_ssl_cipher_list",
+                  lcl_c_proc_new("Curl::set_ssl_cipher_list",
                                  c_curl_set_option_ssl_cipher_list));
   lcl_ns_def_take(curl_ns, "set_tls13_ciphers",
-                  lcl_c_proc_new("curl::set_tls13_ciphers",
+                  lcl_c_proc_new("Curl::set_tls13_ciphers",
                                  c_curl_set_option_tls13_ciphers));
 
   /* Proxy */
   lcl_ns_def_take(curl_ns, "set_proxy",
-                  lcl_c_proc_new("curl::set_proxy", c_curl_set_option_proxy));
+                  lcl_c_proc_new("Curl::set_proxy", c_curl_set_option_proxy));
   lcl_ns_def_take(
       curl_ns, "set_proxy_port",
-      lcl_c_proc_new("curl::set_proxy_port", c_curl_set_option_proxy_port));
+      lcl_c_proc_new("Curl::set_proxy_port", c_curl_set_option_proxy_port));
   lcl_ns_def_take(
       curl_ns, "set_proxy_type",
-      lcl_c_proc_new("curl::set_proxy_type", c_curl_set_option_proxy_type));
+      lcl_c_proc_new("Curl::set_proxy_type", c_curl_set_option_proxy_type));
   lcl_ns_def_take(curl_ns, "set_proxy_username",
-                  lcl_c_proc_new("curl::set_proxy_username",
+                  lcl_c_proc_new("Curl::set_proxy_username",
                                  c_curl_set_option_proxy_username));
   lcl_ns_def_take(curl_ns, "set_proxy_password",
-                  lcl_c_proc_new("curl::set_proxy_password",
+                  lcl_c_proc_new("Curl::set_proxy_password",
                                  c_curl_set_option_proxy_password));
   lcl_ns_def_take(
       curl_ns, "set_no_proxy",
-      lcl_c_proc_new("curl::set_no_proxy", c_curl_set_option_no_proxy));
+      lcl_c_proc_new("Curl::set_no_proxy", c_curl_set_option_no_proxy));
   lcl_ns_def_take(curl_ns, "set_proxy_ssl_verify_peer",
-                  lcl_c_proc_new("curl::set_proxy_ssl_verify_peer",
+                  lcl_c_proc_new("Curl::set_proxy_ssl_verify_peer",
                                  c_curl_set_option_proxy_ssl_verify_peer));
   lcl_ns_def_take(curl_ns, "set_proxy_ssl_verify_host",
-                  lcl_c_proc_new("curl::set_proxy_ssl_verify_host",
+                  lcl_c_proc_new("Curl::set_proxy_ssl_verify_host",
                                  c_curl_set_option_proxy_ssl_verify_host));
   lcl_ns_def_take(curl_ns, "set_proxy_ca_info",
-                  lcl_c_proc_new("curl::set_proxy_ca_info",
+                  lcl_c_proc_new("Curl::set_proxy_ca_info",
                                  c_curl_set_option_proxy_ca_info));
   lcl_ns_def_take(curl_ns, "set_proxy_ca_path",
-                  lcl_c_proc_new("curl::set_proxy_ca_path",
+                  lcl_c_proc_new("Curl::set_proxy_ca_path",
                                  c_curl_set_option_proxy_ca_path));
   lcl_ns_def_take(curl_ns, "set_proxy_ssl_version",
-                  lcl_c_proc_new("curl::set_proxy_ssl_version",
+                  lcl_c_proc_new("Curl::set_proxy_ssl_version",
                                  c_curl_set_option_proxy_ssl_version));
 
   /* DNS and connection reuse */
   lcl_ns_def_take(
       curl_ns, "set_doh_url",
-      lcl_c_proc_new("curl::set_doh_url", c_curl_set_option_doh_url));
+      lcl_c_proc_new("Curl::set_doh_url", c_curl_set_option_doh_url));
   lcl_ns_def_take(
       curl_ns, "set_dns_servers",
-      lcl_c_proc_new("curl::set_dns_servers", c_curl_set_option_dns_servers));
+      lcl_c_proc_new("Curl::set_dns_servers", c_curl_set_option_dns_servers));
   lcl_ns_def_take(curl_ns, "set_fresh_connect",
-                  lcl_c_proc_new("curl::set_fresh_connect",
+                  lcl_c_proc_new("Curl::set_fresh_connect",
                                  c_curl_set_option_fresh_connect));
   lcl_ns_def_take(
       curl_ns, "set_forbid_reuse",
-      lcl_c_proc_new("curl::set_forbid_reuse", c_curl_set_option_forbid_reuse));
+      lcl_c_proc_new("Curl::set_forbid_reuse", c_curl_set_option_forbid_reuse));
 
   /* Speed limits */
   lcl_ns_def_take(curl_ns, "set_max_recv_speed",
-                  lcl_c_proc_new("curl::set_max_recv_speed",
+                  lcl_c_proc_new("Curl::set_max_recv_speed",
                                  c_curl_set_option_max_recv_speed_large));
   lcl_ns_def_take(curl_ns, "set_max_send_speed",
-                  lcl_c_proc_new("curl::set_max_send_speed",
+                  lcl_c_proc_new("Curl::set_max_send_speed",
                                  c_curl_set_option_max_send_speed_large));
 
   /* Cookies */
   lcl_ns_def_take(
       curl_ns, "set_cookie_file",
-      lcl_c_proc_new("curl::set_cookie_file", c_curl_set_option_cookie_file));
+      lcl_c_proc_new("Curl::set_cookie_file", c_curl_set_option_cookie_file));
   lcl_ns_def_take(
       curl_ns, "set_cookie_jar",
-      lcl_c_proc_new("curl::set_cookie_jar", c_curl_set_option_cookie_jar));
+      lcl_c_proc_new("Curl::set_cookie_jar", c_curl_set_option_cookie_jar));
 
   /* Observability */
   lcl_ns_def_take(
       curl_ns, "set_verbose",
-      lcl_c_proc_new("curl::set_verbose", c_curl_set_option_verbose));
+      lcl_c_proc_new("Curl::set_verbose", c_curl_set_option_verbose));
   lcl_ns_def_take(
       curl_ns, "set_include_header",
-      lcl_c_proc_new("curl::set_include_header", c_curl_set_option_header));
+      lcl_c_proc_new("Curl::set_include_header", c_curl_set_option_header));
 
   /* Callbacks */
   lcl_ns_def_take(
       curl_ns, "set_write_callback",
-      lcl_c_proc_new("curl::set_write_callback", c_curl_set_write_callback));
+      lcl_c_proc_new("Curl::set_write_callback", c_curl_set_write_callback));
   lcl_ns_def_take(
       curl_ns, "set_header_callback",
-      lcl_c_proc_new("curl::set_header_callback", c_curl_set_header_callback));
+      lcl_c_proc_new("Curl::set_header_callback", c_curl_set_header_callback));
   lcl_ns_def_take(
       curl_ns, "set_sse_callback",
-      lcl_c_proc_new("curl::set_sse_callback", c_curl_set_sse_callback));
+      lcl_c_proc_new("Curl::set_sse_callback", c_curl_set_sse_callback));
 
   /* Response info getters */
   lcl_ns_def_take(
       curl_ns, "get_response_code",
-      lcl_c_proc_new("curl::get_response_code", c_curl_get_info_response_code));
+      lcl_c_proc_new("Curl::get_response_code", c_curl_get_info_response_code));
   lcl_ns_def_take(
       curl_ns, "get_content_type",
-      lcl_c_proc_new("curl::get_content_type", c_curl_get_info_content_type));
+      lcl_c_proc_new("Curl::get_content_type", c_curl_get_info_content_type));
   lcl_ns_def_take(
       curl_ns, "get_effective_url",
-      lcl_c_proc_new("curl::get_effective_url", c_curl_get_info_effective_url));
+      lcl_c_proc_new("Curl::get_effective_url", c_curl_get_info_effective_url));
   lcl_ns_def_take(
       curl_ns, "get_total_time",
-      lcl_c_proc_new("curl::get_total_time", c_curl_get_info_total_time));
+      lcl_c_proc_new("Curl::get_total_time", c_curl_get_info_total_time));
   lcl_ns_def_take(
       curl_ns, "get_header_size",
-      lcl_c_proc_new("curl::get_header_size", c_curl_get_info_header_size));
+      lcl_c_proc_new("Curl::get_header_size", c_curl_get_info_header_size));
   lcl_ns_def_take(
       curl_ns, "get_request_size",
-      lcl_c_proc_new("curl::get_request_size", c_curl_get_info_request_size));
+      lcl_c_proc_new("Curl::get_request_size", c_curl_get_info_request_size));
   lcl_ns_def_take(
       curl_ns, "get_num_connects",
-      lcl_c_proc_new("curl::get_num_connects", c_curl_get_info_num_connects));
+      lcl_c_proc_new("Curl::get_num_connects", c_curl_get_info_num_connects));
   lcl_ns_def_take(
       curl_ns, "get_primary_ip",
-      lcl_c_proc_new("curl::get_primary_ip", c_curl_get_info_primary_ip));
+      lcl_c_proc_new("Curl::get_primary_ip", c_curl_get_info_primary_ip));
   lcl_ns_def_take(
       curl_ns, "get_primary_port",
-      lcl_c_proc_new("curl::get_primary_port", c_curl_get_info_primary_port));
+      lcl_c_proc_new("Curl::get_primary_port", c_curl_get_info_primary_port));
 
   /* Error handling */
   lcl_ns_def_take(
       curl_ns, "get_last_error",
-      lcl_c_proc_new("curl::get_last_error", c_curl_get_last_error));
+      lcl_c_proc_new("Curl::get_last_error", c_curl_get_last_error));
   lcl_ns_def_take(curl_ns, "is_timeout",
-                  lcl_c_proc_new("curl::is_timeout", c_curl_is_timeout));
+                  lcl_c_proc_new("Curl::is_timeout", c_curl_is_timeout));
   lcl_ns_def_take(curl_ns, "error_string",
-                  lcl_c_proc_new("curl::error_string", c_curl_error_string));
+                  lcl_c_proc_new("Curl::error_string", c_curl_error_string));
 }

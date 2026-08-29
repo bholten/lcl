@@ -1,6 +1,68 @@
 ;; Tests for curl-dsl.lcl
 
-import curl::dsl
+import Curl::Dsl
+
+Test::suite "curl dsl http signatures" {
+    Test::case "signature base follows RFC 9421 component order" {
+        let base [Curl::Dsl::_build_signature_base POST "https://example.com/foo?param=value" #{"content-type" "application/json" "x-custom" "abc"} "{}" ("@method" "@authority" "@scheme" "@path" "@query" "@target-uri" "@request-target" content-type x-custom) {("@method");created=1618884473;keyid="k1";alg="hmac-sha256"}]
+        let want [String::join (
+            {"@method": POST}
+            {"@authority": example.com}
+            {"@scheme": https}
+            {"@path": /foo}
+            {"@query": param=value}
+            {"@target-uri": https://example.com/foo?param=value}
+            {"@request-target": /foo?param=value}
+            {"content-type": application/json}
+            {"x-custom": abc}
+            {"@signature-params": ("@method");created=1618884473;keyid="k1";alg="hmac-sha256"}) "\n"]
+        Test::eq $base $want
+    }
+
+    Test::case "content-digest is sha-256 of the body, empty for no body" {
+        Test::eq [Curl::Dsl::_build_content_digest ""] ""
+        Test::eq [Curl::Dsl::_build_content_digest "{}"] "sha-256=:[Crypto::sha256 "{}"]:"
+    }
+
+    Test::case "url parsing tolerates missing path and query" {
+        Test::eq [Curl::Dsl::_parse_url "https://example.com"] #{scheme https authority example.com path / query {}}
+        Test::eq [Curl::Dsl::_parse_url "http://h:8080/a/b?x=1&y=2"] #{scheme http authority h:8080 path /a/b query x=1&y=2}
+    }
+
+    Test::case "hmac-sha256 signing adds Signature-Input and Signature headers" {
+        let cfg #{key_id k1 key_pem "secret" algorithm hmac-sha256 name sig covered_components ("@method" "@path" content-digest) created 1618884473}
+        let headers [Curl::Dsl::_apply_http_signature GET "https://example.com/x" ("Accept: */*") "" $cfg]
+        Test::eq [len $headers] 3
+        Test::eq [get $headers 0] "Accept: */*"
+        Test::eq [get $headers 1] {Signature-Input: sig=("@method" "@path" "content-digest");created=1618884473;keyid="k1";alg="hmac-sha256"}
+        let base [String::join ({"@method": GET} {"@path": /x} {"content-digest": } {"@signature-params": ("@method" "@path" "content-digest");created=1618884473;keyid="k1";alg="hmac-sha256"}) "\n"]
+        Test::eq [get $headers 2] "Signature: sig=:[Crypto::base64_encode [Crypto::hmac secret $base sha256]]:"
+    }
+
+    Test::case "an unknown algorithm is an error" {
+        let cfg #{key_id k1 key_pem s algorithm md5 name sig covered_components () created 1}
+        Test::eq [catch { Curl::Dsl::_apply_http_signature GET "https://e/" () "" $cfg } r err] 1
+        Test::eq $err "Unsupported signature algorithm: md5"
+    }
+
+    Test::case "the http_signature block collects its settings, created included" {
+        let r [Curl::Dsl::_build_request {
+            http_signature {
+                key_id    k1
+                key_pem   secret
+                algorithm hmac-sha256
+                name      s1
+                cover     ("@method")
+                created   42
+            }
+        }]
+        let sc [get [get $r config] http_signature]
+        Test::eq [get $sc key_id] k1
+        Test::eq [get $sc name] s1
+        Test::eq [get $sc covered_components] ("@method")
+        Test::eq [get $sc created] 42
+    }
+}
 
 Test::suite "curl dsl" {
     Test::case "Basic requests to httpbin" {

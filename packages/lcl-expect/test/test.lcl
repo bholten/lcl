@@ -2,21 +2,21 @@
 
 Test::suite "expect library" {
     Test::case "Pattern creation" {
-        let pat1 [expect::pattern "hello"]
-        let pat2 [expect::regex {[a-z]+}]
-        let pat3 [expect::timeout]
-        let pat4 [expect::eof]
+        let pat1 [Expect::pattern "hello"]
+        let pat2 [Expect::regex {[a-z]+}]
+        let pat3 [Expect::timeout]
+        let pat4 [Expect::eof]
 
-        assert_eq literal [expect::pattern-kind $pat1]
-        assert_eq regex [expect::pattern-kind $pat2]
-        assert_eq timeout [expect::pattern-kind $pat3]
-        assert_eq eof [expect::pattern-kind $pat4]
+        assert_eq literal [Expect::pattern-kind $pat1]
+        assert_eq regex [Expect::pattern-kind $pat2]
+        assert_eq timeout [Expect::pattern-kind $pat3]
+        assert_eq eof [Expect::pattern-kind $pat4]
     }
 
     Test::case "Pattern matching on buffer" {
         let buf "user@host:~$ ls -la"
         let patterns [list "password:" "$ " "# "]
-        let r [expect::match-buffer $buf $patterns]
+        let r [Expect::match-buffer $buf $patterns]
 
         assert_eq 1 [get $r matched]
         assert_eq 1 [get $r index]
@@ -26,20 +26,20 @@ Test::suite "expect library" {
     }
 
     Test::case "PTY spawning + Send and receive" {
-        let s [expect::spawn (cat)]
+        let s [Expect::spawn (cat)]
 
-        assert_eq 1 [expect::pty? $s]
+        assert_eq 1 [Expect::pty? $s]
 
-        expect::send-line $s "hello world"
+        Expect::send-line $s "hello world"
 
-        let r [expect::wait-for $s "hello"]
+        let r [Expect::wait-for $s "hello"]
 
         assert_eq 1 [get $r matched]
         assert_eq "hello world" [String::trim [get $r data]]
 
-        expect::send-line $s "password: secret"
+        Expect::send-line $s "password: secret"
 
-        let result [expect::match [get $s handle] (
+        let result [Expect::match [get $s handle] (
             ("password:" [lambda {m} {
                 let d [get $m data]
                 String::trim $d
@@ -49,17 +49,17 @@ Test::suite "expect library" {
         
         assert_eq "password: secret" $result
 
-        expect::close $s        
+        Expect::close $s        
     }
 
     Test::case "Pipe mode spawn" {
-        let s2 [expect::spawn (echo done) #{pty 0}]
-        assert_eq 0 [expect::pty? $s2]
+        let s2 [Expect::spawn (echo done) #{pty 0}]
+        assert_eq 0 [Expect::pty? $s2]
         
-        let r [expect::wait-for $s2 "done"]
+        let r [Expect::wait-for $s2 "done"]
         assert_eq 1 [get $r matched]
 
-        expect::close $s2
+        Expect::close $s2
     }
 }
 

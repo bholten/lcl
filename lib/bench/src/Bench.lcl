@@ -115,7 +115,7 @@ namespace Bench {
     ;;;
     ;;; `opts` keys: `filter` (substring of "suite/case"), `min_ms`
     ;;; (per-batch target, default 200), `batches` (default 5),
-    ;;; `profile` (print a `time::profile` table under each row),
+    ;;; `profile` (print a `Time::profile` table under each row),
     ;;; `save` (write a baseline file for the results), `quiet`.
     ;;; Returns 0, or 1 when an `expect_faster` assertion failed.
     proc run {(opts #{})} {
@@ -145,9 +145,9 @@ namespace Bench {
             let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
             repeat $batches {
                 let _b_s0 [Interp::stats]
-                let _b_t0 [time::monotonic_us]
+                let _b_t0 [Time::monotonic_us]
                 apply $_b_fn
-                let _b_dt [- [time::monotonic_us] $_b_t0]
+                let _b_dt [- [Time::monotonic_us] $_b_t0]
                 let _b_s1 [Interp::stats]
                 List::push! _b_ts [int [/ [* $_b_dt 1000] $_b_n]]
                 set! _b_clones [+ $_b_clones [- [+ [get $_b_s1 list_clones] [get $_b_s1 dict_clones]] [+ [get $_b_s0 list_clones] [get $_b_s0 dict_clones]]]]
@@ -187,9 +187,9 @@ namespace Bench {
                 var _b_go 1
                 while {$_b_go} {
                     let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
-                    let _b_t0 [time::monotonic_us]
+                    let _b_t0 [Time::monotonic_us]
                     apply $_b_fn
-                    let _b_dt [- [time::monotonic_us] $_b_t0]
+                    let _b_dt [- [Time::monotonic_us] $_b_t0]
                     if [>= $_b_dt $_b_min_us] { set! _b_go 0 } else { set! _b_n [* $_b_n 2] }
                 }
 
@@ -219,7 +219,7 @@ namespace Bench {
                     puts $_b_row
                     if $do_profile {
                         let _b_fn [lambda {} "repeat $_b_n {$_b_body}"]
-                        puts [time::profile_format [time::profile { apply $_b_fn }]]
+                        puts [Time::profile_format [Time::profile { apply $_b_fn }]]
                     }
                 }
             }
@@ -256,7 +256,7 @@ namespace Bench {
                 set! _b_out [String::join ($_b_out $_b_nl "    {" $_b_k "} " $_b_row_open [get $_b_r ns] " n " [get $_b_r n] $_b_close) ""]
             }
             set! _b_out [String::join ($_b_out $_b_nl $_b_close $_b_nl) ""]
-            if [catch { io::write_file $save $_b_out } _b_r _b_e] {
+            if [catch { Io::write_file $save $_b_out } _b_r _b_e] {
                 puts "Bench: could not write $save ($_b_e); baseline follows:"
                 puts $_b_out
             } else {

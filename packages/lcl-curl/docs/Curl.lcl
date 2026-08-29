@@ -1,0 +1,489 @@
+;;; # lcl-curl
+;;;
+;;; HTTP client bindings for Lcl using libcurl.
+;;;
+;;; > **0.1.0 note:** `lcl-curl` is built and used in-tree only; it is
+;;; > not part of the `cmake --install` artifact. The package vendors
+;;; > libcurl via `FetchContent`, and a shipping decision for vendored
+;;; > deps is deferred. Use it by building Lcl with `-DLCL_BUILD_CURL=ON`
+;;; > and consuming `lcl_curl` directly from your own CMake build.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - libcurl 7.x or 8.x (`libcurl4-openssl-dev` on Debian/Ubuntu, `curl` via Homebrew on macOS)
+;;; - **Portability**: wherever libcurl builds -- Linux, macOS, BSD, Windows.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_CURL=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; Curl::init
+;;;
+;;; let c [Curl::new]
+;;; Curl::set_url $c "https://api.example.com/data"
+;;; Curl::set_verb $c GET
+;;; Curl::set_header $c "Authorization: Bearer token123"
+;;;
+;;; Curl::set_write_callback $c [lambda {chunk} {
+;;;     puts "Received: $chunk"
+;;; }]
+;;;
+;;; Curl::perform $c
+;;;
+;;; let status [Curl::get_response_code $c]
+;;; puts "Status: $status"
+;;; ```
+;;;
+;;; The model is libcurl's easy interface, one proc per option: a
+;;; handle from [Curl::new] is an opaque value, `set_*` procs configure
+;;; it, [Curl::perform] runs the transfer synchronously, and `get_*`
+;;; procs read information about the last transfer. Response bytes
+;;; only reach your script through a callback -- without one libcurl
+;;; writes the body to stdout.
+;;;
+;;; A handle is released when its value is dropped. Every proc in this
+;;; namespace raises an error with an *empty* message when it fails
+;;; (wrong argument count, first argument not a curl handle, non-callable
+;;; callback, libcurl rejecting an option, or a failed transfer); use
+;;; [Curl::get_last_error] and [Curl::error_string] for the reason
+;;; after [Curl::perform].
+;;;
+;;; ## Server-Sent Events
+;;;
+;;; [Curl::set_sse_callback] parses the response stream as SSE: events
+;;; are split on blank lines, `:` comment lines are ignored, and each
+;;; event is delivered as a dict:
+;;;
+;;; | Key     | Value                                                     |
+;;; |---------|-----------------------------------------------------------|
+;;; | `event` | event type; `"message"` when the stream gives none        |
+;;; | `data`  | data lines joined with `\n` (absent when there were none) |
+;;; | `id`    | the `id:` field, when present                             |
+;;; | `retry` | the `retry:` field as an integer, when present            |
+;;;
+;;; ```tcl
+;;; Curl::set_sse_callback $c [lambda {event} {
+;;;     let type [get $event event]
+;;;     let data [get $event data ""]
+;;;     puts "Event: $type, Data: $data"
+;;; }]
+;;; ```
+;;;
+;;; An SSE stream typically never ends, so give the handle a
+;;; [Curl::set_timeout_ms] and treat [Curl::is_timeout] as the normal
+;;; way out:
+;;;
+;;; ```tcl
+;;; catch {Curl::perform $c}
+;;;
+;;; if [Curl::is_timeout $c] {
+;;;     puts "Request timed out (expected for SSE)"
+;;; } else {
+;;;     puts "Error: [Curl::error_string $c]"
+;;; }
+;;; ```
+;;;
+;;; ## Tests
+;;;
+;;; `packages/lcl-curl/test/test.lcl` runs under `ctest -R lcl-curl`.
+;;; The request cases talk to a local `jmalloc/echo-server` from
+;;; `lib/curl-dsl/docker-compose.yml` (port 8080; it echoes requests and
+;;; streams Server-Sent Events at `/.sse`):
+;;;
+;;; ```bash
+;;; docker compose -f lib/curl-dsl/docker-compose.yml up -d
+;;; ctest --test-dir build -R lcl-curl
+;;; docker compose -f lib/curl-dsl/docker-compose.yml down
+;;; ```
+;;;
+;;; Without it those cases `SKIP` (visible in the output, still a
+;;; passing run). `LCL_CURL_REQUIRE_SERVER=1` makes an unreachable
+;;; server fail the run instead (CI sets this on the Linux rows);
+;;; `LCL_CURL_TEST_URL` overrides the base URL (default
+;;; `http://localhost:8080`). None of the tests leave the machine.
+
+namespace Curl {
+
+    ;;; Procs are listed in groups: lifecycle, request, timeouts and
+    ;;; connection, protocol, redirects, authentication, TLS, proxy, DNS
+    ;;; and connection reuse, speed limits, cookies, observability,
+    ;;; callbacks, response information, error handling.
+    ;;;
+    ;;; **Setters.** Each `set_*` proc takes the handle and one value
+    ;;; and returns nothing. Integer options (`CURLOPT_*` long options)
+    ;;; take an integer; boolean options are `0`/`1`. Passing something
+    ;;; that is not a handle, or a non-integer to an integer option, is
+    ;;; an error.
+    ;;;
+    ;;; **Callbacks.** A callback is any callable (a `lambda`, a proc
+    ;;; value) taking one argument. The handle keeps a reference to it
+    ;;; until it is replaced, the handle is reset, or the handle is
+    ;;; freed. Errors raised inside a callback do not abort the
+    ;;; transfer. [Curl::set_write_callback] and [Curl::set_sse_callback]
+    ;;; install the same underlying libcurl write function, so the one
+    ;;; set last wins.
+    ;;;
+    ;;; **Getters.** The `get_*` procs read `curl_easy_getinfo` fields
+    ;;; for the last transfer on the handle; before any [Curl::perform]
+    ;;; they return zero or the empty string. [Curl::get_last_error],
+    ;;; [Curl::is_timeout] and [Curl::error_string] read the result code
+    ;;; [Curl::perform] recorded, `0` on a fresh handle.
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::set_url "not a handle" "http://localhost/"
+    ;;; !!
+    ;;; >> Curl::set_timeout_ms [Curl::new] "soon"
+    ;;; !!
+    ;;; >> Curl::set_write_callback [Curl::new] "not callable"
+    ;;; !!
+    ;;; >> Curl::get_response_code [Curl::new]
+    ;;; 0
+
+    ;;; Initialize libcurl globally (`curl_global_init`); call once before anything else.
+    ;;;
+    ;;; Arguments are ignored. Fails only if libcurl's global
+    ;;; initialization fails.
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::init
+    ;;; ""
+    proc init {} {}
+
+    ;;; Create a new easy handle with default options.
+    ;;;
+    ;;; Returns an opaque value; the handle, its header list and any
+    ;;; callbacks are freed when the value is dropped. Takes no
+    ;;; arguments.
+    ;;;
+    ;;; Examples:
+    ;;; >> type [Curl::new]
+    ;;; "opaque"
+    ;;; >> Curl::new 1
+    ;;; !!
+    proc new {} {}
+
+    ;;; Reset `handle` to its initial state and drop its callbacks.
+    ;;;
+    ;;; Every option set on the handle is cleared (`curl_easy_reset`),
+    ;;; the write, header and SSE callbacks are released, and any
+    ;;; buffered partial SSE event is discarded. Headers added with
+    ;;; [Curl::set_header] before the reset stay queued for the next
+    ;;; transfer.
+    ;;;
+    ;;; Examples:
+    ;;; >> let c [Curl::new]
+    ;;; >> Curl::set_url $c "http://localhost:8080/test"
+    ;;; >> Curl::reset $c
+    ;;; >> Curl::get_effective_url $c
+    ;;; ""
+    proc reset {handle} {}
+
+    ;;; Run the configured transfer synchronously.
+    ;;;
+    ;;; Blocks until the transfer finishes, invoking the write, header
+    ;;; or SSE callback as data arrives. The result code is stored for
+    ;;; [Curl::get_last_error], [Curl::is_timeout] and
+    ;;; [Curl::error_string]; any code other than `CURLE_OK` raises an
+    ;;; error (with an empty message). The header list built by
+    ;;; [Curl::set_header] is consumed by the call: add headers again
+    ;;; before performing the same handle a second time.
+    ;;;
+    ;;; ```tcl
+    ;;; if [catch {Curl::perform $c}] {
+    ;;;     puts "failed: [Curl::error_string $c]"
+    ;;; }
+    ;;; ```
+    proc perform {handle} {}
+
+    ;;; Set the request URL (`CURLOPT_URL`).
+    ;;;
+    ;;; Examples:
+    ;;; >> let c [Curl::new]
+    ;;; >> Curl::set_url $c "http://localhost:8080/test"
+    ;;; >> Curl::get_effective_url $c
+    ;;; "http://localhost:8080/test"
+    proc set_url {handle url} {}
+
+    ;;; Set the request method string (`CURLOPT_CUSTOMREQUEST`): `GET`, `POST`, `PUT`, ...
+    ;;;
+    ;;; This only changes the verb sent on the request line. Set a body
+    ;;; with [Curl::set_body] to send one; use [Curl::set_nobody] for a
+    ;;; `HEAD`-style request.
+    proc set_verb {handle method} {}
+
+    ;;; Append one or more request headers, each a full `Name: value` line.
+    ;;;
+    ;;; Headers accumulate on the handle and are all sent by the next
+    ;;; [Curl::perform], which then clears the list.
+    ;;;
+    ;;; ```tcl
+    ;;; Curl::set_header $c "Content-Type: application/json" "Accept: application/json"
+    ;;; ```
+    proc set_header {handle header *more} {}
+
+    ;;; Set the request body (`CURLOPT_COPYPOSTFIELDS`); libcurl copies the data.
+    ;;;
+    ;;; Setting a body makes libcurl send a `POST` unless
+    ;;; [Curl::set_verb] overrides the method.
+    proc set_body {handle data} {}
+
+    ;;; Set `CURLOPT_NOBODY` (`1` to skip the response body, as for `HEAD`).
+    proc set_nobody {handle flag} {}
+
+    ;;; Set the `User-Agent` header (`CURLOPT_USERAGENT`).
+    proc set_user_agent {handle ua} {}
+
+    ;;; Maximum total time for the transfer in milliseconds (`CURLOPT_TIMEOUT_MS`).
+    ;;;
+    ;;; Hitting it makes [Curl::perform] fail with `CURLE_OPERATION_TIMEDOUT`
+    ;;; (28), which [Curl::is_timeout] reports.
+    proc set_timeout_ms {handle ms} {}
+
+    ;;; Accept timeout for active FTP in milliseconds (`CURLOPT_ACCEPTTIMEOUT_MS`).
+    proc set_accept_timeout_ms {handle ms} {}
+
+    ;;; Connection-phase timeout in milliseconds (`CURLOPT_CONNECTTIMEOUT_MS`).
+    proc set_connection_timeout_ms {handle ms} {}
+
+    ;;; How long to wait for a `100 Continue` in milliseconds (`CURLOPT_EXPECT_100_TIMEOUT_MS`).
+    proc set_expect_100_timeout_ms {handle ms} {}
+
+    ;;; Outgoing network interface name or address (`CURLOPT_INTERFACE`).
+    proc set_interface {handle name} {}
+
+    ;;; Low-speed threshold in bytes per second (`CURLOPT_LOW_SPEED_LIMIT`).
+    ;;;
+    ;;; Together with [Curl::set_low_speed_time]: abort when the
+    ;;; transfer stays below this rate for that many seconds.
+    proc set_low_speed_limit {handle bytes} {}
+
+    ;;; Seconds a transfer may stay below the low-speed limit (`CURLOPT_LOW_SPEED_TIME`).
+    proc set_low_speed_time {handle secs} {}
+
+    ;;; Enable TCP keep-alive probes (`CURLOPT_TCP_KEEPALIVE`, `0`/`1`).
+    proc set_tcp_keep_alive {handle flag} {}
+
+    ;;; Idle seconds before the first keep-alive probe (`CURLOPT_TCP_KEEPIDLE`).
+    proc set_tcp_keep_idle {handle secs} {}
+
+    ;;; Seconds between keep-alive probes (`CURLOPT_TCP_KEEPINTVL`).
+    proc set_tcp_keep_intvl {handle secs} {}
+
+    ;;; `Accept-Encoding` to request and decode automatically (`CURLOPT_ACCEPT_ENCODING`), e.g. `""` for all supported.
+    proc set_accept_encoding {handle encoding} {}
+
+    ;;; Preferred HTTP version as a libcurl `CURL_HTTP_VERSION_*` integer (`CURLOPT_HTTP_VERSION`).
+    proc set_http_version {handle version} {}
+
+    ;;; Follow `Location:` redirects (`CURLOPT_FOLLOWLOCATION`, `0`/`1`).
+    proc set_follow_location {handle flag} {}
+
+    ;;; Maximum number of redirects to follow (`CURLOPT_MAXREDIRS`); `-1` for unlimited.
+    proc set_max_redirects {handle n} {}
+
+    ;;; Which redirects keep the `POST` method, as a `CURL_REDIR_POST_*` bitmask (`CURLOPT_POSTREDIR`).
+    proc set_post_redirect {handle mask} {}
+
+    ;;; HTTP authentication methods as a `CURLAUTH_*` bitmask (`CURLOPT_HTTPAUTH`).
+    proc set_httpauth {handle mask} {}
+
+    ;;; User name for HTTP authentication (`CURLOPT_USERNAME`).
+    proc set_username {handle user} {}
+
+    ;;; Password for HTTP authentication (`CURLOPT_PASSWORD`).
+    proc set_password {handle pass} {}
+
+    ;;; OAuth 2.0 bearer token (`CURLOPT_XOAUTH2_BEARER`).
+    proc set_xoauth2_bearer {handle token} {}
+
+    ;;; Verify the peer's certificate (`CURLOPT_SSL_VERIFYPEER`, `0`/`1`).
+    proc set_ssl_verify_peer {handle flag} {}
+
+    ;;; Verify that the certificate matches the host name (`CURLOPT_SSL_VERIFYHOST`; libcurl expects `2` to verify, `0` to skip).
+    proc set_ssl_verify_host {handle level} {}
+
+    ;;; Path to a CA certificate bundle file (`CURLOPT_CAINFO`).
+    proc set_ca_info {handle path} {}
+
+    ;;; Directory of CA certificates (`CURLOPT_CAPATH`).
+    proc set_ca_path {handle path} {}
+
+    ;;; Client certificate file (`CURLOPT_SSLCERT`).
+    proc set_ssl_cert {handle path} {}
+
+    ;;; Client certificate format, e.g. `PEM` or `DER` (`CURLOPT_SSLCERTTYPE`).
+    proc set_ssl_cert_type {handle type} {}
+
+    ;;; Client private key file (`CURLOPT_SSLKEY`).
+    proc set_ssl_key {handle path} {}
+
+    ;;; Client private key format, e.g. `PEM` or `DER` (`CURLOPT_SSLKEYTYPE`).
+    proc set_ssl_key_type {handle type} {}
+
+    ;;; Passphrase for the client private key (`CURLOPT_KEYPASSWD`).
+    proc set_key_password {handle pass} {}
+
+    ;;; Preferred TLS version as a `CURL_SSLVERSION_*` integer (`CURLOPT_SSLVERSION`).
+    proc set_ssl_version {handle version} {}
+
+    ;;; Cipher list for TLS 1.2 and below, in the TLS backend's syntax (`CURLOPT_SSL_CIPHER_LIST`).
+    proc set_ssl_cipher_list {handle list} {}
+
+    ;;; Cipher suites for TLS 1.3 (`CURLOPT_TLS13_CIPHERS`).
+    proc set_tls13_ciphers {handle list} {}
+
+    ;;; Proxy to use, as a URL or `host:port` (`CURLOPT_PROXY`).
+    proc set_proxy {handle url} {}
+
+    ;;; Proxy port, overriding the one in the proxy string (`CURLOPT_PROXYPORT`).
+    proc set_proxy_port {handle port} {}
+
+    ;;; Proxy type as a `CURLPROXY_*` integer (`CURLOPT_PROXYTYPE`).
+    proc set_proxy_type {handle type} {}
+
+    ;;; User name for proxy authentication (`CURLOPT_PROXYUSERNAME`).
+    proc set_proxy_username {handle user} {}
+
+    ;;; Password for proxy authentication (`CURLOPT_PROXYPASSWORD`).
+    proc set_proxy_password {handle pass} {}
+
+    ;;; Comma-separated hosts that bypass the proxy (`CURLOPT_NOPROXY`).
+    proc set_no_proxy {handle hosts} {}
+
+    ;;; Verify the HTTPS proxy's certificate (`CURLOPT_PROXY_SSL_VERIFYPEER`, `0`/`1`).
+    proc set_proxy_ssl_verify_peer {handle flag} {}
+
+    ;;; Verify the HTTPS proxy's certificate host name (`CURLOPT_PROXY_SSL_VERIFYHOST`; `2` to verify, `0` to skip).
+    proc set_proxy_ssl_verify_host {handle level} {}
+
+    ;;; CA bundle file for the HTTPS proxy (`CURLOPT_PROXY_CAINFO`).
+    proc set_proxy_ca_info {handle path} {}
+
+    ;;; CA directory for the HTTPS proxy (`CURLOPT_PROXY_CAPATH`).
+    proc set_proxy_ca_path {handle path} {}
+
+    ;;; TLS version for the HTTPS proxy as a `CURL_SSLVERSION_*` integer (`CURLOPT_PROXY_SSLVERSION`).
+    proc set_proxy_ssl_version {handle version} {}
+
+    ;;; DNS-over-HTTPS resolver URL (`CURLOPT_DOH_URL`).
+    proc set_doh_url {handle url} {}
+
+    ;;; Comma-separated DNS servers to use, `host:port` each (`CURLOPT_DNS_SERVERS`; needs a c-ares build of libcurl).
+    proc set_dns_servers {handle servers} {}
+
+    ;;; Force a new connection instead of a cached one (`CURLOPT_FRESH_CONNECT`, `0`/`1`).
+    proc set_fresh_connect {handle flag} {}
+
+    ;;; Close the connection after this transfer instead of caching it (`CURLOPT_FORBID_REUSE`, `0`/`1`).
+    proc set_forbid_reuse {handle flag} {}
+
+    ;;; Cap the download rate in bytes per second (`CURLOPT_MAX_RECV_SPEED_LARGE`).
+    proc set_max_recv_speed {handle bytes} {}
+
+    ;;; Cap the upload rate in bytes per second (`CURLOPT_MAX_SEND_SPEED_LARGE`).
+    proc set_max_send_speed {handle bytes} {}
+
+    ;;; Cookie file to read at start, or `""` to enable the cookie engine with no file (`CURLOPT_COOKIEFILE`).
+    proc set_cookie_file {handle path} {}
+
+    ;;; File to write cookies to when the handle is freed (`CURLOPT_COOKIEJAR`).
+    proc set_cookie_jar {handle path} {}
+
+    ;;; Print libcurl's diagnostic trace to stderr (`CURLOPT_VERBOSE`, `0`/`1`).
+    proc set_verbose {handle flag} {}
+
+    ;;; Include response headers in the body data given to the write callback (`CURLOPT_HEADER`, `0`/`1`).
+    proc set_include_header {handle flag} {}
+
+    ;;; Call `proc` with each chunk of the response body as it arrives.
+    ;;;
+    ;;; Chunks are libcurl's write-function buffers (up to 16 KiB),
+    ;;; delivered as strings; concatenate them for the full body.
+    ;;;
+    ;;; ```tcl
+    ;;; var body {}
+    ;;; Curl::set_write_callback $c [lambda {chunk} {
+    ;;;     set! body "$body$chunk"
+    ;;; }]
+    ;;; ```
+    proc set_write_callback {handle proc} {}
+
+    ;;; Call `proc` with each response header line, including its trailing CRLF.
+    ;;;
+    ;;; The status line and the blank line ending the header block are
+    ;;; delivered too, once per response (so again after a redirect).
+    proc set_header_callback {handle proc} {}
+
+    ;;; Parse the response as Server-Sent Events and call `proc` with each event dict.
+    ;;;
+    ;;; See *Server-Sent Events* above for the dict layout. Events are
+    ;;; dispatched as soon as their terminating blank line arrives; a
+    ;;; trailing partial event is kept across chunks and dropped on
+    ;;; [Curl::reset].
+    proc set_sse_callback {handle proc} {}
+
+    ;;; HTTP status code of the last response (`CURLINFO_RESPONSE_CODE`), `0` if none.
+    proc get_response_code {handle} {}
+
+    ;;; `Content-Type` of the last response (`CURLINFO_CONTENT_TYPE`), `""` if none.
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::get_content_type [Curl::new]
+    ;;; ""
+    proc get_content_type {handle} {}
+
+    ;;; Final URL after redirects (`CURLINFO_EFFECTIVE_URL`); the configured URL before a transfer.
+    proc get_effective_url {handle} {}
+
+    ;;; Total transfer time in seconds as a float (`CURLINFO_TOTAL_TIME`).
+    ;;;
+    ;;; The value is narrowed to single precision on the way out.
+    proc get_total_time {handle} {}
+
+    ;;; Size in bytes of all headers received (`CURLINFO_HEADER_SIZE`).
+    proc get_header_size {handle} {}
+
+    ;;; Size in bytes of the request sent (`CURLINFO_REQUEST_SIZE`).
+    proc get_request_size {handle} {}
+
+    ;;; Number of new connections the transfer had to make (`CURLINFO_NUM_CONNECTS`).
+    proc get_num_connects {handle} {}
+
+    ;;; IP address of the server used for the last connection (`CURLINFO_PRIMARY_IP`).
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::get_primary_ip [Curl::new]
+    ;;; ""
+    proc get_primary_ip {handle} {}
+
+    ;;; Port of the server used for the last connection (`CURLINFO_PRIMARY_PORT`).
+    proc get_primary_port {handle} {}
+
+    ;;; `CURLcode` of the last [Curl::perform] as an integer (`0` = OK, `28` = timeout).
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::get_last_error [Curl::new]
+    ;;; 0
+    proc get_last_error {handle} {}
+
+    ;;; Return `1` if the last transfer ended with `CURLE_OPERATION_TIMEDOUT`, else `0`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::is_timeout [Curl::new]
+    ;;; 0
+    proc is_timeout {handle} {}
+
+    ;;; Human-readable text for the last result code (`curl_easy_strerror`).
+    ;;;
+    ;;; Examples:
+    ;;; >> Curl::error_string [Curl::new]
+    ;;; "No error"
+    proc error_string {handle} {}
+}

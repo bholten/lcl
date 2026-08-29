@@ -1,39 +1,39 @@
 ;; Tests for sh.lcl
 
-Test::suite "sh::run" {
+Test::suite "Sh::run" {
     Test::case "basic command" {
-        let result [sh::run (echo hello)]
+        let result [Sh::run (echo hello)]
         Test::eq $result "hello"
     }
 
     Test::case "trims whitespace" {
-        let result [sh::run (echo "  hello  ")]
+        let result [Sh::run (echo "  hello  ")]
         Test::eq $result "hello"
     }
 
     Test::case "throws on error by default" {
         Test::raises {
-            sh::run (false)
+            Sh::run (false)
         }
     }
 
     Test::case "no throw with option" {
-        let result [sh::run (false) #{throw 0}]
+        let result [Sh::run (false) #{throw 0}]
         Test::eq $result ""
     }
 }
 
-Test::suite "sh::run!" {
+Test::suite "Sh::run!" {
     Test::case "returns full result (no opts)" {
-        let r [sh::run! (echo hello)]
+        let r [Sh::run! (echo hello)]
         Test::eq [get $r status] 0
         Test::eq [String::trim [get $r stdout]] "hello"
     }
 }
 
-Test::suite "sh::lines" {
+Test::suite "Sh::lines" {
     Test::case "splits output into lines" {
-        let lines [sh::lines (sh -c {printf "one\ntwo\nthree"})]
+        let lines [Sh::lines (sh -c {printf "one\ntwo\nthree"})]
         Test::eq [len $lines] 3
         Test::eq [get $lines 0] "one"
         Test::eq [get $lines 1] "two"
@@ -41,210 +41,210 @@ Test::suite "sh::lines" {
     }
 
     Test::case "empty output returns empty list" {
-        let lines [sh::lines (true)]
+        let lines [Sh::lines (true)]
         Test::eq [len $lines] 0
     }
 }
 
-Test::suite "sh::ok?" {
+Test::suite "Sh::ok?" {
     Test::case "true for exit 0" {
-        Test::assert [sh::ok? (true)]
+        Test::assert [Sh::ok? (true)]
     }
 
     Test::case "false for non-zero exit" {
-        Test::assert [not [sh::ok? (false)]]
+        Test::assert [not [Sh::ok? (false)]]
     }
 }
 
-Test::suite "sh::status" {
+Test::suite "Sh::status" {
     Test::case "returns exit status" {
-        Test::eq [sh::status (true)] 0
-        Test::eq [sh::status (sh -c "exit 42")] 42
+        Test::eq [Sh::status (true)] 0
+        Test::eq [Sh::status (sh -c "exit 42")] 42
     }
 }
 
-Test::suite "sh::env" {
+Test::suite "Sh::env" {
     Test::case "sets environment variables" {
-        let result [sh::env #{MY_VAR testvalue} (sh -c {echo $MY_VAR})]
+        let result [Sh::env #{MY_VAR testvalue} (sh -c {echo $MY_VAR})]
         Test::eq $result "testvalue"
     }
 
     Test::case "multiple variables" {
-        let result [sh::env #{A 1 B 2} (sh -c {echo $A$B})]
+        let result [Sh::env #{A 1 B 2} (sh -c {echo $A$B})]
         Test::eq $result "12"
     }
 }
 
-Test::suite "sh::in" {
+Test::suite "Sh::in" {
     Test::case "runs in directory" {
-        let result [sh::in /tmp (pwd)]
+        let result [Sh::in /tmp (pwd)]
         Test::eq $result "/tmp"
     }
 }
 
-Test::suite "sh::pipe" {
+Test::suite "Sh::pipe" {
     Test::case "basic pipeline" {
-        let result [sh::pipe "echo hello | cat"]
+        let result [Sh::pipe "echo hello | cat"]
         Test::eq $result "hello"
     }
 
     Test::case "complex pipeline" {
         ;; printf "a\nb\nc\n" has 3 newlines, so wc -l returns 3
-        let result [sh::pipe {printf "a\nb\nc\n" | wc -l}]
+        let result [Sh::pipe {printf "a\nb\nc\n" | wc -l}]
         Test::eq [String::trim $result] "3"
     }
 }
 
-Test::suite "sh::stdin" {
+Test::suite "Sh::stdin" {
     Test::case "sends stdin to command" {
-        let result [sh::stdin "hello world" (cat)]
+        let result [Sh::stdin "hello world" (cat)]
         Test::eq $result "hello world"
     }
 
     Test::case "multi-line stdin" {
-        let result [sh::stdin "line1\nline2" (wc -l)]
+        let result [Sh::stdin "line1\nline2" (wc -l)]
         ;; Note: literal \n in string is not a newline in LCL
         ;; so wc -l counts the literal string as 1 line
         Test::eq [String::trim $result] "1"
     }
 }
 
-Test::suite "sh::which" {
+Test::suite "Sh::which" {
     Test::case "finds executable" {
-        let path [sh::which sh]
+        let path [Sh::which sh]
         Test::assert [!= [String::find $path "/"] -1]
     }
 
     Test::case "returns empty for missing" {
-        let path [sh::which nonexistent_command_12345]
+        let path [Sh::which nonexistent_command_12345]
         Test::eq $path ""
     }
 }
 
-Test::suite "sh::exists?" {
+Test::suite "Sh::exists?" {
     Test::case "true for existing command" {
-        Test::assert [sh::exists? sh]
+        Test::assert [Sh::exists? sh]
     }
 
     Test::case "false for missing command" {
-        Test::assert [not [sh::exists? nonexistent_command_12345]]
+        Test::assert [not [Sh::exists? nonexistent_command_12345]]
     }
 }
 
-Test::suite "sh::pwd/hostname/whoami" {
+Test::suite "Sh::pwd/hostname/whoami" {
     Test::case "pwd returns path" {
-        let pwd [sh::pwd]
+        let pwd [Sh::pwd]
         Test::assert [== [String::find $pwd "/"] 0]
     }
 
     Test::case "whoami returns username" {
-        let user [sh::whoami]
+        let user [Sh::whoami]
         Test::assert [> [String::length $user] 0]
     }
 
     Test::case "hostname returns name" {
-        let host [sh::hostname]
+        let host [Sh::hostname]
         Test::assert [> [String::length $host] 0]
     }
 }
 
-Test::suite "sh::file operations" {
+Test::suite "Sh::file operations" {
     Test::case "mkdir, file?, dir?, rm" {
-        let ts [sh::run (date +%s%N)]
+        let ts [Sh::run (date +%s%N)]
         let tmpdir "/tmp/lcl-sh-test-$ts"
 
         ;; Create directory
-        sh::mkdir $tmpdir
-        Test::assert [sh::dir? $tmpdir]
-        Test::assert [not [sh::file? $tmpdir]]
+        Sh::mkdir $tmpdir
+        Test::assert [Sh::dir? $tmpdir]
+        Test::assert [not [Sh::file? $tmpdir]]
 
         ;; Create file
         let tmpfile "$tmpdir/test.txt"
-        sh::write $tmpfile "hello"
-        Test::assert [sh::file? $tmpfile]
+        Sh::write $tmpfile "hello"
+        Test::assert [Sh::file? $tmpfile]
 
         ;; Read file
-        let content [sh::read $tmpfile]
+        let content [Sh::read $tmpfile]
         Test::eq $content "hello"
 
         ;; Append to file
-        sh::append $tmpfile " world"
-        let content2 [sh::read $tmpfile]
+        Sh::append $tmpfile " world"
+        let content2 [Sh::read $tmpfile]
         Test::assert [!= [String::find $content2 "world"] -1]
 
         ;; Cleanup
-        sh::rm $tmpdir
-        Test::assert [not [sh::dir? $tmpdir]]
+        Sh::rm $tmpdir
+        Test::assert [not [Sh::dir? $tmpdir]]
     }
 
     Test::case "cp and mv" {
-        let ts [sh::run (date +%s%N)]
+        let ts [Sh::run (date +%s%N)]
         let tmpdir "/tmp/lcl-sh-cp-test-$ts"
-        sh::mkdir $tmpdir
+        Sh::mkdir $tmpdir
 
         let src "$tmpdir/src.txt"
         let dst "$tmpdir/dst.txt"
         let moved "$tmpdir/moved.txt"
 
-        sh::write $src "content"
-        sh::cp $src $dst
-        Test::assert [sh::file? $dst]
-        Test::eq [sh::read $dst] "content"
+        Sh::write $src "content"
+        Sh::cp $src $dst
+        Test::assert [Sh::file? $dst]
+        Test::eq [Sh::read $dst] "content"
 
-        sh::mv $dst $moved
-        Test::assert [not [sh::file? $dst]]
-        Test::assert [sh::file? $moved]
+        Sh::mv $dst $moved
+        Test::assert [not [Sh::file? $dst]]
+        Test::assert [Sh::file? $moved]
 
-        sh::rm $tmpdir
+        Sh::rm $tmpdir
     }
 }
 
-Test::suite "sh::test predicates" {
+Test::suite "Sh::test predicates" {
     Test::case "file? and dir?" {
-        Test::assert [sh::dir? /tmp]
-        Test::assert [not [sh::file? /tmp]]
+        Test::assert [Sh::dir? /tmp]
+        Test::assert [not [Sh::file? /tmp]]
     }
 
     Test::case "readable? and writable?" {
-        Test::assert [sh::readable? /tmp]
-        Test::assert [sh::writable? /tmp]
+        Test::assert [Sh::readable? /tmp]
+        Test::assert [Sh::writable? /tmp]
     }
 
     Test::case "executable?" {
-        let sh_path [sh::which sh]
-        Test::assert [sh::executable? $sh_path]
+        let sh_path [Sh::which sh]
+        Test::assert [Sh::executable? $sh_path]
     }
 }
 
-Test::suite "sh::glob" {
+Test::suite "Sh::glob" {
     Test::case "expands pattern" {
-        let files [sh::glob "/tmp/*"]
+        let files [Sh::glob "/tmp/*"]
         ;; /tmp should have some files
         Test::assert [> [len $files] 0]
     }
 
     Test::case "empty for no match" {
-        let files [sh::glob "/nonexistent_path_12345/*"]
+        let files [Sh::glob "/nonexistent_path_12345/*"]
         Test::eq [len $files] 0
     }
 }
 
-Test::suite "sh::date" {
+Test::suite "Sh::date" {
     Test::case "default format (no arg)" {
-        let d [sh::date]
+        let d [Sh::date]
         Test::assert [> [String::length $d] 0]
     }
 
     Test::case "custom format" {
-        let year [sh::date "%Y"]
+        let year [Sh::date "%Y"]
         Test::assert [>= [String::length $year] 4]
     }
 }
 
-Test::suite "sh::sleep" {
+Test::suite "Sh::sleep" {
     Test::case "sleeps briefly" {
         ;; Just verify it doesn't error
-        sh::sleep 0.01
+        Sh::sleep 0.01
         Test::assert 1
     }
 }

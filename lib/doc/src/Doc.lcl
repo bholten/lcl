@@ -5,9 +5,12 @@
 ;;; the doctests embedded in `Examples:` sections.
 ;;;
 ;;; A run of `;;;` lines immediately above a `proc`, `macro`,
-;;; `namespace`, `let`, or `var` command documents that definition; a
-;;; run with a blank line (or any other command) between it and the
-;;; next definition is module documentation. `;;;` lines inside braced
+;;; `namespace`, `let`, or `var` command documents that definition. An
+;;; unattached run (a blank line or another command between it and
+;;; the next definition) is prose: above the first definition of a
+;;; file or namespace body it is that module's or namespace's own
+;;; documentation; after one, it is a section of text rendered in
+;;; place between the entries around it. `;;;` lines inside braced
 ;;; data are ignored: a line only counts when it is not covered by any
 ;;; word span, so doc comments inside string blobs never leak into the
 ;;; docs. Namespace bodies are recursed into by slicing the body span.
@@ -15,6 +18,7 @@
 ;;; Doc text convention: first line is a one-line summary, then
 ;;; markdown prose, then an optional `Examples:` section:
 ;;;
+;;; ```tcl
 ;;;   ;;; Add two numbers, slowly.
 ;;;   ;;;
 ;;;   ;;; Examples:
@@ -22,6 +26,7 @@
 ;;;   ;;; 3
 ;;;   ;;; >> + 1 (2 3)
 ;;;   ;;; !! expected number
+;;; ```
 ;;;
 ;;; Each `>>` line is a command; the following non-blank line is the
 ;;; expected `repr` of its result (`!!` expects an error whose message
@@ -32,6 +37,12 @@
 ;;; examples behave as before. A bare `>>` is a visual separator.
 ;;; Comparing against `repr` is deliberate: it keeps examples honest
 ;;; about list-vs-string.
+;;;
+;;; An `Examples:` section ends at the first non-blank line that
+;;; follows a blank line and is not a `>>` command: prose resumes
+;;; there, and another `Examples:` may follow later. Long-form docs
+;;; (a manual written as module prose) can therefore interleave text
+;;; and executed examples; rendering keeps them in order.
 
 namespace Doc {
     proc _streq {a b} {
@@ -205,9 +216,10 @@ namespace Doc {
     ;;; `#{kind proc|macro name N params P line L doc D}`,
     ;;; `#{kind let|var name N line L doc D}` (only when documented), or
     ;;; `#{kind namespace name N line L doc D entries (...)}` with the
-    ;;; body extracted recursively. Names starting with `_` are private
-    ;;; and skipped. `base` offsets reported line numbers (used by the
-    ;;; recursion; callers can ignore it).
+    ;;; body extracted recursively, or `#{kind prose name {} line L doc
+    ;;; D}` for a section of text between definitions. Names starting
+    ;;; with `_` are private and skipped. `base` offsets reported line
+    ;;; numbers (used by the recursion; callers can ignore it).
     ;;;
     ;;; Examples:
     ;;; >> let m [Doc::extract ";;; doubles\nproc dbl {x} { + \$x \$x }"]
@@ -282,32 +294,60 @@ namespace Doc {
             }
         }
 
+        ;; unattached runs: module prose above the first entry, in-place
+        ;; sections after it (merged into the entry order by line)
         var mdoc {}
+        var first_line -1
         var ri 0
+
+        if [> [len $entries] 0] {
+            set! first_line [get [get $entries 0] line]
+        }
+
+        var merged ()
+        var ei 0
 
         foreach r $runs {
             if [not [get $used $ri]] {
-                if [== $mdoc {}] { set! mdoc [get $r text] } else { set! mdoc "$mdoc\n\n[get $r text]" }
+                let rline [+ $base [get $r first] -1]
+
+                if [or [< $first_line 0] [< $rline $first_line]] {
+                    if [== $mdoc {}] { set! mdoc [get $r text] } else { set! mdoc "$mdoc\n\n[get $r text]" }
+                } else {
+                    while [and [< $ei [len $entries]] [< [get [get $entries $ei] line] $rline]] {
+                        List::push! merged [get $entries $ei]
+                        set! ei [+ $ei 1]
+                    }
+
+                    List::push! merged #{kind "prose" name {} line $rline doc [get $r text]}
+                }
             }
 
             set! ri [+ $ri 1]
         }
 
-        #{doc $mdoc entries $entries}
+        while [< $ei [len $entries]] {
+            List::push! merged [get $entries $ei]
+            set! ei [+ $ei 1]
+        }
+
+        #{doc $mdoc entries $merged}
     }
 
     ;;; Extract the doc model from a file (needs the io package).
     proc extract_file {path} {
-        extract [io::read_file $path]
+        extract [Io::read_file $path]
     }
 
     ;; ---- doc text parsing -----------------------------------------
 
     ;;; Parse one doc string into its parts.
     ;;;
-    ;;; Returns `#{summary S body B examples (...) example_lines (...)}`.
-    ;;; `body` is the prose before `Examples:` (summary included);
-    ;;; each example is `#{cmd C kind none|value|error expect E}`.
+    ;;; Returns `#{summary S body B blocks (...) examples (...)
+    ;;; example_lines (...)}`. `blocks` is the doc in order, each
+    ;;; `#{kind prose text T}` or `#{kind examples lines (...)}`;
+    ;;; `body` is all prose joined, `example_lines` all example lines,
+    ;;; and each example is `#{cmd C kind none|value|error expect E}`.
     ;;;
     ;;; Examples:
     ;;; >> get [Doc::parse "sums\n\nExamples:\n>> + 1 2\n3"] summary
@@ -319,33 +359,74 @@ namespace Doc {
     ;;; 2
     ;;; >> get [get [get [Doc::parse $d] examples] 1] expect
     ;;; "3"
+    ;;; >> let two "a\n\nExamples:\n>> + 1 1\n2\n\nMore prose.\n\nExamples:\n>> + 2 2\n4"
+    ;;; >> List::map [get [Doc::parse $two] blocks] [lambda {b} { get $b kind }]
+    ;;; ("prose" "examples" "prose" "examples")
+    ;;; >> len [get [Doc::parse $two] examples]
+    ;;; 2
     proc parse {doc} {
-        var body_lines ()
-        var ex_lines ()
+        var blocks ()
+        var cur ()
         var in_ex 0
+        var blank 1
 
         foreach ln [String::split $doc "\n"] {
+            let t [String::trim $ln]
+
             if $in_ex {
-                set! ex_lines [List::push $ex_lines $ln]
+                if [and $blank [!= $t {}] [not [_starts $t ">>"]]] {
+                    ;; prose after a blank line ends the examples
+                    List::push! blocks #{kind "examples" lines $cur}
+                    set! cur ($ln)
+                    set! in_ex 0
+                } else {
+                    List::push! cur $ln
+                }
             } else {
-                if [== [String::trim $ln] "Examples:"] {
+                if [== $t "Examples:"] {
+                    if [> [len $cur] 0] {
+                        List::push! blocks #{kind "prose" text [String::join $cur "\n"]}
+                    }
+
+                    set! cur ()
                     set! in_ex 1
                 } else {
-                    set! body_lines [List::push $body_lines $ln]
+                    List::push! cur $ln
                 }
+            }
+
+            set! blank [== $t {}]
+        }
+
+        if $in_ex {
+            List::push! blocks #{kind "examples" lines $cur}
+        } else {
+            if [> [len $cur] 0] {
+                List::push! blocks #{kind "prose" text [String::join $cur "\n"]}
+            }
+        }
+
+        var body_lines ()
+        var ex_lines ()
+
+        foreach b $blocks {
+            if [== [get $b kind] "prose"] {
+                List::push! body_lines [get $b text]
+            } else {
+                set! ex_lines [List::concat $ex_lines [get $b lines]]
             }
         }
 
         var summary {}
 
-        foreach ln $body_lines {
+        foreach ln [String::split [String::join $body_lines "\n"] "\n"] {
             if [and [== $summary {}] [!= [String::trim $ln] {}]] {
                 set! summary [String::trim $ln]
             }
         }
 
         var examples ()
-        var cur {}
+        var ex {}
 
         foreach ln $ex_lines {
             let t [String::trim $ln]
@@ -353,78 +434,172 @@ namespace Doc {
             if [_starts $t ">>"] {
                 let rest [String::trim [String::range $t 2 [String::length $t]]]
 
-                if [and [!= $cur {}] [== [get $cur kind] "none"] [catch {Lex::commands [get $cur cmd]}]] {
+                if [and [!= $ex {}] [== [get $ex kind] "none"] [catch {Lex::commands [get $ex cmd]}]] {
                     ;; the accumulated command doesn't parse yet (an
                     ;; open brace, quote, or bracket): this >> line
                     ;; continues it
-                    set! cur [put $cur cmd "[get $cur cmd]\n$rest"]
+                    set! ex [put $ex cmd "[get $ex cmd]\n$rest"]
                 } else {
-                    if [and [!= $cur {}] [!= [get $cur cmd] {}]] {
-                        set! examples [List::push $examples $cur]
+                    if [and [!= $ex {}] [!= [get $ex cmd] {}]] {
+                        List::push! examples $ex
                     }
 
-                    set! cur #{cmd $rest kind "none" expect {}}
+                    set! ex #{cmd $rest kind "none" expect {}}
                 }
             } else {
-                if [and [!= $t {}] [!= $cur {}]] {
+                if [and [!= $t {}] [!= $ex {}]] {
                     if [_starts $t "!!"] {
-                        set! cur [put $cur kind "error"]
-                        set! cur [put $cur expect [String::trim [String::range $t 2 [String::length $t]]]]
+                        set! ex [put $ex kind "error"]
+                        set! ex [put $ex expect [String::trim [String::range $t 2 [String::length $t]]]]
                     } else {
-                        if [== [get $cur kind] "value"] {
-                            set! cur [put $cur expect "[get $cur expect]\n$t"]
+                        if [== [get $ex kind] "value"] {
+                            set! ex [put $ex expect "[get $ex expect]\n$t"]
                         } else {
-                            set! cur [put $cur kind "value"]
-                            set! cur [put $cur expect $t]
+                            set! ex [put $ex kind "value"]
+                            set! ex [put $ex expect $t]
                         }
                     }
                 }
             }
         }
 
-        if [and [!= $cur {}] [!= [get $cur cmd] {}]] {
-            set! examples [List::push $examples $cur]
+        if [and [!= $ex {}] [!= [get $ex cmd] {}]] {
+            List::push! examples $ex
         }
 
-        #{summary $summary body [String::join $body_lines "\n"] examples $examples example_lines $ex_lines}
+        #{summary $summary body [String::join $body_lines "\n"] blocks $blocks examples $examples example_lines $ex_lines}
     }
 
     ;; ---- markdown generation --------------------------------------
 
-    ;; Render one doc string: prose, then examples as a fenced block.
-    proc _md_doc {doc} {
-        let p [parse $doc]
+    ;;; The HTML anchor id a rendered entry gets: its qualified name,
+    ;;; verbatim. `markdown` emits `<a id="..."></a>` before every
+    ;;; heading so links survive signature changes (pandoc's derived
+    ;;; heading ids do not), and `?`/`!` are legal in an HTML5 id.
+    ;;;
+    ;;; Examples:
+    ;;; >> Doc::anchor "List::push!"
+    ;;; "List::push!"
+    proc anchor {qname} {
+        $qname
+    }
+
+    ;; Resolve one `[...]` in prose. `rest` starts at the `[`; returns
+    ;; `#{text T len N}`: the replacement and how many bytes of `rest`
+    ;; it covers. A bracket that is not a bare name, has no closing
+    ;; bracket, or is already a markdown link (`](` / `][` follows) is
+    ;; passed through unchanged.
+    proc _link_one {rest link} {
+        let n [String::length $rest]
+        let b [String::find $rest "]"]
+
+        if [< $b 0] {
+            return #{text $rest len $n}
+        }
+
+        let name [String::range $rest 1 $b]
+        let after [String::range $rest [+ $b 1] [+ $b 2]]
+        var url {}
+
+        if [and [!= $name {}] [< [String::find $name " "] 0] [< [String::find $name "\["] 0]] {
+            if [and [!= $after "("] [!= $after "\["]] {
+                set! url [apply $link $name]
+            }
+        }
+
+        if [== $url {}] {
+            return #{text [String::range $rest 0 [+ $b 1]] len [+ $b 1]}
+        }
+
+        #{text "\[`$name`\]($url)" len [+ $b 1]}
+    }
+
+    ;; Link `[Name]` references in one span of prose (no code spans).
+    proc _link_seg {seg link} {
         var out {}
-        let body [String::trim [get $p body]]
+        var rest $seg
 
-        if [!= $body {}] {
-            set! out "$body\n\n"
+        while 1 {
+            let a [String::find $rest "\["]
+
+            if [< $a 0] {
+                return "$out$rest"
+            }
+
+            let r [_link_one [String::range $rest $a [String::length $rest]] $link]
+            set! out "$out[String::range $rest 0 $a][get $r text]"
+            set! rest [String::range $rest [+ $a [get $r len]] [String::length $rest]]
+        }
+    }
+
+    ;; Turn `[Name]` outside code spans into a markdown link when
+    ;; `link` (a proc: name -> url, or {} for no link) resolves it;
+    ;; everything else is left verbatim. Splitting on backticks keeps
+    ;; inline code and fenced blocks untouched: an odd-numbered
+    ;; segment is always inside code, whether the fence is one
+    ;; backtick or three.
+    proc _link_text {text link} {
+        if [== $link {}] {
+            return $text
         }
 
-        var ex {}
+        var out {}
+        var i 0
 
-        foreach ln [get $p example_lines] {
-            set! ex "$ex$ln\n"
-        }
+        foreach seg [String::split $text "`"] {
+            if [> $i 0] {
+                set! out "$out`"
+            }
 
-        set! ex [String::trim $ex]
+            if [== [% $i 2] 1] {
+                set! out "$out$seg"
+            } else {
+                set! out "$out[_link_seg $seg $link]"
+            }
 
-        if [!= $ex {}] {
-            set! out "$out**Examples:**\n\n```tcl\n$ex\n```\n\n"
+            set! i [+ $i 1]
         }
 
         $out
     }
 
-    proc _md_entries {prefix entries} {
+    ;; Render one doc string: its prose and example blocks, in order,
+    ;; examples as fenced code.
+    proc _md_doc {doc link} {
+        var out {}
+
+        foreach b [get [parse $doc] blocks] {
+            if [== [get $b kind] "prose"] {
+                let body [String::trim [get $b text]]
+
+                if [!= $body {}] {
+                    set! out "$out[_link_text $body $link]\n\n"
+                }
+            } else {
+                let ex [String::trim [String::join [get $b lines] "\n"]]
+
+                if [!= $ex {}] {
+                    set! out "$out**Examples:**\n\n```tcl\n$ex\n```\n\n"
+                }
+            }
+        }
+
+        $out
+    }
+
+    proc _md_entries {prefix entries link} {
         var out {}
 
         foreach e $entries {
             let q "$prefix[get $e name]"
             let k [get $e kind]
+            let a "<a id=\"[anchor $q]\"></a>\n\n"
 
+            if [== $k "prose"] {
+                set! out "$out[_md_doc [get $e doc] $link]"
+            } else {
             if [== $k "namespace"] {
-                set! out "$out## namespace `$q`\n\n[_md_doc [get $e doc]][_md_entries "$q::" [get $e entries]]"
+                set! out "$out$a## namespace `$q`\n\n[_md_doc [get $e doc] $link][_md_entries "$q::" [get $e entries] $link]"
             } else {
                 if [or [== $k "proc"] [== $k "macro"]] {
                     var sig $q
@@ -434,10 +609,11 @@ namespace Doc {
                         set! sig "$q $params"
                     }
 
-                    set! out "$out### $k `$sig`\n\n[_md_doc [get $e doc]]"
+                    set! out "$out$a### $k `$sig`\n\n[_md_doc [get $e doc] $link]"
                 } else {
-                    set! out "$out### $k `$q`\n\n[_md_doc [get $e doc]]"
+                    set! out "$out$a### $k `$q`\n\n[_md_doc [get $e doc] $link]"
                 }
+            }
             }
         }
 
@@ -448,8 +624,21 @@ namespace Doc {
     ;;;
     ;;; Module doc first, then `## namespace` sections with `###`
     ;;; entries; proc signatures come from the source's own word
-    ;;; records. An optional title becomes a leading `#` heading.
-    proc markdown {model (title {})} {
+    ;;; records. Every entry heading is preceded by an `<a id>` anchor
+    ;;; named by `anchor`. An optional title becomes a leading `#`
+    ;;; heading. `link`, when given, is a proc mapping a name to a URL
+    ;;; (or `{}`): each `[Name]` in prose outside code spans that it
+    ;;; resolves is rendered as a link, so companion docs can
+    ;;; cross-reference by qualified name.
+    ;;;
+    ;;; Examples:
+    ;;; >> let m [Doc::extract ";;; See \[M::f\].\nnamespace M { ;;; f\n proc f {} { 1 } }"]
+    ;;; >> >= [String::find [Doc::markdown $m] "<a id=\"M::f\"></a>"] 0
+    ;;; 1
+    ;;; >> let md [Doc::markdown $m {} [lambda {n} { "u#$n" }]]
+    ;;; >> >= [String::find $md "See \[`M::f`\](u#M::f)."] 0
+    ;;; 1
+    proc markdown {model (title {}) (link {})} {
         var out {}
 
         if [!= $title {}] {
@@ -457,18 +646,31 @@ namespace Doc {
         }
 
         if [!= [String::trim [get $model doc]] {}] {
-            set! out "$out[_md_doc [get $model doc]]"
+            set! out "$out[_md_doc [get $model doc] $link]"
         }
 
-        "$out[_md_entries {} [get $model entries]]"
+        "$out[_md_entries {} [get $model entries] $link]"
     }
 
     ;;; Extract a file and render it to markdown (needs the io package).
-    ;;; The title defaults to the path.
-    proc markdown_file {path (title {})} {
+    ;;; The title defaults to the path; `link` is passed to `markdown`.
+    proc markdown_file {path (title {}) (link {})} {
         var t $title
         if [== $t {}] { set! t $path }
-        markdown [extract_file $path] $t
+        markdown [extract_file $path] $t $link
+    }
+
+    ;;; Link `[Name]` references in free-form markdown text, the same
+    ;;; way `markdown` does for extracted docs. Lets a site builder run
+    ;;; plain `.md` pages through the same resolver.
+    ;;;
+    ;;; Examples:
+    ;;; >> Doc::link_text "See \[f\] and `\[f\]`." [lambda {n} { "#$n" }]
+    ;;; "See \[`f`](#f) and `\[f]`."
+    ;;; >> Doc::link_text "no \[zz\] here" [lambda {n} { {} }]
+    ;;; "no \[zz] here"
+    proc link_text {text link} {
+        _link_text $text $link
     }
 
     ;; ---- doctests -------------------------------------------------
@@ -540,7 +742,11 @@ namespace Doc {
         var acc #{pass 0 fail 0 failures ()}
 
         foreach e $entries {
-            let q "$prefix[get $e name]"
+            var q "$prefix[get $e name]"
+
+            if [== [get $e kind] "prose"] {
+                set! q "$prefix(prose)"
+            }
 
             if [!= [get $e doc] {}] {
                 set! acc [_dt_merge $acc [_dt_doc $q [get $e doc]]]
@@ -597,6 +803,8 @@ namespace Doc {
         var acc ()
 
         foreach e $entries {
+            if [== [get $e kind] "prose"] { continue }
+
             let q "$prefix[get $e name]"
             let flat #{kind [get $e kind] qname $q name [get $e name] params [get $e params {}] line [get $e line] doc [get $e doc] file $file}
             set! acc [List::push $acc $flat]
@@ -634,7 +842,7 @@ namespace Doc {
 
     ;;; Register a file's docs under its path (needs the io package).
     proc register_file {path} {
-        register [io::read_file $path] $path
+        register [Io::read_file $path] $path
     }
 
     ;; Entries for a source, reading the file on first use.

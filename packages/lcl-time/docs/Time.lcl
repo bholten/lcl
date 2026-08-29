@@ -1,0 +1,313 @@
+;;; # lcl-time
+;;;
+;;; Time, clock, calendar and profiling functions for Lcl.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - C standard library `<time.h>` (`time`, `clock`, `localtime`,
+;;;   `gmtime`, `mktime`, `strftime`, `difftime`, `ctime`)
+;;; - POSIX `nanosleep` for [Time::sleep]
+;;; - `clock_gettime(CLOCK_MONOTONIC, ...)` for [Time::monotonic_us]
+;;;   and the profiler
+;;; - **Portability**: wide. The calendar API is ISO C and builds on
+;;;   Linux, macOS, BSD and Windows; the monotonic clock, sub-second
+;;;   sleep and profiler rely on POSIX features that may be missing
+;;;   from older Windows toolchains.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_TIME=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; Timestamps are integers: seconds since the Unix epoch. Broken-down
+;;; times are dicts with the keys `year`, `mon` (1-12), `mday` (1-31),
+;;; `hour`, `min`, `sec`, `wday` (0 = Sunday), `yday` (1-366) and
+;;; `isdst`; unlike C's `struct tm`, `year`, `mon` and `yday` are the
+;;; human-readable values.
+;;;
+;;; ```tcl
+;;; ;; Unix timestamp (seconds since epoch)
+;;; let now [Time::time]
+;;; puts "epoch: $now"
+;;;
+;;; ;; Format with strftime
+;;; puts [Time::strftime "%Y-%m-%d %H:%M:%S" $now]
+;;;
+;;; ;; Monotonic timing
+;;; let t0 [Time::monotonic_us]
+;;; do-some-work
+;;; let elapsed [- [Time::monotonic_us] $t0]
+;;; puts "elapsed: $elapsed us"
+;;;
+;;; ;; Sleep
+;;; Time::sleep 0.25     ;; 250 ms
+;;; ```
+;;;
+;;; ## Profiling
+;;;
+;;; ```tcl
+;;; proc update {e} { ... }
+;;; let rows [Time::profile { foreach e $enemies { update $e } }]
+;;; puts [Time::profile_format $rows]
+;;; ;;      calls      incl_us      excl_us  name
+;;; ;;       1492        61230        61230  update
+;;; ```
+;;;
+;;; [Time::profile] runs a body and returns one
+;;; `#{name calls incl_us excl_us}` row per proc that ran, sorted by
+;;; exclusive time. [Time::profile_start!] / [Time::profile_stop!]
+;;; bracket a region from outside -- e.g. around a game loop -- and
+;;; `profile_stop!` returns the same rows. [Time::profile_format]
+;;; renders them as an aligned table.
+;;;
+;;; Inclusive time is wall time between a proc's entry and exit;
+;;; exclusive subtracts the inclusive time of the procs it called, so
+;;; the cost of C builtins is attributed to the proc that called them.
+;;; Tail self-calls count as a single call. Timing uses the monotonic
+;;; clock; the hook itself costs well under a microsecond per call.
+;;; The profiler is installed as the interpreter's call hook, nesting
+;;; inside any hook the host set; only one profile can be running at
+;;; a time.
+
+namespace Time {
+
+    ;;; Procs are listed in groups: clocks ([Time::time], [Time::clock],
+    ;;; [Time::monotonic_us]), calendar conversion ([Time::localtime],
+    ;;; [Time::gmtime], [Time::mktime], [Time::ctime]), formatting and
+    ;;; arithmetic ([Time::strftime], [Time::difftime]), sleeping
+    ;;; ([Time::sleep]) and profiling ([Time::profile],
+    ;;; [Time::profile_start!], [Time::profile_stop!],
+    ;;; [Time::profile_format]).
+
+    ;;; Return the current Unix timestamp: integer seconds since
+    ;;; 1970-01-01 00:00:00 UTC.
+    ;;;
+    ;;; ```tcl
+    ;;; let started [Time::time]
+    ;;; ```
+    proc time {} {}
+
+    ;;; Return the CPU time consumed by this process, in microseconds.
+    ;;;
+    ;;; Derived from C `clock()` and `CLOCKS_PER_SEC`; measures
+    ;;; processor time, not wall time, so it does not advance while the
+    ;;; process sleeps or waits.
+    ;;;
+    ;;; ```tcl
+    ;;; let c0 [Time::clock]
+    ;;; crunch
+    ;;; puts "cpu: [- [Time::clock] $c0] us"
+    ;;; ```
+    proc clock {} {}
+
+    ;;; Return a monotonic clock reading in microseconds.
+    ;;;
+    ;;; Counts from an arbitrary fixed point (typically boot) and never
+    ;;; jumps when the wall clock is adjusted, which makes it the right
+    ;;; clock for measuring elapsed time. Only differences between two
+    ;;; readings are meaningful. On 32-bit platforms the value wraps
+    ;;; after about 35 minutes.
+    ;;;
+    ;;; ```tcl
+    ;;; let t0 [Time::monotonic_us]
+    ;;; do-some-work
+    ;;; puts "took [- [Time::monotonic_us] $t0] us"
+    ;;; ```
+    proc monotonic_us {} {}
+
+    ;;; Break `timestamp` (default: now) down into local-time fields.
+    ;;;
+    ;;; Returns a dict with `year`, `mon`, `mday`, `hour`, `min`, `sec`,
+    ;;; `wday`, `yday` and `isdst`, interpreted in the process's local
+    ;;; time zone (`TZ`). Raises an error if `timestamp` is not an
+    ;;; integer.
+    ;;;
+    ;;; ```tcl
+    ;;; let tm [Time::localtime]
+    ;;; puts "today is [get $tm year]-[get $tm mon]-[get $tm mday]"
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> List::sort [Dict::keys [Time::localtime 0]]
+    ;;; ("hour" "isdst" "mday" "min" "mon" "sec" "wday" "yday" "year")
+    ;;; >> Time::localtime noon
+    ;;; !! expected integer timestamp
+    proc localtime {(timestamp {})} {}
+
+    ;;; Break `timestamp` (default: now) down into UTC fields.
+    ;;;
+    ;;; Same dict shape as [Time::localtime], but in UTC, so the
+    ;;; result does not depend on the time zone. Raises an error if
+    ;;; `timestamp` is not an integer.
+    ;;;
+    ;;; Examples:
+    ;;; >> get [Time::gmtime 0] year
+    ;;; 1970
+    ;;; >> let tm [Time::gmtime 86400]
+    ;;; >> "[get $tm year]-[get $tm mon]-[get $tm mday] wday=[get $tm wday] yday=[get $tm yday]"
+    ;;; "1970-1-2 wday=5 yday=2"
+    ;;; >> get [Time::gmtime -1] year
+    ;;; 1969
+    proc gmtime {(timestamp {})} {}
+
+    ;;; Convert a broken-down local-time dict back to a Unix timestamp.
+    ;;;
+    ;;; Reads `year`, `mon`, `mday`, `hour`, `min`, `sec` and `isdst`
+    ;;; from `tm`; missing fields count as zero (so `mon` and `mday`
+    ;;; should always be given), and a missing `isdst` lets the C
+    ;;; library decide. `wday` and `yday` are ignored. Out-of-range
+    ;;; fields are normalised as `mktime(3)` does. The inverse of
+    ;;; [Time::localtime]. Raises an error if `tm` is not a dict or
+    ;;; does not describe a representable time.
+    ;;;
+    ;;; ```tcl
+    ;;; Time::mktime [Time::localtime 1000000000]     ;; 1000000000
+    ;;; Time::mktime #{year 2001 mon 9 mday 9 hour 1 min 46 sec 40}
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::mktime "2001-09-09"
+    ;;; !! expected dict
+    proc mktime {tm} {}
+
+    ;;; Format `timestamp` (default: now) as an `asctime`-style string,
+    ;;; e.g. `Thu Jan  1 00:00:00 1970`, in local time.
+    ;;;
+    ;;; The newline C `ctime` appends is stripped. Raises an error if
+    ;;; `timestamp` is not an integer.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::length [Time::ctime 0]
+    ;;; 24
+    proc ctime {(timestamp {})} {}
+
+    ;;; Format `timestamp` (default: now) in local time with a
+    ;;; `strftime(3)` format string.
+    ;;;
+    ;;; The usual conversions apply: `%Y-%m-%d`, `%H:%M:%S`, `%A`, `%Z`,
+    ;;; `%s`, and so on. The result must fit in 255 bytes; a longer
+    ;;; result, or a format that produces nothing, raises an error.
+    ;;; Note the argument is a timestamp, not a broken-down dict --
+    ;;; convert a dict with [Time::mktime] first.
+    ;;;
+    ;;; ```tcl
+    ;;; puts [Time::strftime "%Y-%m-%d %H:%M:%S"]
+    ;;; puts [Time::strftime "%A" [Posix::file_mtime CMakeLists.txt]]
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::strftime "%%" 0
+    ;;; "%"
+    ;;; >> Time::strftime
+    ;;; !! requires a format string
+    proc strftime {format (timestamp {})} {}
+
+    ;;; Return `t1 - t0` in seconds as a float.
+    ;;;
+    ;;; Raises an error if either argument is not an integer
+    ;;; timestamp.
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::difftime 10 3
+    ;;; 7
+    ;;; >> type [Time::difftime 10 3]
+    ;;; "float"
+    ;;; >> Time::difftime 3 10
+    ;;; -7
+    proc difftime {t1 t0} {}
+
+    ;;; Pause the process for `seconds`, which may be fractional.
+    ;;;
+    ;;; Uses `nanosleep`, so sub-second durations work. Returns the
+    ;;; empty string. Raises an error if `seconds` is not a number or
+    ;;; is negative.
+    ;;;
+    ;;; ```tcl
+    ;;; Time::sleep 0.25     ;; 250 ms
+    ;;; Time::sleep 2
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::sleep -1
+    ;;; !! must be non-negative
+    ;;; >> Time::sleep soon
+    ;;; !! expected number
+    proc sleep {seconds} {}
+
+    ;;; Run `body` and return a profile of the procs it called.
+    ;;;
+    ;;; `body` is a braced script evaluated in the caller's scope, so
+    ;;; it can read and mutate the surrounding variables; its own
+    ;;; value is dropped. Returns a list of `#{name calls incl_us
+    ;;; excl_us}` rows, one per distinct proc name, sorted by exclusive
+    ;;; time (then inclusive time, then name). An error in `body`
+    ;;; propagates unchanged and the profiler is released. Raises an
+    ;;; error if a profile is already running.
+    ;;;
+    ;;; Examples:
+    ;;; >> proc ex_leaf {n} { + $n 1 }
+    ;;; >> proc ex_root {} { ex_leaf 1; ex_leaf 2 }
+    ;;; >> let rows [Time::profile { ex_root }]
+    ;;; >> List::sort [List::map $rows [lambda {r} { "[get $r name]:[get $r calls]" }]]
+    ;;; ("ex_leaf:2" "ex_root:1")
+    ;;; >> List::sort [Dict::keys [get $rows 0]]
+    ;;; ("calls" "excl_us" "incl_us" "name")
+    ;;; >> Time::profile { ex_leaf 0; error boom }
+    ;;; !! boom
+    ;;; >> Time::profile
+    ;;; !! expected 1 argument
+    proc profile {body} {}
+
+    ;;; Start collecting profile data for every proc call from now on.
+    ;;;
+    ;;; Use with [Time::profile_stop!] to profile a region you cannot
+    ;;; wrap in a single body, such as a game loop driven by a host
+    ;;; callback. Raises an error if the profiler is already running.
+    ;;;
+    ;;; ```tcl
+    ;;; Time::profile_start!
+    ;;; ;; ... frames run ...
+    ;;; puts [Time::profile_format [Time::profile_stop!]]
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> proc ex_tick {} { 1 }
+    ;;; >> Time::profile_start!
+    ;;; >> Time::profile_start!
+    ;;; !! already running
+    ;;; >> ex_tick; ex_tick; ex_tick
+    ;;; >> get [get [Time::profile_stop!] 0] calls
+    ;;; 3
+    proc profile_start! {} {}
+
+    ;;; Stop collecting and return the rows gathered since
+    ;;; [Time::profile_start!].
+    ;;;
+    ;;; Same row shape and order as [Time::profile]. Raises an error if
+    ;;; the profiler is not running.
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::profile_stop!
+    ;;; !! not running
+    proc profile_stop! {} {}
+
+    ;;; Render profile `rows` as an aligned text table.
+    ;;;
+    ;;; One header line (`calls incl_us excl_us name`) followed by one
+    ;;; line per row, with no trailing newline. Raises an error if
+    ;;; `rows` is not a list or a row lacks one of the four keys.
+    ;;;
+    ;;; Examples:
+    ;;; >> Time::profile_format ()
+    ;;; "     calls      incl_us      excl_us  name"
+    ;;; >> String::split [Time::profile_format (#{name f calls 3 incl_us 120 excl_us 100})] "\n"
+    ;;; ("     calls      incl_us      excl_us  name" "         3          120          100  f")
+    ;;; >> Time::profile_format (#{name f})
+    ;;; !! malformed report row
+    proc profile_format {rows} {}
+}

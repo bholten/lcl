@@ -5,7 +5,7 @@
 #include <lcl.h>
 
 #define REGEX_TYPE "regex_t"
-#define REGEX_NS "regex"
+#define REGEX_NS "Regex"
 
 struct lcl_regex {
   regex_t re;
@@ -30,7 +30,7 @@ void lcl_regex_free(struct lcl_regex *re) {
   free(re);
 }
 
-/* Resolve a pattern argument: a compiled handle (regex::compile)
+/* Resolve a pattern argument: a compiled handle (Regex::compile)
  * passes through; anything else is treated as a pattern string and
  * compiled into *scratch — caller must regfree it when *owned. */
 static int get_regex(lcl_interp *interp, lcl_value *v, regex_t **re_out,
@@ -109,7 +109,7 @@ static int rbuf_append(struct rbuf *b, const char *s, size_t n) {
   return 1;
 }
 
-/* regex::regcomp pattern - compile to a reusable handle */
+/* Regex::regcomp pattern - compile to a reusable handle */
 static lcl_return_code c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
   struct lcl_regex *re = NULL;
@@ -117,7 +117,7 @@ static lcl_return_code c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
   int errcode;
 
   if (argc < 1) {
-    lcl_set_error(interp, "regex::compile requires a pattern");
+    lcl_set_error(interp, "Regex::compile requires a pattern");
     return LCL_RC_ERR;
   }
 
@@ -146,7 +146,7 @@ static lcl_return_code c_regcomp(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::regexec regex string -> 1 if matched, 0 if not */
+/* Regex::regexec regex string -> 1 if matched, 0 if not */
 static lcl_return_code c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
   struct lcl_regex *re = NULL;
@@ -154,12 +154,12 @@ static lcl_return_code c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
   const char *str = NULL;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::regexec requires a regex and a string");
+    lcl_set_error(interp, "Regex::regexec requires a regex and a string");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], REGEX_TYPE, (void **)&re) != LCL_OK) {
-    lcl_set_error(interp, "regex::regexec: not a compiled regex");
+    lcl_set_error(interp, "Regex::regexec: not a compiled regex");
     return LCL_RC_ERR;
   }
 
@@ -174,7 +174,7 @@ static lcl_return_code c_regexec(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::match pattern|regex string -> 1 if matched, 0 if not */
+/* Regex::match pattern|regex string -> 1 if matched, 0 if not */
 static lcl_return_code c_match(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   regex_t scratch;
@@ -184,7 +184,7 @@ static lcl_return_code c_match(lcl_interp *interp, int argc, lcl_value **argv,
   int matched;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::match requires pattern and string");
+    lcl_set_error(interp, "Regex::match requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -207,7 +207,7 @@ static lcl_return_code c_match(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::find pattern|regex string -> (start end) of the first
+/* Regex::find pattern|regex string -> (start end) of the first
  * match (byte offsets, end exclusive), or the empty list */
 static lcl_return_code c_find(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
@@ -219,7 +219,7 @@ static lcl_return_code c_find(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::find requires pattern and string");
+    lcl_set_error(interp, "Regex::find requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -252,7 +252,7 @@ static lcl_return_code c_find(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::captures pattern|regex string -> list of the first match's
+/* Regex::captures pattern|regex string -> list of the first match's
  * texts: element 0 is the whole match, 1..n the capture groups
  * (unmatched optional groups become empty strings). Empty list when
  * the pattern does not match. */
@@ -267,7 +267,7 @@ static lcl_return_code c_captures(lcl_interp *interp, int argc,
   lcl_value *result;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::captures requires pattern and string");
+    lcl_set_error(interp, "Regex::captures requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -325,7 +325,7 @@ static lcl_return_code c_captures(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* regex::search pattern|regex string ?from? -> offset pairs for the
+/* Regex::search pattern|regex string ?from? -> offset pairs for the
  * first match at or after byte offset `from` (default 0): element 0
  * is the whole match, 1..n the capture groups, each a (start end)
  * pair of absolute byte offsets into string (end exclusive).
@@ -345,7 +345,7 @@ static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::search requires pattern and string");
+    lcl_set_error(interp, "Regex::search requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -355,12 +355,12 @@ static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc > 2) {
     if (lcl_value_to_int(argv[2], &from) != LCL_OK) {
-      lcl_set_error(interp, "regex::search: from must be an integer");
+      lcl_set_error(interp, "Regex::search: from must be an integer");
       return LCL_RC_ERR;
     }
 
     if (from < 0) {
-      lcl_set_error(interp, "regex::search: from must be >= 0");
+      lcl_set_error(interp, "Regex::search: from must be >= 0");
       return LCL_RC_ERR;
     }
   }
@@ -422,7 +422,7 @@ static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::find_all pattern|regex string -> list of every
+/* Regex::find_all pattern|regex string -> list of every
  * (non-overlapping) whole-match text, left to right */
 static lcl_return_code c_find_all(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
@@ -435,7 +435,7 @@ static lcl_return_code c_find_all(lcl_interp *interp, int argc,
   lcl_value *result;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::find_all requires pattern and string");
+    lcl_set_error(interp, "Regex::find_all requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -524,7 +524,7 @@ static int append_replacement(struct rbuf *b, const char *tmpl,
   return 1;
 }
 
-/* regex::replace pattern|regex replacement string -> string with
+/* Regex::replace pattern|regex replacement string -> string with
  * every match replaced. The replacement may reference group texts
  * with \0 (whole match) .. \9; \\ is a literal backslash. */
 static lcl_return_code c_replace(lcl_interp *interp, int argc, lcl_value **argv,
@@ -543,7 +543,7 @@ static lcl_return_code c_replace(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc < 3) {
     lcl_set_error(interp,
-                  "regex::replace requires pattern, replacement, and string");
+                  "Regex::replace requires pattern, replacement, and string");
     return LCL_RC_ERR;
   }
 
@@ -613,21 +613,24 @@ static lcl_return_code c_replace(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* regex::split pattern|regex string -> list of the substrings
+/* Regex::split pattern|regex string -> list of the substrings
  * between matches (a match at the start or end contributes an empty
- * leading/trailing element; empty matches are skipped) */
+ * leading/trailing element; empty matches are skipped). `start` is
+ * where the current piece begins; `scan` is where the next search
+ * starts, and runs ahead of `start` while skipping empty matches. */
 static lcl_return_code c_split(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   regex_t scratch;
   regex_t *re = NULL;
   int owned = 0;
   const char *str = NULL;
-  size_t pos = 0;
+  size_t start = 0;
+  size_t scan = 0;
   size_t len;
   lcl_value *result;
 
   if (argc < 2) {
-    lcl_set_error(interp, "regex::split requires pattern and string");
+    lcl_set_error(interp, "Regex::split requires pattern and string");
     return LCL_RC_ERR;
   }
 
@@ -642,22 +645,22 @@ static lcl_return_code c_split(lcl_interp *interp, int argc, lcl_value **argv,
   len = strlen(str);
   result = lcl_list_new();
 
-  while (pos <= len) {
+  while (scan <= len) {
     regmatch_t m;
-    int flags = pos > 0 ? REG_NOTBOL : 0;
+    int flags = scan > 0 ? REG_NOTBOL : 0;
     lcl_value *v;
 
-    if (regexec(re, str + pos, 1, &m, flags) != 0) {
+    if (regexec(re, str + scan, 1, &m, flags) != 0) {
       break;
     }
 
     if (m.rm_eo == m.rm_so) {
       /* empty match: no split point here; scan past it */
-      pos += (size_t)m.rm_so + 1;
+      scan += (size_t)m.rm_so + 1;
       continue;
     }
 
-    v = substr_value(str + pos, 0, (size_t)m.rm_so);
+    v = substr_value(str, start, scan + (size_t)m.rm_so);
 
     if (!v) {
       break;
@@ -665,11 +668,12 @@ static lcl_return_code c_split(lcl_interp *interp, int argc, lcl_value **argv,
 
     lcl_list_push(&result, v);
     lcl_ref_dec(v);
-    pos += (size_t)m.rm_eo;
+    scan += (size_t)m.rm_eo;
+    start = scan;
   }
 
   {
-    lcl_value *v = substr_value(str, pos, len);
+    lcl_value *v = substr_value(str, start, len);
 
     if (v) {
       lcl_list_push(&result, v);
@@ -698,20 +702,20 @@ void lcl_register_regex(lcl_interp *interp) {
   lcl_define_take(interp, REGEX_NS, regex_ns);
 
   lcl_ns_def_take(regex_ns, "compile",
-                  lcl_c_proc_new("regex::compile", c_regcomp));
+                  lcl_c_proc_new("Regex::compile", c_regcomp));
   lcl_ns_def_take(regex_ns, "regcomp",
-                  lcl_c_proc_new("regex::regcomp", c_regcomp));
+                  lcl_c_proc_new("Regex::regcomp", c_regcomp));
   lcl_ns_def_take(regex_ns, "regexec",
-                  lcl_c_proc_new("regex::regexec", c_regexec));
-  lcl_ns_def_take(regex_ns, "match", lcl_c_proc_new("regex::match", c_match));
-  lcl_ns_def_take(regex_ns, "find", lcl_c_proc_new("regex::find", c_find));
+                  lcl_c_proc_new("Regex::regexec", c_regexec));
+  lcl_ns_def_take(regex_ns, "match", lcl_c_proc_new("Regex::match", c_match));
+  lcl_ns_def_take(regex_ns, "find", lcl_c_proc_new("Regex::find", c_find));
   lcl_ns_def_take(regex_ns, "captures",
-                  lcl_c_proc_new("regex::captures", c_captures));
+                  lcl_c_proc_new("Regex::captures", c_captures));
   lcl_ns_def_take(regex_ns, "search",
-                  lcl_c_proc_new("regex::search", c_search));
+                  lcl_c_proc_new("Regex::search", c_search));
   lcl_ns_def_take(regex_ns, "find_all",
-                  lcl_c_proc_new("regex::find_all", c_find_all));
+                  lcl_c_proc_new("Regex::find_all", c_find_all));
   lcl_ns_def_take(regex_ns, "replace",
-                  lcl_c_proc_new("regex::replace", c_replace));
-  lcl_ns_def_take(regex_ns, "split", lcl_c_proc_new("regex::split", c_split));
+                  lcl_c_proc_new("Regex::replace", c_replace));
+  lcl_ns_def_take(regex_ns, "split", lcl_c_proc_new("Regex::split", c_split));
 }

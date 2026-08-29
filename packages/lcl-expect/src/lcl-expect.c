@@ -19,7 +19,7 @@
 #include <lcl-process.h>
 #include <lcl.h>
 
-#define EXPECT_NS "expect"
+#define EXPECT_NS "Expect"
 #define EXPECT_PATTERN_TYPE_TAG "expect_pattern"
 
 typedef enum {
@@ -71,7 +71,7 @@ static expect_pattern *get_pattern(lcl_value *v) {
 }
 
 /*
- * expect::pattern str ?opts?
+ * Expect::pattern str ?opts?
  *
  * Create a literal pattern object.
  * Options:
@@ -84,7 +84,7 @@ static lcl_return_code c_expect_pattern(lcl_interp *interp, int argc,
   int nocase = 0;
 
   if (argc < 1) {
-    lcl_set_error(interp, "expect::pattern requires a string argument");
+    lcl_set_error(interp, "Expect::pattern requires a string argument");
     return LCL_RC_ERR;
   }
 
@@ -129,7 +129,7 @@ static lcl_return_code c_expect_pattern(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::regex str ?opts?
+ * Expect::regex str ?opts?
  *
  * Create a regex pattern object.
  * Options:
@@ -144,7 +144,7 @@ static lcl_return_code c_expect_regex(lcl_interp *interp, int argc,
   int ret;
 
   if (argc < 1) {
-    lcl_set_error(interp, "expect::regex requires a pattern argument");
+    lcl_set_error(interp, "Expect::regex requires a pattern argument");
     return LCL_RC_ERR;
   }
 
@@ -205,7 +205,7 @@ static lcl_return_code c_expect_regex(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::timeout
+ * Expect::timeout
  *
  * Create a timeout sentinel pattern.
  */
@@ -232,7 +232,7 @@ static lcl_return_code c_expect_timeout(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::eof
+ * Expect::eof
  *
  * Create an EOF sentinel pattern.
  */
@@ -259,7 +259,7 @@ static lcl_return_code c_expect_eof(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::pattern? value
+ * Expect::pattern? value
  *
  * Check if value is a pattern object.
  */
@@ -277,7 +277,7 @@ static lcl_return_code c_expect_is_pattern(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::pattern-kind pattern
+ * Expect::pattern-kind pattern
  *
  * Get the kind of a pattern as a string.
  */
@@ -287,7 +287,7 @@ static lcl_return_code c_expect_pattern_kind(lcl_interp *interp, int argc,
   expect_pattern *p;
 
   if (argc < 1) {
-    lcl_set_error(interp, "expect::pattern-kind requires a pattern argument");
+    lcl_set_error(interp, "Expect::pattern-kind requires a pattern argument");
     return LCL_RC_ERR;
   }
 
@@ -391,7 +391,7 @@ static int match_pattern(const expect_pattern *p, const char *buf,
 }
 
 /*
- * expect::match-buffer buf patterns ?opts?
+ * Expect::match-buffer buf patterns ?opts?
  *
  * Low-level: match buffer against a list of patterns.
  *
@@ -412,7 +412,7 @@ static lcl_return_code c_expect_match_buffer(lcl_interp *interp, int argc,
   lcl_value *tmp;
 
   if (argc < 2) {
-    lcl_set_error(interp, "expect::match-buffer requires buf and patterns");
+    lcl_set_error(interp, "Expect::match-buffer requires buf and patterns");
     return LCL_RC_ERR;
   }
 
@@ -541,7 +541,7 @@ static lcl_return_code c_expect_match_buffer(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::read-match handle patterns ?opts?
+ * Expect::read-match handle patterns ?opts?
  *
  * Read from process handle until one of the patterns matches, timeout, or EOF.
  *
@@ -573,7 +573,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
   size_t i;
 
   if (argc < 2) {
-    lcl_set_error(interp, "expect::read-match requires handle and patterns");
+    lcl_set_error(interp, "Expect::read-match requires handle and patterns");
     return LCL_RC_ERR;
   }
 
@@ -711,10 +711,10 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
     {
       lcl_value *read_proc = NULL;
 
-      if (lcl_get(interp, "::process::read", &read_proc) != LCL_OK) {
+      if (lcl_get(interp, "::Process::read", &read_proc) != LCL_OK) {
         lcl_ref_dec(read_opts);
         free(buf);
-        lcl_set_error(interp, "process::read not found");
+        lcl_set_error(interp, "Process::read not found");
         return LCL_RC_ERR;
       }
 
@@ -742,7 +742,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
       lcl_value *alive_result = NULL;
       long is_alive = 1;
 
-      if (lcl_get(interp, "::process::alive?", &alive_proc) == LCL_OK) {
+      if (lcl_get(interp, "::Process::alive?", &alive_proc) == LCL_OK) {
         read_args[0] = handle;
 
         if (lcl_call_proc(interp, alive_proc, 1, read_args, &alive_result) ==
@@ -824,7 +824,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
 }
 
 /*
- * expect::match handle pairs ?opts?
+ * Expect::match handle pairs ?opts?
  *
  * Pattern/handler matching with closures.
  *
@@ -838,7 +838,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
  * Returns: result of matched handler
  *
  * Example:
- *   expect::match $h (
+ *   Expect::match $h (
  *     ("password:" [lambda {m} { send-line "secret" }])
  *     ("$ "        [lambda {m} { $m }])
  *     (timeout     [lambda {} { error "timed out" }])
@@ -864,7 +864,7 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
   lcl_value *tmp;
 
   if (argc < 2) {
-    lcl_set_error(interp, "expect::match requires handle and pairs");
+    lcl_set_error(interp, "Expect::match requires handle and pairs");
     return LCL_RC_ERR;
   }
 
@@ -1005,11 +1005,11 @@ error:
 }
 
 /*
- * expect::loop handle pairs ?opts?
+ * Expect::loop handle pairs ?opts?
  *
  * Loop with pattern/handler matching until break.
  *
- * Same as expect::match but loops until:
+ * Same as Expect::match but loops until:
  *   - A handler returns without calling 'continue'
  *   - A handler calls 'break'
  *   - No pattern matches (error)
@@ -1018,7 +1018,7 @@ error:
  * Normal return from handler also exits the loop.
  *
  * Example:
- *   expect::loop $h (
+ *   Expect::loop $h (
  *     ("More--"    [lambda {m} { send " "; continue }])
  *     ("password:" [lambda {m} { send-line $pw; continue }])
  *     ("$ "        [lambda {m} { break }])
@@ -1052,28 +1052,28 @@ static lcl_return_code c_expect_loop(lcl_interp *interp, int argc,
 }
 
 /*
- * Register the expect:: namespace
+ * Register the Expect:: namespace
  */
 void lcl_register_expect(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(EXPECT_NS);
   lcl_define_take(interp, EXPECT_NS, ns);
 
   lcl_ns_def_take(ns, "pattern",
-                  lcl_c_proc_new("expect::pattern", c_expect_pattern));
-  lcl_ns_def_take(ns, "regex", lcl_c_proc_new("expect::regex", c_expect_regex));
+                  lcl_c_proc_new("Expect::pattern", c_expect_pattern));
+  lcl_ns_def_take(ns, "regex", lcl_c_proc_new("Expect::regex", c_expect_regex));
   lcl_ns_def_take(ns, "timeout",
-                  lcl_c_proc_new("expect::timeout", c_expect_timeout));
-  lcl_ns_def_take(ns, "eof", lcl_c_proc_new("expect::eof", c_expect_eof));
+                  lcl_c_proc_new("Expect::timeout", c_expect_timeout));
+  lcl_ns_def_take(ns, "eof", lcl_c_proc_new("Expect::eof", c_expect_eof));
   lcl_ns_def_take(ns, "pattern?",
-                  lcl_c_proc_new("expect::pattern?", c_expect_is_pattern));
+                  lcl_c_proc_new("Expect::pattern?", c_expect_is_pattern));
   lcl_ns_def_take(
       ns, "pattern-kind",
-      lcl_c_proc_new("expect::pattern-kind", c_expect_pattern_kind));
+      lcl_c_proc_new("Expect::pattern-kind", c_expect_pattern_kind));
   lcl_ns_def_take(
       ns, "match-buffer",
-      lcl_c_proc_new("expect::match-buffer", c_expect_match_buffer));
+      lcl_c_proc_new("Expect::match-buffer", c_expect_match_buffer));
   lcl_ns_def_take(ns, "read-match",
-                  lcl_c_proc_new("expect::read-match", c_expect_read_match));
-  lcl_ns_def_take(ns, "match", lcl_c_proc_new("expect::match", c_expect_match));
-  lcl_ns_def_take(ns, "loop", lcl_c_proc_new("expect::loop", c_expect_loop));
+                  lcl_c_proc_new("Expect::read-match", c_expect_read_match));
+  lcl_ns_def_take(ns, "match", lcl_c_proc_new("Expect::match", c_expect_match));
+  lcl_ns_def_take(ns, "loop", lcl_c_proc_new("Expect::loop", c_expect_loop));
 }

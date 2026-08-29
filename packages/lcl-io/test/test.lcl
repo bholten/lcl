@@ -1,4 +1,4 @@
-;; io:: Package Tests
+;; Io:: Package Tests
 ;; Run with an LCL interpreter that has the io extension loaded.
 ;; lcl-io is pure ANSI C (stdio.h + getenv); existence checks below use
 ;; read-back / catch instead of stat-based predicates (see lcl-posix).
@@ -11,19 +11,19 @@
 ;; ============================================================================
 
 Test::suite "Standard Streams" {
-    Test::case "io::stdout returns handle" {
-        let stdout [io::stdout]
+    Test::case "Io::stdout returns handle" {
+        let stdout [Io::stdout]
         Test::opaque $stdout
     }
 
-    Test::case "io::stderr returns handle" {
-        let stderr [io::stderr]
+    Test::case "Io::stderr returns handle" {
+        let stderr [Io::stderr]
         Test::opaque $stderr
     }
 
-    Test::case "io::fputs writes to stdout" {
+    Test::case "Io::fputs writes to stdout" {
         ;; Just verify it doesn't error - output goes to stdout
-        io::fputs [io::stdout] "test output\n"
+        Io::fputs [Io::stdout] "test output\n"
         Test::assert 1
     }
 }
@@ -32,14 +32,14 @@ Test::suite "Standard Streams" {
 ;; Environment
 ;; ============================================================================
 
-Test::suite "Environment (io::getenv)" {
+Test::suite "Environment (Io::getenv)" {
     Test::case "getenv returns PATH" {
-        let path [io::getenv PATH]
+        let path [Io::getenv PATH]
         Test::gt [String::length $path] 0
     }
 
     Test::case "getenv returns empty for non-existent var" {
-        let missing [io::getenv LCL_NONEXISTENT_VAR_12345]
+        let missing [Io::getenv LCL_NONEXISTENT_VAR_12345]
         Test::empty $missing
     }
 }
@@ -52,45 +52,45 @@ Test::suite "File Operations" {
     Test::case "write_file and read_file" {
         let test_file "/tmp/lcl_io_test.txt"
         let content "Hello, LCL IO!"
-        io::write_file $test_file $content
-        Test::eq [io::read_file $test_file] $content
-        io::remove $test_file
+        Io::write_file $test_file $content
+        Test::eq [Io::read_file $test_file] $content
+        Io::remove $test_file
     }
 
     Test::case "read_file on missing file errors" {
-        Test::eq [catch { io::read_file "/tmp/nonexistent_lcl_test_xyz" } r e] 1
-        Test::eq [>= [String::find $e {io::read_file: could not read "/tmp/nonexistent_lcl_test_xyz"}] 0] 1
-        Test::eq [catch { io::write_file "/nonexistent_lcl_dir/x" hi } r e] 1
-        Test::eq [>= [String::find $e {io::write_file: could not open}] 0] 1
+        Test::eq [catch { Io::read_file "/tmp/nonexistent_lcl_test_xyz" } r e] 1
+        Test::eq [>= [String::find $e {Io::read_file: could not read "/tmp/nonexistent_lcl_test_xyz"}] 0] 1
+        Test::eq [catch { Io::write_file "/nonexistent_lcl_dir/x" hi } r e] 1
+        Test::eq [>= [String::find $e {Io::write_file: could not open}] 0] 1
     }
 
     Test::case "copy creates destination file" {
         let src "/tmp/lcl_io_copy_src.txt"
         let dst "/tmp/lcl_io_copy_dst.txt"
         let content "copy test"
-        io::write_file $src $content
-        io::copy $src $dst
-        Test::eq [io::read_file $dst] $content
-        io::remove $src
-        io::remove $dst
+        Io::write_file $src $content
+        Io::copy $src $dst
+        Test::eq [Io::read_file $dst] $content
+        Io::remove $src
+        Io::remove $dst
     }
 
     Test::case "rename moves file" {
         let src "/tmp/lcl_io_rename_src.txt"
         let dst "/tmp/lcl_io_rename_dst.txt"
         let content "rename test"
-        io::write_file $src $content
-        io::rename $src $dst
-        Test::eq [catch { io::read_file $src }] 1
-        Test::eq [io::read_file $dst] $content
-        io::remove $dst
+        Io::write_file $src $content
+        Io::rename $src $dst
+        Test::eq [catch { Io::read_file $src }] 1
+        Test::eq [Io::read_file $dst] $content
+        Io::remove $dst
     }
 
     Test::case "remove deletes file" {
         let test_file "/tmp/lcl_io_remove_test.txt"
-        io::write_file $test_file "delete me"
-        io::remove $test_file
-        Test::eq [catch { io::read_file $test_file }] 1
+        Io::write_file $test_file "delete me"
+        Io::remove $test_file
+        Test::eq [catch { Io::read_file $test_file }] 1
     }
 }
 
@@ -103,74 +103,74 @@ Test::suite "File Handle Operations" {
         let test_file "/tmp/lcl_fh_test.txt"
 
         ;; Write with file handle
-        let fh [io::open_file $test_file w]
-        io::fputs $fh "line one\n"
-        io::fputs $fh "line two\n"
-        io::close_file $fh
+        let fh [Io::open_file $test_file w]
+        Io::fputs $fh "line one\n"
+        Io::fputs $fh "line two\n"
+        Io::close_file $fh
 
         ;; Read with file handle
-        let fh_read [io::open_file $test_file r]
-        let line1 [io::fgets $fh_read 1024]
-        let line2 [io::fgets $fh_read 1024]
-        io::close_file $fh_read
+        let fh_read [Io::open_file $test_file r]
+        let line1 [Io::fgets $fh_read 1024]
+        let line2 [Io::fgets $fh_read 1024]
+        Io::close_file $fh_read
 
         Test::eq [String::trim $line1] {line one}
         Test::eq [String::trim $line2] {line two}
 
-        io::remove $test_file
+        Io::remove $test_file
     }
 
     Test::case "flush works without error" {
         let test_file "/tmp/lcl_flush_test.txt"
-        let fh [io::open_file $test_file w]
-        io::fputs $fh "test data"
-        io::flush $fh
-        io::close_file $fh
-        Test::eq [io::read_file $test_file] "test data"
-        io::remove $test_file
+        let fh [Io::open_file $test_file w]
+        Io::fputs $fh "test data"
+        Io::flush $fh
+        Io::close_file $fh
+        Test::eq [Io::read_file $test_file] "test data"
+        Io::remove $test_file
     }
 
     Test::case "fgets returns empty string on eof" {
         let test_file "/tmp/lcl_io_fgets_eof.txt"
-        io::write_file $test_file "one\n\ntwo"
+        Io::write_file $test_file "one\n\ntwo"
 
-        let fh [io::open_file $test_file r]
-        Test::false [io::eof? $fh]
+        let fh [Io::open_file $test_file r]
+        Test::false [Io::eof? $fh]
 
-        Test::eq [io::fgets $fh 64] "one\n"
-        Test::eq [io::fgets $fh 64] "\n"     ;; blank line is "\n", not ""
-        Test::eq [io::fgets $fh 64] "two"    ;; final line without newline
-        Test::eq [io::fgets $fh 64] ""       ;; EOF — empty string, no error
-        Test::true [io::eof? $fh]
+        Test::eq [Io::fgets $fh 64] "one\n"
+        Test::eq [Io::fgets $fh 64] "\n"     ;; blank line is "\n", not ""
+        Test::eq [Io::fgets $fh 64] "two"    ;; final line without newline
+        Test::eq [Io::fgets $fh 64] ""       ;; EOF — empty string, no error
+        Test::true [Io::eof? $fh]
 
         ;; still empty (and no error) on repeated reads past EOF
-        Test::eq [io::fgets $fh 64] ""
+        Test::eq [Io::fgets $fh 64] ""
 
-        io::close_file $fh
-        io::remove $test_file
+        Io::close_file $fh
+        Io::remove $test_file
     }
 
     Test::case "eof? on empty file" {
         let test_file "/tmp/lcl_io_eof_empty.txt"
-        io::write_file $test_file ""
+        Io::write_file $test_file ""
 
-        let fh [io::open_file $test_file r]
-        Test::false [io::eof? $fh]           ;; feof is set by a read, not by position
-        Test::eq [io::fgets $fh 64] ""
-        Test::true [io::eof? $fh]
+        let fh [Io::open_file $test_file r]
+        Test::false [Io::eof? $fh]           ;; feof is set by a read, not by position
+        Test::eq [Io::fgets $fh 64] ""
+        Test::true [Io::eof? $fh]
 
-        io::close_file $fh
-        io::remove $test_file
+        Io::close_file $fh
+        Io::remove $test_file
     }
 
     Test::case "fgets rejects buffer size below 2" {
         let test_file "/tmp/lcl_io_fgets_size.txt"
-        io::write_file $test_file "data"
+        Io::write_file $test_file "data"
 
-        let fh [io::open_file $test_file r]
-        Test::eq [catch { io::fgets $fh 1 }] 1
-        io::close_file $fh
-        io::remove $test_file
+        let fh [Io::open_file $test_file r]
+        Test::eq [catch { Io::fgets $fh 1 }] 1
+        Io::close_file $fh
+        Io::remove $test_file
     }
 }
 

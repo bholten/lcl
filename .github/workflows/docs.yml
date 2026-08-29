@@ -1,0 +1,60 @@
+name: Docs
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          DEPS=$(./ci/package-set.sh apt linux-full)
+          sudo apt-get update
+          sudo apt-get install -y $DEPS pandoc
+
+      - name: Configure
+        run: |
+          FLAGS=()
+          while IFS= read -r line; do FLAGS+=("$line"); done \
+            < <(./ci/package-set.sh flags linux-full)
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLCL_BUILD_RANDOM=ON "${FLAGS[@]}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Doctest
+        run: ./build/lcl tools/docs.lcl doctest
+
+      - name: Render site
+        run: ./build/lcl tools/docs.lcl build site
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

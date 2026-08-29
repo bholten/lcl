@@ -1,0 +1,168 @@
+;;; # lcl-random
+;;;
+;;; Seeded pseudo-random streams for Lcl: xoshiro128**, exposed under the engine's own name, `Xoshiro::`.
+;;;
+;;; > **Not cryptographically secure.** Do not use `Xoshiro::` for
+;;; > keys, tokens, nonces, salts, or any other security-sensitive
+;;; > value. Use [Crypto::random_bytes] (lcl-crypto, OpenSSL
+;;; > `RAND_bytes`) for those.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - ISO C only (`<stdlib.h>`, `<time.h>`, `<float.h>`, `<limits.h>`)
+;;; - **Portability:** everywhere the core builds. The generator runs
+;;;   on `unsigned long` with explicit modulo-2^32 arithmetic, so it is
+;;;   the same generator on 32- and 64-bit `long`.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_RANDOM=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; let rng [Xoshiro::new 12345]       ;; deterministic stream
+;;; let rng [Xoshiro::new]             ;; weak time-based seed
+;;;
+;;; Xoshiro::int $rng 1 6              ;; integer in [1, 6], inclusive
+;;; Xoshiro::float $rng                ;; float in [0, 1)
+;;; Xoshiro::shuffle $rng (a b c d)    ;; new list, Fisher-Yates
+;;;
+;;; ;; Minesweeper: n distinct mines out of all cells
+;;; let mines [List::slice [Xoshiro::shuffle $rng $cells] 0 $n]
+;;; ```
+;;;
+;;; A stream is an opaque handle (`<opaque:xoshiro128**>`) that
+;;; advances on every draw. Two streams made from the same seed
+;;; produce the same sequence, in this and every future version: the
+;;; seed mapping, the integer mapping and the float construction are
+;;; part of the package's compatibility contract, and the known
+;;; answers below are pinned by its test suite against the canonical
+;;; xoshiro128** implementation.
+;;;
+;;; Examples:
+;;; >> let a [Xoshiro::new 99]
+;;; >> let b [Xoshiro::new 99]
+;;; >> == [Xoshiro::int $a 0 1000000] [Xoshiro::int $b 0 1000000]
+;;; 1
+namespace Xoshiro {
+
+    ;;; Create a new stream, optionally from an integer `seed`.
+    ;;;
+    ;;; `seed` may be any Lcl integer; it is reduced modulo 2^32, so
+    ;;; `-1` and `4294967295` start the same stream, as do `42` and
+    ;;; `4294967338`. A non-integer seed is an error. Without a seed
+    ;;; the stream is seeded from `time(NULL)`, `clock()` and a
+    ;;; per-process counter -- *weak*, fine for games, not for anything
+    ;;; that needs unpredictability -- and consecutive unseeded streams
+    ;;; differ from one another.
+    ;;;
+    ;;; ```tcl
+    ;;; let rng [Xoshiro::new]             ;; different every run
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> type [Xoshiro::new 42]
+    ;;; "opaque"
+    ;;; >> let rng [Xoshiro::new 42]
+    ;;; >> List::map (1 2 3 4 5 6 7 8) [lambda {_} { Xoshiro::int $rng 0 65535 }]
+    ;;; (10077 55737 1185 13889 35054 57770 47660 28861)
+    ;;; >> let wrapped [Xoshiro::new 4294967338]
+    ;;; >> List::map (1 2) [lambda {_} { Xoshiro::int $wrapped 0 65535 }]
+    ;;; (10077 55737)
+    ;;; >> let neg [Xoshiro::new -1]
+    ;;; >> List::map (1 2 3 4) [lambda {_} { Xoshiro::int $neg 0 65535 }]
+    ;;; (62625 27860 17581 37041)
+    ;;; >> let top [Xoshiro::new 4294967295]
+    ;;; >> List::map (1 2 3 4) [lambda {_} { Xoshiro::int $top 0 65535 }]
+    ;;; (62625 27860 17581 37041)
+    ;;; >> Xoshiro::new a
+    ;;; !! seed must be an integer
+    ;;; >> Xoshiro::new 1 2
+    ;;; !! expected 0 or 1 arguments
+    proc new {(seed "")} {}
+
+    ;;; Draw a uniform integer in `[lo, hi]`, both ends inclusive.
+    ;;;
+    ;;; The whole `long` range is supported, including `lo` equal to
+    ;;; `hi` and negative bounds. Values are drawn from the top bits
+    ;;; of the generator by rejection sampling, so there is no modulo
+    ;;; bias. `lo` greater than `hi`, a non-integer bound, or a first
+    ;;; argument that is not a stream is an error.
+    ;;;
+    ;;; Examples:
+    ;;; >> let d6 [Xoshiro::new 42]
+    ;;; >> Xoshiro::int $d6 1 6
+    ;;; 2
+    ;;; >> Xoshiro::int $d6 1 6
+    ;;; 1
+    ;;; >> List::map (1 2 3 4 5 6 7 8) [lambda {_} { Xoshiro::int $d6 1 6 }]
+    ;;; (2 5 6 4 5 3 5 6)
+    ;;; >> let rng [Xoshiro::new 1]
+    ;;; >> Xoshiro::int $rng 5 5
+    ;;; 5
+    ;;; >> Xoshiro::int $rng -7 -7
+    ;;; -7
+    ;;; >> List::map (1 2 3 4 5 6) [lambda {_} { Xoshiro::int $rng -3 3 }]
+    ;;; (-3 1 0 0 1 2)
+    ;;; >> int? [Xoshiro::int [Xoshiro::new 5] -9223372036854775808 9223372036854775807]
+    ;;; 1
+    ;;; >> Xoshiro::int $rng 5 1
+    ;;; !! lo must be <= hi
+    ;;; >> Xoshiro::int $rng a 5
+    ;;; !! lo and hi must be integers
+    ;;; >> Xoshiro::int 42 1 5
+    ;;; !! expected xoshiro stream
+    proc int {stream lo hi} {}
+
+    ;;; Draw a uniform float in `[0, 1)`.
+    ;;;
+    ;;; Built from two generator outputs (53 significant bits), so
+    ;;; every `double` in the interval is reachable and one call
+    ;;; advances the stream twice. Always strictly less than 1.
+    ;;;
+    ;;; Examples:
+    ;;; >> let rng [Xoshiro::new 42]
+    ;;; >> Xoshiro::float $rng
+    ;;; 0.15377165265745885
+    ;;; >> Xoshiro::float $rng
+    ;;; 0.018084542542176507
+    ;;; >> float? [Xoshiro::float $rng]
+    ;;; 1
+    ;;; >> < [Xoshiro::float $rng] 1.0
+    ;;; 1
+    ;;; >> Xoshiro::float 1
+    ;;; !! expected xoshiro stream
+    proc float {stream} {}
+
+    ;;; Return a new, uniformly shuffled copy of `list` (Fisher-Yates).
+    ;;;
+    ;;; The input list is left untouched and element types are
+    ;;; preserved. Like every list operation it refuses text: pass a
+    ;;; real list (`(a b c)`), not a braced string (`{a b c}`). Take a
+    ;;; prefix of the result with `List::slice` to pick `n` distinct
+    ;;; elements.
+    ;;;
+    ;;; Examples:
+    ;;; >> let rng [Xoshiro::new 7]
+    ;;; >> let xs (a b c d e f)
+    ;;; >> Xoshiro::shuffle $rng $xs
+    ;;; ("f" "c" "e" "d" "b" "a")
+    ;;; >> $xs
+    ;;; ("a" "b" "c" "d" "e" "f")
+    ;;; >> Xoshiro::shuffle [Xoshiro::new 42] (1 2 3 4 5 6 7 8 9 10)
+    ;;; (9 7 8 10 4 6 5 2 1 3)
+    ;;; >> Xoshiro::shuffle [Xoshiro::new 7] (1 (2 3) #{k v})
+    ;;; ((2 3) #{"k" "v"} 1)
+    ;;; >> List::slice [Xoshiro::shuffle [Xoshiro::new 7] (a b c d e f)] 0 3
+    ;;; ("f" "c" "e")
+    ;;; >> Xoshiro::shuffle $rng ()
+    ;;; ()
+    ;;; >> Xoshiro::shuffle $rng {a b c}
+    ;;; !! expected list
+    proc shuffle {stream list} {}
+}

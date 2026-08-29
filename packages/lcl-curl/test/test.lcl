@@ -1,7 +1,7 @@
-;; curl:: Package Tests
+;; Curl:: Package Tests
 ;;
 proc env_or {name default} {
-    let v [io::getenv $name]
+    let v [Io::getenv $name]
     if [String::eq? $v ""] { $default } else { $v }
 }
 
@@ -10,16 +10,16 @@ let BASE [env_or LCL_CURL_TEST_URL "http://localhost:8080"]
 ;; 1 when a GET of `url` answers 200 within 3 s, else 0 (reason in the
 ;; message printed when the server is required).
 proc probe {what url} {
-    let c [curl::new]
-    curl::set_url $c $url
-    curl::set_timeout_ms $c 3000
-    curl::set_write_callback $c [lambda {r} {}]
+    let c [Curl::new]
+    Curl::set_url $c $url
+    Curl::set_timeout_ms $c 3000
+    Curl::set_write_callback $c [lambda {r} {}]
     let ok [== [catch {
-        curl::perform $c
-        if [!= [curl::get_response_code $c] 200] { error "HTTP [curl::get_response_code $c]" }
+        Curl::perform $c
+        if [!= [Curl::get_response_code $c] 200] { error "HTTP [Curl::get_response_code $c]" }
     } res err] 0]
-    if [and [not $ok] [not [String::eq? [io::getenv LCL_CURL_REQUIRE_SERVER] ""]]] {
-        puts "lcl-curl: $what at $url is unreachable ([curl::error_string $c]) and LCL_CURL_REQUIRE_SERVER is set"
+    if [and [not $ok] [not [String::eq? [Io::getenv LCL_CURL_REQUIRE_SERVER] ""]]] {
+        puts "lcl-curl: $what at $url is unreachable ([Curl::error_string $c]) and LCL_CURL_REQUIRE_SERVER is set"
         exit 1
     }
     $ok
@@ -39,13 +39,13 @@ proc need_server {} {
 ;; ============================================================================
 
 Test::suite "CURL Initialization" {
-    Test::case "curl::init succeeds" {
-        curl::init
+    Test::case "Curl::init succeeds" {
+        Curl::init
         Test::assert 1
     }
 
-    Test::case "curl::new creates handle" {
-        let c [curl::new]
+    Test::case "Curl::new creates handle" {
+        let c [Curl::new]
         Test::opaque $c
     }
 }
@@ -56,33 +56,33 @@ Test::suite "CURL Initialization" {
 
 Test::suite "CURL Options" {
     Test::case "set_verbose accepts boolean" {
-        let c [curl::new]
-        curl::set_verbose $c 0
+        let c [Curl::new]
+        Curl::set_verbose $c 0
         Test::assert 1
     }
 
     Test::case "set_verb accepts HTTP method" {
-        let c [curl::new]
-        curl::set_verb $c GET
+        let c [Curl::new]
+        Curl::set_verb $c GET
         Test::assert 1
     }
 
     Test::case "set_header accepts header string" {
-        let c [curl::new]
-        curl::set_header $c "Content-Type: application/json"
-        curl::set_header $c "User-Agent: lcl-curl-test"
+        let c [Curl::new]
+        Curl::set_header $c "Content-Type: application/json"
+        Curl::set_header $c "User-Agent: lcl-curl-test"
         Test::assert 1
     }
 
     Test::case "set_body accepts body string" {
-        let c [curl::new]
-        curl::set_body $c {{"key": "value"}}
+        let c [Curl::new]
+        Curl::set_body $c {{"key": "value"}}
         Test::assert 1
     }
 
     Test::case "set_url accepts URL" {
-        let c [curl::new]
-        curl::set_url $c $BASE/test
+        let c [Curl::new]
+        Curl::set_url $c $BASE/test
         Test::assert 1
     }
 }
@@ -97,18 +97,18 @@ var _response_body {}
 Test::suite "CURL Request Execution" {
     Test::case "GET request returns 200" {
         need_server
-        let c [curl::new]
-        curl::set_verbose $c 0
-        curl::set_verb $c GET
-        curl::set_url $c $BASE/test
+        let c [Curl::new]
+        Curl::set_verbose $c 0
+        Curl::set_verb $c GET
+        Curl::set_url $c $BASE/test
 
-        curl::set_write_callback $c [lambda {response} {
+        Curl::set_write_callback $c [lambda {response} {
             set! _response_received 1
             set! _response_body $response
         }]
 
-        curl::perform $c
-        let code [curl::get_response_code $c]
+        Curl::perform $c
+        let code [Curl::get_response_code $c]
         Test::eq $code 200
     }
 
@@ -125,20 +125,20 @@ Test::suite "CURL Request Execution" {
 
     Test::case "POST request returns 200" {
         need_server
-        let c [curl::new]
-        curl::set_verbose $c 0
-        curl::set_verb $c POST
-        curl::set_header $c "Content-Type: application/json"
-        curl::set_body $c {{"user": "test", "value": 42}}
-        curl::set_url $c $BASE/test
+        let c [Curl::new]
+        Curl::set_verbose $c 0
+        Curl::set_verb $c POST
+        Curl::set_header $c "Content-Type: application/json"
+        Curl::set_body $c {{"user": "test", "value": 42}}
+        Curl::set_url $c $BASE/test
 
         var post_response {}
-        curl::set_write_callback $c [lambda {response} {
+        Curl::set_write_callback $c [lambda {response} {
             set! post_response $response
         }]
 
-        curl::perform $c
-        let code [curl::get_response_code $c]
+        Curl::perform $c
+        let code [Curl::get_response_code $c]
         Test::eq $code 200
         Test::not_empty $post_response
     }
@@ -156,29 +156,29 @@ var _sse_last_event {}
 Test::suite "CURL SSE and Header Callbacks" {
     Test::case "should receive SSE events from stream" {
         need_server
-        let c [curl::new]
-        curl::set_timeout_ms $c 3500
-        curl::set_verbose $c 0
-        curl::set_verb $c GET
-        curl::set_url $c "$BASE/.sse"
+        let c [Curl::new]
+        Curl::set_timeout_ms $c 3500
+        Curl::set_verbose $c 0
+        Curl::set_verb $c GET
+        Curl::set_url $c "$BASE/.sse"
 
-        curl::set_sse_callback $c [lambda {ev} {
+        Curl::set_sse_callback $c [lambda {ev} {
             set! _sse_event_count [+ $_sse_event_count 1]
             set! _sse_last_data [get $ev data]
             set! _sse_last_event [get $ev event]
         }]
 
-        curl::set_header_callback $c [lambda {hs} {
+        Curl::set_header_callback $c [lambda {hs} {
             set! _sse_headers_count [+ $_sse_headers_count 1]
         }]
 
         ;; the stream never ends (`server`, `request`, then `time`
         ;; once a second), so the timeout is its normal end
-        let ok [== [catch {curl::perform $c}] 0]
-        if [not [or $ok [curl::is_timeout $c]]] {
-            error "SSE error [curl::error_string $c]"
+        let ok [== [catch {Curl::perform $c}] 0]
+        if [not [or $ok [Curl::is_timeout $c]]] {
+            error "SSE error [Curl::error_string $c]"
         }
-        Test::eq [curl::get_response_code $c] 200
+        Test::eq [Curl::get_response_code $c] 200
         Test::gte $_sse_event_count 3
         Test::eq [String::trim $_sse_last_event] time
         Test::not_empty [String::trim $_sse_last_data]
@@ -193,29 +193,29 @@ Test::suite "CURL SSE and Header Callbacks" {
 Test::suite "CURL Response Info" {
     Test::case "get_total_time returns positive" {
         need_server
-        let c [curl::new]
-        curl::set_url $c $BASE/test
-        curl::perform $c
-        let time [curl::get_total_time $c]
+        let c [Curl::new]
+        Curl::set_url $c $BASE/test
+        Curl::perform $c
+        let time [Curl::get_total_time $c]
         Test::gt $time 0
     }
 
     Test::case "get_response_code returns HTTP status" {
         need_server
-        let c [curl::new]
-        curl::set_url $c $BASE/test
-        curl::perform $c
-        let code [curl::get_response_code $c]
+        let c [Curl::new]
+        Curl::set_url $c $BASE/test
+        Curl::perform $c
+        let code [Curl::get_response_code $c]
         Test::gte $code 100
         Test::lt $code 600
     }
 
     Test::case "get_content_type returns content type" {
         need_server
-        let c [curl::new]
-        curl::set_url $c $BASE/test
-        curl::perform $c
-        let ctype [curl::get_content_type $c]
+        let c [Curl::new]
+        Curl::set_url $c $BASE/test
+        Curl::perform $c
+        let ctype [Curl::get_content_type $c]
         Test::not_empty $ctype
     }
 }
@@ -226,12 +226,12 @@ Test::suite "CURL Response Info" {
 
 Test::suite "CURL Handle Management" {
     Test::case "reset clears handle state" {
-        let c [curl::new]
-        curl::set_url $c $BASE/test
-        curl::set_header $c "X-Custom: value"
-        curl::reset $c
+        let c [Curl::new]
+        Curl::set_url $c $BASE/test
+        Curl::set_header $c "X-Custom: value"
+        Curl::reset $c
         ;; After reset, should be able to set new options
-        curl::set_url $c $BASE/other
+        Curl::set_url $c $BASE/other
         Test::assert 1
     }
 }

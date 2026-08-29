@@ -30,9 +30,9 @@ jHsc5I1AHIdcm0l0SA1Fp8foIBSFJ4YtmAAe+lKu2ZbdvtUkgjUp6SouCRqCrQVc
 W9gEujkvlmDLlWaNG5+PdPCk
 -----END PRIVATE KEY-----}
 
-puts "Testing crypto::sign_rsa_pss..."
+puts "Testing Crypto::sign_rsa_pss..."
 let message "Hello, HTTP Signatures!"
-let sig [crypto::sign_rsa_pss $rsa_key $message sha256]
+let sig [Crypto::sign_rsa_pss $rsa_key $message sha256]
 puts "RSA-PSS signature (hex): $sig"
 puts "Signature length: [String::length $sig] hex chars"
 

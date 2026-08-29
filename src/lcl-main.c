@@ -64,8 +64,8 @@ static const lcl_embedded_lib test_framework_lib = {
 #ifdef LCL_HAVE_SH_LIB
 #include "sh-lib-data.h"
 
-static const lcl_embedded_lib sh_lib = {"lib/sh/src/sh.lcl", lib_sh_src_sh_lcl,
-                                        sizeof(lib_sh_src_sh_lcl)};
+static const lcl_embedded_lib sh_lib = {"lib/sh/src/Sh.lcl", lib_sh_src_Sh_lcl,
+                                        sizeof(lib_sh_src_Sh_lcl)};
 #endif
 
 #ifdef LCL_HAVE_CURL_DSL_LIB

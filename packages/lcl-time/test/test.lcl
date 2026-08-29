@@ -5,18 +5,18 @@
 
 Test::suite "Time Test Suite" {
     Test::case "Test basic time values" {
-        let now [time::time]
-        let lt [time::localtime]
+        let now [Time::time]
+        let lt [Time::localtime]
 
         assert [!= $now 0]
     }
 }
 
 Test::suite "Profiler" {
-    Test::case "time::profile reports calls and times per proc" {
+    Test::case "Time::profile reports calls and times per proc" {
         proc tp_leaf {n} { var i 0; while {< $i $n} { set! i [+ $i 1] }; $i }
         proc tp_root {} { tp_leaf 200; tp_leaf 300 }
-        let rows [time::profile { tp_root; tp_root }]
+        let rows [Time::profile { tp_root; tp_root }]
         Test::eq [len $rows] 2
         var by_name #{}
         foreach r $rows { set! by_name [put $by_name [get $r name] $r] }
@@ -30,7 +30,7 @@ Test::suite "Profiler" {
         Test::true [<= [get $root excl_us] [get $root incl_us]]
         ;; rows come sorted by exclusive time
         Test::eq [get [get $rows 0] name] tp_leaf
-        let text [time::profile_format $rows]
+        let text [Time::profile_format $rows]
         Test::eq [String::find $text "calls"] [String::find $text "calls"]
         Test::true [>= [String::find $text "tp_leaf"] 0]
     }
@@ -39,28 +39,50 @@ Test::suite "Profiler" {
         let x 41
         proc tp_id {v} { $v }
         var seen 0
-        let rows [time::profile { set! seen [tp_id [+ $x 1]] }]
+        let rows [Time::profile { set! seen [tp_id [+ $x 1]] }]
         Test::eq $seen 42
-        Test::eq [catch { time::profile { tp_id 1; error boom } } r err] 1
+        Test::eq [catch { Time::profile { tp_id 1; error boom } } r err] 1
         Test::eq $err boom
         ;; the failed run released the profiler
-        Test::eq [len [time::profile { tp_id 1 }]] 1
+        Test::eq [len [Time::profile { tp_id 1 }]] 1
     }
 
     Test::case "profile_start!/profile_stop! bracket a region" {
         proc tp_a {} { 1 }
-        time::profile_start!
+        Time::profile_start!
         tp_a
         tp_a
         tp_a
-        let rows [time::profile_stop!]
+        let rows [Time::profile_stop!]
         Test::eq [get [get $rows 0] calls] 3
-        Test::eq [catch { time::profile_stop! } r err] 1
+        Test::eq [catch { Time::profile_stop! } r err] 1
         Test::eq $err {profiler is not running}
-        time::profile_start!
-        Test::eq [catch { time::profile_start! } r err] 1
+        Time::profile_start!
+        Test::eq [catch { Time::profile_start! } r err] 1
         Test::eq $err {profiler is already running}
-        time::profile_stop!
+        Time::profile_stop!
+    }
+
+    Test::case "an empty profile reports no rows" {
+        Time::profile_start!
+        Test::eq [Time::profile_stop!] ()
+        ;; a body that fails before any proc runs still reports cleanly
+        Test::eq [catch { Time::profile { error boom } } r err] 1
+        Test::eq $err boom
+        Time::profile_start!
+        Test::eq [Time::profile_stop!] ()
+    }
+}
+
+Test::suite "Time::mktime" {
+    Test::case "round-trips a broken-down local time" {
+        let t 1234567890
+        Test::eq [Time::mktime [Time::localtime $t]] $t
+    }
+
+    Test::case "missing fields default sanely" {
+        let d [Time::localtime 0]
+        Test::eq [Time::mktime #{year [get $d year] mon [get $d mon] mday [get $d mday] hour [get $d hour] min [get $d min] sec [get $d sec]}] 0
     }
 }
 

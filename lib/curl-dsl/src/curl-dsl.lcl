@@ -1,15 +1,279 @@
+;;; # curl-dsl
+;;;
+;;; A declarative HTTP request DSL over the `Curl::` bindings: one proc per verb, configured by a braced body.
+;;;
+;;; Requires the `lcl-curl` package (`-DLCL_BUILD_CURL=ON`) and
+;;; `lcl-json` (JSON responses are decoded through `Json::`). Build
+;;; the library into the CLI with `-DLCL_BUILD_CURL_DSL_LIB=ON` and
+;;; bring the verbs into scope with `import Curl::Dsl`. Every request
+;;; goes over the network, so nothing on this page is doctested.
+;;;
+;;; ```tcl
+;;; import Curl::Dsl
+;;;
+;;; let resp [POST https://api.example.com/items {
+;;;     header "Content-Type: application/json"
+;;;     timeout_ms 5000
+;;;     body {{"name": "widget"}}
+;;;
+;;;     on_response {
+;;;         puts "HTTP $status_code in $total_time s"
+;;;     }
+;;; }]
+;;;
+;;; get $resp status_code
+;;; get $resp json
+;;; ```
+;;;
+;;; ## Request body
+;;;
+;;; The braced body is evaluated with these commands in scope; each
+;;; sets one part of the request. All are optional, and the body
+;;; itself may be omitted.
+;;;
+;;; | Command                         | Effect                                                            |
+;;; |---------------------------------|-------------------------------------------------------------------|
+;;; | `header "Name: value"`          | add one request header                                            |
+;;; | `headers { ... }`               | add one header per non-blank line of the block                    |
+;;; | `body text`                     | request body (sent via [Curl::set_body])                          |
+;;; | `timeout_ms n`                  | [Curl::set_timeout_ms]                                            |
+;;; | `connection_timeout_ms n`       | [Curl::set_connection_timeout_ms]                                 |
+;;; | `accept_timeout_ms n`           | [Curl::set_accept_timeout_ms]                                     |
+;;; | `verbose 0/1`                   | [Curl::set_verbose]                                               |
+;;; | `follow_redirects 0/1`          | [Curl::set_follow_location]                                       |
+;;; | `ssl_verify peer host`          | [Curl::set_ssl_verify_peer] and [Curl::set_ssl_verify_host]       |
+;;; | `ssl_verify_peer 0/1`           | [Curl::set_ssl_verify_peer] only                                  |
+;;; | `user_agent ua`                 | [Curl::set_user_agent]                                            |
+;;; | `on_response { ... }`           | block run after the transfer (see below)                          |
+;;; | `on_event { ... }`              | block run per Server-Sent Event; switches the request to SSE mode |
+;;; | `http_signature { ... }`        | collect HTTP-signature settings (see below)                       |
+;;;
+;;; ## Response
+;;;
+;;; Each verb returns a response dict:
+;;;
+;;; | Key             | Value                                                              |
+;;; |-----------------|--------------------------------------------------------------------|
+;;; | `status_code`   | HTTP status ([Curl::get_response_code])                            |
+;;; | `body`          | response body (empty in SSE mode)                                  |
+;;; | `headers`       | dict; currently only `content-type`, as a one-element list         |
+;;; | `json`          | decoded body when the content type contains `application/json`, else `{}` |
+;;; | `content_type`  | [Curl::get_content_type]                                           |
+;;; | `effective_url` | [Curl::get_effective_url]                                          |
+;;; | `total_time`    | [Curl::get_total_time]                                             |
+;;; | `error_code`    | [Curl::get_last_error]                                             |
+;;; | `is_timeout`    | [Curl::is_timeout]                                                 |
+;;; | `error`         | [Curl::error_string], present only when `error_code` is non-zero   |
+;;;
+;;; A failed transfer raises `curl request failed: <reason>` -- except
+;;; a timeout, and any failure in SSE mode, which return the dict with
+;;; `error_code`/`error` set instead.
+;;;
+;;; An `on_response` block runs after the transfer with `$status_code`,
+;;; `$body`, `$headers`, `$json`, `$content_type`, `$effective_url`,
+;;; `$total_time`, `$is_timeout`, `$error_code` and `$response_error`
+;;; (the `error` text, or empty) bound as variables.
+;;;
+;;; ## Server-Sent Events
+;;;
+;;; With `on_event`, the response is parsed as SSE through
+;;; [Curl::set_sse_callback] and the block runs once per event with
+;;; `$data`, `$event_type`, `$id` and `$retry` bound (empty when the
+;;; event lacks the field) and `$event` holding the whole event dict.
+;;; Give the request a `timeout_ms`: an SSE stream ends by timing out.
+;;;
+;;; ```tcl
+;;; GET http://localhost:8080/.sse {
+;;;     timeout_ms 3000
+;;;     on_event {
+;;;         puts "$event_type: $data"
+;;;     }
+;;; }
+;;; ```
+;;;
+;;; ## HTTP signatures
+;;;
+;;; An `http_signature { ... }` block signs the request per RFC 9421
+;;; (HTTP Message Signatures), adding `Signature-Input` and `Signature`
+;;; headers. Inside the block: `key_id id`, `key_pem pem` or
+;;; `key_file path`, `algorithm alg` (`hmac-sha256`, `rsa-pss-sha256`,
+;;; `rsa-pss-sha512`, `ecdsa-p256-sha256`, `ecdsa-p384-sha384`),
+;;; `name label` (default `sig`), `cover (components)` (default `()`)
+;;; and `created ts` (default: now). Components are the derived
+;;; `@method "@authority" "@scheme" "@path" "@query" "@target-uri"
+;;; @request-target`, `content-digest` (sha-256 of the body, computed
+;;; for you), or any header set in the request. Quote the derived
+;;; components in a list literal -- `("@method" "@path")` -- because a
+;;; bare `@word` inside `(...)` is the splice operator. Signing needs
+;;; the `lcl-crypto` package, and `key_file` the `lcl-io` package.
+;;;
+;;; ```tcl
+;;; POST https://api.example.com/orders {
+;;;     header Content-Type: application/json
+;;;     body {{"qty": 1}}
+;;;     http_signature {
+;;;         key_id    "orders-key"
+;;;         key_pem   $secret
+;;;         algorithm hmac-sha256
+;;;         cover     ("@method" "@authority" "@path" content-digest)
+;;;     }
+;;; }
+;;; ```
+
 ;; cURL DSL
 ;; requires lcl-curl package
 
-namespace curl::dsl {
-    namespace JSON { import json }
+namespace Curl::Dsl {
+    ;; ---- HTTP message signatures (RFC 9421) --------------------------
+
+    proc _parse_url {url} {
+        var scheme {}
+        var authority {}
+        var path "/"
+        var query {}
+        var rest $url
+        let scheme_end [String::find $rest "://"]
+
+        if [>= $scheme_end 0] {
+            set! scheme [String::range $rest 0 $scheme_end]
+            set! rest [String::range $rest [+ $scheme_end 3] [String::length $rest]]
+        }
+
+        let path_start [String::find $rest "/"]
+
+        if [>= $path_start 0] {
+            set! authority [String::range $rest 0 $path_start]
+            set! rest [String::range $rest $path_start [String::length $rest]]
+        } else {
+            set! authority $rest
+            set! rest "/"
+        }
+
+        let query_start [String::find $rest "?"]
+
+        if [>= $query_start 0] {
+            set! path [String::range $rest 0 $query_start]
+            set! query [String::range $rest [+ $query_start 1] [String::length $rest]]
+        } else {
+            set! path $rest
+        }
+
+        #{scheme $scheme authority $authority path $path query $query}
+    }
+
+    proc _build_request_target {url_parts} {
+        let p [get $url_parts path]
+        let q [get $url_parts query]
+
+        if [not [empty? $q]] {
+            return "$p?$q"
+        }
+
+        $p
+    }
+
+    ;; Content-Digest header value for `body`: sha-256 over the bytes,
+    ;; as a structured-field byte sequence. Empty for an empty body.
+    proc _build_content_digest {body} {
+        if [empty? $body] { return {} }
+
+        let hash [Crypto::sha256 $body]
+
+        String::join ({sha-256=:} $hash {:}) {}
+    }
+
+    proc _get_header_value {headers_dict component} {
+        get $headers_dict [String::lower $component] {}
+    }
+
+    ;; The signature base (RFC 9421 §2.5): one `"component": value`
+    ;; line per covered component, then the signature parameters.
+    proc _build_signature_base {verb url headers_dict body covered_components sig_params} {
+        var lines ()
+        let url_parts [_parse_url $url]
+
+        foreach component $covered_components {
+            let value [cond
+                       [== $component "@method"] [String::upper $verb]
+                       [== $component "@authority"] [get $url_parts authority]
+                       [== $component "@scheme"] [get $url_parts scheme]
+                       [== $component "@path"] [get $url_parts path]
+                       [== $component "@query"] [get $url_parts query]
+                       [== $component "@target-uri"] $url
+                       [== $component "@request-target"] [_build_request_target $url_parts]
+                       [== $component "content-digest"] [_build_content_digest $body]
+                       else [_get_header_value $headers_dict $component]]
+
+            List::push! lines "\"$component\": $value"
+        }
+
+        List::push! lines "\"@signature-params\": $sig_params"
+
+        String::join $lines "\n"
+    }
+
+    proc _build_sig_params {covered_components key_id algorithm created} {
+        var component_list ()
+
+        foreach c $covered_components {
+            List::push! component_list "\"$c\""
+        }
+
+        let components_str [String::join $component_list " "]
+
+        "($components_str);created=$created;keyid=\"$key_id\";alg=\"$algorithm\""
+    }
+
+    ;; Sign the request and return `headers_list` extended with the
+    ;; `Signature-Input` and `Signature` headers. `sig_config` comes
+    ;; from the `http_signature` block; `created` defaults to now.
+    proc _apply_http_signature {verb url headers_list body sig_config} {
+        let key_id [get $sig_config key_id]
+        let key_pem [get $sig_config key_pem]
+        let algorithm [get $sig_config algorithm]
+        let covered [get $sig_config covered_components]
+        let sig_name [get $sig_config name]
+        let created [get $sig_config created [Time::time]]
+        let sig_params [_build_sig_params $covered $key_id $algorithm $created]
+        var headers_dict #{}
+
+        foreach h $headers_list {
+            let colon_pos [String::find $h ":"]
+
+            if [>= $colon_pos 0] {
+                let name [String::lower [String::trim [String::range $h 0 $colon_pos]]]
+                let val [String::trim [String::range $h [+ $colon_pos 1] [String::length $h]]]
+                put! headers_dict $name $val
+            }
+        }
+
+        let sig_base [_build_signature_base $verb $url $headers_dict $body $covered $sig_params]
+
+        let signature [case $algorithm
+                       {hmac-sha256}       [Crypto::hmac $key_pem $sig_base sha256]
+                       {rsa-pss-sha256}    [Crypto::sign_rsa_pss $key_pem $sig_base sha256]
+                       {rsa-pss-sha512}    [Crypto::sign_rsa_pss $key_pem $sig_base sha512]
+                       {ecdsa-p256-sha256} [Crypto::sign_ecdsa $key_pem $sig_base p256]
+                       {ecdsa-p384-sha384} [Crypto::sign_ecdsa $key_pem $sig_base p384]
+                       else [error "Unsupported signature algorithm: $algorithm"]]
+
+        let sig_b64 [Crypto::base64_encode $signature]
+        var new_headers $headers_list
+
+        List::push! new_headers "Signature-Input: $sig_name=$sig_params"
+        List::push! new_headers "Signature: $sig_name=:$sig_b64:"
+
+        $new_headers
+    }
+
+    ;; ---- request execution -------------------------------------------
 
     proc _execute_request {verb url request_config on_event_callback} {
-        curl::init
-        let c [curl::new]
+        Curl::init
+        let c [Curl::new]
 
-        curl::set_url $c $url
-        curl::set_verb $c $verb
+        Curl::set_url $c $url
+        Curl::set_verb $c $verb
 
         ;; Get body first (needed for signature computation)
         var body {}
@@ -30,53 +294,53 @@ namespace curl::dsl {
         }
 
         foreach h $headers_list {
-            curl::set_header $c $h
+            Curl::set_header $c $h
         }
 
         if [not [empty? $body]] {
-            curl::set_body $c $body
+            Curl::set_body $c $body
         }
 
         if [has? $request_config options] {
             let opts [get $request_config options]
 
             if [has? $opts timeout_ms] {
-                curl::set_timeout_ms $c [get $opts timeout_ms]
+                Curl::set_timeout_ms $c [get $opts timeout_ms]
             }
 
             if [has? $opts connection_timeout_ms] {
-                curl::set_connection_timeout_ms $c [get $opts connection_timeout_ms]
+                Curl::set_connection_timeout_ms $c [get $opts connection_timeout_ms]
             }
 
             if [has? $opts accept_timeout_ms] {
-                curl::set_accept_timeout_ms $c [get $opts accept_timeout_ms]
+                Curl::set_accept_timeout_ms $c [get $opts accept_timeout_ms]
             }
 
             if [has? $opts verbose] {
-                curl::set_verbose $c [get $opts verbose]
+                Curl::set_verbose $c [get $opts verbose]
             }
 
             if [has? $opts follow_location] {
-                curl::set_follow_location $c [get $opts follow_location]
+                Curl::set_follow_location $c [get $opts follow_location]
             }
 
             if [has? $opts ssl_verify_peer] {
-                curl::set_ssl_verify_peer $c [get $opts ssl_verify_peer]
+                Curl::set_ssl_verify_peer $c [get $opts ssl_verify_peer]
             }
 
             if [has? $opts ssl_verify_host] {
-                curl::set_ssl_verify_host $c [get $opts ssl_verify_host]
+                Curl::set_ssl_verify_host $c [get $opts ssl_verify_host]
             }
 
             if [has? $opts user_agent] {
-                curl::set_user_agent $c [get $opts user_agent]
+                Curl::set_user_agent $c [get $opts user_agent]
             }
         }
 
         var response_body {}
 
         if [not [empty? $on_event_callback]] {
-            curl::set_sse_callback $c [lambda {event} {
+            Curl::set_sse_callback $c [lambda {event} {
                 var data {}
                 var event_type {}
                 var id {}
@@ -101,19 +365,19 @@ namespace curl::dsl {
                 eval $on_event_callback
             }]
         } else {
-            curl::set_write_callback $c [lambda {chunk} {
+            Curl::set_write_callback $c [lambda {chunk} {
                 set! response_body "$response_body$chunk"
             }]
         }
 
         var perform_failed 0
-        if [catch {curl::perform $c} _result _err] {
+        if [catch {Curl::perform $c} _result _err] {
             set! perform_failed 1
         }
 
-        let is_timeout [curl::is_timeout $c]
-        let error_code [curl::get_last_error $c]
-        let error_string [curl::error_string $c]
+        let is_timeout [Curl::is_timeout $c]
+        let error_code [Curl::get_last_error $c]
+        let error_string [Curl::error_string $c]
 
         if [and $perform_failed [not $is_timeout]] {
             if [empty? $on_event_callback] {
@@ -121,10 +385,10 @@ namespace curl::dsl {
             }
         }
 
-        let status_code [curl::get_response_code $c]
-        let content_type [curl::get_content_type $c]
-        let effective_url [curl::get_effective_url $c]
-        let total_time [curl::get_total_time $c]
+        let status_code [Curl::get_response_code $c]
+        let content_type [Curl::get_content_type $c]
+        let effective_url [Curl::get_effective_url $c]
+        let total_time [Curl::get_total_time $c]
 
         var headers #{}
 
@@ -135,7 +399,7 @@ namespace curl::dsl {
         var parsed_json {}
 
         if [>= [String::find $content_type "application/json"] 0] {
-            if [catch { JSON::decode $response_body } result _err] {
+            if [catch { Json::decode $response_body } result _err] {
                 ;; JSON parse failed, leave parsed_json empty
             } else {
                 set! parsed_json $result
@@ -258,8 +522,14 @@ namespace curl::dsl {
             }
 
             proc key_file {path} {
-                let pem [File::read $path]
+                let pem [Io::read_file $path]
                 set! sig_config [put $sig_config key_pem $pem]
+            }
+
+            ;; fixed `created` timestamp (default: now); useful for
+            ;; reproducible signatures
+            proc created {ts} {
+                set! sig_config [put $sig_config created $ts]
             }
 
             proc algorithm {alg} {
@@ -321,36 +591,88 @@ namespace curl::dsl {
         return $response
     }
 
+    ;;; Send a `GET` request to `url`, configured by `syntax_body`; return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [GET https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc GET {url (syntax_body {})} {
         let result [_make_request "GET" $url $syntax_body]
         return $result
     }
 
+    ;;; Send a `POST` request to `url` (give it a `body` in `syntax_body`); return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [POST https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc POST {url (syntax_body {})} {
         let result [_make_request "POST" $url $syntax_body]
         return $result
     }
 
+    ;;; Send a `PUT` request to `url`; return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [PUT https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc PUT {url (syntax_body {})} {
         let result [_make_request "PUT" $url $syntax_body]
         return $result
     }
 
+    ;;; Send a `DELETE` request to `url`; return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [DELETE https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc DELETE {url (syntax_body {})} {
         let result [_make_request "DELETE" $url $syntax_body]
         return $result
     }
 
+    ;;; Send a `PATCH` request to `url`; return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [PATCH https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc PATCH {url (syntax_body {})} {
         let result [_make_request "PATCH" $url $syntax_body]
         return $result
     }
 
+    ;;; Send an `OPTIONS` request to `url`; return the response dict.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [OPTIONS https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc OPTIONS {url (syntax_body {})} {
         let result [_make_request "OPTIONS" $url $syntax_body]
         return $result
     }
 
+    ;;; Send a `HEAD` request to `url`; return the response dict.
+    ;;;
+    ;;; Only the verb is changed ([Curl::set_verb]); [Curl::set_nobody] is
+    ;;; not set.
+    ;;;
+    ;;; ```tcl
+    ;;; let resp [HEAD https://api.example.com/resource {
+    ;;;     header "Accept: application/json"
+    ;;; }]
+    ;;; ```
     proc HEAD {url (syntax_body {})} {
         let result [_make_request "HEAD" $url $syntax_body]
         return $result

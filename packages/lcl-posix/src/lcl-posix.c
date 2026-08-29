@@ -13,7 +13,7 @@
 
 #include <lcl.h>
 
-#define POSIX_NS "posix"
+#define POSIX_NS "Posix"
 
 lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
@@ -27,7 +27,7 @@ lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *item;
 
   if (argc < 1) {
-    lcl_set_error(interp, "posix::glob: expected at least 1 pattern");
+    lcl_set_error(interp, "Posix::glob: expected at least 1 pattern");
     return LCL_RC_ERR;
   }
 
@@ -43,7 +43,7 @@ lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
 
     if (glob_result != 0 && glob_result != GLOB_NOMATCH) {
       globfree(&glob_buf);
-      lcl_set_error(interp, "posix::glob: glob failed");
+      lcl_set_error(interp, "Posix::glob: glob failed");
       return LCL_RC_ERR;
     }
 
@@ -64,7 +64,7 @@ lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::mkdir path ?mode? - create directory with optional mode (default 0755)
+/* Posix::mkdir path ?mode? - create directory with optional mode (default 0755)
  */
 lcl_return_code c_posix_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
@@ -93,7 +93,7 @@ lcl_return_code c_posix_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::rmdir path - remove empty directory */
+/* Posix::rmdir path - remove empty directory */
 lcl_return_code c_posix_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   const char *path;
@@ -114,7 +114,7 @@ lcl_return_code c_posix_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::exists? path - check if file or directory exists */
+/* Posix::exists? path - check if file or directory exists */
 lcl_return_code c_posix_exists(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   const char *path;
@@ -137,7 +137,7 @@ lcl_return_code c_posix_exists(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::file? path - check if path is a regular file */
+/* Posix::file? path - check if path is a regular file */
 lcl_return_code c_posix_is_file(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   const char *path;
@@ -160,7 +160,7 @@ lcl_return_code c_posix_is_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::dir? path - check if path is a directory */
+/* Posix::dir? path - check if path is a directory */
 lcl_return_code c_posix_is_dir(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   const char *path;
@@ -183,7 +183,7 @@ lcl_return_code c_posix_is_dir(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::file_size path - get file size in bytes */
+/* Posix::file_size path - get file size in bytes */
 lcl_return_code c_posix_file_size(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
   const char *path;
@@ -205,7 +205,7 @@ lcl_return_code c_posix_file_size(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* posix::file_mtime path - get file modification time (Unix timestamp) */
+/* Posix::file_mtime path - get file modification time (Unix timestamp) */
 lcl_return_code c_posix_file_mtime(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
   const char *path;
@@ -227,7 +227,7 @@ lcl_return_code c_posix_file_mtime(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* posix::readdir path - list directory contents */
+/* Posix::readdir path - list directory contents */
 lcl_return_code c_posix_readdir(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   const char *path;
@@ -267,7 +267,7 @@ lcl_return_code c_posix_readdir(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::getcwd - get current working directory */
+/* Posix::getcwd - get current working directory */
 lcl_return_code c_posix_getcwd(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   char *cwd;
@@ -286,7 +286,7 @@ lcl_return_code c_posix_getcwd(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* posix::chdir path - change current working directory */
+/* Posix::chdir path - change current working directory */
 lcl_return_code c_posix_chdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   const char *path;
@@ -385,38 +385,38 @@ void lcl_register_posix(lcl_interp *interp) {
   lcl_define_take(interp, POSIX_NS, posix_ns);
 
   lcl_ns_def_take(posix_ns, "glob",
-                  lcl_c_proc_new("posix::glob", c_posix_glob));
+                  lcl_c_proc_new("Posix::glob", c_posix_glob));
 
   /* Directory operations */
   lcl_ns_def_take(posix_ns, "mkdir",
-                  lcl_c_proc_new("posix::mkdir", c_posix_mkdir));
+                  lcl_c_proc_new("Posix::mkdir", c_posix_mkdir));
   lcl_ns_def_take(posix_ns, "rmdir",
-                  lcl_c_proc_new("posix::rmdir", c_posix_rmdir));
+                  lcl_c_proc_new("Posix::rmdir", c_posix_rmdir));
   lcl_ns_def_take(posix_ns, "readdir",
-                  lcl_c_proc_new("posix::readdir", c_posix_readdir));
+                  lcl_c_proc_new("Posix::readdir", c_posix_readdir));
 
   /* File/directory info */
   lcl_ns_def_take(posix_ns, "exists?",
-                  lcl_c_proc_new("posix::exists?", c_posix_exists));
+                  lcl_c_proc_new("Posix::exists?", c_posix_exists));
   lcl_ns_def_take(posix_ns, "file?",
-                  lcl_c_proc_new("posix::file?", c_posix_is_file));
+                  lcl_c_proc_new("Posix::file?", c_posix_is_file));
   lcl_ns_def_take(posix_ns, "dir?",
-                  lcl_c_proc_new("posix::dir?", c_posix_is_dir));
+                  lcl_c_proc_new("Posix::dir?", c_posix_is_dir));
   lcl_ns_def_take(posix_ns, "file_size",
-                  lcl_c_proc_new("posix::file_size", c_posix_file_size));
+                  lcl_c_proc_new("Posix::file_size", c_posix_file_size));
   lcl_ns_def_take(posix_ns, "file_mtime",
-                  lcl_c_proc_new("posix::file_mtime", c_posix_file_mtime));
+                  lcl_c_proc_new("Posix::file_mtime", c_posix_file_mtime));
   lcl_ns_def_take(posix_ns, "dirname",
-                  lcl_c_proc_new("posix::dirname", c_posix_dirname));
+                  lcl_c_proc_new("Posix::dirname", c_posix_dirname));
   lcl_ns_def_take(posix_ns, "basename",
-                  lcl_c_proc_new("posix::basename", c_posix_basename));
+                  lcl_c_proc_new("Posix::basename", c_posix_basename));
 
   /* Working directory */
   lcl_ns_def_take(posix_ns, "getcwd",
-                  lcl_c_proc_new("posix::getcwd", c_posix_getcwd));
+                  lcl_c_proc_new("Posix::getcwd", c_posix_getcwd));
   lcl_ns_def_take(posix_ns, "chdir",
-                  lcl_c_proc_new("posix::chdir", c_posix_chdir));
+                  lcl_c_proc_new("Posix::chdir", c_posix_chdir));
 
   lcl_ns_def_take(posix_ns, "realpath",
-                  lcl_c_proc_new("posix::realpath", c_posix_realpath));
+                  lcl_c_proc_new("Posix::realpath", c_posix_realpath));
 }

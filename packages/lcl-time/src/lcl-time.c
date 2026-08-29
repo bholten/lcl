@@ -7,7 +7,7 @@
 
 #include <lcl.h>
 
-#define TIME_NS "time"
+#define TIME_NS "Time"
 
 static void dict_put_int(lcl_value **d, const char *key, int val) {
   lcl_value *v = lcl_int_new(val);
@@ -35,52 +35,49 @@ static lcl_value *tm_to_dict(const struct tm *tm) {
   return d;
 }
 
-static int dict_to_tm(lcl_value *d, struct tm *tm) {
+static int tm_field(lcl_value *d, const char *key, long *val) {
   lcl_value *v = NULL;
+  int ok = 0;
+
+  if (lcl_dict_get(d, key, &v) == LCL_OK && v) {
+    ok = lcl_value_to_int(v, val) == LCL_OK;
+    lcl_ref_dec(v);
+  }
+
+  return ok;
+}
+
+static int dict_to_tm(lcl_value *d, struct tm *tm) {
   long val;
 
   memset(tm, 0, sizeof(*tm));
 
-  if (lcl_dict_get(d, "sec", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_sec = (int)val;
-    }
+  if (tm_field(d, "sec", &val)) {
+    tm->tm_sec = (int)val;
   }
 
-  if (lcl_dict_get(d, "min", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_min = (int)val;
-    }
+  if (tm_field(d, "min", &val)) {
+    tm->tm_min = (int)val;
   }
 
-  if (lcl_dict_get(d, "hour", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_hour = (int)val;
-    }
+  if (tm_field(d, "hour", &val)) {
+    tm->tm_hour = (int)val;
   }
 
-  if (lcl_dict_get(d, "mday", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_mday = (int)val;
-    }
+  if (tm_field(d, "mday", &val)) {
+    tm->tm_mday = (int)val;
   }
 
-  if (lcl_dict_get(d, "mon", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_mon = (int)val - 1;
-    }
+  if (tm_field(d, "mon", &val)) {
+    tm->tm_mon = (int)val - 1;
   }
 
-  if (lcl_dict_get(d, "year", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_year = (int)val - 1900;
-    }
+  if (tm_field(d, "year", &val)) {
+    tm->tm_year = (int)val - 1900;
   }
 
-  if (lcl_dict_get(d, "isdst", &v) == LCL_OK && v) {
-    if (lcl_value_to_int(v, &val) == LCL_OK) {
-      tm->tm_isdst = (int)val;
-    }
+  if (tm_field(d, "isdst", &val)) {
+    tm->tm_isdst = (int)val;
   } else {
     tm->tm_isdst = -1;
   }
@@ -88,7 +85,7 @@ static int dict_to_tm(lcl_value *d, struct tm *tm) {
   return 0;
 }
 
-/* time::time -> current Unix timestamp (seconds since epoch) */
+/* Time::time -> current Unix timestamp (seconds since epoch) */
 static lcl_return_code c_time(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   (void)interp;
@@ -99,7 +96,7 @@ static lcl_return_code c_time(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* time::clock -> CPU time in microseconds */
+/* Time::clock -> CPU time in microseconds */
 static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   clock_t c;
@@ -113,7 +110,7 @@ static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* time::monotonic_us -> microseconds since arbitrary monotonic point */
+/* Time::monotonic_us -> microseconds since arbitrary monotonic point */
 static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   struct timespec ts;
@@ -137,7 +134,7 @@ static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* time::localtime ?timestamp? -> dict with local time components */
+/* Time::localtime ?timestamp? -> dict with local time components */
 static lcl_return_code c_localtime(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
   time_t t;
@@ -146,7 +143,7 @@ static lcl_return_code c_localtime(lcl_interp *interp, int argc,
 
   if (argc >= 1) {
     if (lcl_value_to_int(argv[0], &ts) != LCL_OK) {
-      lcl_set_error(interp, "time::localtime: expected integer timestamp");
+      lcl_set_error(interp, "Time::localtime: expected integer timestamp");
       return LCL_RC_ERR;
     }
     t = (time_t)ts;
@@ -157,7 +154,7 @@ static lcl_return_code c_localtime(lcl_interp *interp, int argc,
   tm = localtime(&t);
 
   if (!tm) {
-    lcl_set_error(interp, "time::localtime: failed to convert timestamp");
+    lcl_set_error(interp, "Time::localtime: failed to convert timestamp");
     return LCL_RC_ERR;
   }
 
@@ -171,7 +168,7 @@ static lcl_return_code c_localtime(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* time::gmtime ?timestamp? -> dict with UTC time components */
+/* Time::gmtime ?timestamp? -> dict with UTC time components */
 static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   time_t t;
@@ -180,7 +177,7 @@ static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc >= 1) {
     if (lcl_value_to_int(argv[0], &ts) != LCL_OK) {
-      lcl_set_error(interp, "time::gmtime: expected integer timestamp");
+      lcl_set_error(interp, "Time::gmtime: expected integer timestamp");
       return LCL_RC_ERR;
     }
     t = (time_t)ts;
@@ -191,7 +188,7 @@ static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
   tm = gmtime(&t);
 
   if (!tm) {
-    lcl_set_error(interp, "time::gmtime: failed to convert timestamp");
+    lcl_set_error(interp, "Time::gmtime: failed to convert timestamp");
     return LCL_RC_ERR;
   }
 
@@ -205,19 +202,19 @@ static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* time::mktime dict -> Unix timestamp from time dict */
+/* Time::mktime dict -> Unix timestamp from time dict */
 static lcl_return_code c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   struct tm tm;
   time_t t;
 
   if (argc < 1) {
-    lcl_set_error(interp, "time::mktime requires a time dict");
+    lcl_set_error(interp, "Time::mktime requires a time dict");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_type_of(argv[0]) != LCL_DICT) {
-    lcl_set_error(interp, "time::mktime: expected dict");
+    lcl_set_error(interp, "Time::mktime: expected dict");
     return LCL_RC_ERR;
   }
 
@@ -225,7 +222,7 @@ static lcl_return_code c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
   t = mktime(&tm);
 
   if (t == (time_t)-1) {
-    lcl_set_error(interp, "time::mktime: invalid time");
+    lcl_set_error(interp, "Time::mktime: invalid time");
     return LCL_RC_ERR;
   }
 
@@ -233,7 +230,7 @@ static lcl_return_code c_mktime(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* time::strftime format ?timestamp? -> formatted time string */
+/* Time::strftime format ?timestamp? -> formatted time string */
 static lcl_return_code c_strftime(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
   const char *fmt;
@@ -244,7 +241,7 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
   long ts;
 
   if (argc < 1) {
-    lcl_set_error(interp, "time::strftime requires a format string");
+    lcl_set_error(interp, "Time::strftime requires a format string");
     return LCL_RC_ERR;
   }
 
@@ -254,7 +251,7 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
 
   if (argc >= 2) {
     if (lcl_value_to_int(argv[1], &ts) != LCL_OK) {
-      lcl_set_error(interp, "time::strftime: expected integer timestamp");
+      lcl_set_error(interp, "Time::strftime: expected integer timestamp");
       return LCL_RC_ERR;
     }
 
@@ -266,14 +263,14 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
   tm = localtime(&t);
 
   if (!tm) {
-    lcl_set_error(interp, "time::strftime: failed to convert timestamp");
+    lcl_set_error(interp, "Time::strftime: failed to convert timestamp");
     return LCL_RC_ERR;
   }
 
   len = strftime(buf, sizeof(buf), fmt, tm);
 
   if (len == 0 && fmt[0] != '\0') {
-    lcl_set_error(interp, "time::strftime: format failed or buffer too small");
+    lcl_set_error(interp, "Time::strftime: format failed or buffer too small");
     return LCL_RC_ERR;
   }
 
@@ -282,7 +279,7 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* time::difftime t1 t2 -> difference in seconds (t1 - t2) */
+/* Time::difftime t1 t2 -> difference in seconds (t1 - t2) */
 static lcl_return_code c_difftime(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
   long t1;
@@ -290,13 +287,13 @@ static lcl_return_code c_difftime(lcl_interp *interp, int argc,
   double diff;
 
   if (argc < 2) {
-    lcl_set_error(interp, "time::difftime requires two timestamps");
+    lcl_set_error(interp, "Time::difftime requires two timestamps");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_int(argv[0], &t1) != LCL_OK ||
       lcl_value_to_int(argv[1], &t2) != LCL_OK) {
-    lcl_set_error(interp, "time::difftime: expected integer timestamps");
+    lcl_set_error(interp, "Time::difftime: expected integer timestamps");
     return LCL_RC_ERR;
   }
 
@@ -305,7 +302,7 @@ static lcl_return_code c_difftime(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-/* time::sleep seconds -> sleep for given duration (supports fractions) */
+/* Time::sleep seconds -> sleep for given duration (supports fractions) */
 static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   double secs;
@@ -313,20 +310,20 @@ static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
   struct timespec ts;
 
   if (argc < 1) {
-    lcl_set_error(interp, "time::sleep requires duration in seconds");
+    lcl_set_error(interp, "Time::sleep requires duration in seconds");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_float(argv[0], &secs) != LCL_OK) {
     if (lcl_value_to_int(argv[0], &isecs) != LCL_OK) {
-      lcl_set_error(interp, "time::sleep: expected number");
+      lcl_set_error(interp, "Time::sleep: expected number");
       return LCL_RC_ERR;
     }
     secs = (double)isecs;
   }
 
   if (secs < 0) {
-    lcl_set_error(interp, "time::sleep: duration must be non-negative");
+    lcl_set_error(interp, "Time::sleep: duration must be non-negative");
     return LCL_RC_ERR;
   }
 
@@ -339,7 +336,7 @@ static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* time::ctime ?timestamp? -> human-readable time string */
+/* Time::ctime ?timestamp? -> human-readable time string */
 static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   time_t t;
@@ -350,7 +347,7 @@ static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc >= 1) {
     if (lcl_value_to_int(argv[0], &ts) != LCL_OK) {
-      lcl_set_error(interp, "time::ctime: expected integer timestamp");
+      lcl_set_error(interp, "Time::ctime: expected integer timestamp");
       return LCL_RC_ERR;
     }
     t = (time_t)ts;
@@ -361,7 +358,7 @@ static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
   str = ctime(&t);
 
   if (!str) {
-    lcl_set_error(interp, "time::ctime: failed to convert timestamp");
+    lcl_set_error(interp, "Time::ctime: failed to convert timestamp");
     return LCL_RC_ERR;
   }
 
@@ -613,7 +610,10 @@ static lcl_value *prof_report(profiler *p) {
     return NULL;
   }
 
-  qsort(p->entries, p->n, sizeof(*p->entries), prof_cmp_excl);
+  /* qsort's array must not be NULL even for zero elements */
+  if (p->n > 1) {
+    qsort(p->entries, p->n, sizeof(*p->entries), prof_cmp_excl);
+  }
 
   for (i = 0; i < p->n; i++) {
     prof_entry *e = &p->entries[i];
@@ -681,34 +681,34 @@ static lcl_return_code prof_stop(lcl_interp *interp, const char *cmd,
   return LCL_RC_OK;
 }
 
-/* time::profile_start! - begin collecting; nests inside any host hook */
+/* Time::profile_start! - begin collecting; nests inside any host hook */
 static lcl_return_code c_profile_start(lcl_interp *interp, int argc,
                                        lcl_value **argv, lcl_value **out) {
   (void)argv;
   (void)out;
 
   if (argc != 0) {
-    lcl_set_error(interp, "time::profile_start!: expected 0 arguments");
+    lcl_set_error(interp, "Time::profile_start!: expected 0 arguments");
     return LCL_RC_ERR;
   }
 
-  return prof_start(interp, "time::profile_start!");
+  return prof_start(interp, "Time::profile_start!");
 }
 
-/* time::profile_stop! -> report rows collected since profile_start! */
+/* Time::profile_stop! -> report rows collected since profile_start! */
 static lcl_return_code c_profile_stop(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   (void)argv;
 
   if (argc != 0) {
-    lcl_set_error(interp, "time::profile_stop!: expected 0 arguments");
+    lcl_set_error(interp, "Time::profile_stop!: expected 0 arguments");
     return LCL_RC_ERR;
   }
 
-  return prof_stop(interp, "time::profile_stop!", out);
+  return prof_stop(interp, "Time::profile_stop!", out);
 }
 
-/* time::profile {body} -> report rows for the procs called while
+/* Time::profile {body} -> report rows for the procs called while
  * running body in the caller's scope; body's own value is dropped. */
 static lcl_return_code s_profile(lcl_interp *interp, int argc,
                                  const lcl_word **args, lcl_value **out) {
@@ -718,7 +718,7 @@ static lcl_return_code s_profile(lcl_interp *interp, int argc,
   lcl_return_code rc;
 
   if (argc != 1) {
-    lcl_set_error(interp, "time::profile: expected 1 argument (body)");
+    lcl_set_error(interp, "Time::profile: expected 1 argument (body)");
     return LCL_RC_ERR;
   }
 
@@ -730,11 +730,11 @@ static lcl_return_code s_profile(lcl_interp *interp, int argc,
 
   if (!src) {
     lcl_ref_dec(body);
-    lcl_set_error(interp, "time::profile: body must be a braced script");
+    lcl_set_error(interp, "Time::profile: body must be a braced script");
     return LCL_RC_ERR;
   }
 
-  if (prof_start(interp, "time::profile") != LCL_RC_OK) {
+  if (prof_start(interp, "Time::profile") != LCL_RC_OK) {
     lcl_ref_dec(body);
     return LCL_RC_ERR;
   }
@@ -747,17 +747,17 @@ static lcl_return_code s_profile(lcl_interp *interp, int argc,
     lcl_value *dropped = NULL;
 
     /* keep the body's error, not the report */
-    if (prof_stop(interp, "time::profile", &dropped) == LCL_RC_OK) {
+    if (prof_stop(interp, "Time::profile", &dropped) == LCL_RC_OK) {
       lcl_ref_dec(dropped);
     }
 
     return rc;
   }
 
-  return prof_stop(interp, "time::profile", out);
+  return prof_stop(interp, "Time::profile", out);
 }
 
-/* time::profile_format rows -> aligned text table */
+/* Time::profile_format rows -> aligned text table */
 static lcl_return_code c_profile_format(lcl_interp *interp, int argc,
                                         lcl_value **argv, lcl_value **out) {
   lcl_value *rows;
@@ -768,7 +768,7 @@ static lcl_return_code c_profile_format(lcl_interp *interp, int argc,
   size_t cap = 0;
 
   if (argc != 1 || lcl_value_type_of(argv[0]) != LCL_LIST) {
-    lcl_set_error(interp, "time::profile_format: expected a report list");
+    lcl_set_error(interp, "Time::profile_format: expected a report list");
     return LCL_RC_ERR;
   }
 
@@ -791,7 +791,7 @@ static lcl_return_code c_profile_format(lcl_interp *interp, int argc,
 
       if (!name || !calls || !incl || !excl) {
         free(buf);
-        lcl_set_error(interp, "time::profile_format: malformed report row");
+        lcl_set_error(interp, "Time::profile_format: malformed report row");
         return LCL_RC_ERR;
       }
 
@@ -814,7 +814,7 @@ static lcl_return_code c_profile_format(lcl_interp *interp, int argc,
 
       if (!nb) {
         free(buf);
-        lcl_set_error(interp, "time::profile_format: out of memory");
+        lcl_set_error(interp, "Time::profile_format: out of memory");
         return LCL_RC_ERR;
       }
 
@@ -841,26 +841,26 @@ void lcl_register_time(lcl_interp *interp) {
   lcl_value *time_ns = lcl_ns_new(TIME_NS);
   lcl_define_take(interp, TIME_NS, time_ns);
 
-  lcl_ns_def_take(time_ns, "time", lcl_c_proc_new("time::time", c_time));
-  lcl_ns_def_take(time_ns, "clock", lcl_c_proc_new("time::clock", c_clock));
+  lcl_ns_def_take(time_ns, "time", lcl_c_proc_new("Time::time", c_time));
+  lcl_ns_def_take(time_ns, "clock", lcl_c_proc_new("Time::clock", c_clock));
   lcl_ns_def_take(time_ns, "monotonic_us",
-                  lcl_c_proc_new("time::monotonic_us", c_monotonic_us));
+                  lcl_c_proc_new("Time::monotonic_us", c_monotonic_us));
   lcl_ns_def_take(time_ns, "profile",
-                  lcl_c_spec_new("time::profile", s_profile));
+                  lcl_c_spec_new("Time::profile", s_profile));
   lcl_ns_def_take(time_ns, "profile_start!",
-                  lcl_c_proc_new("time::profile_start!", c_profile_start));
+                  lcl_c_proc_new("Time::profile_start!", c_profile_start));
   lcl_ns_def_take(time_ns, "profile_stop!",
-                  lcl_c_proc_new("time::profile_stop!", c_profile_stop));
+                  lcl_c_proc_new("Time::profile_stop!", c_profile_stop));
   lcl_ns_def_take(time_ns, "profile_format",
-                  lcl_c_proc_new("time::profile_format", c_profile_format));
+                  lcl_c_proc_new("Time::profile_format", c_profile_format));
   lcl_ns_def_take(time_ns, "localtime",
-                  lcl_c_proc_new("time::localtime", c_localtime));
-  lcl_ns_def_take(time_ns, "gmtime", lcl_c_proc_new("time::gmtime", c_gmtime));
-  lcl_ns_def_take(time_ns, "mktime", lcl_c_proc_new("time::mktime", c_mktime));
+                  lcl_c_proc_new("Time::localtime", c_localtime));
+  lcl_ns_def_take(time_ns, "gmtime", lcl_c_proc_new("Time::gmtime", c_gmtime));
+  lcl_ns_def_take(time_ns, "mktime", lcl_c_proc_new("Time::mktime", c_mktime));
   lcl_ns_def_take(time_ns, "strftime",
-                  lcl_c_proc_new("time::strftime", c_strftime));
+                  lcl_c_proc_new("Time::strftime", c_strftime));
   lcl_ns_def_take(time_ns, "difftime",
-                  lcl_c_proc_new("time::difftime", c_difftime));
-  lcl_ns_def_take(time_ns, "sleep", lcl_c_proc_new("time::sleep", c_sleep));
-  lcl_ns_def_take(time_ns, "ctime", lcl_c_proc_new("time::ctime", c_ctime));
+                  lcl_c_proc_new("Time::difftime", c_difftime));
+  lcl_ns_def_take(time_ns, "sleep", lcl_c_proc_new("Time::sleep", c_sleep));
+  lcl_ns_def_take(time_ns, "ctime", lcl_c_proc_new("Time::ctime", c_ctime));
 }

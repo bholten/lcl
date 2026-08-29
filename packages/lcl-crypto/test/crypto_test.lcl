@@ -1,36 +1,50 @@
 ;; Test crypto package functions
 
-puts "Testing crypto::sha256..."
-let hash1 [crypto::sha256 "hello world"]
+puts "Testing Crypto::sha256..."
+let hash1 [Crypto::sha256 "hello world"]
 puts "SHA256 of 'hello world': $hash1"
 
 puts ""
-puts "Testing crypto::sha512..."
-let hash2 [crypto::sha512 "hello world"]
+puts "Testing Crypto::sha512..."
+let hash2 [Crypto::sha512 "hello world"]
 puts "SHA512 of 'hello world': $hash2"
 
 puts ""
-puts "Testing crypto::hmac..."
-let hmac_result [crypto::hmac "secret-key" "message to sign" sha256]
+puts "Testing Crypto::hmac..."
+let hmac_result [Crypto::hmac "secret-key" "message to sign" sha256]
 puts "HMAC-SHA256: $hmac_result"
 
 puts ""
-puts "Testing crypto::base64_encode..."
-let encoded [crypto::base64_encode "Hello, World!"]
+puts "Testing Crypto::base64_encode..."
+let encoded [Crypto::base64_encode "Hello, World!"]
 puts "Base64 encoded: $encoded"
 
 puts ""
-puts "Testing crypto::base64_decode..."
-let decoded [crypto::base64_decode $encoded]
+puts "Testing Crypto::base64_decode..."
+let decoded [Crypto::base64_decode $encoded]
 puts "Base64 decoded: $decoded"
 
+assert [== $decoded "Hello, World!"]
+assert [== [Crypto::base64_encode ""] ""]
+assert [== [Crypto::base64_decode ""] ""]
+assert [== [Crypto::base64_encode "f"] "Zg=="]
+assert [== [Crypto::base64_decode "Zg=="] "f"]
+assert [== [Crypto::base64_decode "Zm8="] "fo"]
+assert [== [Crypto::base64_decode "Zm9v"] "foo"]
+;; strict: unpadded, wrong length, bad alphabet, padding in the middle
+assert [catch { Crypto::base64_decode "SGVsbG8" } r err]
+assert [>= [String::find $err "invalid base64"] 0]
+assert [catch { Crypto::base64_decode "not base64!" }]
+assert [catch { Crypto::base64_decode "Zg==Zg==" }]
+assert [catch { Crypto::base64_decode "Z=g=" }]
+
 puts ""
-puts "Testing crypto::random_bytes..."
-let rb [crypto::random_bytes 16]
+puts "Testing Crypto::random_bytes..."
+let rb [Crypto::random_bytes 16]
 assert [== [String::length $rb] 32]
-assert [== [crypto::random_bytes 0] ""]
-assert [!= [crypto::random_bytes 8] [crypto::random_bytes 8]]
-assert [catch {crypto::random_bytes -1}]
+assert [== [Crypto::random_bytes 0] ""]
+assert [!= [Crypto::random_bytes 8] [Crypto::random_bytes 8]]
+assert [catch {Crypto::random_bytes -1}]
 puts "16 random bytes (hex): $rb"
 
 puts ""

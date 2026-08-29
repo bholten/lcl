@@ -1,0 +1,184 @@
+;;; # Lcl
+;;;
+;;; Lcl ("Lexical Command Language") is a Tcl-inspired scripting language
+;;; with **lexical scoping**. It provides the simplicity and extensibility
+;;; of Tcl while adding modern features like closures, immutable bindings,
+;;; and namespaces.
+;;;
+;;; Lcl is implemented in **C89** with no dependencies except for a hosted
+;;; C standard library. It is meant to be embedded: the core is a single
+;;; library with one public header, and everything platform-bound lives
+;;; in optional packages.
+;;;
+;;; > **Pre-alpha software**: this project is in early development. APIs,
+;;; > syntax, and semantics may change substantially.
+;;;
+;;; This page is the overview. [The language manual](core/language.html)
+;;; covers syntax, data types, scoping, control flow, and metaprogramming
+;;; in depth; [Embedding](core/embedding.html) covers the C API.
+;;;
+;;; > ⚠️⚠️⚠️ **Coming from Tcl? Read this first.** ⚠️⚠️⚠️
+;;; >
+;;; > Lcl *looks* like Tcl:
+;;; >
+;;; > commands, words, `$var`, `[...]`, braces -- but it is **not** Tcl.
+;;; >
+;;; > - **`{a b c}` is text, not a list.** Lists are `(a b c)`, dicts are
+;;; >   `#{k v}`. `len {a b c}` is 5. `foreach x {a b c}` is an error.
+;;; >   Nothing ever reparses a string as a list -- use [String::split].
+;;; > - **No `set`.** `let` binds immutably; `var` makes a mutable cell,
+;;; >   `set!` mutates it. No `upvar`, `uplevel`, `global`.
+;;; > - **Lexical scoping and closures.** Procs capture where they were
+;;; >   defined, not who called them.
+;;; > - **No `expr`.** Arithmetic and comparison are prefix commands:
+;;; >   `[+ 1 2]`, `[< $i 10]`. `if [< $i 10] {...}` -- brackets, not
+;;; >   braces, on the condition (a braced condition is a non-empty
+;;; >   string, i.e. always true). `while {[< $i 10]} {...}` is the
+;;; >   exception: braces there mean "re-evaluate each iteration".
+;;; > - **`42` is an int, `"42"` is a string.** Literals are typed at
+;;; >   compile time; interpolation preserves types.
+;;; > - **`$a::b` is invalid.** Qualified names are `${a::b}`.
+;;; > - **`[$x]` does not dispatch.** It yields `$x`; use `[apply $x]`.
+;;; > - **Namespaces are values** built with `namespace name { ... }`;
+;;; >   `proc a::b` outside one is an error. **No** `namespace eval`!
+;;; > - **Comments are `;;` anywhere**; `#` mid-line is literal.
+;;; > - **Reference counting, not GC** -- mutual recursion between procs
+;;; >   is rejected at definition time.
+;;;
+;;; ## Why?
+;;;
+;;; Tcl is woefully unappreciated. It is one of the best languages for
+;;; creating DSLs and embedding them in C/C++ projects. It's been described
+;;; as "Lisp for C programmers" and it definitely hits that same itch:
+;;; homoiconicity ("everything is a string") and simple metaprogramming by
+;;; passing around literal blocks of code and operating on them as data.
+;;;
+;;; However, Tcl's scoping rules are... awkward. Whenever I've worked with
+;;; Tcl, I often find myself fighting the scoping, and wishing it was
+;;; simply lexical.
+;;;
+;;; Hence, Lcl.
+;;;
+;;; The intent for Lcl is therefore focused on DSL embeddings and scripting
+;;; for C/C++ projects, not as a complete replacement for -- or even any
+;;; compatibility with -- Tcl. This constrains the design and scope of the
+;;; project: I'm not particularly interested in making a full language with
+;;; an independent runtime. I'm focused on making embedding into C/C++
+;;; projects easy and fun; a way to use a Tcl-like extension language with
+;;; more Scheme-like semantics.
+;;;
+;;; ## Key Differences from Tcl
+;;;
+;;; | Feature    | Tcl                              | Lcl                                                            |
+;;; |------------|----------------------------------|----------------------------------------------------------------|
+;;; | Scoping    | Dynamic (`upvar`, `uplevel`)     | Lexical (closures)                                             |
+;;; | Bindings   | Mutable by default               | Immutable by default (`let`), explicit mutation (`var`/`set!`) |
+;;; | Memory     | Garbage collected                | Reference counted                                              |
+;;; | Closures   | Limited                          | First-class (flat closures)                                    |
+;;; | Namespaces | `proc ns::foo` anywhere          | Must define inside `namespace` block                           |
+;;; | Comments   | `#` at line start                | `;;` anywhere (Lisp-style)                                     |
+;;; | `if`       | `if {expr} {body} elseif ...`    | `if $cond {then} else {else}` (Scheme-style, value-based)      |
+;;; | Branching  | `elseif`/`elsif` keywords        | Nested `if` only (no elseif)                                   |
+;;; | Quoting    | `expr` command for expressions   | Expressions are just commands                                  |
+;;; | Dispatch   | `[$x]` runtime-dispatches if `$x` names a command | `[$x]` returns the value of `$x`; `[apply $x]` dispatches |
+;;; | Numbers    | Strings; `expr` interprets       | `42` compiles to an int, `"42"` stays a string                 |
+;;; | Philosophy | "Everything is a string"         | "Everything *has* a string... inside a closure"                |
+;;;
+;;; Lcl uses a more unified API, does not use the ensemble pattern for
+;;; dictionaries, and does not use the prefix-convention for list
+;;; operations.
+;;;
+;;; | Tcl            | Lcl            |
+;;; |----------------|----------------|
+;;; | llength x      | len x          |
+;;; | dict get d k   | get d k        |
+;;; | lindex x i     | get x i        |
+;;; | dict set d k v | put d k v      |
+;;; | lappend x v    | List::push! x v (in place) / List::push x v (copy) |
+;;; | dict keys d    | Dict::keys d   |
+;;;
+;;; And many others. The details -- and the reasoning behind each of
+;;; them -- are in [the language manual](core/language.html).
+;;;
+;;; ## Quick Start
+;;;
+;;; ```tcl
+;;; ;; Variables and immutable bindings
+;;; let x 10
+;;; puts "x = $x"
+;;;
+;;; ;; Mutable bindings use cells
+;;; var counter 0
+;;; set! counter [+ $counter 1]
+;;; puts "counter = $counter"
+;;;
+;;; ;; Procedures
+;;; proc greet {name} {
+;;;     return "Hello, $name!"
+;;; }
+;;;
+;;; puts [greet "World"]
+;;;
+;;; ;; Closures capture their environment
+;;; proc make_counter {start} {
+;;;     var n $start
+;;;
+;;;     return [lambda {} {
+;;;         set! n [+ $n 1]
+;;;         $n
+;;;     }]
+;;; }
+;;;
+;;; let c [make_counter 10]
+;;; puts [apply $c]  ;; 11
+;;; puts [apply $c]  ;; 12
+;;; ;; Note: [$c] does NOT call the closure -- it returns the closure value.
+;;; ;; `apply` is the explicit way to invoke a callable held in a variable.
+;;; ;; See "Dispatch and apply" in the language manual for the design rationale.
+;;; ```
+;;;
+;;; Save that as `hello.lcl` and run it with `lcl hello.lcl`; the build
+;;; and command-line instructions are in the repository README.
+;;;
+;;; ## Packages and portability
+;;;
+;;; Core Lcl is strict C89 with no dependencies beyond a hosted C library,
+;;; and aims for absolute maximum portability. The optional extension
+;;; libraries under `packages/` are allowed to break both rules. A package
+;;; may require a system library (OpenSSL, libcurl) or bind to a platform
+;;; (POSIX `fork`, pseudo-terminals) -- that is by design, not a gap to be
+;;; papered over. Every package is off by default (`-DLCL_BUILD_<NAME>=ON`
+;;; to opt in), and each one declares exactly what it needs in the
+;;; Requirements section of its own README.
+;;;
+;;; Packages are thin, honest bindings: one package per underlying engine,
+;;; exposing what that library actually does, under a namespace named for
+;;; what it is (`Regex::` is POSIX `regex.h`, `Xoshiro::` is xoshiro128**).
+;;; There are no switchable backends and no compatibility layers; a
+;;; different engine would be a different package.
+;;;
+;;; | Package | Namespace | Depends on |
+;;; |---------|-----------|------------|
+;;; | lcl-io | `Io::` | ANSI C (`stdio.h`, `getenv`) -- portable everywhere core builds |
+;;; | lcl-posix | `Posix::` | POSIX (`dirent.h`, `sys/stat.h`, `glob.h`, `unistd.h`) |
+;;; | lcl-math | `Math::` | libm |
+;;; | lcl-time | `Time::` | ISO C `<time.h>`; POSIX for monotonic clock / sleep |
+;;; | lcl-random | `Xoshiro::` | ISO C; xoshiro128** (seeded, reproducible, **not** cryptographic) |
+;;; | lcl-json | `Json::` | cJSON (C99) |
+;;; | lcl-regex | `Regex::` | POSIX `regex.h` |
+;;; | lcl-process | `Process::` | POSIX (`fork`/`exec`, pipes, PTYs) |
+;;; | lcl-expect | `Expect::` | lcl-process, POSIX PTYs |
+;;; | lcl-crypto | `Crypto::` | OpenSSL (hashes, HMAC, signatures, `random_bytes`) |
+;;; | lcl-curl | `Curl::` | libcurl |
+;;;
+;;; ## Reading these docs
+;;;
+;;; The pages below are grouped by where their code lives. **Core** pages
+;;; are companion docs (`docs/*.lcl`) for the builtins implemented in C:
+;;; the prose and examples are written in Lcl, and the entries are stubs
+;;; that carry the signature and the doc comment. **Packages** pages
+;;; document `packages/lcl-*`, each enabled with `-DLCL_BUILD_<NAME>=ON`.
+;;; **Libraries** pages are rendered from the pure-Lcl libraries' own
+;;; sources (`lib/*/src/*.lcl`), so they document exactly the code that
+;;; ships. Every `>>` example on this site is executed by the test suite;
+;;; the output shown under it is the checked result.

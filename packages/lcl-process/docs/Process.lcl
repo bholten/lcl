@@ -1,0 +1,304 @@
+;;; # lcl-process
+;;;
+;;; Process spawning and management for Lcl.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - POSIX `fork`/`execvp`, `pipe`, `waitpid`, `select`
+;;; - POSIX pseudo-terminal support (`openpty`) for PTY-backed spawns
+;;; - **Portability**: POSIX (Linux, macOS, BSD). Not portable to
+;;;   Windows because of `fork`/`exec` and pseudo-terminals.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_PROCESS=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; The `lcl-expect` package (`-DLCL_BUILD_EXPECT=ON`, which requires
+;;; this one) builds an expect-style session API on top of
+;;; [Process::spawn] and [Process::read-until].
+;;;
+;;; ## Usage
+;;;
+;;; Commands are argv lists, never shell strings: the first element is
+;;; the program (looked up on `PATH`), the rest are its arguments,
+;;; passed verbatim. Nothing is parsed, quoted, or expanded unless you
+;;; ask for `/bin/sh` explicitly with the `shell` option.
+;;;
+;;; ```tcl
+;;; ;; Synchronous capture
+;;; let result [Process::run (echo hello)]
+;;; puts [get $result stdout]        ;; hello
+;;;
+;;; ;; Asynchronous interactive control
+;;; let h [Process::spawn (cat)]
+;;; Process::send $h "hello\n"
+;;; Process::close-stdin $h
+;;; Process::wait $h
+;;; puts [Process::read $h]          ;; hello
+;;; Process::close $h
+;;; ```
+;;;
+;;; [Process::run] is the whole story for "run this and give me its
+;;; output". [Process::spawn] returns an opaque *handle* for
+;;; interactive control; the rest of the namespace operates on such
+;;; handles. Options are always an optional trailing dict.
+;;;
+;;; A handle's pipes (or PTY) are closed by [Process::close] or, if you
+;;; forget, by the handle's finalizer when the value is released.
+;;; Neither one signals or reaps the child: call [Process::kill] and
+;;; [Process::wait] yourself if the process may still be running, or
+;;; it lingers as a zombie until the interpreter exits.
+;;;
+;;; ### Expect-style interaction
+;;;
+;;; ```tcl
+;;; let h [Process::spawn (some-interactive-program) #{pty 1}]
+;;;
+;;; let r [Process::read-until $h "login:" #{timeout 5000}]
+;;; if [get $r matched] {
+;;;     Process::send $h "alice\n"
+;;;     Process::read-until $h "Password:" #{timeout 5000}
+;;;     Process::send $h "secret\n"
+;;; }
+;;;
+;;; Process::wait $h
+;;; Process::close $h
+;;; ```
+
+namespace Process {
+
+    ;;; Procs are listed in groups: running ([Process::run],
+    ;;; [Process::spawn]), streams ([Process::send], [Process::close-stdin],
+    ;;; [Process::read], [Process::read-until]), lifecycle ([Process::wait],
+    ;;; [Process::alive?], [Process::kill], [Process::close]) and
+    ;;; pseudo-terminals ([Process::pty?], [Process::set-winsize],
+    ;;; [Process::get-winsize]).
+
+    ;;; Run `argv` to completion and return its status and captured
+    ;;; output.
+    ;;;
+    ;;; `argv` is a non-empty list: program and arguments. The child's
+    ;;; stdin is closed unless the `stdin` option supplies data; stdout
+    ;;; and stderr are captured in full (up to `limit` bytes each).
+    ;;;
+    ;;; Options (`opts` dict):
+    ;;;
+    ;;; - `stdin` -- string written to the child's standard input, then
+    ;;;   closed
+    ;;; - `env` -- dict of environment variables *added* to (or
+    ;;;   overriding entries of) the inherited environment
+    ;;; - `cwd` -- working directory for the child
+    ;;; - `merge` -- 1 to send the child's stderr into `stdout`
+    ;;; - `throw` -- 1 to raise an error instead of returning when the
+    ;;;   exit status is non-zero
+    ;;; - `limit` -- maximum bytes captured per stream (default 4 MiB;
+    ;;;   excess output is discarded)
+    ;;; - `shell` -- 1 to join `argv` with spaces and run it through
+    ;;;   `/bin/sh -c`
+    ;;;
+    ;;; Returns `#{status N stdout "..." stderr "..."}`. `status` is the
+    ;;; exit code, or the negated signal number if the child was killed
+    ;;; by a signal; a program that cannot be executed (not found, bad
+    ;;; `cwd`) exits with 127. With `merge`, `stderr` is the empty
+    ;;; string. Raises an error if `argv` is empty or the pipes/fork
+    ;;; fail.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Process::run (git rev-parse HEAD)]
+    ;;; if [== [get $r status] 0] { puts [String::trim [get $r stdout]] }
+    ;;;
+    ;;; Process::run (cat) #{stdin "input data"}
+    ;;; Process::run (make) #{cwd build env #{CC clang} throw 1}
+    ;;; Process::run (ls -l | wc -l) #{shell 1}
+    ;;; ```
+    proc run {argv (opts #{})} {}
+
+    ;;; Start `argv` in the background and return a process handle.
+    ;;;
+    ;;; By default the child gets three pipes (stdin, stdout, stderr),
+    ;;; with the read ends non-blocking so [Process::read] never hangs
+    ;;; without a `timeout`. Options (`opts` dict):
+    ;;;
+    ;;; - `env` -- dict of environment variables added to the inherited
+    ;;;   environment
+    ;;; - `cwd` -- working directory for the child
+    ;;; - `merge` -- 1 to send stderr into the stdout pipe
+    ;;; - `pty` -- 1 to run the child on a pseudo-terminal instead of
+    ;;;   pipes: it becomes a session leader with the PTY as its
+    ;;;   controlling terminal, and stdin, stdout and stderr all share
+    ;;;   the PTY (so `merge` and the `stderr` read option are moot)
+    ;;; - `rows`, `cols` -- initial window size for a PTY (default
+    ;;;   24 x 80)
+    ;;;
+    ;;; Raises an error if `argv` is empty or the spawn fails. A program
+    ;;; that cannot be executed still yields a handle; it exits with
+    ;;; status 127.
+    ;;;
+    ;;; ```tcl
+    ;;; let h [Process::spawn (python3 -i) #{pty 1 rows 40 cols 120}]
+    ;;; ```
+    proc spawn {argv (opts #{})} {}
+
+    ;;; Write the string `data` to the child's standard input.
+    ;;;
+    ;;; Returns the number of bytes written. Raises an error if stdin
+    ;;; has been closed with [Process::close-stdin] or the write fails.
+    ;;;
+    ;;; ```tcl
+    ;;; Process::send $h "quit\n"
+    ;;; ```
+    proc send {handle data} {}
+
+    ;;; Close the child's standard input so it sees end-of-file.
+    ;;;
+    ;;; Idempotent on pipe handles. A PTY handle has one descriptor for
+    ;;; both directions and cannot be half-closed, so there this sends
+    ;;; the terminal's EOF character (`^D` unless the child changed it)
+    ;;; instead, which a program reading a line at a time treats as
+    ;;; end-of-file; the handle stays readable. Returns the empty
+    ;;; string.
+    ;;;
+    ;;; ```tcl
+    ;;; let h [Process::spawn (sort)]
+    ;;; Process::send $h "b\na\n"
+    ;;; Process::close-stdin $h
+    ;;; Process::wait $h
+    ;;; puts [Process::read $h]     ;; a b
+    ;;; ```
+    proc close-stdin {handle} {}
+
+    ;;; Read whatever output is currently available from the child.
+    ;;;
+    ;;; Options (`opts` dict):
+    ;;;
+    ;;; - `n` -- maximum bytes to return (default 4096)
+    ;;; - `stderr` -- 1 to read the stderr pipe instead of stdout
+    ;;; - `timeout` -- milliseconds to wait for data to arrive (default
+    ;;;   0: return immediately)
+    ;;;
+    ;;; Returns the bytes read, possibly fewer than `n`, or the empty
+    ;;; string when nothing is available within the timeout, when the
+    ;;; child has closed the stream, or when the requested stream does
+    ;;; not exist (stderr on a `merge` or PTY handle). A read that gets
+    ;;; nothing and one that hits end-of-file look the same; use
+    ;;; [Process::alive?] to tell them apart.
+    ;;;
+    ;;; ```tcl
+    ;;; Process::read $h                  ;; what is there right now
+    ;;; Process::read $h #{timeout 1000}  ;; wait up to a second
+    ;;; Process::read $h #{stderr 1 n 65536}
+    ;;; ```
+    proc read {handle (opts #{})} {}
+
+    ;;; Read from the child until one of `patterns` appears in the
+    ;;; output.
+    ;;;
+    ;;; `patterns` is a single string or a list of strings, matched
+    ;;; literally (no regular expressions) against everything read so
+    ;;; far; the first pattern in list order that is present wins.
+    ;;; Options (`opts` dict):
+    ;;;
+    ;;; - `timeout` -- total milliseconds to wait (default 0: keep
+    ;;;   reading until a match or end-of-file)
+    ;;; - `stderr` -- 1 to read the stderr pipe instead of stdout
+    ;;;
+    ;;; Returns `#{data "..." matched 0/1 pattern "..." index N}`:
+    ;;; `data` is everything read up to and including the match (or
+    ;;; everything read before giving up), `matched` is 1 on a match
+    ;;; and 0 on timeout or end-of-file, `pattern` is the matching
+    ;;; string (empty when not matched) and `index` its position in
+    ;;; the list (0 for a single pattern). Bytes after the match are
+    ;;; left unread. Raises an error if `patterns` is an empty list.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Process::read-until $h ("ok>" "error:") #{timeout 2000}]
+    ;;; if [and [get $r matched] [== [get $r index] 1]] {
+    ;;;     puts "prompt reported an error: [get $r data]"
+    ;;; }
+    ;;; ```
+    proc read-until {handle patterns (opts #{})} {}
+
+    ;;; Wait for the child to exit.
+    ;;;
+    ;;; With no `timeout` option this blocks until the process ends;
+    ;;; with `#{timeout ms}` it polls for at most that long. Returns
+    ;;; `#{exited 1 status N}` once the child is gone -- with a
+    ;;; `signal N` entry and `status -1` if it was killed by a signal
+    ;;; -- or `#{exited 0}` if the timeout ran out. The result is
+    ;;; remembered, so later calls return it without waiting again.
+    ;;;
+    ;;; Waiting does not drain output: what the child wrote stays in
+    ;;; the pipe for [Process::read] afterwards. The flip side is that
+    ;;; a child producing more than the pipe buffer holds blocks until
+    ;;; something reads it, so for chatty programs read first (or in a
+    ;;; loop with [Process::alive?]) and wait last.
+    ;;;
+    ;;; ```tcl
+    ;;; let w [Process::wait $h #{timeout 5000}]
+    ;;; if [not [get $w exited]] {
+    ;;;     Process::kill $h #{signal KILL}
+    ;;;     Process::wait $h
+    ;;; }
+    ;;; ```
+    proc wait {handle (opts #{})} {}
+
+    ;;; Return 1 if the child is still running, else 0.
+    ;;;
+    ;;; Reaps the child if it has just exited, recording its status for
+    ;;; a subsequent [Process::wait].
+    ;;;
+    ;;; ```tcl
+    ;;; while [Process::alive? $h] {
+    ;;;     puts [Process::read $h #{timeout 100}]
+    ;;; }
+    ;;; ```
+    proc alive? {handle} {}
+
+    ;;; Send a signal to the child (default `SIGTERM`).
+    ;;;
+    ;;; The `signal` option accepts `TERM`, `KILL`, `INT` or `HUP` (with
+    ;;; or without the `SIG` prefix) or a signal number. Returns 1 if
+    ;;; the signal was sent, 0 if the child had already been reaped.
+    ;;; Raises an error if `kill(2)` fails.
+    ;;;
+    ;;; ```tcl
+    ;;; Process::kill $h                  ;; SIGTERM
+    ;;; Process::kill $h #{signal KILL}
+    ;;; Process::kill $h #{signal 10}     ;; SIGUSR1 on Linux
+    ;;; ```
+    proc kill {handle (opts #{})} {}
+
+    ;;; Close the handle's pipes (or PTY) and release their file
+    ;;; descriptors.
+    ;;;
+    ;;; Idempotent; the handle stays valid but reads return the empty
+    ;;; string and sends fail. Does not terminate or reap the child.
+    ;;; Returns the empty string.
+    proc close {handle} {}
+
+    ;;; Return 1 if `handle` was spawned with `#{pty 1}`, else 0.
+    proc pty? {handle} {}
+
+    ;;; Set the terminal window size of a PTY handle to `rows` x
+    ;;; `cols`.
+    ;;;
+    ;;; The child sees a `SIGWINCH`. Raises an error on a pipe handle
+    ;;; (`set-winsize only works on PTY handles`). Returns the empty
+    ;;; string.
+    ;;;
+    ;;; ```tcl
+    ;;; Process::set-winsize $h 50 132
+    ;;; ```
+    proc set-winsize {handle rows cols} {}
+
+    ;;; Return the terminal window size of a PTY handle as
+    ;;; `#{rows N cols M}`.
+    ;;;
+    ;;; Raises an error on a pipe handle (`get-winsize only works on
+    ;;; PTY handles`).
+    proc get-winsize {handle} {}
+}

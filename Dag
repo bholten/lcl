@@ -34,7 +34,18 @@ project lcl {
                      -DLCL_BUILD_STATIC=ON
                      -DCMAKE_BUILD_TYPE=Release)
 
-    let SOURCES [posix::glob src/*.c src/*.h lib/**/*.lcl packages/**/**/*.lcl]
+    let SOURCES [Posix::glob CMakeLists.txt cmake/*.cmake
+                             include/*.h src/*.c src/*.h
+                             packages/*/CMakeLists.txt
+                             packages/*/include/*.h
+                             packages/*/src/*.c packages/*/src/*.h
+                             lib/*/src/*.lcl]
+
+    let DOCS [Posix::glob tools/docs.lcl
+                          docs/*.lcl docs/*.md
+                          packages/*/docs/*.lcl packages/*/docs/*.md
+                          lib/*/docs/*.lcl lib/*/docs/*.md
+                          lib/*/src/*.lcl]
 
     task build {
         inputs ${lcl::SOURCES}
@@ -59,7 +70,7 @@ project lcl {
 
     task emcc {
         inputs ${lcl::SOURCES}
-        outputs build-emcc
+        outputs build-emcc/
         run {
             set -e
             emcmake cmake -B ${lcl::emcc::outputs}
@@ -88,7 +99,7 @@ project lcl {
     }
 
     task test {
-        inputs $SOURCES
+        inputs ${lcl::SOURCES}
         outputs build/.test.sentinel
         depends_on lcl::build
         run {
@@ -98,59 +109,31 @@ project lcl {
         }
     }
 
-    ;; Baselines are recorded from the Release build: the ASan debug
-    ;; build inflates every number roughly tenfold.
-    task bench {
-        inputs $SOURCES
-        depends_on lcl::release
+    task doctest {
+        inputs ${lcl::DOCS}
+        outputs build/.doctest.sentinel
+        depends_on lcl::build
         run {
-            ${lcl::release::outputs}/lcl bench/run.lcl --baseline bench/baseline.lcl
+            set -e
+            ${lcl::build::outputs}/lcl tools/docs.lcl doctest
+            touch ${lcl::doctest::outputs}
         }
     }
 
-    task doctest {
-        shell lcl
-        shell_arg -c
-        inputs $SOURCES
-        outputs [posix::glob html/*.html]
-        depends_on lcl::build
+    task docs {
+        inputs ${lcl::DOCS}
+        outputs site/
+        depends_on lcl::doctest
         run {
-            let docs [posix::glob docs/*.lcl packages/**/docs/*.lcl]
+            ${lcl::build::outputs}/lcl tools/docs.lcl build ${lcl::docs::outputs}
+        }
+    }
 
-            var success 1
-
-            foreach doc $docs {
-                let result [Doc::doctest_file $doc]
-
-                if [get $result fail] {
-                    set! success 0
-                }
-
-                Doc::report $result
-            }
-
-            if $success {
-                if [not [posix::exists? html]] {
-                    posix::mkdir html
-                }
-
-                foreach doc $docs {
-                    let md       [Doc::markdown_file $doc]
-                    let fname    [posix::basename $doc]
-                    let out_md   "html/$fname.md"
-                    let out_html "html/$fname.html"
-
-                    io::write_file $out_md $md
-
-                    let cmd (pandoc -f markdown -t html -o $out_html $out_md)
-
-                    puts "Writing Doc $out_html"
-
-                    sh::run $cmd
-                }
-            }
-
-            $success
+    task bench {
+        inputs ${lcl::SOURCES}
+        depends_on lcl::release
+        run {
+            ${lcl::release::outputs}/lcl bench/run.lcl --baseline bench/baseline.lcl
         }
     }
 
@@ -161,7 +144,7 @@ project lcl {
             rm -rf ${lcl::emcc::outputs}
             rm -rf ${lcl::release::outputs}
             rm -rf ${lcl::static::outputs}
-            rm -rf ${lcl::doctest::outputs}
+            rm -rf ${lcl::docs::outputs}
         }
     }
 }

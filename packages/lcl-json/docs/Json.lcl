@@ -1,0 +1,217 @@
+;;; # lcl-json
+;;;
+;;; JSON encoding and decoding for Lcl, backed by cJSON.
+;;;
+;;; > **0.1.0 note:** `lcl-json` is built and used in-tree only; it is
+;;; > not part of the `cmake --install` artifact. The package vendors
+;;; > cJSON via `FetchContent`, and a shipping decision for vendored
+;;; > dependencies is deferred. Use it by building Lcl with
+;;; > `-DLCL_BUILD_JSON=ON` and consuming `lcl_json` directly from your
+;;; > own CMake build.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - cJSON (vendored or system-installed; pure C99)
+;;; - **Portability:** very wide. cJSON builds on Linux, macOS, BSD,
+;;;   Windows, and embedded targets.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_JSON=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; ;; Encode Lcl values to JSON text
+;;; let data #{name "Alice" age 30 active [Json::true]}
+;;; let text [Json::encode $data]      ;; {"name":"Alice","active":true,"age":30}
+;;;
+;;; ;; Decode JSON text to Lcl values
+;;; let parsed [Json::decode {{"items": [1, 2, 3], "valid": true}}]
+;;; let items [get $parsed items]      ;; (1 2 3)
+;;; if [Json::bool? [get $parsed valid]] { puts "valid is a JSON boolean" }
+;;; ```
+;;;
+;;; ## Type mapping
+;;;
+;;; | JSON | Lcl |
+;;; |------|-----|
+;;; | string | string |
+;;; | number with an integral value | int |
+;;; | number with a fractional part | float |
+;;; | array | list |
+;;; | object | dict |
+;;; | `true` / `false` | JSON boolean (opaque, see [Json::true], [Json::false]) |
+;;; | `null` | JSON null (opaque, see [Json::null]) |
+;;;
+;;; Going the other way, [Json::encode] maps Lcl strings, ints, floats,
+;;; lists and dicts to their JSON counterparts and the opaque boolean
+;;; and null values to `true`, `false` and `null`. Procs, namespaces
+;;; and foreign opaque values cannot be encoded and raise an error.
+;;;
+;;; ## Notes
+;;;
+;;; - JSON booleans are distinct from Lcl integers: `1` encodes as the
+;;;   number `1`, never as `true`. Build real booleans with
+;;;   [Json::true] and [Json::false] and test for them with
+;;;   [Json::bool?]; the null value has [Json::null] and [Json::null?].
+;;; - Numbers travel through a C `double`. A JSON number decodes to an
+;;;   int whenever its value is integral and fits a `long`, so `1.0`
+;;;   and `1e3` come back as the ints `1` and `1000`; other numbers
+;;;   become floats. Integers beyond 2^53 lose precision on encode.
+;;; - Object key order is not preserved: dict keys are emitted in the
+;;;   dict's internal order, and decoded objects are dicts. Only rely
+;;;   on key order for single-key objects.
+;;; - Encoding is compact (no whitespace). Non-ASCII bytes in strings
+;;;   are passed through as UTF-8, not escaped.
+;;; - Text after the first complete JSON value is ignored by
+;;;   [Json::decode].
+;;; - Failures (malformed JSON, an unencodable value, wrong argument
+;;;   count) raise an error without a detail message.
+;;;
+;;; ## Literal values
+;;;
+;;; JSON's `true`, `false` and `null` have no native Lcl counterpart,
+;;; so the package represents them as opaque values. They print as
+;;; `<opaque:json_bool>` and `<opaque:json_null>`, are not equal to
+;;; the ints `1` and `0`, and are only useful to [Json::encode] and
+;;; the predicates [Json::bool?] and [Json::null?].
+namespace Json {
+
+    ;;; Encode an Lcl value as compact JSON text.
+    ;;;
+    ;;; Strings, ints, floats, lists and dicts map to JSON strings,
+    ;;; numbers, arrays and objects; the values made by [Json::true],
+    ;;; [Json::false] and [Json::null] map to the JSON literals. A
+    ;;; string is always a JSON string, even when it looks numeric,
+    ;;; because numbers are typed at scan time. Floats with an integral
+    ;;; value print without a fraction. Procs, namespaces and other
+    ;;; opaque values are an error.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::encode 42
+    ;;; "42"
+    ;;; >> Json::encode "42"
+    ;;; "\"42\""
+    ;;; >> Json::encode 2.5
+    ;;; "2.5"
+    ;;; >> Json::encode 1.0
+    ;;; "1"
+    ;;; >> Json::encode (1 2.5 "x" (3 4) #{k v})
+    ;;; "\[1,2.5,\"x\",\[3,4],{\"k\":\"v\"}]"
+    ;;; >> Json::encode #{name "Alice"}
+    ;;; "{\"name\":\"Alice\"}"
+    ;;; >> Json::encode ()
+    ;;; "\[]"
+    ;;; >> Json::encode #{}
+    ;;; "{}"
+    ;;; >> Json::encode [Json::true]
+    ;;; "true"
+    ;;; >> Json::encode [Json::null]
+    ;;; "null"
+    ;;; >> Json::encode "a\nb"
+    ;;; "\"a\\nb\""
+    ;;; >> catch { Json::encode [lambda {x} { $x }] }
+    ;;; 1
+    proc encode {value} {}
+
+    ;;; Parse JSON text into an Lcl value.
+    ;;;
+    ;;; Objects become dicts, arrays become lists, strings become
+    ;;; strings, and numbers become ints when integral (and within
+    ;;; `long` range) or floats otherwise. `true`, `false` and `null`
+    ;;; become the opaque values recognised by [Json::bool?] and
+    ;;; [Json::null?]. Malformed text is an error; anything after the
+    ;;; first complete value is ignored. Decoding and re-encoding is
+    ;;; stable.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::decode {[1, 2.5, "x"]}
+    ;;; (1 2.5 "x")
+    ;;; >> Json::decode {{"a": {"b": [1, 2]}}}
+    ;;; #{"a" #{"b" (1 2)}}
+    ;;; >> Json::decode {"hi"}
+    ;;; "hi"
+    ;;; >> type [Json::decode {42}]
+    ;;; "int"
+    ;;; >> type [Json::decode {2.5}]
+    ;;; "float"
+    ;;; >> Json::decode {1e3}
+    ;;; 1000
+    ;;; >> Json::bool? [get [Json::decode {{"ok": true}}] ok]
+    ;;; 1
+    ;;; >> Json::null? [get [Json::decode {{"v": null}}] v]
+    ;;; 1
+    ;;; >> Json::encode [Json::decode {{"x": [1, 2, {"y": null}]}}]
+    ;;; "{\"x\":\[1,2,{\"y\":null}]}"
+    ;;; >> catch { Json::decode {not json} }
+    ;;; 1
+    proc decode {text} {}
+
+    ;;; Return the JSON `true` value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::encode [Json::true]
+    ;;; "true"
+    ;;; >> Json::bool? [Json::true]
+    ;;; 1
+    ;;; >> type [Json::true]
+    ;;; "opaque"
+    proc true {} {}
+
+    ;;; Return the JSON `false` value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::encode [Json::false]
+    ;;; "false"
+    ;;; >> Json::encode #{flag [Json::false]}
+    ;;; "{\"flag\":false}"
+    proc false {} {}
+
+    ;;; Return the JSON `null` value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::encode [Json::null]
+    ;;; "null"
+    ;;; >> Json::null? [Json::null]
+    ;;; 1
+    proc null {} {}
+
+    ;;; Return 1 if `value` is a JSON boolean (from [Json::true],
+    ;;; [Json::false] or a decoded `true`/`false`), else 0.
+    ;;;
+    ;;; Ints are never JSON booleans.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::bool? [Json::true]
+    ;;; 1
+    ;;; >> Json::bool? [Json::false]
+    ;;; 1
+    ;;; >> Json::bool? 1
+    ;;; 0
+    ;;; >> Json::bool? [Json::null]
+    ;;; 0
+    ;;; >> List::map [Json::decode {[true, 0]}] [lambda {v} { Json::bool? $v }]
+    ;;; (1 0)
+    proc bool? {value} {}
+
+    ;;; Return 1 if `value` is the JSON null (from [Json::null] or a
+    ;;; decoded `null`), else 0.
+    ;;;
+    ;;; The string `"null"` and the empty string are not JSON null.
+    ;;;
+    ;;; Examples:
+    ;;; >> Json::null? [Json::null]
+    ;;; 1
+    ;;; >> Json::null? "null"
+    ;;; 0
+    ;;; >> Json::null? ""
+    ;;; 0
+    ;;; >> Json::null? [Json::true]
+    ;;; 0
+    proc null? {value} {}
+}

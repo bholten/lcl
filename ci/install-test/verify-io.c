@@ -12,14 +12,14 @@ int main(void) {
     lcl_register_core(interp);
     lcl_register_io(interp);
 
-    if (lcl_eval_string(interp, "io::getenv PATH", &result) != LCL_OK ||
+    if (lcl_eval_string(interp, "Io::getenv PATH", &result) != LCL_OK ||
         lcl_value_to_cstring(interp, result, &as_str) != LCL_OK) {
-        fprintf(stderr, "io::getenv failed\n");
+        fprintf(stderr, "Io::getenv failed\n");
         lcl_ref_dec(result);
         lcl_interp_free(interp);
         return 1;
     }
-    printf("ok: io::getenv PATH = %s\n", as_str);
+    printf("ok: Io::getenv PATH = %s\n", as_str);
     lcl_ref_dec(result);
     lcl_interp_free(interp);
     return 0;

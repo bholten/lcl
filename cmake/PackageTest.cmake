@@ -48,4 +48,20 @@ function(lcl_add_package_test)
                 "${CMAKE_CURRENT_SOURCE_DIR}/${PT_COMMAND}"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
+
+    if(LCL_BUILD_DOC_LIB AND LCL_BUILD_IO)
+        get_directory_property(_pt_doctest_added LCL_PACKAGE_DOCTEST_ADDED)
+        file(GLOB _pt_docs "${CMAKE_CURRENT_SOURCE_DIR}/docs/*.lcl")
+
+        if(_pt_docs AND NOT _pt_doctest_added)
+            get_filename_component(_pt_pkg "${CMAKE_CURRENT_SOURCE_DIR}" NAME)
+            add_test(
+                NAME ${_pt_pkg}-doctest
+                COMMAND $<TARGET_FILE:lcl-cli>
+                        "${LCL_SOURCE_DIR}/tools/docs.lcl" doctest ${_pt_docs}
+                WORKING_DIRECTORY ${LCL_SOURCE_DIR}
+            )
+            set_property(DIRECTORY PROPERTY LCL_PACKAGE_DOCTEST_ADDED 1)
+        endif()
+    endif()
 endfunction()

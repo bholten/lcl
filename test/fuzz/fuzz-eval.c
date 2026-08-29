@@ -1,6 +1,6 @@
 /* libFuzzer target: full pipeline — compile + evaluate.
  *
- * Core stdlib only (no io::/posix:: packages), with three
+ * Core stdlib only (no Io::/Posix:: packages), with three
  * overrides so the fuzzer stays hermetic:
  *   - puts    -> muted (no stdout spam)
  *   - load    -> error (no filesystem reads)

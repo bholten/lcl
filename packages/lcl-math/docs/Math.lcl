@@ -1,0 +1,471 @@
+;;; # lcl-math
+;;;
+;;; Floating-point math functions for Lcl, a thin wrapper around the C `<math.h>` library.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - C standard library `<math.h>` and libm
+;;; - **Portability:** universal. Builds anywhere a hosted C
+;;;   implementation with libm is available: Linux, macOS, BSD,
+;;;   Windows, and embedded targets.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_MATH=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; puts [Math::pi]                    ;; 3.141592653589793
+;;; puts [Math::sqrt 2]                ;; 1.4142135623730951
+;;; puts [Math::sin [/ [Math::pi] 2]]  ;; 1
+;;; puts [Math::pow 2 10]              ;; 1024
+;;; puts [Math::log10 1000]            ;; 3
+;;; ```
+;;;
+;;; Every function accepts ints or floats (and numeric strings, which
+;;; are converted) and returns a **float**, except [Math::isnan] and
+;;; [Math::isinf], which return the ints 0 and 1. A float with an
+;;; integral value prints without a fraction (`Math::sqrt 4` prints
+;;; `2`) but is still typed float: `float?` reports 1 and `int?`
+;;; reports 0. The constants [Math::pi] and [Math::e] are commands,
+;;; not variables: call them as `[Math::pi]`.
+;;;
+;;; Results follow the C library exactly, including its edge cases:
+;;; domain errors such as `Math::sqrt -1` return NaN rather than
+;;; raising, and overflow returns infinity. Test for those with
+;;; [Math::isnan] and [Math::isinf]; how NaN and infinity *print* is
+;;; platform-dependent, so do not compare their text. A non-numeric
+;;; argument or a missing argument is an error (without a detail
+;;; message); extra arguments are ignored.
+;;;
+;;; ## Functions
+;;;
+;;; - Constants: [Math::pi], [Math::e]
+;;; - Trigonometric (angles in radians): [Math::sin], [Math::cos],
+;;;   [Math::tan], [Math::asin], [Math::acos], [Math::atan],
+;;;   [Math::atan2]
+;;; - Hyperbolic: [Math::sinh], [Math::cosh], [Math::tanh],
+;;;   [Math::asinh], [Math::acosh], [Math::atanh]
+;;; - Exponential and logarithmic: [Math::exp], [Math::exp2],
+;;;   [Math::log], [Math::log2], [Math::log10]
+;;; - Power and root: [Math::pow], [Math::sqrt], [Math::cbrt],
+;;;   [Math::hypot]
+;;; - Rounding and remainder (results are integral-valued floats;
+;;;   convert with `int` when an int is required): [Math::ceil],
+;;;   [Math::floor], [Math::trunc], [Math::round], [Math::fmod]
+;;; - Other: [Math::abs], [Math::erf], [Math::erfc], [Math::tgamma],
+;;;   [Math::lgamma], [Math::isnan], [Math::isinf], [Math::min],
+;;;   [Math::max]
+namespace Math {
+
+    ;;; Return pi.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::pi
+    ;;; 3.141592653589793
+    ;;; >> Math::cos [Math::pi]
+    ;;; -1
+    proc pi {} {}
+
+    ;;; Return Euler's number e.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::e
+    ;;; 2.718281828459045
+    ;;; >> Math::log [Math::e]
+    ;;; 1
+    proc e {} {}
+
+    ;;; Sine of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::sin 0
+    ;;; 0
+    ;;; >> Math::sin [/ [Math::pi] 2]
+    ;;; 1
+    proc sin {x} {}
+
+    ;;; Cosine of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::cos 0
+    ;;; 1
+    ;;; >> Math::cos [Math::pi]
+    ;;; -1
+    proc cos {x} {}
+
+    ;;; Tangent of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::tan 0
+    ;;; 0
+    proc tan {x} {}
+
+    ;;; Arc sine of `x`, in `[-pi/2, pi/2]`; NaN outside `[-1, 1]`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::asin 0
+    ;;; 0
+    ;;; >> Math::asin 1
+    ;;; 1.5707963267948966
+    ;;; >> Math::isnan [Math::asin 2]
+    ;;; 1
+    proc asin {x} {}
+
+    ;;; Arc cosine of `x`, in `[0, pi]`; NaN outside `[-1, 1]`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::acos 1
+    ;;; 0
+    ;;; >> Math::acos -1
+    ;;; 3.141592653589793
+    proc acos {x} {}
+
+    ;;; Arc tangent of `x`, in `[-pi/2, pi/2]`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::atan 0
+    ;;; 0
+    ;;; >> Math::atan 1
+    ;;; 0.7853981633974483
+    proc atan {x} {}
+
+    ;;; Arc tangent of `y/x` using the signs of both to pick the
+    ;;; quadrant; result in `[-pi, pi]`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::atan2 1 1
+    ;;; 0.7853981633974483
+    ;;; >> Math::atan2 0 -1
+    ;;; 3.141592653589793
+    ;;; >> Math::atan2 -1 0
+    ;;; -1.5707963267948966
+    proc atan2 {y x} {}
+
+    ;;; Hyperbolic sine of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::sinh 0
+    ;;; 0
+    ;;; >> Math::sinh 1
+    ;;; 1.1752011936438014
+    proc sinh {x} {}
+
+    ;;; Hyperbolic cosine of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::cosh 0
+    ;;; 1
+    ;;; >> Math::cosh 1
+    ;;; 1.5430806348152437
+    proc cosh {x} {}
+
+    ;;; Hyperbolic tangent of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::tanh 0
+    ;;; 0
+    ;;; >> Math::tanh 1
+    ;;; 0.7615941559557649
+    proc tanh {x} {}
+
+    ;;; Inverse hyperbolic sine of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::asinh 0
+    ;;; 0
+    ;;; >> Math::asinh 1
+    ;;; 0.881373587019543
+    proc asinh {x} {}
+
+    ;;; Inverse hyperbolic cosine of `x`; NaN below 1.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::acosh 1
+    ;;; 0
+    ;;; >> Math::acosh 2
+    ;;; 1.3169578969248166
+    ;;; >> Math::isnan [Math::acosh 0]
+    ;;; 1
+    proc acosh {x} {}
+
+    ;;; Inverse hyperbolic tangent of `x`; infinite at `+-1`, NaN
+    ;;; beyond.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::atanh 0
+    ;;; 0
+    ;;; >> Math::atanh 0.5
+    ;;; 0.5493061443340548
+    ;;; >> Math::isinf [Math::atanh 1]
+    ;;; 1
+    proc atanh {x} {}
+
+    ;;; e raised to `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::exp 0
+    ;;; 1
+    ;;; >> Math::exp 1
+    ;;; 2.718281828459045
+    ;;; >> Math::isinf [Math::exp 1000]
+    ;;; 1
+    proc exp {x} {}
+
+    ;;; 2 raised to `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::exp2 10
+    ;;; 1024
+    ;;; >> Math::exp2 -2
+    ;;; 0.25
+    proc exp2 {x} {}
+
+    ;;; Natural logarithm of `x`; `-inf` at 0, NaN below.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::log 1
+    ;;; 0
+    ;;; >> Math::log [Math::e]
+    ;;; 1
+    ;;; >> Math::log 10
+    ;;; 2.302585092994046
+    ;;; >> Math::isinf [Math::log 0]
+    ;;; 1
+    ;;; >> Math::isnan [Math::log -1]
+    ;;; 1
+    proc log {x} {}
+
+    ;;; Base-2 logarithm of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::log2 1024
+    ;;; 10
+    ;;; >> Math::log2 0.5
+    ;;; -1
+    proc log2 {x} {}
+
+    ;;; Base-10 logarithm of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::log10 1000
+    ;;; 3
+    ;;; >> Math::log10 0.001
+    ;;; -3
+    proc log10 {x} {}
+
+    ;;; `x` raised to `y`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::pow 2 10
+    ;;; 1024
+    ;;; >> Math::pow 2 -1
+    ;;; 0.5
+    ;;; >> Math::pow 9 0.5
+    ;;; 3
+    ;;; >> Math::pow -2 3
+    ;;; -8
+    ;;; >> Math::pow 0 0
+    ;;; 1
+    ;;; >> Math::pow 2 63
+    ;;; 9.223372036854776e+18
+    proc pow {x y} {}
+
+    ;;; Square root of `x`; NaN for negative `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::sqrt 16
+    ;;; 4
+    ;;; >> Math::sqrt 2
+    ;;; 1.4142135623730951
+    ;;; >> Math::sqrt 0.25
+    ;;; 0.5
+    ;;; >> Math::isnan [Math::sqrt -1]
+    ;;; 1
+    ;;; >> float? [Math::sqrt 4]
+    ;;; 1
+    ;;; >> catch { Math::sqrt abc }
+    ;;; 1
+    proc sqrt {x} {}
+
+    ;;; Cube root of `x`; defined for negative `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::cbrt 8
+    ;;; 2
+    ;;; >> Math::cbrt -8
+    ;;; -2
+    ;;; >> Math::cbrt 2
+    ;;; 1.2599210498948734
+    proc cbrt {x} {}
+
+    ;;; `sqrt(x*x + y*y)` computed without intermediate overflow.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::hypot 3 4
+    ;;; 5
+    ;;; >> Math::hypot 5 12
+    ;;; 13
+    ;;; >> Math::hypot 1 1
+    ;;; 1.4142135623730951
+    proc hypot {x y} {}
+
+    ;;; Round `x` up to the nearest integral value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::ceil 2.1
+    ;;; 3
+    ;;; >> Math::ceil -2.1
+    ;;; -2
+    ;;; >> float? [Math::ceil 2.1]
+    ;;; 1
+    proc ceil {x} {}
+
+    ;;; Round `x` down to the nearest integral value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::floor 2.9
+    ;;; 2
+    ;;; >> Math::floor -2.1
+    ;;; -3
+    proc floor {x} {}
+
+    ;;; Truncate `x` toward zero.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::trunc 2.9
+    ;;; 2
+    ;;; >> Math::trunc -2.9
+    ;;; -2
+    proc trunc {x} {}
+
+    ;;; Round `x` to the nearest integral value, ties away from zero.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::round 2.4
+    ;;; 2
+    ;;; >> Math::round 2.5
+    ;;; 3
+    ;;; >> Math::round -2.5
+    ;;; -3
+    proc round {x} {}
+
+    ;;; Floating-point remainder of `x / y`, with the sign of `x`;
+    ;;; NaN when `y` is 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::fmod 7 3
+    ;;; 1
+    ;;; >> Math::fmod -7 3
+    ;;; -1
+    ;;; >> Math::fmod 5.5 2
+    ;;; 1.5
+    ;;; >> Math::isnan [Math::fmod 1 0]
+    ;;; 1
+    proc fmod {x y} {}
+
+    ;;; Absolute value of `x` (as a float).
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::abs -3
+    ;;; 3
+    ;;; >> Math::abs -2.5
+    ;;; 2.5
+    ;;; >> int? [Math::abs -3]
+    ;;; 0
+    proc abs {x} {}
+
+    ;;; Error function of `x`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::erf 0
+    ;;; 0
+    ;;; >> Math::erf 1
+    ;;; 0.8427007929497149
+    ;;; >> Math::erf 10
+    ;;; 1
+    proc erf {x} {}
+
+    ;;; Complementary error function, `1 - erf(x)`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::erfc 0
+    ;;; 1
+    ;;; >> Math::erfc 1
+    ;;; 0.15729920705028513
+    proc erfc {x} {}
+
+    ;;; Gamma function of `x`; `tgamma (n+1)` is `n!` for
+    ;;; non-negative ints.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::tgamma 5
+    ;;; 24
+    ;;; >> Math::tgamma 10
+    ;;; 362880
+    ;;; >> Math::tgamma 0.5
+    ;;; 1.772453850905516
+    ;;; >> Math::isinf [Math::tgamma 0]
+    ;;; 1
+    proc tgamma {x} {}
+
+    ;;; Natural logarithm of the absolute value of the gamma function.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::lgamma 1
+    ;;; 0
+    ;;; >> Math::lgamma 3
+    ;;; 0.6931471805599453
+    ;;; >> Math::lgamma 10
+    ;;; 12.80182748008147
+    proc lgamma {x} {}
+
+    ;;; Return 1 if `x` is NaN, else 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::isnan [Math::sqrt -1]
+    ;;; 1
+    ;;; >> Math::isnan 1
+    ;;; 0
+    ;;; >> Math::isnan [Math::exp 1000]
+    ;;; 0
+    proc isnan {x} {}
+
+    ;;; Return 1 if `x` is positive or negative infinity, else 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::isinf [Math::exp 1000]
+    ;;; 1
+    ;;; >> Math::isinf [Math::log 0]
+    ;;; 1
+    ;;; >> Math::isinf 1
+    ;;; 0
+    proc isinf {x} {}
+
+    ;;; The smaller of `x` and `y`, as a float.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::min 1 2
+    ;;; 1
+    ;;; >> Math::min 3 2.5
+    ;;; 2.5
+    ;;; >> Math::min -1 1
+    ;;; -1
+    proc min {x y} {}
+
+    ;;; The larger of `x` and `y`, as a float.
+    ;;;
+    ;;; Examples:
+    ;;; >> Math::max 1 2
+    ;;; 2
+    ;;; >> Math::max 2.5 2.25
+    ;;; 2.5
+    ;;; >> float? [Math::max 1 2]
+    ;;; 1
+    proc max {x y} {}
+}
