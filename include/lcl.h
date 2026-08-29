@@ -704,7 +704,7 @@ lcl_result lcl_ns_def(lcl_value *ns, const char *name, lcl_value *value);
  * As lcl_ns_def, but CONSUMES the caller's reference to `value` -- on
  * success and on failure alike. This is the one-liner for registering
  * freshly created procs: lcl_ns_def_take(ns, "open",
- * lcl_c_proc_new("io::open", c_open));
+ * lcl_c_proc_new("Io::open", c_open));
  */
 lcl_result lcl_ns_def_take(lcl_value *ns, const char *name, lcl_value *value);
 
@@ -753,7 +753,7 @@ lcl_result lcl_define_take(lcl_interp *interp, const char *name,
  * proc body therefore does not see interpreter-root bindings by bare
  * name -- proc bodies are closed over what they capture, not over the
  * global frame. To reach a root binding regardless of where you are
- * called from, use the `::`-rooted spelling: "::process::read".
+ * called from, use the `::`-rooted spelling: "::Process::read".
  */
 lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out);
 

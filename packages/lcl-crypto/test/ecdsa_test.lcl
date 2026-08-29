@@ -7,9 +7,9 @@ AwEHoUQDQgAEARnCR7Af/nXPFHsyfrLgS8FtjrYTLIcGp3diMwelG37z0DFXpyuD
 BJb7kzjgwMkuSw+00zlw027XYYfnarbz7Q==
 -----END EC PRIVATE KEY-----}
 
-puts "Testing crypto::sign_ecdsa..."
+puts "Testing Crypto::sign_ecdsa..."
 let message "Hello, HTTP Signatures!"
-let sig [crypto::sign_ecdsa $ec_key $message p256]
+let sig [Crypto::sign_ecdsa $ec_key $message p256]
 puts "ECDSA P-256 signature (hex): $sig"
 puts "Signature length: [String::length $sig] hex chars"
 

@@ -6,7 +6,7 @@
 #include <lcl.h>
 
 #define FILE_HANDLE_TYPE_TAG "file_handle_type_tag"
-#define IO_NS "io"
+#define IO_NS "Io"
 
 static char *read_file(const char *path) {
   FILE *f;
@@ -229,7 +229,7 @@ lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
   const char *path;
 
   if (argc != 1) {
-    lcl_set_error(interp, "io::read_file: expected 1 argument");
+    lcl_set_error(interp, "Io::read_file: expected 1 argument");
     return LCL_RC_ERR;
   }
 
@@ -241,7 +241,7 @@ lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (!contents) {
     char msg[433];
-    sprintf(msg, "io::read_file: could not read \"%.400s\"", path);
+    sprintf(msg, "Io::read_file: could not read \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
@@ -260,7 +260,7 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   FILE *f;
 
   if (argc != 2) {
-    lcl_set_error(interp, "io::write_file: expected 2 arguments");
+    lcl_set_error(interp, "Io::write_file: expected 2 arguments");
     return LCL_RC_ERR;
   }
 
@@ -278,7 +278,7 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (!f) {
     char msg[434];
-    sprintf(msg, "io::write_file: could not open \"%.400s\"", path);
+    sprintf(msg, "Io::write_file: could not open \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
@@ -286,7 +286,7 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   if (fwrite(contents, 1, len, f) != len) {
     char msg[434];
     fclose(f);
-    sprintf(msg, "io::write_file: short write to \"%.400s\"", path);
+    sprintf(msg, "Io::write_file: short write to \"%.400s\"", path);
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
@@ -377,7 +377,7 @@ lcl_return_code c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* io::remove path - remove file */
+/* Io::remove path - remove file */
 lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
                             lcl_value **out) {
   const char *path;
@@ -398,7 +398,7 @@ lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* io::rename old new - rename/move file or directory */
+/* Io::rename old new - rename/move file or directory */
 lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
                             lcl_value **out) {
   const char *old_path;
@@ -424,7 +424,7 @@ lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-/* io::copy src dst - copy file contents */
+/* Io::copy src dst - copy file contents */
 lcl_return_code c_io_copy(lcl_interp *interp, int argc, lcl_value **argv,
                           lcl_value **out) {
   const char *src_path;
@@ -478,25 +478,25 @@ void lcl_register_io(lcl_interp *interp) {
   lcl_define_take(interp, IO_NS, io_ns);
 
   lcl_ns_def_take(io_ns, "open_file",
-                  lcl_c_proc_new("io::open_file", c_io_open_file));
+                  lcl_c_proc_new("Io::open_file", c_io_open_file));
   lcl_ns_def_take(io_ns, "close_file",
-                  lcl_c_proc_new("io::close_file", c_io_close_file));
-  lcl_ns_def_take(io_ns, "eof?", lcl_c_proc_new("io::eof?", c_io_is_eof));
-  lcl_ns_def_take(io_ns, "fgets", lcl_c_proc_new("io::fgets", c_io_fgets));
-  lcl_ns_def_take(io_ns, "fputs", lcl_c_proc_new("io::fputs", c_io_fputs));
+                  lcl_c_proc_new("Io::close_file", c_io_close_file));
+  lcl_ns_def_take(io_ns, "eof?", lcl_c_proc_new("Io::eof?", c_io_is_eof));
+  lcl_ns_def_take(io_ns, "fgets", lcl_c_proc_new("Io::fgets", c_io_fgets));
+  lcl_ns_def_take(io_ns, "fputs", lcl_c_proc_new("Io::fputs", c_io_fputs));
 
   lcl_ns_def_take(io_ns, "read_file",
-                  lcl_c_proc_new("io::read_file", c_io_read_file));
+                  lcl_c_proc_new("Io::read_file", c_io_read_file));
   lcl_ns_def_take(io_ns, "write_file",
-                  lcl_c_proc_new("io::write_file", c_io_write_file));
-  lcl_ns_def_take(io_ns, "stdout", lcl_c_proc_new("io::stdout", c_io_stdout));
-  lcl_ns_def_take(io_ns, "stderr", lcl_c_proc_new("io::stderr", c_io_stderr));
-  lcl_ns_def_take(io_ns, "stdin", lcl_c_proc_new("io::stdin", c_io_stdin));
-  lcl_ns_def_take(io_ns, "flush", lcl_c_proc_new("io::flush", c_io_flush));
-  lcl_ns_def_take(io_ns, "getenv", lcl_c_proc_new("io::getenv", c_io_getenv));
+                  lcl_c_proc_new("Io::write_file", c_io_write_file));
+  lcl_ns_def_take(io_ns, "stdout", lcl_c_proc_new("Io::stdout", c_io_stdout));
+  lcl_ns_def_take(io_ns, "stderr", lcl_c_proc_new("Io::stderr", c_io_stderr));
+  lcl_ns_def_take(io_ns, "stdin", lcl_c_proc_new("Io::stdin", c_io_stdin));
+  lcl_ns_def_take(io_ns, "flush", lcl_c_proc_new("Io::flush", c_io_flush));
+  lcl_ns_def_take(io_ns, "getenv", lcl_c_proc_new("Io::getenv", c_io_getenv));
 
   /* File operations */
-  lcl_ns_def_take(io_ns, "remove", lcl_c_proc_new("io::remove", c_io_remove));
-  lcl_ns_def_take(io_ns, "rename", lcl_c_proc_new("io::rename", c_io_rename));
-  lcl_ns_def_take(io_ns, "copy", lcl_c_proc_new("io::copy", c_io_copy));
+  lcl_ns_def_take(io_ns, "remove", lcl_c_proc_new("Io::remove", c_io_remove));
+  lcl_ns_def_take(io_ns, "rename", lcl_c_proc_new("Io::rename", c_io_rename));
+  lcl_ns_def_take(io_ns, "copy", lcl_c_proc_new("Io::copy", c_io_copy));
 }

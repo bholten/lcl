@@ -10,8 +10,8 @@ extern "C" {
 /*
  * Register JSON commands with the interpreter.
  * Creates a "json" namespace with:
- *   json::encode value   - Convert LCL value to JSON string
- *   json::decode string  - Parse JSON string to LCL value
+ *   Json::encode value   - Convert LCL value to JSON string
+ *   Json::decode string  - Parse JSON string to LCL value
  */
 void lcl_register_json(lcl_interp *interp);
 

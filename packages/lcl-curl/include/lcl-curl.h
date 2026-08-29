@@ -11,15 +11,15 @@ extern "C" {
  * Register CURL bindings with the interpreter.
  *
  * This adds the "curl" namespace with the following commands:
- *   curl::new      - Create a new CURL context
- *   curl::init     - Initialize CURL globally
- *   curl::reset    - Reset a CURL context
- *   curl::set_url  - Set request URL
- *   curl::set_verb - Set HTTP method
- *   curl::set_header - Add HTTP header(s)
- *   curl::set_body - Set request body
- *   curl::perform  - Execute the request
- *   curl::set_write_callback - Set callback for response data
+ *   Curl::new      - Create a new CURL context
+ *   Curl::init     - Initialize CURL globally
+ *   Curl::reset    - Reset a CURL context
+ *   Curl::set_url  - Set request URL
+ *   Curl::set_verb - Set HTTP method
+ *   Curl::set_header - Add HTTP header(s)
+ *   Curl::set_body - Set request body
+ *   Curl::perform  - Execute the request
+ *   Curl::set_write_callback - Set callback for response data
  *   ... and many more options
  */
 void lcl_register_curl(lcl_interp *interp);

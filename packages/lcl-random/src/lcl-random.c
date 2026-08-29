@@ -1,6 +1,6 @@
 /* lcl-random: xoshiro128** pseudo-random streams as opaque handles.
  *
- * Not cryptographically secure. Use crypto::random_bytes for keys,
+ * Not cryptographically secure. Use Crypto::random_bytes for keys,
  * tokens, nonces, salts, or anything security-sensitive.
  *
  * Strict C89: there is no 32-bit integer type, so the generator runs
@@ -11,7 +11,7 @@
  * canonical uint32_t implementation.
  *
  * Seed mapping, int mapping and float construction are part of the
- * compatibility contract: `xoshiro::new 42` must yield the same
+ * compatibility contract: `Xoshiro::new 42` must yield the same
  * sequence in every future version. Details next to each function. */
 
 #include <float.h>
@@ -22,7 +22,7 @@
 
 #include <lcl.h>
 
-#define RANDOM_NS "xoshiro"
+#define RANDOM_NS "Xoshiro"
 #define XOSHIRO_TYPE "xoshiro128**"
 #define U32_MASK 0xffffffffUL
 
@@ -93,7 +93,7 @@ static lcl_return_code get_rng(lcl_interp *interp, const char *who,
     char msg[128];
 
     strcpy(msg, who);
-    strcat(msg, ": expected xoshiro stream (from xoshiro::new)");
+    strcat(msg, ": expected xoshiro stream (from Xoshiro::new)");
     lcl_set_error(interp, msg);
     return LCL_RC_ERR;
   }
@@ -134,14 +134,14 @@ static unsigned long uniform_below(struct xoshiro *r, unsigned long width) {
   }
 }
 
-/* xoshiro::new ?seed? -> stream */
+/* Xoshiro::new ?seed? -> stream */
 static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   struct xoshiro *r;
   u32 seed;
 
   if (argc > 1) {
-    lcl_set_error(interp, "xoshiro::new: expected 0 or 1 arguments");
+    lcl_set_error(interp, "Xoshiro::new: expected 0 or 1 arguments");
     return LCL_RC_ERR;
   }
 
@@ -149,7 +149,7 @@ static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
     long s;
 
     if (lcl_value_to_int(argv[0], &s) != LCL_OK) {
-      lcl_set_error(interp, "xoshiro::new: seed must be an integer");
+      lcl_set_error(interp, "Xoshiro::new: seed must be an integer");
       return LCL_RC_ERR;
     }
 
@@ -161,7 +161,7 @@ static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
   r = (struct xoshiro *)calloc(1, sizeof(*r));
 
   if (!r) {
-    lcl_set_error(interp, "xoshiro::new: out of memory");
+    lcl_set_error(interp, "Xoshiro::new: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -170,14 +170,14 @@ static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (!*out) {
     free(r);
-    lcl_set_error(interp, "xoshiro::new: out of memory");
+    lcl_set_error(interp, "Xoshiro::new: out of memory");
     return LCL_RC_ERR;
   }
 
   return LCL_RC_OK;
 }
 
-/* xoshiro::int stream lo hi -> integer in [lo, hi] (inclusive) */
+/* Xoshiro::int stream lo hi -> integer in [lo, hi] (inclusive) */
 static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   struct xoshiro *r;
@@ -187,22 +187,22 @@ static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
   unsigned long off;
 
   if (argc != 3) {
-    lcl_set_error(interp, "xoshiro::int: expected 3 arguments (stream lo hi)");
+    lcl_set_error(interp, "Xoshiro::int: expected 3 arguments (stream lo hi)");
     return LCL_RC_ERR;
   }
 
-  if (get_rng(interp, "xoshiro::int", argv[0], &r) != LCL_RC_OK) {
+  if (get_rng(interp, "Xoshiro::int", argv[0], &r) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_int(argv[1], &lo) != LCL_OK ||
       lcl_value_to_int(argv[2], &hi) != LCL_OK) {
-    lcl_set_error(interp, "xoshiro::int: lo and hi must be integers");
+    lcl_set_error(interp, "Xoshiro::int: lo and hi must be integers");
     return LCL_RC_ERR;
   }
 
   if (lo > hi) {
-    lcl_set_error(interp, "xoshiro::int: lo must be <= hi");
+    lcl_set_error(interp, "Xoshiro::int: lo must be <= hi");
     return LCL_RC_ERR;
   }
 
@@ -213,7 +213,7 @@ static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-/* xoshiro::float stream -> float in [0, 1) */
+/* Xoshiro::float stream -> float in [0, 1) */
 static lcl_return_code c_float(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   struct xoshiro *r;
@@ -222,11 +222,11 @@ static lcl_return_code c_float(lcl_interp *interp, int argc, lcl_value **argv,
   double x;
 
   if (argc != 1) {
-    lcl_set_error(interp, "xoshiro::float: expected 1 argument (stream)");
+    lcl_set_error(interp, "Xoshiro::float: expected 1 argument (stream)");
     return LCL_RC_ERR;
   }
 
-  if (get_rng(interp, "xoshiro::float", argv[0], &r) != LCL_RC_OK) {
+  if (get_rng(interp, "Xoshiro::float", argv[0], &r) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
@@ -243,7 +243,7 @@ static lcl_return_code c_float(lcl_interp *interp, int argc, lcl_value **argv,
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
 
-/* xoshiro::shuffle stream list -> new list, Fisher-Yates */
+/* Xoshiro::shuffle stream list -> new list, Fisher-Yates */
 static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
                                  lcl_value **argv, lcl_value **out) {
   struct xoshiro *r;
@@ -254,16 +254,16 @@ static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
 
   if (argc != 2) {
     lcl_set_error(interp,
-                  "xoshiro::shuffle: expected 2 arguments (stream list)");
+                  "Xoshiro::shuffle: expected 2 arguments (stream list)");
     return LCL_RC_ERR;
   }
 
-  if (get_rng(interp, "xoshiro::shuffle", argv[0], &r) != LCL_RC_OK) {
+  if (get_rng(interp, "Xoshiro::shuffle", argv[0], &r) != LCL_RC_OK) {
     return LCL_RC_ERR;
   }
 
   if (lcl_value_type_of(argv[1]) != LCL_LIST) {
-    lcl_set_error(interp, "xoshiro::shuffle: expected list");
+    lcl_set_error(interp, "Xoshiro::shuffle: expected list");
     return LCL_RC_ERR;
   }
 
@@ -271,7 +271,7 @@ static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
   elems = (lcl_value **)calloc(n ? n : 1, sizeof(*elems));
 
   if (!elems) {
-    lcl_set_error(interp, "xoshiro::shuffle: out of memory");
+    lcl_set_error(interp, "Xoshiro::shuffle: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -282,7 +282,7 @@ static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
       }
 
       free(elems);
-      lcl_set_error(interp, "xoshiro::shuffle: internal error reading list");
+      lcl_set_error(interp, "Xoshiro::shuffle: internal error reading list");
       return LCL_RC_ERR;
     }
   }
@@ -309,7 +309,7 @@ static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
   free(elems);
 
   if (!result) {
-    lcl_set_error(interp, "xoshiro::shuffle: out of memory");
+    lcl_set_error(interp, "Xoshiro::shuffle: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -323,9 +323,9 @@ void lcl_register_random(lcl_interp *interp) {
 
   lcl_define_take(interp, RANDOM_NS, ns);
 
-  lcl_ns_def_take(ns, "new", lcl_c_proc_new("xoshiro::new", c_new));
-  lcl_ns_def_take(ns, "int", lcl_c_proc_new("xoshiro::int", c_int));
-  lcl_ns_def_take(ns, "float", lcl_c_proc_new("xoshiro::float", c_float));
+  lcl_ns_def_take(ns, "new", lcl_c_proc_new("Xoshiro::new", c_new));
+  lcl_ns_def_take(ns, "int", lcl_c_proc_new("Xoshiro::int", c_int));
+  lcl_ns_def_take(ns, "float", lcl_c_proc_new("Xoshiro::float", c_float));
   lcl_ns_def_take(ns, "shuffle",
-                  lcl_c_proc_new("xoshiro::shuffle", c_shuffle));
+                  lcl_c_proc_new("Xoshiro::shuffle", c_shuffle));
 }

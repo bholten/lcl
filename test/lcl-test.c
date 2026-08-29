@@ -34,7 +34,6 @@ extern void lcl_set_call_hook(lcl_interp *interp,
                                          const char *, int, lcl_value **, int,
                                          void *),
                               void *userdata);
-extern void lcl_clear_error(lcl_interp *interp);
 
 /* ---------------------------------------------------------------------------
  * OOM injection (linked via -Wl,--wrap=calloc,--wrap=strndup).
@@ -905,7 +904,7 @@ static int test_issue15_to_string_null_contract(void) {
   lcl_ref_dec(v);
 
   /* (e) `lcl_string_new(NULL)` produces a valid empty string, not a
-   *     poison value. Regression for io::getenv-class bugs that pass
+   *     poison value. Regression for Io::getenv-class bugs that pass
    *     a possibly-NULL C string into the constructor. */
   v = lcl_string_new(NULL);
   ASSERT_TRUE(v != NULL);

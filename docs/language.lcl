@@ -1,0 +1,1276 @@
+;;; # The Lcl Language
+;;;
+;;; Syntax, data types, scoping, control flow, namespaces, and metaprogramming, with examples the test suite executes.
+;;;
+;;; This is the language manual. Every example written as `>>` below is
+;;; run by the test suite: the line after a `>>` command is the `repr` of
+;;; its result (strings print double-quoted, lists as `(...)`, dicts as
+;;; `#{...}`), and `!!` names an error the command must raise. Fenced
+;;; blocks are illustrative only. The [overview](../index.html) has the
+;;; short "coming from Tcl" list; [Embedding](embedding.html) covers the C
+;;; API.
+;;;
+;;; ## Language Features
+;;;
+;;; ### Data Types
+;;;
+;;; Strings are the fundamental type. Bare numeric literals are typed at
+;;; compile time; quoting or bracing a number means "this is text".
+;;;
+;;; Examples:
+;;; >> let s "hello world"
+;;; >> type $s
+;;; "string"
+;;; >> type 42
+;;; "int"
+;;; >> type 3.14
+;;; "float"
+;;; >> type "42"
+;;; "string"
+;;; >> type 007
+;;; "string"
+;;;
+;;; `007` is a string because it is a non-canonical spelling (see
+;;; Numeric Literals under Syntax Reference). Numeric contexts still
+;;; accept numeric *text* -- textual data entering the numeric domain --
+;;; without changing the value's own type:
+;;;
+;;; Examples:
+;;; >> + 1 "007"
+;;; 8
+;;; >> type "007"
+;;; "string"
+;;;
+;;; Lists have a constructor and a literal syntax; `()` is the empty
+;;; list. `{a b c}` is *not* a list -- it is a five-character string.
+;;;
+;;; Examples:
+;;; >> let lst [list a b c d e]
+;;; >> (a b c d e)
+;;; ("a" "b" "c" "d" "e")
+;;; >> ()
+;;; ()
+;;; >> len $lst
+;;; 5
+;;; >> get $lst 2
+;;; "c"
+;;; >> len {a b c}
+;;; 5
+;;;
+;;; Dictionaries likewise: `dict` or the `#{...}` literal, `#{}` for the
+;;; empty dict.
+;;;
+;;; Examples:
+;;; >> let d [dict name "Alice" age 30]
+;;; >> #{name "Alice" age 30}
+;;; #{"name" "Alice" "age" 30}
+;;; >> #{}
+;;; #{}
+;;; >> get $d name
+;;; "Alice"
+;;; >> has? $d age
+;;; 1
+;;;
+;;; ### Generic Operations
+;;;
+;;; These operations work across multiple types. `len` is the
+;;; length/size of a list, dict, string, or namespace (its number of
+;;; bindings); `get` accesses by index, key, or binding name, with an
+;;; optional fallback when the key is absent.
+;;;
+;;; Examples:
+;;; >> len (1 2 3)
+;;; 3
+;;; >> len #{a 1 b 2}
+;;; 2
+;;; >> len "hello"
+;;; 5
+;;; >> get (a b c) 0
+;;; "a"
+;;; >> get #{k v} k
+;;; "v"
+;;; >> get "hello" 1
+;;; "e"
+;;; >> get #{k v} missing fallback
+;;; "fallback"
+;;;
+;;; `put` and `del` are functional updates: they return a new value and
+;;; leave the original alone. On a dict, `del` of an absent key is a
+;;; no-op; on a list, an out-of-range index is an error.
+;;;
+;;; Examples:
+;;; >> put (a b c) 0 replaced
+;;; ("replaced" "b" "c")
+;;; >> put #{a 1} newkey value
+;;; #{"a" 1 "newkey" "value"}
+;;; >> del #{a 1 b 2} a
+;;; #{"b" 2}
+;;; >> del (a b c) 0
+;;; ("b" "c")
+;;; >> del (a b c) 9
+;;; !! out of range
+;;;
+;;; `put!` and `del!` make the same updates in place, on a `var`. They
+;;; are special forms: the first word is the variable's *name*, not its
+;;; value. They are O(1)-ish instead of copying the container, so use
+;;; them when accumulating.
+;;;
+;;; Examples:
+;;; >> var gd #{}
+;;; >> put! gd k v
+;;; #{"k" "v"}
+;;; >> del! gd k
+;;; #{}
+;;; >> var gl (1 2 3)
+;;; >> put! gl 0 x
+;;; ("x" 2 3)
+;;; >> del! gl 2
+;;; ("x" 2)
+;;;
+;;; `has?` is a membership test (deep equality for list elements,
+;;; key presence for dicts and namespaces, substring for strings) and
+;;; `empty?` checks for emptiness.
+;;;
+;;; Examples:
+;;; >> has? (a b c) b
+;;; 1
+;;; >> has? #{a 1} a
+;;; 1
+;;; >> has? "hello" "ell"
+;;; 1
+;;; >> empty? ()
+;;; 1
+;;; >> empty? (1)
+;;; 0
+;;;
+;;; Values are copy-on-write, so `set! x [List::push $x v]` copies the
+;;; list on every iteration -- the variable still owns the old list while
+;;; [List::push] runs, and a value-returning operation cannot mutate what
+;;; someone else owns. The `!` forms ([List::push!], [List::pop!], `put!`,
+;;; `del!`) resolve the name to its `var` cell and update the container in
+;;; place when the cell is its sole owner (cloning once if it was
+;;; aliased). The result is exactly what the copying form would have
+;;; produced; only the cost differs. Like `set!`, they reject a value that
+;;; would make the cell reference itself, and they require a `var`:
+;;;
+;;; Examples:
+;;; >> let frozen (1)
+;;; >> List::push! frozen 2
+;;; !! expected cell
+;;;
+;;; ### Type Predicates
+;;;
+;;; Examples:
+;;; >> list? (1 2)
+;;; 1
+;;; >> dict? #{}
+;;; 1
+;;; >> string? "hi"
+;;; 1
+;;; >> number? 42
+;;; 1
+;;; >> proc? [lambda {} { 1 }]
+;;; 1
+;;; >> cell? [ref 0]
+;;; 1
+;;;
+;;; `number?` asks "numerically interpretable?" (a number, or numeric
+;;; text); `int?` and `float?` inspect the tag itself.
+;;;
+;;; Examples:
+;;; >> number? "007"
+;;; 1
+;;; >> int? 42
+;;; 1
+;;; >> int? "42"
+;;; 0
+;;; >> float? 3.14
+;;; 1
+;;;
+;;; ### Namespaced Functions
+;;;
+;;; Type-specific operations are organized into namespaces: [List],
+;;; [Dict], and [String] (each has its own reference page).
+;;;
+;;; Examples:
+;;; >> List::push (a b) c
+;;; ("a" "b" "c")
+;;; >> List::pop (a b c)
+;;; ("a" "b")
+;;; >> var acc ()
+;;; >> List::push! acc newitem
+;;; ("newitem")
+;;; >> List::pop! acc
+;;; "newitem"
+;;; >> $acc
+;;; ()
+;;; >> List::reverse (a b c)
+;;; ("c" "b" "a")
+;;; >> List::slice (a b c d e) 1 3
+;;; ("b" "c")
+;;; >> List::concat (a b) (c d)
+;;; ("a" "b" "c" "d")
+;;;
+;;; [List::push] returns a new list; [List::push!] appends in place to
+;;; the `var` and [List::pop!] removes the last element in place and
+;;; returns it.
+;;;
+;;; Examples:
+;;; >> Dict::keys #{a 1 b 2}
+;;; ("b" "a")
+;;; >> Dict::values #{a 1 b 2}
+;;; (2 1)
+;;; >> Dict::merge #{a 1} #{b 2 a 3}
+;;; #{"b" 2 "a" 3}
+;;;
+;;; Dict order is not insertion order; keys and values are returned in
+;;; the same (internal) order as each other.
+;;;
+;;; Examples:
+;;; >> String::upper "hello"
+;;; "HELLO"
+;;; >> String::lower "HELLO"
+;;; "hello"
+;;; >> String::find "hello" "ll"
+;;; 2
+;;; >> String::replace "hello" "l" "L"
+;;; "heLLo"
+;;; >> String::split "a,b,c" ","
+;;; ("a" "b" "c")
+;;; >> String::join (a b c) "-"
+;;; "a-b-c"
+;;;
+;;; ### Reader Reflection (Lex)
+;;;
+;;; `Lex::commands` reads text with the language's own reader without
+;;; evaluating any of it, and returns the lexical structure: a list of
+;;; `#{line N words (...)}` records, one per statement. Each word record
+;;; carries `text` (the decoded literal value: escapes processed,
+;;; quotes/braces stripped), `dynamic` (1 when evaluation would compute
+;;; part of the word -- a `$var` or `[subcommand]` piece, including `()`
+;;; and `#{}` literals), the `quoted`/`braced`/`expand` flags, and `span`
+;;; -- the word's half-open `(start end)` byte range in the input.
+;;;
+;;; Examples:
+;;; >> let lr [Lex::commands {ls -lsa}]
+;;; >> let lhead [get [get [get $lr 0] words] 0]
+;;; >> get $lhead text
+;;; "ls"
+;;; >> get $lhead dynamic
+;;; 0
+;;; >> get $lhead span
+;;; (0 2)
+;;; >> String::range {ls -lsa} @[get $lhead span]
+;;; "ls"
+;;;
+;;; Spans let tooling recover any word's original bytes verbatim
+;;; (quoting, escapes, and `@` intact) with [String::range], instead of
+;;; re-quoting decoded text; quoting style is semantic in Lcl (`while`
+;;; dispatches on braced-ness, bare identifiers on quoting/shape), so
+;;; slicing is the safe way to re-emit source. Dynamic words have
+;;; `text ""` plus a `pieces` list (`#{kind lit text ...}` /
+;;; `#{kind var name ...}` / `#{kind sub}`) describing why. Malformed
+;;; input errors with the compiler's message.
+;;;
+;;; Examples:
+;;; >> let lw [get [get [get [Lex::commands {puts $x}] 0] words] 1]
+;;; >> get $lw dynamic
+;;; 1
+;;; >> get $lw pieces
+;;; (#{"kind" "var" "name" "x"})
+;;; >> Lex::commands {puts "unterminated}
+;;; !! unmatched
+;;;
+;;; This exists so embedders can classify interactive text -- Lcl call,
+;;; external command, shell handoff -- against the real grammar instead
+;;; of a lookalike parser.
+;;;
+;;; ### Proc Reflection (Proc)
+;;;
+;;; [Proc::name], [Proc::params], [Proc::body] and [Proc::origin] are
+;;; Lcl's version of reflection. Optional parameters are written
+;;; `(name default)` and a `*rest` parameter collects the remaining
+;;; arguments.
+;;;
+;;; Examples:
+;;; >> proc padd {a b (c 0) *rest} { + $a $b $c }
+;;; >> Proc::params padd
+;;; ("a" "b" "?c" "*rest")
+;;; >> Proc::name padd
+;;; "padd"
+;;; >> Proc::body padd
+;;; " + \$a \$b \$c "
+;;; >> Proc::origin {+}
+;;; #{}
+;;;
+;;; `Proc::origin` of an Lcl proc is `#{file F line N}`; a C proc has
+;;; none. `proc`, `lambda` and `macro` return the value they build, and a
+;;; proc value prints as `<proc add>`, `<lambda>` or `<macro m>` -- a
+;;; label, not re-parseable code. A REPL can therefore hand a fresh
+;;; definition straight to the next command:
+;;;
+;;; Examples:
+;;; >> proc pfix {x} { * $x $x }
+;;; <proc pfix>
+;;; >> lambda {x} { + $x 1 }
+;;; <lambda>
+;;; >> List::map (1 2 3) [proc psq {x} { * $x $x }]
+;;; (1 4 9)
+;;;
+;;; ### Diagnostics
+;;;
+;;; Three tools for finding out where the time and the copies go.
+;;; `Interp::stats` returns process-wide counters (always on, one
+;;; increment each): `values_live` is the number of Lcl values currently
+;;; allocated, `list_clones` and `dict_clones` count copy-on-write copies
+;;; of shared containers.
+;;;
+;;; Examples:
+;;; >> Dict::keys [Interp::stats]
+;;; ("list_clones" "values_live" "dict_clones" "values_freed" "values_allocated")
+;;;
+;;; A `list_clones` count that grows with your data is an accumulation
+;;; loop that should use `List::push!`/`put!`; `values_live` climbing
+;;; between two identical frames is a leak.
+;;;
+;;; `Time::profile` (package `lcl-time`) reports per-proc calls and
+;;; inclusive/exclusive time:
+;;;
+;;; ```tcl
+;;; let rows [Time::profile { run_frame }]
+;;; puts [Time::profile_format $rows]
+;;; ;;      calls      incl_us      excl_us  name
+;;; ;;       1492        61230        61230  update_enemy
+;;; ;;          1        66310         2100  run_frame
+;;; Time::profile_start!            ;; or bracket a region from outside
+;;; step
+;;; let rows [Time::profile_stop!]
+;;; ```
+;;;
+;;; Exclusive time is inclusive time minus the time spent in user procs
+;;; called from the body, so C builtins land in the proc that called
+;;; them; tail self-calls count as one call.
+;;;
+;;; Every proc call can also be traced from the command line:
+;;;
+;;; ```sh
+;;; LCL_TRACE=1 lcl game.lcl            # every user proc, entry with args + exit
+;;; LCL_TRACE=Vec::norm,update lcl ...  # only these names
+;;; ```
+;;;
+;;; Both are built on `lcl_set_call_hook` (see Embedding), so a host can
+;;; install its own profiler or tracer.
+;;;
+;;; ### Benchmarks (Bench)
+;;;
+;;; The optional `Bench` library (`lib/bench`, `-DLCL_BUILD_BENCH_LIB=ON`,
+;;; needs `lcl-time`) is the Test library's shape applied to timing:
+;;;
+;;; ```tcl
+;;; Bench::suite "list" {
+;;;     Bench::setup { let items [List::range 0 1000] }          ;; once per case, untimed
+;;;     Bench::case "push copying" { var out (); foreach x $items { set! out [List::push $out $x] } }
+;;;     Bench::case "push!"        { var out (); foreach x $items { List::push! out $x } }
+;;;     Bench::expect_faster "push!" "push copying" 5           ;; checked after measuring
+;;; }
+;;; exit [Bench::run]      ;; or Bench::run #{filter push min_ms 200 batches 5 profile 1 save bench/baseline.lcl}
+;;; ```
+;;;
+;;; Each body is compiled once and run in batches through `repeat`, in a
+;;; fresh frame that closes over the setup bindings; batch sizes double
+;;; until a batch takes `min_ms`. A row reports the median and minimum
+;;; ns/iteration over the batches, the copy-on-write clones per iteration
+;;; and the live values a batch leaves behind (both from `Interp::stats`),
+;;; and the change against a baseline loaded with `Bench::baseline`:
+;;;
+;;; ```
+;;; Bench: list
+;;;   push copying x1000       1543.2 us  min 1520.1 us  clones/iter   1000.0  live      0   +2.1% vs baseline
+;;;   push! x1000               101.7 us  min   99.8 us  clones/iter      0.0  live      0  -98.1% vs baseline
+;;;   ok: push! x1000 (101.7 us) vs push copying x1000 (1543.2 us)
+;;; ```
+;;;
+;;; The repo's workloads live in `bench/` (`lcl bench/run.lcl --baseline
+;;; bench/baseline.lcl`, `--smoke` for a quick pass, `--profile` for a
+;;; `Time::profile` table under each row, `--save file` to record a new
+;;; baseline); `bench/BASELINE.md` keeps the history. `ctest` runs the
+;;; workloads once in smoke mode so they cannot bit-rot; only the
+;;; copy-vs-in-place ratios are asserted, never absolute times.
+;;;
+;;; ### Documentation (Doc)
+;;;
+;;; The optional `Doc` library (`lib/doc`, `-DLCL_BUILD_DOC_LIB=ON`) is
+;;; documentation tooling written in pure Lcl on top of `Lex::commands`:
+;;; it extracts doc comments with the language's own reader, so nothing
+;;; that merely *looks* like a doc comment inside braced data ever leaks
+;;; into the docs. This manual is built with it.
+;;;
+;;; A doc comment is a run of `;;;` lines. A run immediately above a
+;;; `proc`, `macro`, `namespace`, `let`, or `var` documents that
+;;; definition; a run separated by a blank line is module documentation.
+;;; Names starting with `_` are private and skipped. There are no
+;;; `@param`-style tags -- signatures come from the source's own word
+;;; records. The first line is the summary, the rest is markdown, and
+;;; `Examples:` sections are executable:
+;;;
+;;; ```tcl
+;;; ;;; Squares a number.
+;;; ;;;
+;;; ;;; Examples:
+;;; ;;; >> M::sq 7
+;;; ;;; 49
+;;; ;;; >> M::sq many
+;;; ;;; !! expected number
+;;; proc sq {x} { * $x $x }
+;;; ```
+;;;
+;;; Each `>>` line is a command; the line after it is the expected `repr`
+;;; of its result (so string results are written quoted: `"hi"`, not
+;;; `hi` -- examples stay honest about list-vs-string). `!!` expects an
+;;; error containing the given text; no expectation just checks the
+;;; command runs. Examples within one doc block share a scope, so a
+;;; `>> let x ...` line can feed later lines.
+;;;
+;;; ```tcl
+;;; let m [Doc::extract $src]           ;; source text -> doc model
+;;; puts [Doc::markdown $m "mymod"]     ;; doc model -> markdown
+;;; Doc::report [Doc::doctest $m]       ;; run all Examples, print failures
+;;; ```
+;;;
+;;; [Doc::extract_file] / [Doc::markdown_file] / [Doc::doctest_file] are
+;;; file-reading variants (they need the `lcl-io` package). `Doc.lcl`
+;;; documents itself with its own format, and its test suite runs its own
+;;; doctests.
+;;;
+;;; Docs also attach to live symbols, for `help` in a REPL or an editor:
+;;;
+;;; ```tcl
+;;; puts [Doc::describe M::sq]          ;; signature, origin, doc text
+;;; Doc::register_file docs/String.lcl  ;; companion docs for C procs...
+;;; puts [Doc::describe String::length] ;; ...now describe finds them
+;;; Doc::search "square"                ;; entries matching name or text
+;;; ```
+;;;
+;;; [Doc::lookup] matches an Lcl proc by its `Proc::origin` file and line
+;;; (reading the file on first use) and anything else by qualified name
+;;; against registered sources; [Doc::register] indexes source the host
+;;; owns, such as an editor buffer, and `eval_at` gives code evaluated
+;;; from that buffer the matching origin.
+;;;
+;;; ### Control Flow
+;;;
+;;; `if` takes a *value* (not a block), Scheme-style: the condition is
+;;; `[...]`, not `{...}` (a braced condition is a non-empty string, i.e.
+;;; always true). Unlike Tcl there is no `elseif`/`elsif`; nest `if`
+;;; instead. The branches are bodies, so a bare word inside one is a
+;;; command, not data -- quote data.
+;;;
+;;; Examples:
+;;; >> if [< 1 2] { "yes" } else { "no" }
+;;; "yes"
+;;; >> let cx -4
+;;; >> if [< $cx 0] { "negative" } else { if [== $cx 0] { "zero" } else { "positive" } }
+;;; "negative"
+;;; >> if 0 { red } else { blue }
+;;; !! unknown command: blue
+;;;
+;;; `repeat` runs a body n times (compiled once; `break`/`continue`/
+;;; `return` work as in `while`; the last body value is returned).
+;;;
+;;; Examples:
+;;; >> var hits 0
+;;; >> repeat 3 { set! hits [+ $hits 1] }
+;;; 3
+;;;
+;;; `cond` is a multi-branch conditional (like Scheme/Lisp): it
+;;; evaluates conditions in order and returns the first truthy branch's
+;;; value. `else` is the default case; without one, no match is an
+;;; error.
+;;;
+;;; Examples:
+;;; >> let cv 5
+;;; >> cond [< $cv 0] {negative} [== $cv 0] {zero} else {positive}
+;;; "positive"
+;;; >> cond [< $cv 0] {negative}
+;;; !! no matching clause
+;;;
+;;; `case` is value dispatch (like switch/match): it compares a value
+;;; against keys and returns the matching expression. Keys are
+;;; evaluated, so `$variables` work.
+;;;
+;;; Examples:
+;;; >> let op "sub"
+;;; >> case $op {add} [+ 5 3] {sub} [- 5 3] {mul} [* 5 3] else {unknown op}
+;;; 2
+;;; >> case "pow" {add} [+ 5 3] else {unknown op}
+;;; "unknown op"
+;;;
+;;; `while` re-evaluates a braced condition each iteration; `for` takes
+;;; init, condition, step and body.
+;;;
+;;; Examples:
+;;; >> var wi 5
+;;; >> while {$wi} { set! wi [- $wi 1] }
+;;; 0
+;;; >> var fsum 0
+;;; >> for {var j 10} {$j} {set! j [- $j 1]} { set! fsum [+ $fsum $j] }
+;;; >> $fsum
+;;; 55
+;;;
+;;; `foreach` iterates values, never text: a list's elements, a dict's
+;;; `(key value)` pairs, or a string's characters. `foreach x {a b c}`
+;;; is an error -- write `(a b c)`.
+;;;
+;;; Examples:
+;;; >> var seen ()
+;;; >> foreach item (a b c) { List::push! seen $item }
+;;; >> $seen
+;;; ("a" "b" "c")
+;;; >> var pairs ()
+;;; >> foreach kv #{a 1 b 2} { List::push! pairs "[get $kv 0]=[get $kv 1]" }
+;;; >> $pairs
+;;; ("b=2" "a=1")
+;;; >> var chars ()
+;;; >> foreach ch "abc" { List::push! chars $ch }
+;;; >> $chars
+;;; ("a" "b" "c")
+;;; >> foreach x {a b c} { $x }
+;;; !! is text, not a list
+;;;
+;;; `break` and `continue` work as expected:
+;;;
+;;; Examples:
+;;; >> var kept ()
+;;; >> foreach x (1 2 3 4 5) { if [== $x 3] { continue }; if [== $x 5] { break }; List::push! kept $x }
+;;; >> $kept
+;;; (1 2 4)
+;;;
+;;; ### Threading Operators (Clojure-style)
+;;;
+;;; Thread a value through a series of operations. `->` inserts the
+;;; value as the *first* argument of each step, `->>` as the *last*.
+;;;
+;;; Examples:
+;;; >> -> #{key "abc"} {get key} {String::upper}
+;;; "ABC"
+;;; >> ->> 3 {- 10}
+;;; 7
+;;; >> -> #{a 1 b 2 c 3} {put d 4} {del a}
+;;; #{"b" 2 "c" 3 "d" 4}
+;;;
+;;; The first is `String::upper [get #{key "abc"} key]`; the second is
+;;; `- 10 3`. Steps can be lambdas held in variables or written inline:
+;;;
+;;; Examples:
+;;; >> let inc [lambda {x} { + $x 1 }]
+;;; >> -> 10 {$inc} {$inc}
+;;; 12
+;;; >> -> 10 {[lambda {x} { + $x 100 }]}
+;;; 110
+;;;
+;;; ### Namespaces
+;;;
+;;; Lcl namespaces work **very differently from Tcl**. In Lcl, namespaces
+;;; are **first-class module values** created with a builder pattern.
+;;; This is closer to ML modules or Scheme libraries than Tcl namespaces.
+;;; All definitions inside the block use *unqualified* names; members
+;;; are accessed with `::`. Qualified variable substitutions are always
+;;; braced: `${geom::pi}`, never `$geom::pi` (command heads like
+;;; `geom::double` need no braces -- they are already whole words).
+;;;
+;;; Examples:
+;;; >> namespace geom {
+;;; >>     let pi 3.14159
+;;; >>     proc double {x} { + $x $x }
+;;; >>     var counter 0
+;;; >>     proc increment {} { set! counter [+ $counter 1]; $counter }
+;;; >> }
+;;; <namespace geom>
+;;; >> ${geom::pi}
+;;; 3.14159
+;;; >> geom::double 21
+;;; 42
+;;; >> geom::increment
+;;; 1
+;;; >> geom::increment
+;;; 2
+;;; >> len $geom
+;;; 4
+;;; >> get $geom pi
+;;; 3.14159
+;;;
+;;; **Key differences from Tcl:**
+;;;
+;;; 1. **`namespace eval` does not exist.** Namespaces are values and
+;;;    more like modules, not evaluation blocks that change scope. The
+;;;    named form desugars to a `let` of an anonymous namespace:
+;;;
+;;; ```tcl
+;;; namespace foo {
+;;;     proc bar {} { ... }
+;;; }
+;;;
+;;; ;; This desugars to:
+;;; let foo [namespace {
+;;;     proc bar {} { ... }
+;;; }]
+;;; ```
+;;;
+;;; 2. **No qualified definitions outside `namespace`.** You cannot
+;;;    write `proc geom::double {x} {...}` at the top level; it is a
+;;;    hard error. Lcl has lexical scoping, and qualified definitions
+;;;    outside `namespace` bring up all kinds of unsound lexical scope
+;;;    issues.
+;;;
+;;; Examples:
+;;; >> proc geom::triple {x} { * $x 3 }
+;;; !! qualified name not allowed here
+;;;
+;;; 3. **Re-entering a namespace extends it.** Calling `namespace` on an
+;;;    existing namespace gives access to its bindings and allows adding
+;;;    new ones.
+;;;
+;;; Examples:
+;;; >> namespace utils { let x 1 }
+;;; >> namespace utils { let y [+ $x 1] }
+;;; >> "${utils::x} ${utils::y}"
+;;; "1 2"
+;;;
+;;; 4. **Nested namespaces are compositional.** A nested `namespace`
+;;;    creates a binding in the parent.
+;;;
+;;; Examples:
+;;; >> namespace outer {
+;;; >>     let x 1
+;;; >>     namespace inner {
+;;; >>         let y 2
+;;; >>         proc greet {} { return "hello" }
+;;; >>     }
+;;; >> }
+;;; >> ${outer::inner::y}
+;;; 2
+;;; >> outer::inner::greet
+;;; "hello"
+;;;
+;;; 5. **Nested paths as shorthand.** Deep hierarchies can be created
+;;;    directly.
+;;;
+;;; Examples:
+;;; >> namespace a::b::c { let deep 42 }
+;;; >> ${a::b::c::deep}
+;;; 42
+;;;
+;;; 6. **Closures capture namespace variables.** Procs defined in a
+;;;    namespace capture cells for `set!`.
+;;;
+;;; Examples:
+;;; >> namespace counter {
+;;; >>     var n 0
+;;; >>     proc inc {} { set! n [+ $n 1]; $n }
+;;; >>     proc dec {} { set! n [- $n 1]; $n }
+;;; >> }
+;;; >> counter::inc
+;;; 1
+;;; >> counter::inc
+;;; 2
+;;; >> counter::dec
+;;; 1
+;;;
+;;; 7. **Bare namespace qualification in variable substitution does not
+;;;    work.** This is surprising to Tcl'ers: `$foo::bar` is a compile
+;;;    error, `${foo::bar}` works. For a plain variable both `$baz` and
+;;;    `${baz}` work.
+;;;
+;;; Examples:
+;;; >> namespace foo { let bar 42 }
+;;; >> $foo::bar
+;;; !! qualified substitutions require braces
+;;; >> ${foo::bar}
+;;; 42
+;;; >> let baz 777
+;;; >> ${baz}
+;;; 777
+;;;
+;;; This was done because it significantly reduces the complexity of the
+;;; lexer and avoids issues with variable substitution when
+;;; interoperating with shells.
+;;;
+;;; ### Import
+;;;
+;;; The `import` command copies bindings from a namespace into the
+;;; current scope, allowing you to use them without qualification --
+;;; all of them, or a named subset.
+;;;
+;;; Examples:
+;;; >> namespace circle { let tau 6.28318; proc square {x} { * $x $x } }
+;;; >> import circle
+;;; >> $tau
+;;; 6.28318
+;;; >> square 5
+;;; 25
+;;; >> namespace abc { let ia 1; let ib 2; let ic 3 }
+;;; >> import abc ia ic
+;;; >> $ia
+;;; 1
+;;; >> $ic
+;;; 3
+;;; >> $ib
+;;; !! undefined variable
+;;;
+;;; **Key behaviors:**
+;;;
+;;; 1. **Shared mutation.** Imported cells (mutable bindings) share state
+;;;    with the original.
+;;;
+;;; Examples:
+;;; >> namespace tally { var n 0; proc incr {} { set! n [+ $n 1] } }
+;;; >> import tally n incr
+;;; >> incr
+;;; 1
+;;; >> $n
+;;; 1
+;;; >> ${tally::n}
+;;; 1
+;;;
+;;; 2. **Conflict detection.** Import errors if a name already exists in
+;;;    the current scope.
+;;;
+;;; Examples:
+;;; >> let taken 1
+;;; >> namespace ns { let taken 99 }
+;;; >> import ns taken
+;;; !! already exists in current scope
+;;;
+;;; 3. **Works with nested namespaces**, using qualified paths.
+;;;
+;;; Examples:
+;;; >> namespace outer2 { namespace inner { let deep 42 } }
+;;; >> import outer2::inner deep
+;;; >> $deep
+;;; 42
+;;;
+;;; 4. **Works inside namespace builders**, to import bindings while
+;;;    defining a namespace.
+;;;
+;;; Examples:
+;;; >> namespace helpers { proc helper {} { 42 } }
+;;; >> namespace app { import helpers helper; proc run {} { helper } }
+;;; >> app::run
+;;; 42
+;;;
+;;; ### Dispatch and `apply`
+;;;
+;;; Lcl's dispatch rule is a deliberate departure from Tcl that is worth
+;;; calling out explicitly. Tcl users in particular should read this
+;;; section before being surprised by the behavior.
+;;;
+;;; **The rule:** A one-word command (a subcommand `[word]` or a
+;;; standalone statement) **dispatches** only when its sole word is a
+;;; **bare identifier** -- a name like `foo` with no `$`, no `[...]`, no
+;;; braces, no quotes, no special syntax. Every other form -- `$var`,
+;;; `[expr]`, `{lit}`, `(list)`, `#{dict}`, literal numbers, multi-piece
+;;; concatenation -- is a **value form**, and yields its value when used
+;;; as a one-word command. No command lookup is attempted.
+;;;
+;;; Examples:
+;;; >> let val "GET"
+;;; >> [$val]
+;;; "GET"
+;;; >> let clo [lambda {} { 42 }]
+;;; >> proc? [$clo]
+;;; 1
+;;; >> [42]
+;;; 42
+;;; >> [{hello world}]
+;;; "hello world"
+;;;
+;;; Bare identifiers dispatch, and an unknown bare identifier is an
+;;; error, never a silent fallback to its own text. Bare words meant as
+;;; data must be value forms -- quoted or braced.
+;;;
+;;; Examples:
+;;; >> proc GET {} { return "called" }
+;;; >> [GET]
+;;; "called"
+;;; >> [nosuchcmd]
+;;; !! unknown command: nosuchcmd
+;;; >> if 1 { "red" } else { "blue" }
+;;; "red"
+;;; >> if 1 { red } else { blue }
+;;; !! unknown command: red
+;;;
+;;; To dispatch a value form (a closure held in a variable, or a command
+;;; name stored as a string), use `apply`. The `@` operator spreads a
+;;; list as arguments.
+;;;
+;;; Examples:
+;;; >> apply $clo
+;;; 42
+;;; >> apply "GET"
+;;; "called"
+;;; >> apply {+} 1 2 3
+;;; 6
+;;; >> proc sum3 {a b c} { + $a $b $c }
+;;; >> let sargs (10 20 30)
+;;; >> apply $sum3 @$sargs
+;;; 60
+;;;
+;;; **Why this design?**
+;;;
+;;; Tcl's one-word dispatch rule is *runtime-decided*: at the head of a
+;;; one-word program, Tcl evaluates the word, then looks the result up as
+;;; a command. If the value's string form happens to match a registered
+;;; command, Tcl dispatches. This is convenient -- `eval $cmd` works for
+;;; stored command names -- but it leaks. Anywhere a value's string form
+;;; might coincide with a proc name (cached values, macro template
+;;; substitutions, anaphoric conditions), Tcl will silently dispatch
+;;; instead of returning the value. The same source line can mean two
+;;; different things depending on data flowing through it.
+;;;
+;;; Lcl makes the dispatch decision at **parse time**. The shape of the
+;;; source determines whether a one-word command dispatches; the data
+;;; flowing through it doesn't. A `$var` is always a variable lookup,
+;;; never a call. An `[expr]` always yields whatever `expr` returned. The
+;;; Tcl idiom of dispatching a stored name survives via `eval $cmd` --
+;;; `eval` compiles `$cmd`'s value as source, and a one-word source like
+;;; `GET` is a bare identifier that dispatches. Use `apply` when you want
+;;; value-dispatch instead.
+;;;
+;;; **`apply` vs `eval`** -- these are complementary, not overlapping:
+;;;
+;;; - `eval str` is *source-evaluation*: compile `str` as Lcl source and run it.
+;;; - `apply value args…` is *value-dispatch*: take a callable value and call it.
+;;;
+;;; `apply` resolves:
+;;;
+;;; - a proc or lambda -- call directly with the args;
+;;; - a normal C proc -- call directly;
+;;; - a special form -- error ("cannot apply special form"; specials
+;;;   want raw unevaluated words, which `apply` doesn't carry);
+;;; - a macro -- error ("cannot apply macro"; use `macroexpand` + `eval`
+;;;   for programmatic macro use);
+;;; - a string -- look it up as a command name and recurse;
+;;; - anything else -- error.
+;;;
+;;; Examples:
+;;; >> eval "GET"
+;;; "called"
+;;; >> apply {if} 1 {2}
+;;; !! cannot apply special form
+;;; >> macro twice {x} { quasiquote { * 2 ,$x } }
+;;; >> apply $twice 21
+;;; !! cannot apply macro
+;;; >> macroexpand twice 21
+;;; " * 2 21 "
+;;; >> eval [macroexpand twice 21]
+;;; 42
+;;; >> apply 42
+;;; !! expected callable
+;;;
+;;; **Tcl-to-Lcl migration cheat sheet:**
+;;;
+;;; | Tcl                 | Lcl                |
+;;; |---------------------|--------------------|
+;;; | `eval $cmd`         | `apply $cmd` (or `eval $cmd` if `$cmd` is source text) |
+;;; | `[$closure]`        | `[apply $closure]` |
+;;; | `[[expr]]`          | `[apply [expr]]`   |
+;;; | `$closure $a $b`    | `apply $closure $a $b` |
+;;; | `apply $fn $args` (list-splat) | `apply $fn @$args` (`@` spreads the list) |
+;;;
+;;; ### Eval and Subst
+;;;
+;;; `eval` executes a string as code in the current scope; `subst`
+;;; substitutes variables and commands in a string. `eval_at` is `eval`
+;;; with a file name (and optional starting line) for error messages and
+;;; `Proc::origin`, for hosts evaluating editor buffers.
+;;;
+;;; Examples:
+;;; >> eval {+ 1 2}
+;;; 3
+;;; >> let ecode "* 6 7"
+;;; >> eval $ecode
+;;; 42
+;;; >> let ex 42
+;;; >> subst {x is $ex, sum is [+ 1 2]}
+;;; "x is 42, sum is 3"
+;;;
+;;; ```tcl
+;;; eval_at $fragment "*scratch*" 42
+;;; eval_at $buffer_text "/home/me/game/main.lcl"
+;;; ```
+;;;
+;;; ## Operators
+;;;
+;;; Arithmetic is prefix and variadic, and integer-preserving when the
+;;; result is exact; otherwise the result is a float.
+;;;
+;;; Examples:
+;;; >> + 1 2 3
+;;; 6
+;;; >> - 10 3
+;;; 7
+;;; >> * 2 3 4
+;;; 24
+;;; >> / 10 2
+;;; 5
+;;; >> / 10 4
+;;; 2.5
+;;; >> % 7 2
+;;; 1
+;;;
+;;; Comparison: `==`/`!=` are value equality (deep for lists and dicts,
+;;; numeric for numeric text); `<`, `>`, `<=`, `>=` order numbers.
+;;; `same?`/`not-same?` test identity -- the same object, not equal
+;;; values.
+;;;
+;;; Examples:
+;;; >> == (1 2) (1 2)
+;;; 1
+;;; >> == "007" 7
+;;; 1
+;;; >> != 1 2
+;;; 1
+;;; >> < 1 2
+;;; 1
+;;; >> > 1 2
+;;; 0
+;;; >> let same_list (1 2)
+;;; >> same? $same_list $same_list
+;;; 1
+;;; >> same? (1 2) (1 2)
+;;; 0
+;;; >> not-same? (1 2) (1 2)
+;;; 1
+;;;
+;;; ## Metaprogramming
+;;;
+;;; ### Quasiquote
+;;;
+;;; Quasiquote provides Lisp-style template syntax for code generation.
+;;; Inside the template, `,$var` substitutes a variable's value, `,[cmd]`
+;;; evaluates a command and inserts the result, `,@$list` splices a
+;;; list's elements (space-separated), `,{lit}` inserts a literal, and
+;;; `\,` is a literal comma. Commas inside `"quoted strings"` are
+;;; literal, not unquotes.
+;;;
+;;; Examples:
+;;; >> let qname "Alice"
+;;; >> quasiquote { puts ,$qname }
+;;; " puts Alice "
+;;; >> let qx 10
+;;; >> let qy 20
+;;; >> eval [quasiquote { + ,$qx ,$qy }]
+;;; 30
+;;; >> quasiquote { + ,[+ 1 2] 3 }
+;;; " + 3 3 "
+;;; >> let qargs (1 2 3)
+;;; >> quasiquote { + ,@$qargs }
+;;; " + 1 2 3 "
+;;; >> eval [quasiquote { + ,@$qargs }]
+;;; 6
+;;; >> quasiquote { a ,{lit} b \, c }
+;;; " a lit b , c "
+;;; >> quasiquote { "a, b" ,$qx }
+;;; " \"a, b\" 10 "
+;;;
+;;; Building a `defun` this way: wrap params and body in literal braces
+;;; so the expansion produces a well-formed `proc` call -- unquote
+;;; inlines values directly, it doesn't re-quote them. Note that `,@`
+;;; splices a *list*, so the parameter list is `(who)`, not `{who}`.
+;;;
+;;; Examples:
+;;; >> proc defun {name params body} {
+;;; >>     quasiquote {
+;;; >>         proc ,$name {,@$params} {,$body}
+;;; >>     }
+;;; >> }
+;;; >> eval [defun greet (who) { "Hello, $who!" }]
+;;; >> greet "World"
+;;; "Hello, World!"
+;;;
+;;; A `macro` is essentially identical, but its result is evaluated at
+;;; the call site, so no `eval` is needed:
+;;;
+;;; Examples:
+;;; >> macro defn {name params body} {
+;;; >>     quasiquote {
+;;; >>         proc ,$name {,@$params} {,$body}
+;;; >>     }
+;;; >> }
+;;; >> defn greet2 (who) { "Hello2, $who!" }
+;;; >> greet2 "world"
+;;; "Hello2, world!"
+;;;
+;;; ### Nested Quasiquote (Macro-Writing-Macros)
+;;;
+;;; For writing macros that generate other macros, use `,,` (double
+;;; comma). At depth 2, `,,$var` evaluates *now* and produces `,<value>`
+;;; in the output, while a single `,$var` is preserved for later
+;;; evaluation.
+;;;
+;;; Examples:
+;;; >> macro make-adder-macro {name amount} {
+;;; >>     quasiquote {
+;;; >>         proc ,$name {x} {
+;;; >>             eval [quasiquote {
+;;; >>                 + ,$x ,,$amount
+;;; >>             }]
+;;; >>         }
+;;; >>     }
+;;; >> }
+;;; >> make-adder-macro add10 10
+;;; >> add10 5
+;;; 15
+;;;
+;;; ## Syntax Reference
+;;;
+;;; ### Quoting
+;;;
+;;; Braces are literal (no substitution); double quotes substitute;
+;;; brackets are command substitution; parens are a list literal
+;;; (`(a b c)` is `[list a b c]`); hash-braces are a dict literal
+;;; (`#{a 1 b 2}` is `[dict a 1 b 2]`).
+;;;
+;;; Examples:
+;;; >> let qa 7
+;;; >> {$qa [+ 1 2]}
+;;; "\$qa \[+ 1 2]"
+;;; >> "$qa [+ 1 2]"
+;;; "7 3"
+;;; >> [+ 1 2]
+;;; 3
+;;; >> (a b c)
+;;; ("a" "b" "c")
+;;; >> #{a 1 b 2}
+;;; #{"b" 2 "a" 1}
+;;;
+;;; **Data belongs in braces.** This is the deliberate division of labor:
+;;; `{...}` is a true literal, `"..."` is a substitution template, and
+;;; `[subst {...}]` turns a literal into a template explicitly when that
+;;; is what you mean. The practical consequence -- and a classic trap for
+;;; anyone arriving from languages where double quotes are the default
+;;; string syntax -- is that any string whose *content* legitimately
+;;; contains `[`, `$`, or `\` must be brace-quoted, or substitution will
+;;; silently rewrite it:
+;;;
+;;; ```tcl
+;;; ;; Regex character classes are command substitutions inside quotes:
+;;; Regex::find "([a-z]+):([0-9]+)" $text   ;; WRONG: [a-z]+ etc. run as
+;;;                                         ;; commands; pattern mangled,
+;;;                                         ;; typically matching nothing
+;;; Regex::find {([a-z]+):([0-9]+)} $text   ;; RIGHT: braced literal
+;;;
+;;; ;; Same for shell snippets, code fragments, printf-style templates:
+;;; let cmd {awk '{print $1}' data.txt}     ;; $1 stays literal
+;;; ```
+;;;
+;;; Rule of thumb: quote (`"..."`) only when you *want* interpolation;
+;;; brace everything else. This also applies inside dict literals --
+;;; `#{pattern {[0-9]+}}` -- where a quoted value substitutes exactly as
+;;; it would anywhere else.
+;;;
+;;; Examples:
+;;; >> {awk '{print $1}' data.txt}
+;;; "awk '{print \$1}' data.txt"
+;;; >> get #{pattern {[0-9]+}} pattern
+;;; "\[0-9]+"
+;;;
+;;; ### Numeric Literals
+;;;
+;;; A bare, unquoted word matching the numeric-literal grammar is
+;;; compiled directly to an int or float:
+;;;
+;;; ```
+;;; integer := 0 | -?[1-9][0-9]*                     ("-0" excluded)
+;;; float   := -?intpart '.' [0-9]+ exp? | -?intpart exp
+;;; exp     := [eE][+-]?[0-9]+
+;;; ```
+;;;
+;;; Examples:
+;;; >> type 42
+;;; "int"
+;;; >> type -3
+;;; "int"
+;;; >> type 3.14
+;;; "float"
+;;; >> 1.50
+;;; 1.5
+;;; >> type 1e3
+;;; "float"
+;;; >> type "42"
+;;; "string"
+;;; >> type {42}
+;;; "string"
+;;; >> type 007
+;;; "string"
+;;; >> type +5
+;;; "string"
+;;; >> type .5
+;;; "string"
+;;;
+;;; The grammar is deliberately strict about *spelling*: `007` might be a
+;;; ZIP fragment, so Lcl refuses to guess, and non-canonical spellings
+;;; are never normalized. Runtime *data* is another matter -- numeric
+;;; contexts accept any string that fully parses as a number, leading
+;;; zeros and all, without retagging the original value. A literal that
+;;; matches the grammar but overflows the numeric range is a compile
+;;; error, never a silent string:
+;;;
+;;; Examples:
+;;; >> + 1 "007"
+;;; 8
+;;; >> 99999999999999999999
+;;; !! integer literal out of range
+;;; >> type {99999999999999999999}
+;;; "string"
+;;;
+;;; ### Comments
+;;;
+;;; Comments are Lisp-style `;;`, anywhere on a line. (A `#` mid-line is
+;;; literal.)
+;;;
+;;; Examples:
+;;; >> + 1 2 ;; this is a comment
+;;; 3
+;;;
+;;; ### Line Continuation
+;;;
+;;; A backslash at the end of a line continues the command:
+;;;
+;;; ```tcl
+;;; dict key1 value1 \
+;;;      key2 value2
+;;; ```
+;;;
+;;; ### Multiline Subcommands
+;;;
+;;; Inside `[...]` brackets, newlines and semicolons are treated as
+;;; ordinary whitespace. This allows multiline expressions without
+;;; explicit line continuation, and it also applies to list literals
+;;; inside brackets.
+;;;
+;;; Examples:
+;;; >> let mres [list
+;;; >>     [list a b]
+;;; >>     [list c d]
+;;; >>     [list e f]
+;;; >> ]
+;;; >> $mres
+;;; (("a" "b") ("c" "d") ("e" "f"))
+;;; >> let nested ((item1 item2)
+;;; >>             (item3 item4))
+;;; >> len $nested
+;;; 2
+;;;
+;;; **Important:** this only applies to code *inside* brackets. Bare
+;;; commands (not wrapped in `[...]`) still follow normal Tcl-like rules
+;;; and require backslash continuation for multiple lines:
+;;;
+;;; ```tcl
+;;; ;; Bare command - backslashes REQUIRED for line continuation
+;;; case $cmd \
+;;;   {add}  [+ $a $b] \
+;;;   {sub}  [- $a $b] \
+;;;   {mul}  [* $a $b] \
+;;;   else   {unknown}
+;;;
+;;; ;; Same command wrapped in brackets - backslashes not needed inside
+;;; let result [case $cmd
+;;;              {add}  [+ $a $b]
+;;;              {sub}  [- $a $b]
+;;;              {mul}  [* $a $b]
+;;;              else   {unknown}]
+;;; ```
+;;;
+;;; Semicolons and newlines inside `{...}` braces and `"..."` quotes are
+;;; always preserved:
+;;;
+;;; ```tcl
+;;; ;; Shell commands with semicolons work correctly
+;;; let output [Sh::run {echo "hello"; echo "world"}]
+;;;
+;;; ;; Quoted strings preserve newlines
+;;; let text "line1
+;;; line2"
+;;; ```
+;;;
+;;; ### Functional Programming
+;;;
+;;; | Function                | Description                                                           |
+;;; |-------------------------|-----------------------------------------------------------------------|
+;;; | `List::map l f`         | Apply f to each element, return new list                              |
+;;; | `List::filter l f`      | Keep elements where f returns true                                    |
+;;; | `List::reduce l init f` | Fold list with f(acc, elem)                                           |
+;;; | `Dict::map d f`         | Apply f(key, value) to each entry, return new dict with mapped values |
+;;; | `Dict::filter d f`      | Keep entries where f(key, value) returns true                         |
+;;; | `Dict::reduce d init f` | Fold dict with f(acc, key, value)                                     |
+;;;
+;;; Examples:
+;;; >> List::map (1 2 3) [lambda {x} { * $x 2 }]
+;;; (2 4 6)
+;;; >> List::filter (1 2 3 4) [lambda {x} { == [% $x 2] 0 }]
+;;; (2 4)
+;;; >> List::reduce (1 2 3) 0 [lambda {acc x} { + $acc $x }]
+;;; 6
+;;; >> Dict::map #{a 1 b 2} [lambda {k v} { * $v 10 }]
+;;; #{"b" 20 "a" 10}
+;;; >> Dict::filter #{a 1 b 2} [lambda {k v} { > $v 1 }]
+;;; #{"b" 2}
+;;; >> Dict::reduce #{a 1 b 2} 0 [lambda {acc k v} { + $acc $v }]
+;;; 3
+;;;
+;;; ## Known Limitations
+;;;
+;;; ### Mutual Recursion
+;;;
+;;; Lcl uses **reference counting** for memory management (no garbage
+;;; collector). This is a deliberate design choice for embeddability --
+;;; GC adds complexity, unpredictable pauses, and makes integration with
+;;; host applications harder.
+;;;
+;;; Lcl does not resolve implicit lexical forward references -- a bare
+;;; name that didn't exist when a procedure was defined is an error when
+;;; the call executes, never a search of the caller's environment. Mutual
+;;; recursion is therefore **explicit**, through a live path: at top
+;;; level, a leading `::` resolves live from the interpreter root, and
+;;; inside a namespace, members resolve live through the namespace.
+;;;
+;;; ```tcl
+;;; ;; Top level: a leading :: resolves live from the interpreter root
+;;; proc even? {n} { if [== $n 0] {1} else {::odd? [- $n 1]} }
+;;; proc odd? {n} { if [== $n 0] {0} else {::even? [- $n 1]} }
+;;; puts [odd? 13]   ;; 1
+;;; ```
+;;;
+;;; Examples:
+;;; >> namespace Parity {
+;;; >>     proc even? {n} { if [== $n 0] {1} else {Parity::odd? [- $n 1]} }
+;;; >>     proc odd? {n} { if [== $n 0] {0} else {Parity::even? [- $n 1]} }
+;;; >> }
+;;; >> Parity::odd? 13
+;;; 1
+;;;
+;;; However, **mutual recursion is not tail-call optimized**. Lcl's TCO
+;;; only applies to self-recursive calls (where the callee is the same
+;;; proc as the caller). Mutually recursive procs consume a stack frame
+;;; per call and will hit the maximum recursion depth (1024) for large
+;;; inputs, while a self-recursive proc runs in constant stack:
+;;;
+;;; Examples:
+;;; >> Parity::odd? 3000
+;;; !! maximum recursion depth exceeded
+;;; >> proc count_down {n} { if [== $n 0] { "done" } else { count_down [- $n 1] } }
+;;; >> count_down 100000
+;;; "done"
+;;;
+;;; Additionally, reference counting cannot handle reference cycles. When
+;;; two **mutable cells** each hold a procedure that captures the other
+;;; cell, they form a cycle that can never be freed. Lcl detects this at
+;;; `set!` time and raises an error rather than silently leaking memory:
+;;;
+;;; Examples:
+;;; >> var is_even_fn {}
+;;; >> var is_odd_fn {}
+;;; >> set! is_even_fn [lambda {n} { apply $is_odd_fn [- $n 1] }]
+;;; >> set! is_odd_fn [lambda {n} { apply $is_even_fn [- $n 1] }]
+;;; !! reference cycle

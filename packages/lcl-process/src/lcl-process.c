@@ -24,7 +24,7 @@
 #include <lcl.h>
 
 #define PROCESS_HANDLE_TYPE_TAG "process_handle"
-#define PROCESS_NS "process"
+#define PROCESS_NS "Process"
 
 #define INITIAL_BUF_SIZE 4096
 #define MAX_BUF_SIZE (4 * 1024 * 1024)
@@ -250,7 +250,7 @@ static lcl_value *get_opt_val(lcl_value *opts, const char *key) {
 }
 
 /*
- * process::run argv ?opts?
+ * Process::run argv ?opts?
  *
  * Options (dict):
  *   stdin   - string to send to stdin
@@ -585,7 +585,7 @@ cleanup:
 }
 
 /*
- * process::spawn argv ?opts?
+ * Process::spawn argv ?opts?
  *
  * Options (dict):
  *   env   - dict of environment vars
@@ -916,7 +916,6 @@ static lcl_return_code c_process_close_stdin(lcl_interp *interp, int argc,
                                              lcl_value **argv,
                                              lcl_value **out) {
   process_handle *h;
-  (void)interp;
 
   if (argc < 1) {
     return LCL_RC_ERR;
@@ -928,7 +927,24 @@ static lcl_return_code c_process_close_stdin(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (h->stdin_fd >= 0) {
+  if (h->is_pty) {
+    struct termios t;
+    unsigned char eof = 4;
+
+    if (h->pty_master < 0) {
+      lcl_set_error(interp, "Process::close-stdin: process is closed");
+      return LCL_RC_ERR;
+    }
+
+    if (tcgetattr(h->pty_master, &t) == 0) {
+      eof = t.c_cc[VEOF];
+    }
+
+    if (write(h->pty_master, &eof, 1) != 1) {
+      lcl_set_error(interp, "Process::close-stdin: write failed");
+      return LCL_RC_ERR;
+    }
+  } else if (h->stdin_fd >= 0) {
     close(h->stdin_fd);
     h->stdin_fd = -1;
   }
@@ -938,7 +954,7 @@ static lcl_return_code c_process_close_stdin(lcl_interp *interp, int argc,
 }
 
 /*
- * process::read handle ?opts?
+ * Process::read handle ?opts?
  *
  * Options:
  *   n       - max bytes to read (default: all available)
@@ -1025,7 +1041,7 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
 }
 
 /*
- * process::read-until handle patterns ?opts?
+ * Process::read-until handle patterns ?opts?
  *
  * Read from process until one of the patterns is found.
  *
@@ -1274,7 +1290,7 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
 }
 
 /*
- * process::wait handle ?opts?
+ * Process::wait handle ?opts?
  *
  * Options:
  *   timeout - ms to wait (0 = block forever)
@@ -1440,7 +1456,7 @@ static lcl_return_code c_process_alive(lcl_interp *interp, int argc,
 }
 
 /*
- * process::kill handle ?opts?
+ * Process::kill handle ?opts?
  *
  * Options:
  *   signal - signal name or number (default: TERM)
@@ -1552,7 +1568,7 @@ static lcl_return_code c_process_close(lcl_interp *interp, int argc,
 }
 
 /*
- * process::pty? handle - check if handle is using PTY mode
+ * Process::pty? handle - check if handle is using PTY mode
  */
 static lcl_return_code c_process_is_pty(lcl_interp *interp, int argc,
                                         lcl_value **argv, lcl_value **out) {
@@ -1573,7 +1589,7 @@ static lcl_return_code c_process_is_pty(lcl_interp *interp, int argc,
 }
 
 /*
- * process::set-winsize handle rows cols
+ * Process::set-winsize handle rows cols
  *
  * Set the terminal window size for PTY handles.
  * Only works on PTY handles; returns error for pipe handles.
@@ -1621,7 +1637,7 @@ static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
 }
 
 /*
- * process::get-winsize handle
+ * Process::get-winsize handle
  *
  * Get the terminal window size for PTY handles.
  * Returns: #{rows N cols M}
@@ -1669,45 +1685,45 @@ static lcl_return_code c_process_get_winsize(lcl_interp *interp, int argc,
 /*
  * lcl-process - Process spawning and management for LCL
  *
- * Provides the process:: namespace with:
- *   process::run        - synchronous execution with capture
- *   process::spawn      - asynchronous execution, returns handle (with PTY
- * support) process::send       - write to stdin process::read       - read from
- * stdout/stderr process::read-until - read until pattern matched (expect-like)
- *   process::wait       - wait for process exit
- *   process::close      - close handle and cleanup
- *   process::alive?     - check if process is still running
- *   process::kill       - send signal to process
- *   process::pty?       - check if handle is using PTY mode
- *   process::set-winsize - set terminal window size (PTY only)
- *   process::get-winsize - get terminal window size (PTY only)
+ * Provides the Process:: namespace with:
+ *   Process::run        - synchronous execution with capture
+ *   Process::spawn      - asynchronous execution, returns handle (with PTY
+ * support) Process::send       - write to stdin Process::read       - read from
+ * stdout/stderr Process::read-until - read until pattern matched (expect-like)
+ *   Process::wait       - wait for process exit
+ *   Process::close      - close handle and cleanup
+ *   Process::alive?     - check if process is still running
+ *   Process::kill       - send signal to process
+ *   Process::pty?       - check if handle is using PTY mode
+ *   Process::set-winsize - set terminal window size (PTY only)
+ *   Process::get-winsize - get terminal window size (PTY only)
  */
 void lcl_register_process(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(PROCESS_NS);
   lcl_define_take(interp, PROCESS_NS, ns);
 
-  lcl_ns_def_take(ns, "run", lcl_c_proc_new("process::run", c_process_run));
+  lcl_ns_def_take(ns, "run", lcl_c_proc_new("Process::run", c_process_run));
   lcl_ns_def_take(ns, "spawn",
-                  lcl_c_proc_new("process::spawn", c_process_spawn));
-  lcl_ns_def_take(ns, "send", lcl_c_proc_new("process::send", c_process_send));
+                  lcl_c_proc_new("Process::spawn", c_process_spawn));
+  lcl_ns_def_take(ns, "send", lcl_c_proc_new("Process::send", c_process_send));
   lcl_ns_def_take(
       ns, "close-stdin",
-      lcl_c_proc_new("process::close-stdin", c_process_close_stdin));
-  lcl_ns_def_take(ns, "read", lcl_c_proc_new("process::read", c_process_read));
+      lcl_c_proc_new("Process::close-stdin", c_process_close_stdin));
+  lcl_ns_def_take(ns, "read", lcl_c_proc_new("Process::read", c_process_read));
   lcl_ns_def_take(ns, "read-until",
-                  lcl_c_proc_new("process::read-until", c_process_read_until));
-  lcl_ns_def_take(ns, "wait", lcl_c_proc_new("process::wait", c_process_wait));
+                  lcl_c_proc_new("Process::read-until", c_process_read_until));
+  lcl_ns_def_take(ns, "wait", lcl_c_proc_new("Process::wait", c_process_wait));
   lcl_ns_def_take(ns, "alive?",
-                  lcl_c_proc_new("process::alive?", c_process_alive));
-  lcl_ns_def_take(ns, "kill", lcl_c_proc_new("process::kill", c_process_kill));
+                  lcl_c_proc_new("Process::alive?", c_process_alive));
+  lcl_ns_def_take(ns, "kill", lcl_c_proc_new("Process::kill", c_process_kill));
   lcl_ns_def_take(ns, "close",
-                  lcl_c_proc_new("process::close", c_process_close));
+                  lcl_c_proc_new("Process::close", c_process_close));
   lcl_ns_def_take(ns, "pty?",
-                  lcl_c_proc_new("process::pty?", c_process_is_pty));
+                  lcl_c_proc_new("Process::pty?", c_process_is_pty));
   lcl_ns_def_take(
       ns, "set-winsize",
-      lcl_c_proc_new("process::set-winsize", c_process_set_winsize));
+      lcl_c_proc_new("Process::set-winsize", c_process_set_winsize));
   lcl_ns_def_take(
       ns, "get-winsize",
-      lcl_c_proc_new("process::get-winsize", c_process_get_winsize));
+      lcl_c_proc_new("Process::get-winsize", c_process_get_winsize));
 }

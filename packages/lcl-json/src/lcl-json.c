@@ -5,7 +5,7 @@
 #include "cJSON.h"
 #include <lcl.h>
 
-#define JSON_NS "json"
+#define JSON_NS "Json"
 
 #define JSON_BOOL_TYPE "json_bool"
 #define JSON_NULL_TYPE "json_null"
@@ -428,15 +428,15 @@ void lcl_register_json(lcl_interp *interp) {
   lcl_define_take(interp, JSON_NS, json_ns);
 
   lcl_ns_def_take(json_ns, "encode",
-                  lcl_c_proc_new("json::encode", c_json_encode));
+                  lcl_c_proc_new("Json::encode", c_json_encode));
   lcl_ns_def_take(json_ns, "decode",
-                  lcl_c_proc_new("json::decode", c_json_decode));
-  lcl_ns_def_take(json_ns, "true", lcl_c_proc_new("json::true", c_json_true));
+                  lcl_c_proc_new("Json::decode", c_json_decode));
+  lcl_ns_def_take(json_ns, "true", lcl_c_proc_new("Json::true", c_json_true));
   lcl_ns_def_take(json_ns, "false",
-                  lcl_c_proc_new("json::false", c_json_false));
-  lcl_ns_def_take(json_ns, "null", lcl_c_proc_new("json::null", c_json_null));
+                  lcl_c_proc_new("Json::false", c_json_false));
+  lcl_ns_def_take(json_ns, "null", lcl_c_proc_new("Json::null", c_json_null));
   lcl_ns_def_take(json_ns, "bool?",
-                  lcl_c_proc_new("json::bool?", c_json_is_bool));
+                  lcl_c_proc_new("Json::bool?", c_json_is_bool));
   lcl_ns_def_take(json_ns, "null?",
-                  lcl_c_proc_new("json::null?", c_json_is_null));
+                  lcl_c_proc_new("Json::null?", c_json_is_null));
 }

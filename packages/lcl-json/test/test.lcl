@@ -6,30 +6,30 @@
 Test::suite "Load JSON" {
     Test::case "null values" {
         let j {{"value": null}}
-        let decoded [json::decode $j]
+        let decoded [Json::decode $j]
         let v [get $decoded value]
-        Test::eq [json::null? $v] 1
+        Test::eq [Json::null? $v] 1
     }
 
     Test::case "boolean predicates" {
         let j {{"t": true, "f": false}}
-        let decoded [json::decode $j]
-        Test::eq [json::bool? [get $decoded t]] 1
-        Test::eq [json::bool? [get $decoded f]] 1
-        Test::eq [json::null? [get $decoded t]] 0
+        let decoded [Json::decode $j]
+        Test::eq [Json::bool? [get $decoded t]] 1
+        Test::eq [Json::bool? [get $decoded f]] 1
+        Test::eq [Json::null? [get $decoded t]] 0
     }
 
     Test::case "empty structures" {
-        Test::eq [json::encode [json::decode {{}}]] {{}}
-        Test::eq [json::encode [json::decode {[]}]] {[]}
+        Test::eq [Json::encode [Json::decode {{}}]] {{}}
+        Test::eq [Json::encode [Json::decode {[]}]] {[]}
     }
 
     Test::case "direct bool/null creation" {
-        let d [dict flag [json::true] empty [json::null]]
-        let encoded [json::encode $d]
-        let decoded [json::decode $encoded]
-        Test::eq [json::bool? [get $decoded flag]] 1
-        Test::eq [json::null? [get $decoded empty]] 1
+        let d [dict flag [Json::true] empty [Json::null]]
+        let encoded [Json::encode $d]
+        let decoded [Json::decode $encoded]
+        Test::eq [Json::bool? [get $decoded flag]] 1
+        Test::eq [Json::null? [get $decoded empty]] 1
     }
 
     Test::case "roundtrip JSON decode -> encode -> decode -> encode" {
@@ -53,10 +53,10 @@ Test::suite "Load JSON" {
             }
         }
 
-        let decoded1 [json::decode $j]
-        let encoded1 [json::encode $decoded1]
-        let decoded2 [json::decode $encoded1]
-        let encoded2 [json::encode $decoded2]
+        let decoded1 [Json::decode $j]
+        let encoded1 [Json::encode $decoded1]
+        let decoded2 [Json::decode $encoded1]
+        let encoded2 [Json::encode $decoded2]
         Test::eq $encoded1 $encoded2
     }
 }

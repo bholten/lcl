@@ -1,0 +1,242 @@
+;;; # lcl-io
+;;;
+;;; File I/O for Lcl, bound to the ANSI C standard library and nothing else.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - A hosted ANSI C89 library (`stdio.h`, `getenv`)
+;;; - **Portability**: everywhere core Lcl builds, including Windows.
+;;;   POSIX filesystem operations (directory listing, glob, stat
+;;;   predicates, working-directory control) live in the separate
+;;;   `lcl-posix` package -- see [Posix::readdir], [Posix::glob],
+;;;   [Posix::exists?], [Posix::getcwd].
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_IO=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; Whole-file operations take a path and do everything in one call;
+;;; the streaming operations work on an opaque *file handle* returned
+;;; by [Io::open_file] or one of the standard-stream accessors
+;;; ([Io::stdin], [Io::stdout], [Io::stderr]).
+;;;
+;;; ```tcl
+;;; ;; Read an entire file
+;;; let contents [Io::read_file "config.txt"]
+;;;
+;;; ;; Write (overwrite) a file
+;;; Io::write_file output.txt "Hello, World!"
+;;;
+;;; ;; Stream-based I/O
+;;; let f [Io::open_file data.txt r]
+;;;
+;;; while 1 {
+;;;     let line [Io::fgets $f 1024]
+;;;     if [== [String::length $line] 0] { break }
+;;;     puts $line
+;;; }
+;;; Io::close_file $f
+;;; ```
+;;;
+;;; Most procs return the empty string on success and raise an error
+;;; on failure. Only [Io::read_file] and [Io::write_file] attach a
+;;; descriptive message; the rest raise a bare error (the message
+;;; reads `unknown error`), so wrap them in `catch` when the failure
+;;; mode matters to you.
+;;;
+;;; For plain writes to standard output use `puts` from the core
+;;; stdlib; [Io::stdout] exists for when you need a handle (for
+;;; [Io::fputs] without a trailing newline, or [Io::flush]).
+
+namespace Io {
+
+    ;;; Procs are listed in groups: whole-file operations ([Io::read_file],
+    ;;; [Io::write_file], [Io::copy], [Io::remove], [Io::rename]), streaming
+    ;;; I/O on file handles ([Io::open_file], [Io::close_file], [Io::fgets],
+    ;;; [Io::fputs], [Io::flush], [Io::eof?]), the standard streams
+    ;;; ([Io::stdin], [Io::stdout], [Io::stderr]) and the environment
+    ;;; ([Io::getenv]).
+    ;;;
+    ;;; A file handle is an opaque value wrapping a C `FILE *`. Handles are
+    ;;; not closed automatically: pair every [Io::open_file] with
+    ;;; [Io::close_file].
+
+    ;;; Return the entire contents of the file at `path` as a string.
+    ;;;
+    ;;; The file is opened in binary mode and read in full. A file that
+    ;;; cannot be opened or read raises an error naming the path.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::range [Io::read_file LICENSE] 0 11
+    ;;; "MIT License"
+    ;;; >> Io::read_file no/such/file.txt
+    ;;; !! could not read
+    ;;; >> Io::read_file
+    ;;; !! expected 1 argument
+    proc read_file {path} {}
+
+    ;;; Write `data` to the file at `path`, creating or truncating it.
+    ;;;
+    ;;; `data` is written as bytes (binary mode); nothing is appended.
+    ;;; Raises an error if the file cannot be opened for writing or the
+    ;;; write is short. Returns the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::write_file notes.txt "first line\nsecond line\n"
+    ;;; ```
+    ;;;
+    ;;; Examples:
+    ;;; >> Io::write_file only-a-path
+    ;;; !! expected 2 arguments
+    proc write_file {path data} {}
+
+    ;;; Copy the contents of the file at `src` to `dst`, creating or
+    ;;; truncating `dst`.
+    ;;;
+    ;;; Bytes are copied through an 8 KiB buffer; no metadata
+    ;;; (permissions, timestamps) is preserved. Raises an error if
+    ;;; either file cannot be opened or a write is short. Returns the
+    ;;; empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::copy config.txt config.txt.bak
+    ;;; ```
+    proc copy {src dst} {}
+
+    ;;; Delete the file at `path`.
+    ;;;
+    ;;; Wraps C `remove`; on most platforms it also removes an empty
+    ;;; directory, but use [Posix::rmdir] when you mean that. Raises an
+    ;;; error if the file does not exist or cannot be removed. Returns
+    ;;; the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::remove scratch.tmp
+    ;;; ```
+    proc remove {path} {}
+
+    ;;; Rename (move) the file or directory at `old` to `new`.
+    ;;;
+    ;;; Wraps C `rename`, so the same rules apply: whether an existing
+    ;;; `new` is replaced and whether moves cross filesystems are up
+    ;;; to the platform. Raises an error on failure. Returns the empty
+    ;;; string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::rename output.tmp output.txt
+    ;;; ```
+    proc rename {old new} {}
+
+    ;;; Open the file at `path` and return a file handle.
+    ;;;
+    ;;; `mode` is passed straight to C `fopen`: `r`, `w`, `a`, `r+`,
+    ;;; `w+`, `a+`, optionally with `b` for binary (`rb`, `wb`, ...).
+    ;;; Raises an error if the file cannot be opened.
+    ;;;
+    ;;; ```tcl
+    ;;; let f [Io::open_file log.txt a]
+    ;;; Io::fputs $f "appended\n"
+    ;;; Io::close_file $f
+    ;;; ```
+    proc open_file {path mode} {}
+
+    ;;; Close a file handle returned by [Io::open_file].
+    ;;;
+    ;;; Closing one of the standard streams ([Io::stdin], [Io::stdout],
+    ;;; [Io::stderr]) is a no-op. Raises an error if the underlying
+    ;;; close fails. Returns the empty string.
+    ;;;
+    ;;; Examples:
+    ;;; >> Io::close_file [Io::stdout]
+    ;;; ""
+    proc close_file {handle} {}
+
+    ;;; Read one line from `handle`, up to `size - 1` bytes.
+    ;;;
+    ;;; Behaves like C `fgets`: the trailing newline is kept, so a
+    ;;; blank line reads as `"\n"` and an empty result always means
+    ;;; end-of-file (or a line longer than `size - 1` bytes, which is
+    ;;; returned in pieces). `size` must be at least 2. A read error
+    ;;; raises an error; end-of-file never does -- check [Io::eof?] or
+    ;;; the length of the result.
+    ;;;
+    ;;; ```tcl
+    ;;; let f [Io::open_file data.txt r]
+    ;;; var lines ()
+    ;;; while 1 {
+    ;;;     let line [Io::fgets $f 4096]
+    ;;;     if [== [String::length $line] 0] { break }
+    ;;;     List::push! lines [String::trim $line]
+    ;;; }
+    ;;; Io::close_file $f
+    ;;; ```
+    proc fgets {handle size} {}
+
+    ;;; Write the string `data` to `handle`, with no newline added.
+    ;;;
+    ;;; Raises an error if the write fails. Returns the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::fputs [Io::stderr] "warning: no config found\n"
+    ;;; ```
+    proc fputs {handle data} {}
+
+    ;;; Flush any buffered output on `handle`.
+    ;;;
+    ;;; Raises an error if the flush fails. Returns the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::fputs [Io::stdout] "progress: "
+    ;;; Io::flush [Io::stdout]
+    ;;; ```
+    proc flush {handle} {}
+
+    ;;; Return 1 if `handle` has hit end-of-file, else 0.
+    ;;;
+    ;;; The flag is set by a read that reaches the end, not by
+    ;;; position: a freshly opened empty file reports 0 until the first
+    ;;; [Io::fgets] returns `""`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Io::eof? [Io::stdout]
+    ;;; 0
+    proc eof? {handle} {}
+
+    ;;; Return a file handle for the process's standard input.
+    ;;;
+    ;;; ```tcl
+    ;;; let line [Io::fgets [Io::stdin] 256]
+    ;;; ```
+    proc stdin {} {}
+
+    ;;; Return a file handle for the process's standard output.
+    ;;;
+    ;;; Examples:
+    ;;; >> type [Io::stdout]
+    ;;; "opaque"
+    proc stdout {} {}
+
+    ;;; Return a file handle for the process's standard error.
+    ;;;
+    ;;; ```tcl
+    ;;; Io::fputs [Io::stderr] "fatal: $msg\n"
+    ;;; ```
+    proc stderr {} {}
+
+    ;;; Return the value of the environment variable `name`, or the
+    ;;; empty string if it is not set.
+    ;;;
+    ;;; An unset variable and one set to the empty string are
+    ;;; indistinguishable.
+    ;;;
+    ;;; Examples:
+    ;;; >> Io::getenv LCL_NO_SUCH_VARIABLE_XYZ
+    ;;; ""
+    proc getenv {name} {}
+}

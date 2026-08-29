@@ -1,0 +1,519 @@
+;;; # lcl-expect
+;;;
+;;; Expect-style automation of interactive programs: spawn, send, and match patterns with lexical handlers.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - `lcl-process` (process spawning and PTY support; `LCL_BUILD_EXPECT` requires `LCL_BUILD_PROCESS=ON`)
+;;; - POSIX pseudo-terminal support (`openpty`, `forkpty`) and POSIX `regex.h`
+;;; - **Portability**: POSIX (Linux, macOS, BSD). Not portable to Windows as-is -- relies on POSIX pseudo-terminals via lcl-process.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_PROCESS=ON -DLCL_BUILD_EXPECT=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Overview
+;;;
+;;; lcl-expect provides a Tcl Expect-like interface for automating
+;;; interactive programs via PTY or pipes. It combines low-level C
+;;; primitives for pattern matching ([Expect::pattern], [Expect::regex],
+;;; [Expect::match-buffer], [Expect::read-match], [Expect::match],
+;;; [Expect::loop]) with a higher-level Lcl convenience layer
+;;; (`packages/lcl-expect/src/expect.lcl`, embedded into the CLI when
+;;; the package is enabled) that works on *session* dicts.
+;;;
+;;; Nothing here is pure: every operation past pattern construction
+;;; spawns or talks to a child process, so the examples on this page
+;;; are illustrative rather than doctested.
+;;;
+;;; ## Quick start
+;;;
+;;; ```tcl
+;;; ;; Spawn an interactive shell
+;;; let s [Expect::spawn (bash)]
+;;;
+;;; ;; Wait for prompt, send command
+;;; Expect::wait-for $s "$ "
+;;; Expect::send-line $s "echo hello"
+;;;
+;;; ;; Match and handle patterns
+;;; Expect::interact $s (
+;;;     ("password:" [lambda {m} { Expect::send-line $s "secret"; continue }])
+;;;     ("$ " [lambda {m} { get $m data }])
+;;; )
+;;;
+;;; ;; Clean up
+;;; Expect::close $s
+;;; ```
+;;;
+;;; ## Sessions
+;;;
+;;; [Expect::spawn] returns a session dict `#{handle <h> timeout <t>}`:
+;;; the `Process::` handle plus the default timeout (milliseconds) for
+;;; every wait on that session. The high-level procs take the session;
+;;; the C primitives take the raw handle (`[get $s handle]`). Sessions
+;;; default to PTY mode, which is what interactive programs need; pass
+;;; `#{pty 0}` for plain pipes when you only want a command's output.
+;;;
+;;; ```tcl
+;;; ;; PTY mode (default) - for interactive programs
+;;; let s [Expect::spawn (bash)]
+;;;
+;;; ;; Pipe mode - for simple command output
+;;; let s [Expect::spawn (ls -la) #{pty 0}]
+;;;
+;;; ;; Custom PTY size
+;;; let s [Expect::spawn (vim) #{rows 40 cols 120}]
+;;; ```
+;;;
+;;; ## Patterns
+;;;
+;;; Anywhere a pattern is expected you can pass:
+;;;
+;;; - a **string** -- a literal, case-sensitive substring match;
+;;; - a **pattern object** from [Expect::pattern] (literal, optionally
+;;;   `nocase`) or [Expect::regex] (POSIX extended regex, optionally
+;;;   `nocase`);
+;;; - a **sentinel** from [Expect::timeout] or [Expect::eof], which
+;;;   never matches text but is selected when the wait times out or
+;;;   the child exits without matching anything else.
+;;;
+;;; The `Expect::Pat::` helpers wrap these and add
+;;; [Expect::Pat::prompt] for common shell prompts:
+;;;
+;;; ```tcl
+;;; Expect::Pat::literal "hello"           ;; Literal pattern
+;;; Expect::Pat::regex {[0-9]+}            ;; Regex pattern
+;;; Expect::Pat::timeout                   ;; Timeout sentinel
+;;; Expect::Pat::eof                       ;; EOF sentinel
+;;; Expect::Pat::prompt                    ;; Common shell prompt regex
+;;; Expect::Pat::prompt #{type bash}       ;; Bash-specific prompt
+;;; ```
+;;;
+;;; ## Match results
+;;;
+;;; Waiting procs ([Expect::wait-for], [Expect::expect],
+;;; [Expect::read-match] and the `send-*-expect` combinators) return a
+;;; dict; handlers given to [Expect::interact], [Expect::interact-loop],
+;;; [Expect::match] and [Expect::loop] receive the same dict as their
+;;; one argument:
+;;;
+;;; | Field     | Meaning                                                        |
+;;; |-----------|----------------------------------------------------------------|
+;;; | `matched` | 1 if a pattern (or sentinel) was selected, 0 otherwise         |
+;;; | `index`   | 0-based index of the selected pattern                          |
+;;; | `data`    | everything read from the child during this wait                |
+;;; | `timeout` | 1 if the wait timed out                                        |
+;;; | `eof`     | 1 if the child exited before anything matched                  |
+;;;
+;;; When the wait ends by timeout or EOF without a matching sentinel,
+;;; `matched` is 0 and `index` is 0. [Expect::match-buffer], which
+;;; matches against a string you already hold, returns `matched`,
+;;; `index` (-1 when nothing matched) and, on a match, `before`,
+;;; `match` and `after` slices instead of `data`/`timeout`/`eof`.
+;;;
+;;; ## Handlers
+;;;
+;;; [Expect::interact] pairs patterns with callables and runs the one
+;;; whose pattern matched first; [Expect::interact-loop] repeats that
+;;; until a handler leaves the loop. Because handlers are closures they
+;;; see the session and any state of the enclosing scope directly.
+;;; Inside a loop handler:
+;;;
+;;; - `continue` keeps matching;
+;;; - `break` exits the loop (the loop returns `""`);
+;;; - returning normally exits the loop with that value.
+;;;
+;;; ```tcl
+;;; Expect::interact-loop $s (
+;;;     ("More--" [lambda {m} { Expect::send $s " "; continue }])
+;;;     ("password:" [lambda {m} { Expect::send-line $s $password; continue }])
+;;;     ("$ " [lambda {m} { break }])
+;;; )
+;;; ```
+;;;
+;;; Always list a `[Expect::timeout]` or `[Expect::eof]` pair when the
+;;; child might not produce a match: without a sentinel a timeout or
+;;; EOF still dispatches -- to the *first* pair's handler, with
+;;; `matched` 0 in the result dict.
+;;;
+;;; ## Examples
+;;;
+;;; ### SSH login automation
+;;;
+;;; ```tcl
+;;; let s [Expect::spawn (ssh user@host)]
+;;;
+;;; Expect::interact-loop $s (
+;;;     ("yes/no" [lambda {m} {
+;;;         Expect::send-line $s "yes"
+;;;         continue
+;;;     }])
+;;;     ("password:" [lambda {m} {
+;;;         Expect::send-line $s $password
+;;;         continue
+;;;     }])
+;;;     ("$ " [lambda {m} { break }])
+;;;     ([Expect::timeout] [lambda {m} {
+;;;         error "SSH connection timed out"
+;;;     }])
+;;; )
+;;;
+;;; ;; Now at shell prompt
+;;; Expect::send-line $s "hostname"
+;;; let r [Expect::wait-for $s "$ "]
+;;; puts [get $r data]
+;;;
+;;; Expect::close $s
+;;; ```
+;;;
+;;; ### Interactive menu navigation
+;;;
+;;; ```tcl
+;;; let s [Expect::spawn (./menu-app)]
+;;;
+;;; Expect::interact-loop $s (
+;;;     ("Press any key" [lambda {m} {
+;;;         Expect::send $s " "
+;;;         continue
+;;;     }])
+;;;     (">" [lambda {m} {
+;;;         ;; At menu, select option 2
+;;;         Expect::send-line $s "2"
+;;;         continue
+;;;     }])
+;;;     ("Done" [lambda {m} { break }])
+;;; )
+;;;
+;;; Expect::close $s
+;;; ```
+;;;
+;;; ### Handling pagers
+;;;
+;;; ```tcl
+;;; let s [Expect::spawn (man ls)]
+;;;
+;;; Expect::interact-loop $s (
+;;;     ;; Handle "more" style pagers
+;;;     ("--More--" [lambda {m} { Expect::send $s " "; continue }])
+;;;     ;; Handle "less" style pagers
+;;;     (":" [lambda {m} { Expect::send $s "q"; break }])
+;;;     ([Expect::eof] [lambda {m} { break }])
+;;; )
+;;;
+;;; Expect::close $s
+;;; ```
+;;;
+;;; ### Scripted sessions
+;;;
+;;; ```tcl
+;;; let results [Expect::script (bash) (
+;;;     (expect "$ ")
+;;;     (send-line "echo hello")
+;;;     (expect "$ ")
+;;; )]
+;;; ```
+;;;
+;;; ## Tests
+;;;
+;;; `packages/lcl-expect/test/test.lcl` runs under `ctest -R lcl-expect`
+;;; and spawns `cat` and `echo`, so it needs a working PTY.
+
+namespace Expect {
+
+    ;;; Procs are listed in groups: configuration, spawning, sending,
+    ;;; waiting, handler-based matching, lifecycle, PTY, reading,
+    ;;; combinators and the script runner (the Lcl layer, working on
+    ;;; sessions), then the C primitives (patterns and matching on raw
+    ;;; `Process::` handles). Pattern helpers live in `Expect::pat`.
+
+    ;;; Set the default timeout in milliseconds for new sessions (initially 10000).
+    proc set-timeout {ms} {}
+
+    ;;; Return the current default timeout in milliseconds.
+    proc get-timeout {} {}
+
+    ;;; Spawn `cmd` (a word list) for automation and return a session dict.
+    ;;;
+    ;;; Options in `opts`:
+    ;;;
+    ;;; | Option    | Default           | Meaning                              |
+    ;;; |-----------|-------------------|--------------------------------------|
+    ;;; | `pty`     | 1                 | PTY mode (1) or pipe mode (0)        |
+    ;;; | `timeout` | [Expect::get-timeout] | default timeout for this session |
+    ;;; | `rows`    | 24                | PTY rows                             |
+    ;;; | `cols`    | 80                | PTY columns                          |
+    ;;; | `env`     | `#{}`             | environment variables dict           |
+    ;;; | `cwd`     | `""`              | working directory                    |
+    ;;;
+    ;;; `env` and `cwd` are only forwarded to `Process::spawn` when
+    ;;; non-empty. Returns `#{handle <h> timeout <t>}`.
+    ;;;
+    ;;; ```tcl
+    ;;; let s [Expect::spawn (bash)]
+    ;;; let s [Expect::spawn (ls -la) #{pty 0}]
+    ;;; let s [Expect::spawn (vim) #{rows 40 cols 120}]
+    ;;; ```
+    proc spawn {cmd (opts #{})} {}
+
+    ;;; Send `str` to the child's input as-is.
+    ;;;
+    ;;; ```tcl
+    ;;; Expect::send $s "hello"
+    ;;; ```
+    proc send {session str} {}
+
+    ;;; Send `str` followed by a newline.
+    ;;;
+    ;;; ```tcl
+    ;;; Expect::send-line $s "ls -la"
+    ;;; ```
+    proc send-line {session str} {}
+
+    ;;; Send a control character; `char` is a lowercase letter `a`-`z` for Ctrl-A through Ctrl-Z.
+    ;;;
+    ;;; Anything outside `a`-`z` raises `invalid control character`.
+    ;;;
+    ;;; ```tcl
+    ;;; Expect::send-ctrl $s "c"    ;; Ctrl-C
+    ;;; Expect::send-ctrl $s "d"    ;; Ctrl-D (EOF)
+    ;;; ```
+    proc send-ctrl {session char} {}
+
+    ;;; Wait for a single `pattern` and return the match result dict.
+    ;;;
+    ;;; `opts` may carry `timeout` (ms), defaulting to the session's.
+    ;;; Check `matched` in the result: on timeout it is 0 and `timeout`
+    ;;; is 1.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Expect::wait-for $s "$ "]
+    ;;; if [get $r matched] {
+    ;;;     puts "Got prompt!"
+    ;;; }
+    ;;; ```
+    proc wait-for {session pattern (opts #{})} {}
+
+    ;;; Wait for any of `patterns` (one pattern or a list) and return the match result dict.
+    ;;;
+    ;;; A single string is wrapped into a one-element list; a list is
+    ;;; used as-is. `opts` may carry `timeout` (ms). `index` in the
+    ;;; result tells which pattern matched.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Expect::expect $s ("password:" "$ " "# ")]
+    ;;; puts "Matched pattern [get $r index]"
+    ;;; ```
+    proc expect {session patterns (opts #{})} {}
+
+    ;;; Wait for the first matching pattern in `pairs` and return its handler's result.
+    ;;;
+    ;;; `pairs` is a list of `(pattern handler)` lists; each handler is
+    ;;; called with the match result dict. `opts` may carry `timeout`.
+    ;;; Single-shot: see [Expect::interact-loop] to keep going. Include
+    ;;; a `[Expect::timeout]` pair to handle timeouts explicitly.
+    ;;;
+    ;;; ```tcl
+    ;;; let result [Expect::interact $s (
+    ;;;     ("password:" [lambda {m} { Expect::send-line $s "secret"; "sent password" }])
+    ;;;     ("$ " [lambda {m} { get $m data }])
+    ;;;     ([Expect::timeout] [lambda {m} { error "timed out" }])
+    ;;; )]
+    ;;; ```
+    proc interact {session pairs (opts #{})} {}
+
+    ;;; Match `pairs` repeatedly until a handler `break`s or returns normally.
+    ;;;
+    ;;; Handlers `continue` to keep matching, `break` to leave (the
+    ;;; loop returns `""`), or return a value to leave with it. `opts`
+    ;;; may carry `timeout`.
+    ;;;
+    ;;; ```tcl
+    ;;; Expect::interact-loop $s (
+    ;;;     ("More--" [lambda {m} { Expect::send $s " "; continue }])
+    ;;;     ("password:" [lambda {m} { Expect::send-line $s $password; continue }])
+    ;;;     ("$ " [lambda {m} { break }])
+    ;;; )
+    ;;; ```
+    proc interact-loop {session pairs (opts #{})} {}
+
+    ;;; Return 1 while the child process is still running (`Process::alive?`).
+    proc alive? {session} {}
+
+    ;;; Wait for the child to exit; `opts` are passed through to `Process::wait`.
+    proc wait {session (opts #{})} {}
+
+    ;;; Send a signal to the child; `opts` are passed through to `Process::kill`.
+    proc kill {session (opts #{})} {}
+
+    ;;; Close the session and release the process handle (`Process::close`).
+    proc close {session} {}
+
+    ;;; Close the child's stdin to signal EOF (`Process::close-stdin`).
+    proc close-stdin {session} {}
+
+    ;;; Return 1 if the session was spawned in PTY mode (`Process::pty?`).
+    proc pty? {session} {}
+
+    ;;; Set the terminal size (`Process::set-winsize`; the child gets `SIGWINCH`).
+    proc set-winsize {session rows cols} {}
+
+    ;;; Return the current terminal size (`Process::get-winsize`).
+    proc get-winsize {session} {}
+
+    ;;; Read whatever output is available; `opts` are passed through to `Process::read`.
+    proc read {session (opts #{})} {}
+
+    ;;; Read output until the child has been quiet for 100 ms and return it all.
+    ;;;
+    ;;; Loops over `Process::read` with a 100 ms timeout, concatenating
+    ;;; chunks until a read returns nothing.
+    ;;;
+    ;;; ```tcl
+    ;;; Expect::send-line $s "ls"
+    ;;; let output [Expect::drain $s]
+    ;;; ```
+    proc drain {session (opts #{})} {}
+
+    ;;; Send `str`, then wait for `pattern` as [Expect::expect] does.
+    proc send-expect {session str pattern (opts #{})} {}
+
+    ;;; Send `str` plus newline, then wait for `pattern` as [Expect::expect] does.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Expect::send-line-expect $s "whoami" "$ "]
+    ;;; ```
+    proc send-line-expect {session str pattern (opts #{})} {}
+
+    ;;; Run `script`, a list of actions, against the session; return the list of expect results.
+    ;;;
+    ;;; Each action is a list whose first word names it:
+    ;;;
+    ;;; - `(send "text")` -- send text
+    ;;; - `(send-line "text")` -- send text plus newline
+    ;;; - `(expect "pattern")` -- wait for a pattern with the session timeout
+    ;;; - `(expect "pattern" timeout_ms)` -- wait with a custom timeout
+    ;;; - `(sleep ms)` -- pause (runs the `sleep` command via `Process::run`)
+    ;;;
+    ;;; Unknown action names are ignored. Only `expect` actions
+    ;;; contribute to the returned list.
+    ;;;
+    ;;; ```tcl
+    ;;; let results [Expect::run $s (
+    ;;;     (expect "login:")
+    ;;;     (send-line "admin")
+    ;;;     (expect "password:")
+    ;;;     (send-line "secret")
+    ;;;     (expect "$ ")
+    ;;; )]
+    ;;; ```
+    proc run {session script} {}
+
+    ;;; Spawn `cmd` with `opts`, run `actions` as [Expect::run] does, close the session, and return the results.
+    ;;;
+    ;;; ```tcl
+    ;;; let results [Expect::script (bash) (
+    ;;;     (expect "$ ")
+    ;;;     (send-line "echo hello")
+    ;;;     (expect "$ ")
+    ;;; )]
+    ;;; ```
+    proc script {cmd actions (opts #{})} {}
+
+    ;;; Create a literal pattern object for `str`.
+    ;;;
+    ;;; `opts` may carry `nocase 1` for case-insensitive matching.
+    ;;; C primitive; see [Expect::Pat::literal].
+    proc pattern {str (opts #{})} {}
+
+    ;;; Create a regex pattern object from POSIX extended regex `str`.
+    ;;;
+    ;;; `opts` may carry `nocase 1` (`REG_ICASE`). A regex that fails
+    ;;; to compile raises the `regerror` text. C primitive; see
+    ;;; [Expect::Pat::regex].
+    proc regex {str (opts #{})} {}
+
+    ;;; Create a timeout sentinel pattern (kind `timeout`).
+    proc timeout {} {}
+
+    ;;; Create an EOF sentinel pattern (kind `eof`).
+    proc eof {} {}
+
+    ;;; Return 1 if `value` is a pattern object, else 0 (also 0 with no argument).
+    proc pattern? {value} {}
+
+    ;;; Return a pattern object's kind: `literal`, `regex`, `timeout` or `eof`.
+    ;;;
+    ;;; Raises `argument is not a pattern` for anything else.
+    proc pattern-kind {pattern} {}
+
+    ;;; Match `patterns` (a list) against the string `buf` without reading anything.
+    ;;;
+    ;;; The pattern whose match starts earliest in `buf` wins; sentinels
+    ;;; never match. Returns `#{matched 1 index N before "..." match "..."
+    ;;; after "..."}` on a match, `#{matched 0 index -1}` otherwise.
+    ;;;
+    ;;; ```tcl
+    ;;; let r [Expect::match-buffer "user@host:~$ ls -la" ("password:" "$ " "# ")]
+    ;;; get $r index     ;; 1
+    ;;; get $r before    ;; user@host:~
+    ;;; get $r after     ;; ls -la
+    ;;; ```
+    proc match-buffer {buf patterns (opts #{})} {}
+
+    ;;; Read from a raw `Process::` handle until a pattern matches, the timeout elapses, or the child exits.
+    ;;;
+    ;;; `patterns` is a list; `opts` may carry `timeout` (ms, default
+    ;;; 10000). Data is read in 100 ms slices and accumulated; after
+    ;;; each slice the patterns are tried in list order against
+    ;;; everything read so far, and the first one that matches wins.
+    ;;; If the child is no longer alive and produced nothing, the wait
+    ;;; ends with `eof`. A `[Expect::timeout]` or `[Expect::eof]` in
+    ;;; the list is selected (`matched 1`) for the corresponding
+    ;;; outcome; otherwise those outcomes yield `matched 0`. Returns
+    ;;; `#{matched 0/1 index N data "..." timeout 0/1 eof 0/1}`.
+    proc read-match {handle patterns (opts #{})} {}
+
+    ;;; Match `pairs` against a raw handle and call the selected handler with the result dict.
+    ;;;
+    ;;; The raw-handle form of [Expect::interact]: `pairs` is a
+    ;;; non-empty list of `(pattern handler)` lists, `opts` may carry
+    ;;; `timeout`. Errors: `pairs list cannot be empty`, `each pair
+    ;;; must be a list of (pattern handler)`, `handler is not
+    ;;; callable`.
+    proc match {handle pairs (opts #{})} {}
+
+    ;;; Repeat [Expect::match] until a handler `break`s or returns normally.
+    ;;;
+    ;;; The raw-handle form of [Expect::interact-loop]. Returns the
+    ;;; handler's value, or `""` after `break`.
+    proc loop {handle pairs (opts #{})} {}
+
+    namespace Pat {
+
+        ;;; Pattern constructors and common prompts, wrapping the C primitives.
+
+        ;;; Create a literal pattern; same as [Expect::pattern].
+        proc literal {s (opts #{})} {}
+
+        ;;; Create a regex pattern; same as [Expect::regex].
+        proc regex {r (opts #{})} {}
+
+        ;;; Create a timeout sentinel; same as [Expect::timeout].
+        proc timeout {} {}
+
+        ;;; Create an EOF sentinel; same as [Expect::eof].
+        proc eof {} {}
+
+        ;;; Return a regex pattern for a shell prompt at the end of the output.
+        ;;;
+        ;;; `opts` may carry `type`: `bash` and `sh` match `[$#] $`,
+        ;;; `zsh` matches `[%#] $`, anything else (the default `any`)
+        ;;; matches `[$#%>] $`.
+        proc prompt {(opts #{})} {}
+    }
+}

@@ -3,6 +3,8 @@
 ;;; A simple but capable test framework written in pure LCL.
 ;;;
 ;;; Usage:
+;;;
+;;; ```tcl
 ;;;   load lib/Test.lcl
 ;;;
 ;;;   Test::suite "My Feature" {
@@ -23,6 +25,7 @@
 ;;;   }
 ;;;
 ;;;   Test::run  ;;; Run all suites and print results
+;;; ```
 
 namespace Test {
     var _suites [list]

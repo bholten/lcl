@@ -1,3 +1,7 @@
 build/
 compile_commands.json
 .cache
+test/fuzz/artifacts/
+fuzz-*.log
+artifacts/
+site/

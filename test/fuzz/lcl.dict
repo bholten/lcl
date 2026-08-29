@@ -149,3 +149,14 @@
 "String::split"
 "String::trim"
 "String::upper"
+
+# added 2026-08-28
+"repeat"
+"List::push!"
+"List::pop!"
+"put!"
+"del!"
+"Interp::stats"
+"String::eq?"
+"Proc::body"
+"Proc::name"

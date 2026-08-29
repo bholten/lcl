@@ -3,43 +3,43 @@
 proc draw {r n lo hi} {
     var acc ()
     for {var i 0} {[< $i $n]} {set! i [+ $i 1]} {
-        set! acc [List::push $acc [xoshiro::int $r $lo $hi]]
+        set! acc [List::push $acc [Xoshiro::int $r $lo $hi]]
     }
     $acc
 }
 
 Test::suite "xoshiro: known answers" {
     Test::case "seed 42, top 16 bits of the raw output" {
-        let r [xoshiro::new 42]
+        let r [Xoshiro::new 42]
         Test::eq [draw $r 8 0 65535] (10077 55737 1185 13889 35054 57770 47660 28861)
     }
 
     Test::case "seed 0 and seed 2^32-1 are valid, distinct streams" {
-        Test::eq [draw [xoshiro::new 0] 4 0 65535] (27312 686 38473 58727)
-        Test::eq [draw [xoshiro::new 4294967295] 4 0 65535] (62625 27860 17581 37041)
+        Test::eq [draw [Xoshiro::new 0] 4 0 65535] (27312 686 38473 58727)
+        Test::eq [draw [Xoshiro::new 4294967295] 4 0 65535] (62625 27860 17581 37041)
     }
 
     Test::case "seed is reduced modulo 2^32" {
-        Test::eq [draw [xoshiro::new -1] 4 0 65535] (62625 27860 17581 37041)
-        Test::eq [draw [xoshiro::new 4294967338] 2 0 65535] (10077 55737)
+        Test::eq [draw [Xoshiro::new -1] 4 0 65535] (62625 27860 17581 37041)
+        Test::eq [draw [Xoshiro::new 4294967338] 2 0 65535] (10077 55737)
     }
 
     Test::case "bounded int: rejection sampling over the top bits (d6)" {
-        let r [xoshiro::new 42]
+        let r [Xoshiro::new 42]
         Test::eq [draw $r 10 1 6] (2 1 2 5 6 4 5 3 5 6)
     }
 
     Test::case "float: 53-bit construction from two outputs" {
-        let r [xoshiro::new 42]
-        let x [xoshiro::float $r]
+        let r [Xoshiro::new 42]
+        let x [Xoshiro::float $r]
         let d [- $x 0.15377165265745885]
         Test::assert [and [< $d 1e-15] [> $d -1e-15]]
     }
 
     Test::case "same seed, same sequence; streams are independent" {
-        let a [xoshiro::new 99]
-        let b [xoshiro::new 99]
-        let c [xoshiro::new 100]
+        let a [Xoshiro::new 99]
+        let b [Xoshiro::new 99]
+        let c [Xoshiro::new 100]
         Test::eq [draw $a 5 0 1000000] [draw $b 5 0 1000000]
         Test::assert [!= [draw $a 5 0 1000000] [draw $c 5 0 1000000]]
     }
@@ -47,16 +47,16 @@ Test::suite "xoshiro: known answers" {
 
 Test::suite "xoshiro: int" {
     Test::case "inclusive bounds, degenerate and negative ranges" {
-        let r [xoshiro::new 1]
-        Test::eq [xoshiro::int $r 5 5] 5
-        Test::eq [xoshiro::int $r -7 -7] -7
+        let r [Xoshiro::new 1]
+        Test::eq [Xoshiro::int $r 5 5] 5
+        Test::eq [Xoshiro::int $r -7 -7] -7
         foreach v [draw $r 200 -3 3] {
             Test::assert [and [>= $v -3] [<= $v 3]]
         }
     }
 
     Test::case "every value in a small range is reached" {
-        let r [xoshiro::new 3]
+        let r [Xoshiro::new 3]
         var seen #{}
         foreach v [draw $r 200 0 3] {
             set! seen [put $seen $v 1]
@@ -65,7 +65,7 @@ Test::suite "xoshiro: int" {
     }
 
     Test::case "no modulo bias on a 3-way range (rough uniformity)" {
-        let r [xoshiro::new 2024]
+        let r [Xoshiro::new 2024]
         var counts (0 0 0)
         foreach v [draw $r 3000 0 2] {
             set! counts [put $counts $v [+ [get $counts $v] 1]]
@@ -76,8 +76,8 @@ Test::suite "xoshiro: int" {
     }
 
     Test::case "full long range is supported" {
-        let r [xoshiro::new 5]
-        let v [xoshiro::int $r -9223372036854775808 9223372036854775807]
+        let r [Xoshiro::new 5]
+        let v [Xoshiro::int $r -9223372036854775808 9223372036854775807]
         Test::assert [int? $v]
         foreach v [draw $r 50 0 4294967296] {
             Test::assert [and [>= $v 0] [<= $v 4294967296]]
@@ -85,25 +85,25 @@ Test::suite "xoshiro: int" {
     }
 
     Test::case "errors" {
-        let r [xoshiro::new 1]
+        let r [Xoshiro::new 1]
         var e 0
-        Test::eq [catch {xoshiro::int $r 5 1} x e] 1
-        Test::eq $e "xoshiro::int: lo must be <= hi"
-        Test::eq [catch {xoshiro::int 42 1 5} x e] 1
-        Test::eq $e "xoshiro::int: expected xoshiro stream (from xoshiro::new)"
-        Test::eq [catch {xoshiro::int $r a 5} x e] 1
-        Test::eq $e "xoshiro::int: lo and hi must be integers"
-        Test::eq [catch {xoshiro::new a} x e] 1
-        Test::eq $e "xoshiro::new: seed must be an integer"
-        Test::eq [catch {xoshiro::new 1 2} x e] 1
+        Test::eq [catch {Xoshiro::int $r 5 1} x e] 1
+        Test::eq $e "Xoshiro::int: lo must be <= hi"
+        Test::eq [catch {Xoshiro::int 42 1 5} x e] 1
+        Test::eq $e "Xoshiro::int: expected xoshiro stream (from Xoshiro::new)"
+        Test::eq [catch {Xoshiro::int $r a 5} x e] 1
+        Test::eq $e "Xoshiro::int: lo and hi must be integers"
+        Test::eq [catch {Xoshiro::new a} x e] 1
+        Test::eq $e "Xoshiro::new: seed must be an integer"
+        Test::eq [catch {Xoshiro::new 1 2} x e] 1
     }
 }
 
 Test::suite "xoshiro: float" {
     Test::case "in the half-open unit interval, typed float" {
-        let r [xoshiro::new 11]
+        let r [Xoshiro::new 11]
         for {var i 0} {[< $i 500]} {set! i [+ $i 1]} {
-            let x [xoshiro::float $r]
+            let x [Xoshiro::float $r]
             Test::assert [float? $x]
             Test::assert [and [>= $x 0.0] [< $x 1.0]]
         }
@@ -112,45 +112,45 @@ Test::suite "xoshiro: float" {
 
 Test::suite "xoshiro: shuffle" {
     Test::case "returns a new list, a permutation, original untouched" {
-        let r [xoshiro::new 7]
+        let r [Xoshiro::new 7]
         let xs (a b c d e f)
-        let ys [xoshiro::shuffle $r $xs]
+        let ys [Xoshiro::shuffle $r $xs]
         Test::eq [repr $ys] {("f" "c" "e" "d" "b" "a")}    ;; contract: Fisher-Yates over int
         Test::eq [repr $xs] {("a" "b" "c" "d" "e" "f")}
         Test::eq [List::sort $ys] $xs
     }
 
     Test::case "element types survive" {
-        let r [xoshiro::new 7]
-        let ys [xoshiro::shuffle $r (1 (2 3) #{k v})]
+        let r [Xoshiro::new 7]
+        let ys [Xoshiro::shuffle $r (1 (2 3) #{k v})]
         Test::eq [len $ys] 3
         Test::assert [List::any? $ys [lambda {e} { list? $e }]]
     }
 
     Test::case "empty and singleton" {
-        let r [xoshiro::new 1]
-        Test::eq [repr [xoshiro::shuffle $r ()]] {()}
-        Test::eq [repr [xoshiro::shuffle $r (x)]] {("x")}
+        let r [Xoshiro::new 1]
+        Test::eq [repr [Xoshiro::shuffle $r ()]] {()}
+        Test::eq [repr [Xoshiro::shuffle $r (x)]] {("x")}
     }
 
     Test::case "refuses text" {
-        let r [xoshiro::new 1]
+        let r [Xoshiro::new 1]
         var e 0
-        Test::eq [catch {xoshiro::shuffle $r {a b c}} x e] 1
-        Test::eq $e "xoshiro::shuffle: expected list"
+        Test::eq [catch {Xoshiro::shuffle $r {a b c}} x e] 1
+        Test::eq $e "Xoshiro::shuffle: expected list"
     }
 }
 
 Test::suite "xoshiro: handles" {
     Test::case "stream is an opaque value" {
-        let r [xoshiro::new]
+        let r [Xoshiro::new]
         Test::eq [type $r] opaque
         Test::eq [repr $r] {<opaque:xoshiro128**>}
     }
 
     Test::case "unseeded streams differ (time + counter)" {
-        let a [xoshiro::new]
-        let b [xoshiro::new]
+        let a [Xoshiro::new]
+        let b [Xoshiro::new]
         Test::assert [!= [draw $a 4 0 1000000] [draw $b 4 0 1000000]]
     }
 }

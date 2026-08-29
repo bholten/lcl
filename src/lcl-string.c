@@ -14,7 +14,7 @@ lcl_value *lcl_string_new(const char *str) {
    * to reify from. So `str_repr == NULL` on a STRING is a poison
    * state -- anyone stringifying it sees a NULL return and raises "out
    * of memory". Treat `str == NULL` as the empty string at
-   * construction time; callers like `io::getenv` of an unset variable
+   * construction time; callers like `Io::getenv` of an unset variable
    * used to silently get "" out of this path and we want to preserve
    * that behavior. */
   lcl_value *v = lcl_value_alloc();

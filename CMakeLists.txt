@@ -6,6 +6,7 @@ project(lcl
   LANGUAGES C
 )
 
+set(LCL_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(LCL_VERSION_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/include/lcl-version.h.in"
@@ -442,9 +443,9 @@ endif()
 
 if(LCL_BUILD_SH_LIB)
   lcl_embed_file(
-    INPUT  lib/sh/src/sh.lcl
+    INPUT  lib/sh/src/Sh.lcl
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sh-lib-data.h
-    SYMBOL lib_sh_src_sh_lcl
+    SYMBOL lib_sh_src_Sh_lcl
     TARGET generate_sh_lib_data
   )
 
@@ -488,7 +489,7 @@ endif()
 
 if(LCL_BUILD_BENCH_LIB)
   if(NOT LCL_BUILD_TIME)
-    message(FATAL_ERROR "LCL_BUILD_BENCH_LIB requires LCL_BUILD_TIME=ON (Bench uses time::monotonic_us)")
+    message(FATAL_ERROR "LCL_BUILD_BENCH_LIB requires LCL_BUILD_TIME=ON (Bench uses Time::monotonic_us)")
   endif()
 
   lcl_embed_file(
@@ -572,6 +573,16 @@ if(LCL_BUILD_TESTS)
                 "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/test.lcl"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
+
+      if(LCL_BUILD_IO)
+        file(GLOB _lcl_core_docs "${CMAKE_CURRENT_SOURCE_DIR}/docs/*.lcl")
+        add_test(
+          NAME doctest-core
+          COMMAND $<TARGET_FILE:lcl-cli>
+                  "${CMAKE_CURRENT_SOURCE_DIR}/tools/docs.lcl" doctest ${_lcl_core_docs}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        )
+      endif()
     endif()
 
     add_test(

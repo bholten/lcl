@@ -1,12 +1,12 @@
 ;; expect.lcl - Lcl convenience layer for expect automation
 ;;
-;; Provides higher-level conveniences built on the C expect:: primitives.
+;; Provides higher-level conveniences built on the C Expect:: primitives.
 ;; This file is meant to be embedded and loaded automatically when
 ;; lcl-expect is enabled.
 ;;
 ;; REQUIRES: lcl-process, lcl-expect (C package)
 
-namespace expect {
+namespace Expect {
     ;; Default timeout in milliseconds (10 seconds)
     var _default_timeout 10000
 
@@ -14,21 +14,21 @@ namespace expect {
     ;; Configuration
     ;; ========================================================================
 
-    ;; expect::set-timeout ms - set default timeout in milliseconds
+    ;; Expect::set-timeout ms - set default timeout in milliseconds
     proc set-timeout {ms} {
-        set! expect::_default_timeout $ms
+        set! Expect::_default_timeout $ms
     }
 
-    ;; expect::get-timeout - get default timeout
+    ;; Expect::get-timeout - get default timeout
     proc get-timeout {} {
-        ${expect::_default_timeout}
+        ${Expect::_default_timeout}
     }
 
     ;; ========================================================================
     ;; Spawning
     ;; ========================================================================
 
-    ;; expect::spawn cmd ?opts? - spawn a process with PTY by default
+    ;; Expect::spawn cmd ?opts? - spawn a process with PTY by default
     ;;
     ;; Options:
     ;;   pty     - use PTY mode (default: 1)
@@ -41,7 +41,7 @@ namespace expect {
     ;; Returns: session dict #{handle <h> timeout <t>}
     proc spawn {cmd (opts #{})} {
         let pty_mode [get $opts pty 1]
-        let timeout [get $opts timeout ${expect::_default_timeout}]
+        let timeout [get $opts timeout ${Expect::_default_timeout}]
         let rows [get $opts rows 24]
         let cols [get $opts cols 80]
         let env [get $opts env #{}]
@@ -55,7 +55,7 @@ namespace expect {
             let spawn_opts [put $spawn_opts cwd $cwd]
         }
 
-        let h [process::spawn $cmd $spawn_opts]
+        let h [Process::spawn $cmd $spawn_opts]
         dict handle $h timeout $timeout
     }
 
@@ -63,17 +63,17 @@ namespace expect {
     ;; Sending
     ;; ========================================================================
 
-    ;; expect::send session str - send string to process
+    ;; Expect::send session str - send string to process
     proc send {session str} {
-        process::send [get $session handle] $str
+        Process::send [get $session handle] $str
     }
 
-    ;; expect::send-line session str - send string with newline
+    ;; Expect::send-line session str - send string with newline
     proc send-line {session str} {
-        expect::send $session "$str\n"
+        Expect::send $session "$str\n"
     }
 
-    ;; expect::send-ctrl session char - send control character
+    ;; Expect::send-ctrl session char - send control character
     ;; char: a-z for Ctrl-A through Ctrl-Z
     proc send-ctrl {session char} {
         ;; Control characters are ASCII 1-26
@@ -81,14 +81,14 @@ namespace expect {
         if [or [< $code 1] [> $code 26]] {
             error "invalid control character"
         }
-        expect::send $session [String::chr $code]
+        Expect::send $session [String::chr $code]
     }
 
     ;; ========================================================================
     ;; Simple Waiting (non-handler based)
     ;; ========================================================================
 
-    ;; expect::wait-for session pattern ?opts? - wait for a single pattern
+    ;; Expect::wait-for session pattern ?opts? - wait for a single pattern
     ;;
     ;; Options:
     ;;   timeout - timeout in ms
@@ -97,11 +97,11 @@ namespace expect {
     proc wait-for {session pattern (opts #{})} {
         let timeout [get $opts timeout [get $session timeout]]
         let patterns [list $pattern]
-        let r [expect::read-match [get $session handle] $patterns #{timeout $timeout}]
+        let r [Expect::read-match [get $session handle] $patterns #{timeout $timeout}]
         $r
     }
 
-    ;; expect::expect session patterns ?opts? - wait for any of multiple patterns
+    ;; Expect::expect session patterns ?opts? - wait for any of multiple patterns
     ;;
     ;; patterns: string or list of strings/patterns
     ;; Returns: match result dict
@@ -114,7 +114,7 @@ namespace expect {
             let pattern_list [list $patterns]
         }
 
-        let r [expect::read-match [get $session handle] $pattern_list #{timeout $timeout}]
+        let r [Expect::read-match [get $session handle] $pattern_list #{timeout $timeout}]
         $r
     }
 
@@ -122,91 +122,91 @@ namespace expect {
     ;; Handler-based Matching
     ;; ========================================================================
 
-    ;; expect::interact session pairs ?opts? - match patterns and call handlers
+    ;; Expect::interact session pairs ?opts? - match patterns and call handlers
     ;;
     ;; pairs: list of (pattern handler) pairs
     ;; Returns: result of matched handler
     ;;
     ;; Example:
-    ;;   expect::interact $s (
-    ;;       ("password:" [lambda {m} { expect::send-line $s "secret"; continue }])
+    ;;   Expect::interact $s (
+    ;;       ("password:" [lambda {m} { Expect::send-line $s "secret"; continue }])
     ;;       ("$ " [lambda {m} { get $m data }])
     ;;   )
     proc interact {session pairs (opts #{})} {
         let timeout [get $opts timeout [get $session timeout]]
-        expect::match [get $session handle] $pairs #{timeout $timeout}
+        Expect::match [get $session handle] $pairs #{timeout $timeout}
     }
 
-    ;; expect::interact-loop session pairs ?opts? - loop with pattern matching
+    ;; Expect::interact-loop session pairs ?opts? - loop with pattern matching
     ;;
     ;; Like interact but loops until break or normal return.
     proc interact-loop {session pairs (opts #{})} {
         let timeout [get $opts timeout [get $session timeout]]
-        expect::loop [get $session handle] $pairs #{timeout $timeout}
+        Expect::loop [get $session handle] $pairs #{timeout $timeout}
     }
 
     ;; ========================================================================
     ;; Lifecycle
     ;; ========================================================================
 
-    ;; expect::alive? session - check if process is running
+    ;; Expect::alive? session - check if process is running
     proc alive? {session} {
-        process::alive? [get $session handle]
+        Process::alive? [get $session handle]
     }
 
-    ;; expect::wait session ?opts? - wait for process to exit
+    ;; Expect::wait session ?opts? - wait for process to exit
     proc wait {session (opts #{})} {
-        process::wait [get $session handle] $opts
+        Process::wait [get $session handle] $opts
     }
 
-    ;; expect::kill session ?opts? - send signal to process
+    ;; Expect::kill session ?opts? - send signal to process
     proc kill {session (opts #{})} {
-        process::kill [get $session handle] $opts
+        Process::kill [get $session handle] $opts
     }
 
-    ;; expect::close session - close the session
+    ;; Expect::close session - close the session
     proc close {session} {
-        process::close [get $session handle]
+        Process::close [get $session handle]
     }
 
-    ;; expect::close-stdin session - close stdin to signal EOF
+    ;; Expect::close-stdin session - close stdin to signal EOF
     proc close-stdin {session} {
-        process::close-stdin [get $session handle]
+        Process::close-stdin [get $session handle]
     }
 
     ;; ========================================================================
     ;; PTY Operations
     ;; ========================================================================
 
-    ;; expect::pty? session - check if using PTY mode
+    ;; Expect::pty? session - check if using PTY mode
     proc pty? {session} {
-        process::pty? [get $session handle]
+        Process::pty? [get $session handle]
     }
 
-    ;; expect::set-winsize session rows cols - set terminal size
+    ;; Expect::set-winsize session rows cols - set terminal size
     proc set-winsize {session rows cols} {
-        process::set-winsize [get $session handle] $rows $cols
+        Process::set-winsize [get $session handle] $rows $cols
     }
 
-    ;; expect::get-winsize session - get terminal size
+    ;; Expect::get-winsize session - get terminal size
     proc get-winsize {session} {
-        process::get-winsize [get $session handle]
+        Process::get-winsize [get $session handle]
     }
 
     ;; ========================================================================
     ;; Reading
     ;; ========================================================================
 
-    ;; expect::read session ?opts? - read available output
+    ;; Expect::read session ?opts? - read available output
     proc read {session (opts #{})} {
-        process::read [get $session handle] $opts
+        Process::read [get $session handle] $opts
     }
 
-    ;; expect::drain session ?opts? - read all available output
+    ;; Expect::drain session ?opts? - read all available output
     proc drain {session (opts #{})} {
         var output ""
         while 1 {
-            let chunk [process::read [get $session handle] #{timeout 100}]
+            let chunk [Process::read [get $session handle] #{timeout 100}]
             if [empty? $chunk] {
                 break
             }
@@ -219,35 +219,35 @@ namespace expect {
     ;; Pattern Helpers
     ;; ========================================================================
 
-    namespace pat {
-        ;; expect::pat::literal str ?opts? - create literal pattern
+    namespace Pat {
+        ;; Expect::Pat::literal str ?opts? - create literal pattern
         proc literal {s (opts #{})} {
-            expect::pattern $s $opts
+            Expect::pattern $s $opts
         }
 
-        ;; expect::pat::regex str ?opts? - create regex pattern
+        ;; Expect::Pat::regex str ?opts? - create regex pattern
         proc regex {r (opts #{})} {
-            expect::regex $r $opts
+            Expect::regex $r $opts
         }
 
-        ;; expect::pat::timeout - create timeout sentinel
+        ;; Expect::Pat::timeout - create timeout sentinel
         proc timeout {} {
-            expect::timeout
+            Expect::timeout
         }
 
-        ;; expect::pat::eof - create EOF sentinel
+        ;; Expect::Pat::eof - create EOF sentinel
         proc eof {} {
-            expect::eof
+            Expect::eof
         }
 
-        ;; expect::pat::prompt ?opts? - common shell prompt patterns
+        ;; Expect::Pat::prompt ?opts? - common shell prompt patterns
         proc prompt {(opts #{})} {
             let type [get $opts type "any"]
             case $type \
-                {bash}  [expect::regex {[$#] $}] \
-                {zsh}   [expect::regex {[%#] $}] \
-                {sh}    [expect::regex {[$#] $}] \
-                else    [expect::regex {[$#%>] $}]
+                {bash}  [Expect::regex {[$#] $}] \
+                {zsh}   [Expect::regex {[%#] $}] \
+                {sh}    [Expect::regex {[$#] $}] \
+                else    [Expect::regex {[$#%>] $}]
         }
     }
 
@@ -255,23 +255,23 @@ namespace expect {
     ;; Convenience: Combined Operations
     ;; ========================================================================
 
-    ;; expect::send-expect session str pattern ?opts? - send then wait
+    ;; Expect::send-expect session str pattern ?opts? - send then wait
     proc send-expect {session str pattern (opts #{})} {
-        expect::send $session $str
-        expect::expect $session $pattern $opts
+        Expect::send $session $str
+        Expect::expect $session $pattern $opts
     }
 
-    ;; expect::send-line-expect session str pattern ?opts? - send line then wait
+    ;; Expect::send-line-expect session str pattern ?opts? - send line then wait
     proc send-line-expect {session str pattern (opts #{})} {
-        expect::send-line $session $str
-        expect::expect $session $pattern $opts
+        Expect::send-line $session $str
+        Expect::expect $session $pattern $opts
     }
 
     ;; ========================================================================
     ;; Script Runner
     ;; ========================================================================
 
-    ;; expect::run session script - run expect script (list of actions)
+    ;; Expect::run session script - run expect script (list of actions)
     ;;
     ;; Each action is a list: [type args...]
     ;; Types:
@@ -289,19 +289,19 @@ namespace expect {
             let cmd [String::trim [get $action 0]]
 
             case $cmd \
-                {send}      [expect::send $session [get $action 1]] \
-                {send-line} [expect::send-line $session [get $action 1]] \
+                {send}      [Expect::send $session [get $action 1]] \
+                {send-line} [Expect::send-line $session [get $action 1]] \
                 {expect}    [eval {
                     let pattern [get $action 1]
                     let timeout [get $action 2 [get $session timeout]]
-                    let r [expect::expect $session $pattern #{timeout $timeout}]
+                    let r [Expect::expect $session $pattern #{timeout $timeout}]
                     set! results [List::push $results $r]
                 }] \
                 {sleep}     [eval {
-                    ;; Simple sleep using process::run with sleep command
+                    ;; Simple sleep using Process::run with sleep command
                     let ms [get $action 1]
                     let secs [/ $ms 1000.0]
-                    process::run (sleep $secs)
+                    Process::run (sleep $secs)
                 }] \
                 else        {}
         }
@@ -309,13 +309,13 @@ namespace expect {
         $results
     }
 
-    ;; expect::script cmd actions - spawn, run script, close
+    ;; Expect::script cmd actions - spawn, run script, close
     ;;
     ;; Returns: list of expect results
     proc script {cmd actions (opts #{})} {
-        let session [expect::spawn $cmd $opts]
-        let results [expect::run $session $actions]
-        expect::close $session
+        let session [Expect::spawn $cmd $opts]
+        let results [Expect::run $session $actions]
+        Expect::close $session
         $results
     }
 }

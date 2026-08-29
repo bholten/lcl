@@ -1,6 +1,6 @@
-;; posix:: Package Tests
+;; Posix:: Package Tests
 ;; Run with an LCL interpreter that has the posix extension loaded.
-;; File fixtures are created/removed via io:: (lcl-io), so the
+;; File fixtures are created/removed via Io:: (lcl-io), so the
 ;; interpreter needs both packages — the default dev build has both.
 ;;
 ;; Test framework (Test::suite, Test::case, etc.) is embedded when built
@@ -12,16 +12,16 @@
 
 Test::suite "Working Directory" {
     Test::case "getcwd returns non-empty" {
-        let cwd [posix::getcwd]
+        let cwd [Posix::getcwd]
         Test::gt [String::length $cwd] 0
     }
 
     Test::case "chdir and getcwd round-trip" {
-        let original [posix::getcwd]
-        posix::chdir /tmp
-        Test::eq [posix::getcwd] [posix::realpath /tmp] ;; realpath for mac, which symlinks /tmp
-        posix::chdir $original
-        Test::eq [posix::getcwd] $original
+        let original [Posix::getcwd]
+        Posix::chdir /tmp
+        Test::eq [Posix::getcwd] [Posix::realpath /tmp] ;; realpath for mac, which symlinks /tmp
+        Posix::chdir $original
+        Test::eq [Posix::getcwd] $original
     }
 }
 
@@ -33,24 +33,24 @@ Test::suite "Directory Operations" {
     Test::before {
         ;; Clean up from any previous failed runs
         let test_dir "/tmp/lcl_posix_test_dir"
-        if [posix::exists? $test_dir] {
-            posix::rmdir $test_dir
+        if [Posix::exists? $test_dir] {
+            Posix::rmdir $test_dir
         }
     }
 
     Test::case "mkdir creates directory" {
         let test_dir "/tmp/lcl_posix_test_dir"
-        posix::mkdir $test_dir
-        Test::true [posix::exists? $test_dir]
-        Test::true [posix::dir? $test_dir]
-        posix::rmdir $test_dir
+        Posix::mkdir $test_dir
+        Test::true [Posix::exists? $test_dir]
+        Test::true [Posix::dir? $test_dir]
+        Posix::rmdir $test_dir
     }
 
     Test::case "rmdir removes directory" {
         let test_dir "/tmp/lcl_posix_test_dir"
-        posix::mkdir $test_dir
-        posix::rmdir $test_dir
-        Test::false [posix::exists? $test_dir]
+        Posix::mkdir $test_dir
+        Posix::rmdir $test_dir
+        Test::false [Posix::exists? $test_dir]
     }
 }
 
@@ -62,16 +62,16 @@ Test::suite "File Information" {
     Test::case "file_size matches content length" {
         let test_file "/tmp/lcl_posix_size_test.txt"
         let content "Test content here"
-        io::write_file $test_file $content
-        Test::eq [posix::file_size $test_file] [String::length $content]
-        io::remove $test_file
+        Io::write_file $test_file $content
+        Test::eq [Posix::file_size $test_file] [String::length $content]
+        Io::remove $test_file
     }
 
     Test::case "file_mtime returns positive timestamp" {
         let test_file "/tmp/lcl_posix_mtime_test.txt"
-        io::write_file $test_file "test"
-        Test::gt [posix::file_mtime $test_file] 0
-        io::remove $test_file
+        Io::write_file $test_file "test"
+        Test::gt [Posix::file_mtime $test_file] 0
+        Io::remove $test_file
     }
 }
 
@@ -79,22 +79,22 @@ Test::suite "File Information" {
 ;; Directory Listing
 ;; ============================================================================
 
-Test::suite "Directory Listing (posix::readdir)" {
+Test::suite "Directory Listing (Posix::readdir)" {
     Test::case "readdir returns file list" {
         let test_dir "/tmp/lcl_posix_readdir_test"
-        posix::mkdir $test_dir
-        io::write_file "$test_dir/file1.txt" "one"
-        io::write_file "$test_dir/file2.txt" "two"
-        io::write_file "$test_dir/file3.txt" "three"
+        Posix::mkdir $test_dir
+        Io::write_file "$test_dir/file1.txt" "one"
+        Io::write_file "$test_dir/file2.txt" "two"
+        Io::write_file "$test_dir/file3.txt" "three"
 
-        let files [posix::readdir $test_dir]
+        let files [Posix::readdir $test_dir]
         Test::eq [len $files] 3
 
         ;; Clean up
-        io::remove "$test_dir/file1.txt"
-        io::remove "$test_dir/file2.txt"
-        io::remove "$test_dir/file3.txt"
-        posix::rmdir $test_dir
+        Io::remove "$test_dir/file1.txt"
+        Io::remove "$test_dir/file2.txt"
+        Io::remove "$test_dir/file3.txt"
+        Posix::rmdir $test_dir
     }
 }
 
@@ -104,24 +104,24 @@ Test::suite "Directory Listing (posix::readdir)" {
 
 Test::suite "File Predicates" {
     Test::case "non-existent path" {
-        Test::false [posix::exists? "/tmp/nonexistent_lcl_test_xyz"]
-        Test::false [posix::file? "/tmp/nonexistent_lcl_test_xyz"]
-        Test::false [posix::dir? "/tmp/nonexistent_lcl_test_xyz"]
+        Test::false [Posix::exists? "/tmp/nonexistent_lcl_test_xyz"]
+        Test::false [Posix::file? "/tmp/nonexistent_lcl_test_xyz"]
+        Test::false [Posix::dir? "/tmp/nonexistent_lcl_test_xyz"]
     }
 
     Test::case "/tmp is a directory" {
-        Test::true [posix::exists? /tmp]
-        Test::true [posix::dir? /tmp]
-        Test::false [posix::file? /tmp]
+        Test::true [Posix::exists? /tmp]
+        Test::true [Posix::dir? /tmp]
+        Test::false [Posix::file? /tmp]
     }
 
     Test::case "regular file is file? not dir?" {
         let test_file "/tmp/lcl_posix_pred_test.txt"
-        io::write_file $test_file "predicate test"
-        Test::true [posix::exists? $test_file]
-        Test::true [posix::file? $test_file]
-        Test::false [posix::dir? $test_file]
-        io::remove $test_file
+        Io::write_file $test_file "predicate test"
+        Test::true [Posix::exists? $test_file]
+        Test::true [Posix::file? $test_file]
+        Test::false [Posix::dir? $test_file]
+        Io::remove $test_file
     }
 }
 
@@ -129,44 +129,44 @@ Test::suite "File Predicates" {
 ;; Glob
 ;; ============================================================================
 
-Test::suite "Glob (posix::glob)" {
+Test::suite "Glob (Posix::glob)" {
     Test::case "glob finds matching files" {
-        io::write_file "/tmp/lcl_glob_test1.txt" "1"
-        io::write_file "/tmp/lcl_glob_test2.txt" "2"
+        Io::write_file "/tmp/lcl_glob_test1.txt" "1"
+        Io::write_file "/tmp/lcl_glob_test2.txt" "2"
 
-        let files [posix::glob "/tmp/lcl_glob_test*.txt"]
+        let files [Posix::glob "/tmp/lcl_glob_test*.txt"]
         Test::gte [len $files] 2
 
-        io::remove "/tmp/lcl_glob_test1.txt"
-        io::remove "/tmp/lcl_glob_test2.txt"
+        Io::remove "/tmp/lcl_glob_test1.txt"
+        Io::remove "/tmp/lcl_glob_test2.txt"
     }
 
     Test::case "glob with no matches returns empty list" {
-        let files [posix::glob "asdf.txt"]
+        let files [Posix::glob "asdf.txt"]
 
         Test::eq [len $files] 0
     }
 
     Test::case "glob accepts multiple patterns, grouped in argument order" {
-        io::write_file "/tmp/lcl_glob_multi_a.txt" "a"
-        io::write_file "/tmp/lcl_glob_multi_b.log" "b"
+        Io::write_file "/tmp/lcl_glob_multi_a.txt" "a"
+        Io::write_file "/tmp/lcl_glob_multi_b.log" "b"
 
-        let files [posix::glob "/tmp/lcl_glob_multi_*.log" "/tmp/lcl_glob_multi_*.txt"]
+        let files [Posix::glob "/tmp/lcl_glob_multi_*.log" "/tmp/lcl_glob_multi_*.txt"]
         Test::eq $files ("/tmp/lcl_glob_multi_b.log" "/tmp/lcl_glob_multi_a.txt")
 
         ;; a non-matching pattern in the middle contributes nothing
-        let files2 [posix::glob "/tmp/lcl_glob_multi_*.txt" "asdf.txt" "/tmp/lcl_glob_multi_*.log"]
+        let files2 [Posix::glob "/tmp/lcl_glob_multi_*.txt" "asdf.txt" "/tmp/lcl_glob_multi_*.log"]
         Test::eq $files2 ("/tmp/lcl_glob_multi_a.txt" "/tmp/lcl_glob_multi_b.log")
 
         ;; all patterns non-matching
-        Test::eq [len [posix::glob "asdf.txt" "qwer.txt"]] 0
+        Test::eq [len [Posix::glob "asdf.txt" "qwer.txt"]] 0
 
-        io::remove "/tmp/lcl_glob_multi_a.txt"
-        io::remove "/tmp/lcl_glob_multi_b.log"
+        Io::remove "/tmp/lcl_glob_multi_a.txt"
+        Io::remove "/tmp/lcl_glob_multi_b.log"
     }
 
     Test::case "glob requires at least one pattern" {
-        Test::eq [catch {posix::glob} r e] 1
+        Test::eq [catch {Posix::glob} r e] 1
     }
 }
 
@@ -174,11 +174,11 @@ Test::suite "Glob (posix::glob)" {
 ;; realpath
 ;; ============================================================================
 
-Test::suite "realpth (posix::realpath)" {
+Test::suite "realpth (Posix::realpath)" {
     Test::case "realpath finds current dir" {
-        let path [posix::realpath "."]
+        let path [Posix::realpath "."]
 
-        Test::eq $path [posix::getcwd]
+        Test::eq $path [Posix::getcwd]
     }
 }
 
@@ -186,23 +186,23 @@ Test::suite "realpth (posix::realpath)" {
 ;; dirname / basename
 ;; ============================================================================
 
-Test::suite "path parts (posix::dirname, posix::basename)" {
+Test::suite "path parts (Posix::dirname, Posix::basename)" {
     Test::case "dirname strips the last component" {
-        Test::eq [posix::dirname "/usr/local/bin/lcl"] "/usr/local/bin"
-        Test::eq [posix::dirname "lcl"] "."
-        Test::eq [posix::dirname "/"] "/"
+        Test::eq [Posix::dirname "/usr/local/bin/lcl"] "/usr/local/bin"
+        Test::eq [Posix::dirname "lcl"] "."
+        Test::eq [Posix::dirname "/"] "/"
     }
 
     Test::case "basename keeps the last component" {
-        Test::eq [posix::basename "/usr/local/bin/lcl"] "lcl"
-        Test::eq [posix::basename "lcl"] "lcl"
-        Test::eq [posix::basename "/usr/local/"] "local"
+        Test::eq [Posix::basename "/usr/local/bin/lcl"] "lcl"
+        Test::eq [Posix::basename "lcl"] "lcl"
+        Test::eq [Posix::basename "/usr/local/"] "local"
     }
 
     Test::case "the argument is left untouched" {
         let p "/a/b/c"
-        posix::dirname $p
-        posix::basename $p
+        Posix::dirname $p
+        Posix::basename $p
         Test::eq $p "/a/b/c"
     }
 }

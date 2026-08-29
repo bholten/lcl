@@ -5,10 +5,10 @@
 
 Test::suite "Namespaces" {
     Test::case "namespace creates binding" {
-        namespace math {
+        namespace Math {
             let ten 10
         }
-        Test::eq ${math::ten} 10
+        Test::eq ${Math::ten} 10
     }
 
     Test::case "braced variable form" {

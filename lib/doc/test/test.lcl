@@ -101,7 +101,7 @@ namespace M {
         Test::eq [get $s line] 4
     }
 
-    Test::case "unattached runs inside a body extend the namespace doc" {
+    Test::case "unattached runs above the first definition extend the namespace doc" {
         let src {;;; Outer.
 namespace M {
     ;;; Intro prose.
@@ -110,6 +110,46 @@ namespace M {
 }}
         let e [get [get [Doc::extract $src] entries] 0]
         Test::eq [get $e doc] "Outer.\n\nIntro prose."
+    }
+
+    Test::case "unattached runs after a definition are in-place prose entries" {
+        let src {;;; Module.
+
+proc a {} { 0 }
+
+;;; ## Section
+;;; About b.
+
+proc b {} { 0 }
+namespace M {
+    proc c {} { 0 }
+
+    ;;; Between c and d.
+
+    proc d {} { 0 }
+}}
+        let m [Doc::extract $src]
+        Test::eq [get $m doc] "Module."
+        let kinds [List::map [get $m entries] [lambda {e} { get $e kind }]]
+        Test::eq $kinds ("proc" "prose" "proc" "namespace")
+        Test::eq [get [get [get $m entries] 1] doc] "## Section\nAbout b."
+        Test::eq [get [get [get $m entries] 1] line] 5
+        let ns [get [get $m entries] 3]
+        Test::eq [get $ns doc] ""
+        Test::eq [List::map [get $ns entries] [lambda {e} { get $e kind }]] ("proc" "prose" "proc")
+        Test::eq [get [get [get $ns entries] 1] doc] "Between c and d."
+        ;; rendered in order, without a heading or anchor of its own
+        let md [Doc::markdown $m]
+        Test::assert [< [String::find $md "### proc `a`"] [String::find $md "## Section"]]
+        Test::assert [< [String::find $md "## Section"] [String::find $md "### proc `b`"]]
+        Test::assert [< [String::find $md "### proc `M::c`"] [String::find $md "Between c and d."]]
+        Test::assert [< [String::find $md "Between c and d."] [String::find $md "### proc `M::d`"]]
+        Test::eq [String::find $md "<a id=\"\">"] -1
+        ;; indexed symbols skip prose; its examples still run
+        Doc::register $src "prose-src"
+        Test::eq [len [List::filter [Doc::entries] [lambda {e} { == [get $e file] "prose-src" }]]] 5
+        let dt [Doc::doctest [Doc::extract ";;; Examples:\n;;; >> + 1 1\n;;; 2\n\nproc pq {} { 0 }\n\n;;; Examples:\n;;; >> + 1 2\n;;; 3\n\nproc pr {} { 0 }"]]
+        Test::eq [get $dt pass] 2
     }
 
     Test::case "nested namespaces nest in the model" {
@@ -232,7 +272,112 @@ namespace M {
     Test::case "no title heading when title omitted" {
         let md [Doc::markdown [Doc::extract {proc f {} { 0 }}]]
         Test::neq [String::range $md 0 2] "# "
-        Test::assert [== [String::find $md "### proc `f`"] 0]
+        Test::assert [== [String::find $md "<a id=\"f\"></a>\n\n### proc `f`"] 0]
+    }
+
+    Test::case "every entry heading gets an anchor named by its qualified name" {
+        let src {namespace M {
+    proc eq? {a b} { 0 }
+    ;;; A constant.
+    let K 1
+}}
+        let md [Doc::markdown [Doc::extract $src]]
+        Test::assert [>= [String::find $md "<a id=\"M\"></a>\n\n## namespace `M`"] 0]
+        Test::assert [>= [String::find $md "<a id=\"M::eq?\"></a>\n\n### proc `M::eq? a b`"] 0]
+        Test::assert [>= [String::find $md "<a id=\"M::K\"></a>\n\n### let `M::K`"] 0]
+        Test::eq [Doc::anchor "M::eq?"] "M::eq?"
+    }
+
+    Test::case "bracketed names in prose link through the resolver" {
+        let src {;;; See [M::f] and [nope], not `[M::f]`.
+;;;
+;;; ```
+;;; [M::f] in a fence
+;;; ```
+;;; Already [M::f](x) linked; [two words] kept.
+proc g {} { 0 }}
+        let link [lambda {n} { if [== $n "M::f"] { "p.html#M::f" } else { {} } }]
+        let md [Doc::markdown [Doc::extract $src] {} $link]
+        Test::assert [>= [String::find $md "See \[`M::f`\](p.html#M::f) and \[nope\], not `\[M::f\]`."] 0]
+        Test::assert [>= [String::find $md "\n\[M::f\] in a fence\n"] 0]
+        Test::assert [>= [String::find $md "Already \[M::f\](x) linked; \[two words\] kept."] 0]
+    }
+
+    Test::case "no resolver: prose is verbatim" {
+        let md [Doc::markdown [Doc::extract {;;; See [M::f].
+proc g {} { 0 }}]]
+        Test::assert [>= [String::find $md "See \[M::f\]."] 0]
+    }
+
+    Test::case "link_text applies the resolver to free-form markdown" {
+        let out [Doc::link_text "a \[f\] b `\[f\]` \[" [lambda {n} { "#$n" }]]
+        Test::eq $out "a \[`f`\](#f) b `\[f\]` \["
+    }
+}
+
+Test::suite "Doc::parse blocks" {
+    Test::case "prose after a blank line ends an Examples section" {
+        let d "Intro.\n\nExamples:\n>> + 1 1\n2\n\nMiddle prose.\n\nExamples:\n>> + 2 2\n4\n\nOutro."
+        let p [Doc::parse $d]
+        let kinds [List::map [get $p blocks] [lambda {b} { get $b kind }]]
+        Test::eq $kinds ("prose" "examples" "prose" "examples" "prose")
+        Test::eq [len [get $p examples]] 2
+        Test::eq [get $p summary] "Intro."
+        Test::assert [>= [String::find [get $p body] "Middle prose."] 0]
+        Test::assert [>= [String::find [get $p body] "Outro."] 0]
+    }
+
+    Test::case "an expectation right after >> is not prose" {
+        let d "Examples:\n>> + 1 1\n2\nstill expectation"
+        let p [Doc::parse $d]
+        Test::eq [len [get $p blocks]] 1
+        Test::eq [get [get [get $p examples] 0] expect] "2\nstill expectation"
+    }
+
+    Test::case "single trailing Examples section is unchanged" {
+        let p [Doc::parse "sums\n\nExamples:\n>> + 1 2\n3"]
+        Test::eq [len [get $p blocks]] 2
+        Test::eq [get $p body] "sums\n"
+        Test::eq [get [get [get $p examples] 0] expect] "3"
+    }
+
+    Test::case "markdown renders blocks in order" {
+        let src {;;; Intro.
+;;;
+;;; Examples:
+;;; >> + 1 1
+;;; 2
+;;;
+;;; Later prose.
+;;;
+;;; Examples:
+;;; >> + 2 2
+;;; 4
+
+let x 1}
+        let md [Doc::markdown [Doc::extract $src]]
+        let a [String::find $md "Intro."]
+        let b [String::find $md ">> + 1 1"]
+        let c [String::find $md "Later prose."]
+        let d [String::find $md ">> + 2 2"]
+        Test::assert [and [< $a $b] [< $b $c] [< $c $d]]
+    }
+
+    Test::case "interleaved examples all run" {
+        let src {;;; Examples:
+;;; >> + 1 1
+;;; 2
+;;;
+;;; Prose.
+;;;
+;;; Examples:
+;;; >> + 2 2
+;;; 5
+
+let x 1}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 1
+        Test::eq [get $r fail] 1
     }
 }
 
@@ -329,7 +474,7 @@ Test::suite "Doc self-hosting" {
     Test::case "Doc.lcl's own doctests pass" {
         ;; extract_file needs the io package
         var src {}
-        if [catch {set! src [io::read_file "lib/doc/src/Doc.lcl"]}] {
+        if [catch {set! src [Io::read_file "lib/doc/src/Doc.lcl"]}] {
             Test::skip "io package not built"
         }
         let r [Doc::doctest [Doc::extract $src]]
@@ -434,7 +579,7 @@ namespace LkRun {
         proc one {} { 1 }
     }
 }}
-        io::write_file $path $src
+        Io::write_file $path $src
         load $path
         ;; Nothing registered for this file yet: run_ns warms the index
         ;; from the live namespace's origins.
@@ -474,7 +619,7 @@ namespace LkLive {
     ;;; 2
     proc inner {x} { $x }
 }}
-        io::write_file $path $src
+        Io::write_file $path $src
         load $path
         let e [Doc::lookup ${LkLive::inner}]
         Test::eq [get $e qname] "LkLive::inner"

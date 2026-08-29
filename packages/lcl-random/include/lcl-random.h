@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-/* Registers the `xoshiro::` namespace (xoshiro128** streams). */
+/* Registers the `Xoshiro::` namespace (xoshiro128** streams). */
 void lcl_register_random(lcl_interp *interp);
 
 #ifdef __cplusplus

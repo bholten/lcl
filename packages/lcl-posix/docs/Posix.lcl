@@ -1,0 +1,234 @@
+;;; # lcl-posix
+;;;
+;;; POSIX filesystem and path bindings for Lcl.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core
+;;; - POSIX system headers: `dirent.h`, `glob.h`, `libgen.h`,
+;;;   `sys/stat.h`, `unistd.h`
+;;; - **Portability**: POSIX (Linux, macOS, BSD). Deliberately **not**
+;;;   portable to Windows -- this package exists so that the POSIX-only
+;;;   operations have an honestly named home. Portable ANSI C file I/O
+;;;   (reading, writing, copying, renaming files) lives in `lcl-io`; see
+;;;   [Io::read_file], [Io::write_file], [Io::remove].
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; cmake -S . -B build -DLCL_BUILD_POSIX=ON
+;;; cmake --build build
+;;; ```
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; ;; Directory listing
+;;; foreach f [Posix::readdir "."] {
+;;;     puts $f
+;;; }
+;;;
+;;; ;; Glob matching
+;;; foreach f [Posix::glob "*.lcl"] {
+;;;     puts "script: $f"
+;;; }
+;;;
+;;; ;; Predicates
+;;; if [Posix::dir? build] {
+;;;     puts "configured tree present"
+;;; }
+;;; ```
+;;;
+;;; Paths are passed through to the C library untouched, so relative
+;;; paths resolve against the current working directory (see
+;;; [Posix::getcwd] and [Posix::chdir]). Procs that perform an action
+;;; return the empty string on success. Apart from [Posix::glob], a
+;;; failing system call raises a bare error (the message reads
+;;; `unknown error`); the predicates never raise, they answer 0.
+
+namespace Posix {
+
+    ;;; Procs are listed in groups: directories ([Posix::mkdir],
+    ;;; [Posix::rmdir], [Posix::readdir], [Posix::glob]), predicates and file
+    ;;; information ([Posix::exists?], [Posix::file?], [Posix::dir?],
+    ;;; [Posix::file_size], [Posix::file_mtime]), paths ([Posix::dirname],
+    ;;; [Posix::basename], [Posix::realpath]) and the working directory
+    ;;; ([Posix::getcwd], [Posix::chdir]).
+    ;;;
+    ;;; The predicates and file-information procs `stat` the path, so
+    ;;; symbolic links are followed. [Posix::dirname] and [Posix::basename]
+    ;;; are pure string operations following `dirname(3)`/`basename(3)` --
+    ;;; the path need not exist -- while [Posix::realpath] consults the
+    ;;; filesystem.
+
+    ;;; Create the directory `path`.
+    ;;;
+    ;;; `mode` is the permission mask handed to `mkdir(2)` (still
+    ;;; subject to the umask); it defaults to octal `0755`. Lcl has no
+    ;;; octal literals -- `0755` reads as the string `"0755"` and
+    ;;; converts to *decimal* 755 -- so pass the decimal equivalent
+    ;;; (`493` for `0755`, `448` for `0700`) or omit it. Only the last
+    ;;; component is created; parents must already exist. Raises an
+    ;;; error if the directory cannot be created (including when it
+    ;;; already exists). Returns the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Posix::mkdir build/out
+    ;;; Posix::mkdir private 448      ;; 0700
+    ;;; ```
+    proc mkdir {path (mode 493)} {}
+
+    ;;; Remove the empty directory `path`.
+    ;;;
+    ;;; Raises an error if `path` is not a directory, is not empty, or
+    ;;; cannot be removed. Returns the empty string.
+    ;;;
+    ;;; ```tcl
+    ;;; Posix::rmdir build/out
+    ;;; ```
+    proc rmdir {path} {}
+
+    ;;; Return the names of the entries in directory `path` as a list.
+    ;;;
+    ;;; Names are bare (not joined to `path`), `.` and `..` are
+    ;;; omitted, and the order is whatever the filesystem returns --
+    ;;; sort the result if order matters. Raises an error if `path`
+    ;;; cannot be opened as a directory.
+    ;;;
+    ;;; Examples:
+    ;;; >> List::any? [Posix::readdir docs] [lambda {f} { String::eq? $f "String.lcl" }]
+    ;;; 1
+    ;;; >> List::any? [Posix::readdir docs] [lambda {f} { String::eq? $f "." }]
+    ;;; 0
+    proc readdir {path} {}
+
+    ;;; Return the paths matched by one or more glob patterns.
+    ;;;
+    ;;; Each pattern is expanded with `glob(3)` (`*`, `?`, `[...]`;
+    ;;; `*` does not match a leading `.`). Results are grouped per
+    ;;; pattern in argument order, each group sorted; a pattern that
+    ;;; matches nothing contributes nothing, so the result can be
+    ;;; empty. Raises an error when called with no pattern.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::glob docs/String.lcl
+    ;;; ("docs/String.lcl")
+    ;;; >> Posix::glob docs/String.lcl CMakeLists.txt
+    ;;; ("docs/String.lcl" "CMakeLists.txt")
+    ;;; >> Posix::glob no_such_*.xyz
+    ;;; ()
+    ;;; >> Posix::glob
+    ;;; !! expected at least 1 pattern
+    proc glob {pattern *more} {}
+
+    ;;; Return 1 if `path` exists (file, directory, or anything else),
+    ;;; else 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::exists? docs
+    ;;; 1
+    ;;; >> Posix::exists? CMakeLists.txt
+    ;;; 1
+    ;;; >> Posix::exists? no_such_file.xyz
+    ;;; 0
+    proc exists? {path} {}
+
+    ;;; Return 1 if `path` is a regular file, else 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::file? CMakeLists.txt
+    ;;; 1
+    ;;; >> Posix::file? docs
+    ;;; 0
+    proc file? {path} {}
+
+    ;;; Return 1 if `path` is a directory, else 0.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::dir? docs
+    ;;; 1
+    ;;; >> Posix::dir? CMakeLists.txt
+    ;;; 0
+    ;;; >> Posix::dir? no_such_dir
+    ;;; 0
+    proc dir? {path} {}
+
+    ;;; Return the size of the file at `path` in bytes.
+    ;;;
+    ;;; Raises an error if `path` does not exist.
+    ;;;
+    ;;; Examples:
+    ;;; >> > [Posix::file_size LICENSE] 0
+    ;;; 1
+    proc file_size {path} {}
+
+    ;;; Return the modification time of `path` as a Unix timestamp
+    ;;; (integer seconds since the epoch).
+    ;;;
+    ;;; Raises an error if `path` does not exist. Feed the result to
+    ;;; [Time::localtime] or [Time::strftime] to render it.
+    ;;;
+    ;;; ```tcl
+    ;;; let stamp [Posix::file_mtime CMakeLists.txt]
+    ;;; puts [Time::strftime "%Y-%m-%d" $stamp]
+    ;;; ```
+    proc file_mtime {path} {}
+
+    ;;; Return `path` with its last component removed.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::dirname /usr/local/bin/lcl
+    ;;; "/usr/local/bin"
+    ;;; >> Posix::dirname lcl
+    ;;; "."
+    ;;; >> Posix::dirname /
+    ;;; "/"
+    proc dirname {path} {}
+
+    ;;; Return the last component of `path`.
+    ;;;
+    ;;; Trailing slashes are ignored, as in `basename(3)`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::basename /usr/local/bin/lcl
+    ;;; "lcl"
+    ;;; >> Posix::basename lcl
+    ;;; "lcl"
+    ;;; >> Posix::basename /usr/local/
+    ;;; "local"
+    proc basename {path} {}
+
+    ;;; Return the canonical absolute form of `path`: symbolic links,
+    ;;; `.` and `..` resolved, no trailing slash.
+    ;;;
+    ;;; Every component must exist; otherwise an error is raised.
+    ;;;
+    ;;; Examples:
+    ;;; >> String::eq? [Posix::realpath .] [Posix::getcwd]
+    ;;; 1
+    ;;; >> Posix::basename [Posix::realpath docs/../CMakeLists.txt]
+    ;;; "CMakeLists.txt"
+    proc realpath {path} {}
+
+    ;;; Return the current working directory as an absolute path.
+    ;;;
+    ;;; Examples:
+    ;;; >> Posix::dir? [Posix::getcwd]
+    ;;; 1
+    proc getcwd {} {}
+
+    ;;; Change the current working directory to `path`.
+    ;;;
+    ;;; Affects every relative path the process resolves from then on,
+    ;;; including `require` and [Io::open_file]. Raises an error if
+    ;;; `path` is not an accessible directory. Returns the empty
+    ;;; string.
+    ;;;
+    ;;; ```tcl
+    ;;; let here [Posix::getcwd]
+    ;;; Posix::chdir build
+    ;;; ;; ... work with paths relative to build/ ...
+    ;;; Posix::chdir $here
+    ;;; ```
+    proc chdir {path} {}
+}
