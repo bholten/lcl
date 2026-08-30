@@ -7,11 +7,11 @@
  * JavaScript wrapper (wasm/lcl.mjs) drives through cwrap/ccall.
  *
  * Everything JavaScript needs and the public C API cannot give it
- * directly lives here: out-parameters folded into return values,
- * `_take` variants so JS never juggles two references, and the host
- * procedure trampoline. The file is plain C89 on purpose -- no
- * emscripten.h, no EM_JS -- so it compiles under the same flags as
- * the rest of the tree; the export list is on the link line.
+ * directly lives here: out-parameters folded into return values and
+ * the host procedure trampoline; value marshalling is lcl-js's
+ * bridge (Module.LclJs), shared with `Js::`. The file is plain C89 on purpose
+ * -- no emscripten.h, no EM_JS -- so it compiles under the same flags as the
+ * rest of the tree; the export list is on the link line.
  *
  * Ownership follows include/lcl.h: a returned lcl_value carries +1
  * unless the comment says it is borrowed; a `_take` parameter is
@@ -47,6 +47,10 @@
 
 #ifdef LCL_HAVE_RANDOM
 #include <lcl-random.h>
+#endif
+
+#ifdef LCL_HAVE_JS
+#include <lcl-js.h>
 #endif
 
 #ifdef LCL_HAVE_TEST
@@ -193,6 +197,9 @@ lcl_interp *lclw_new(void) {
 #ifdef LCL_HAVE_RANDOM
   lcl_register_random(interp);
 #endif
+#ifdef LCL_HAVE_JS
+  lcl_register_js(interp);
+#endif
 #ifdef LCL_HAVE_TEST
   if (lcl_register_embedded_lib(interp, &test_framework_lib) != LCL_OK) {
     fprintf(stderr, "Warning: Failed to load test framework\n");
@@ -263,46 +270,6 @@ lcl_value *lclw_eval(lcl_interp *interp, const char *src, const char *file) {
   return NULL;
 }
 
-/* Call `proc` with the elements of `args` (borrowed); result (+1) or NULL. */
-lcl_value *lclw_call(lcl_interp *interp, lcl_value *proc, lcl_value *args) {
-  lcl_value *result = NULL;
-  lcl_value **argv = NULL;
-  size_t n = lcl_list_len(args);
-  size_t i;
-  lcl_return_code rc;
-
-  if (!lcl_is_callable(proc)) {
-    lcl_set_error(interp, "value is not callable");
-    return NULL;
-  }
-
-  if (n > 0) {
-    argv = (lcl_value **)calloc(n, sizeof *argv);
-
-    if (!argv) {
-      lcl_set_error(interp, "out of memory");
-      return NULL;
-    }
-
-    for (i = 0; i < n; i++) {
-      argv[i] = lcl_list_peek(args, i);
-    }
-  }
-
-  rc = lcl_call_proc(interp, proc, (int)n, argv, &result);
-  free(argv);
-
-  if (rc != LCL_RC_OK) {
-    if (result) {
-      lcl_ref_dec(result);
-    }
-
-    return NULL;
-  }
-
-  return result ? result : lcl_string_new("");
-}
-
 /*
  * Define `name` as a procedure that forwards its arguments to host
  * function `id`. The proc is declared in Lcl so the name goes through
@@ -344,71 +311,4 @@ lcl_value *lclw_get(lcl_interp *interp, const char *name) {
     return NULL;
   }
   return out;
-}
-
-/* ---- value helpers: out-parameters folded away for cwrap ------------- */
-
-int lclw_is_callable(lcl_value *value) {
-  return lcl_is_callable(value);
-}
-
-/* The integer payload (0 for non-ints). An lcl_int is a wasm i64, so
- * this crosses to JavaScript as a BigInt (WASM_BIGINT). */
-lcl_int lclw_int_of(lcl_value *value) {
-  lcl_int i;
-
-  return lcl_value_type_of(value) == LCL_INT &&
-                 lcl_value_to_int(value, &i) == LCL_OK
-             ? i
-             : 0;
-}
-
-/* The float payload (0.0 for non-floats). */
-double lclw_float_of(lcl_value *value) {
-  double f;
-
-  return lcl_value_type_of(value) == LCL_FLOAT &&
-                 lcl_value_to_float(value, &f) == LCL_OK
-             ? f
-             : 0.0;
-}
-
-/* Append `value` (consumed) to `list` (consumed); the resulting list (+1). */
-lcl_value *lclw_list_push_take(lcl_value *list, lcl_value *value) {
-  lcl_result r = lcl_list_push(&list, value);
-
-  lcl_ref_dec(value);
-
-  if (r != LCL_OK) {
-    lcl_ref_dec(list);
-    return NULL;
-  }
-
-  return list;
-}
-
-/* Store `value` (consumed) under `key` in `dict` (consumed); the dict (+1). */
-lcl_value *lclw_dict_put_take(lcl_value *dict, const char *key,
-                              lcl_value *value) {
-  lcl_result r = lcl_dict_put(&dict, key, value);
-
-  lcl_ref_dec(value);
-
-  if (r != LCL_OK) {
-    lcl_ref_dec(dict);
-    return NULL;
-  }
-
-  return dict;
-}
-
-/* The keys of `dict` as a fresh list (+1), or NULL. */
-lcl_value *lclw_dict_keys(lcl_value *dict) {
-  lcl_value *keys = NULL;
-
-  if (lcl_dict_keys(dict, &keys) != LCL_OK) {
-    return NULL;
-  }
-
-  return keys;
 }

@@ -241,7 +241,7 @@ if(EMSCRIPTEN)
   set(LCL_CLI_LAUNCHER ${LCL_NODE} --stack-size=8000)
   if(LCL_BUILD_CLI)
     target_link_options(lcl-cli PRIVATE
-      -sNODERAWFS=1 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1
+      -sNODERAWFS=1 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1 -sWASM_BIGINT=1
       -sSTACK_SIZE=${LCL_WASM_STACK_SIZE})
   endif()
 else()
@@ -445,6 +445,19 @@ if(LCL_BUILD_EXPECT)
   endif()
 endif()
 
+if(LCL_BUILD_JS)
+  add_subdirectory(packages/lcl-js)
+
+  if(LCL_BUILD_STATIC)
+    target_compile_definitions(lcl_static PUBLIC LCL_HAVE_JS)
+  endif()
+
+  if(LCL_BUILD_CLI)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_JS)
+    target_link_libraries(lcl-cli PRIVATE lcl_js)
+  endif()
+endif()
+
 if(LCL_BUILD_TEST_LIB)
   lcl_embed_file(
     INPUT  lib/test/src/Test.lcl
@@ -561,16 +574,17 @@ if(EMSCRIPTEN AND LCL_BUILD_WASM)
     add_dependencies(lcl-wasm ${_cli_MANUALLY_ADDED_DEPENDENCIES})
   endif()
 
+  if(NOT LCL_BUILD_JS)
+    message(FATAL_ERROR "LCL_BUILD_WASM needs LCL_BUILD_JS: wasm/lcl.mjs marshals through lcl-js's bridge")
+  endif()
+
+  # What wasm/lcl.mjs reaches directly; value marshalling goes through
+  # Module.LclJs, which lcl-js's JavaScript library provides.
   set(_wasm_exports
     _malloc _free
     _lclw_version _lclw_new _lclw_free _lclw_set_host_fn _lclw_set_step_hook
-    _lclw_abort _lclw_eval _lclw_call _lclw_define_host_proc _lclw_define_take
-    _lclw_get _lclw_is_callable _lclw_int_of _lclw_float_of _lclw_list_push_take
-    _lclw_dict_put_take _lclw_dict_keys
-    _lcl_ref_inc _lcl_ref_dec _lcl_value_type_of _lcl_value_to_string
-    _lcl_string_new _lcl_int_new _lcl_float_new _lcl_list_new _lcl_list_len
-    _lcl_list_peek _lcl_dict_new _lcl_dict_len _lcl_dict_peek _lcl_cell_peek
-    _lcl_opaque_type _lcl_interp_error_msg _lcl_interp_error_file
+    _lclw_abort _lclw_eval _lclw_define_host_proc _lclw_define_take _lclw_get
+    _lcl_ref_dec _lcl_interp_error_msg _lcl_interp_error_file
     _lcl_interp_error_line _lcl_set_error _lcl_clear_error)
   string(JOIN "," _wasm_exports_csv ${_wasm_exports})
   target_link_options(lcl-wasm PRIVATE

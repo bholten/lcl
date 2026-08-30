@@ -1,0 +1,272 @@
+;;; # lcl-js
+;;;
+;;; The JavaScript host engine, exposed under its own name, `Js::`.
+;;; This is what Lcl-in-the-browser talks to the page through, and
+;;; what Lcl-under-node talks to node through: one thin binding to
+;;; whatever `globalThis` is.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core, built with Emscripten (`emcmake cmake ...`)
+;;; - **Portability:** Emscripten only, by design. The C half is
+;;;   strict C89 and declares the JavaScript half `extern`; the
+;;;   JavaScript half (`src/lcl-js-library.js`) is linked into the
+;;;   module with `--js-library`. There is nothing to bind on a native
+;;;   host.
+;;;
+;;; ## Build
+;;;
+;;; ```bash
+;;; emcmake cmake -S . -B build-emcc -DLCL_BUILD_JS=ON
+;;; cmake --build build-emcc
+;;; ```
+;;;
+;;; `LCL_BUILD_JS` defaults to on under Emscripten; both the node CLI
+;;; (`lcl.js`) and the browser host (`lcl.mjs`) register `Js::`.
+;;;
+;;; ## Usage
+;;;
+;;; ```tcl
+;;; let doc [Js::global document]
+;;; let div [Js::call $doc createElement div]
+;;; Js::set $div textContent "hello from Lcl"
+;;; Js::call [Js::get $doc body] appendChild $div
+;;;
+;;; ;; Procedures cross as callable functions; DOM events arrive as
+;;; ;; references. Most JS callbacks pass extra arguments, so take a
+;;; ;; rest parameter unless you know the arity.
+;;; Js::call $div addEventListener click [lambda {ev *_} {
+;;;     puts "clicked at [Js::get $ev clientX],[Js::get $ev clientY]"
+;;; }]
+;;;
+;;; ;; Promises are just objects with a `then` method; JSON bodies
+;;; ;; arrive as lists and dicts.
+;;; Js::call [Js::call [Js::global] fetch /api/items] then [lambda {resp *_} {
+;;;     Js::call [Js::call $resp json] then [lambda {items *_} {
+;;;         puts [len $items]
+;;;     }]
+;;; }]
+;;; ```
+;;;
+;;; ## Values across the boundary
+;;;
+;;; Values cross by type, not by text.
+;;;
+;;; | JavaScript | Lcl |
+;;; |---|---|
+;;; | string | string |
+;;; | number | int when integral and within ±2^53, else float |
+;;; | bigint | int (must fit 64 bits) |
+;;; | boolean | `1` / `0` |
+;;; | `null`, `undefined` | `""` (use [Js::typeof] to tell them apart) |
+;;; | array | list (recursively) |
+;;; | plain object (`{...}`, `JSON.parse` output) | dict (recursively) |
+;;; | anything else: DOM nodes, `Map`, class instances, `Math`, functions | a reference: `<opaque:Js::ref>` |
+;;;
+;;; | Lcl | JavaScript |
+;;; |---|---|
+;;; | string, int, float | string, number (`BigInt` beyond ±2^53) |
+;;; | list | a fresh `Array` (recursively) |
+;;; | dict | a fresh plain object (recursively) |
+;;; | proc | a function that calls the procedure |
+;;; | `Js::ref` | the object it refers to |
+;;;
+;;; JSON-shaped data crosses by value in both directions, so a list
+;;; handed to JavaScript is a fresh `Array` and an array coming back is
+;;; a fresh list. Everything else crosses by reference: a reference
+;;; keeps its JavaScript object alive for as long as any Lcl value
+;;; holds it, and the same object always yields the same reference.
+;;; When a script needs a JavaScript array or object it can *mutate*
+;;; -- to hand to a library that expects one -- [Js::array] and
+;;; [Js::object] create one held by reference; [Js::to_list] and
+;;; [Js::to_dict] copy such references (and `Set`s, `Map`s,
+;;; array-likes) back out.
+;;;
+;;; A JavaScript exception becomes an ordinary Lcl error carrying the
+;;; exception's message; an Lcl error raised inside a callback becomes
+;;; a JavaScript exception (an `LclError` with `message`, `file`,
+;;; `line`) and, if JavaScript does not catch it, an Lcl error again
+;;; on the way out.
+;;;
+;;; Examples:
+;;; >> Js::call [Js::global JSON] stringify (1 two #{k v})
+;;; "\[1,\"two\",{\"k\":\"v\"}]"
+;;; >> Js::call [Js::global JSON] parse {[1, "two", null]}
+;;; (1 "two" "")
+;;; >> type [Js::global Math]
+;;; "opaque"
+;;; >> Js::eval {typeof globalThis}
+;;; "object"
+namespace Js {
+
+    ;;; The global object, or the value at a key path from it.
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::typeof [Js::global]
+    ;;; "object"
+    ;;; >> Js::global Math PI
+    ;;; 3.141592653589793
+    ;;; >> Js::typeof [Js::global] Math max
+    ;;; "function"
+    proc global {*keys} {}
+
+    ;;; The property at a key path of `object`. A primitive receiver
+    ;;; works the way it does in JavaScript; a missing property is
+    ;;; `""` (see [Js::typeof]).
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::get [Js::object #{a #{b 2}}] a b
+    ;;; 2
+    ;;; >> Js::get [Js::array (10 20)] 1
+    ;;; 20
+    ;;; >> Js::get "text" length
+    ;;; 4
+    ;;; >> Js::get [Js::object] missing
+    ;;; ""
+    proc get {object *keys} {}
+
+    ;;; Assign `value` at a key path of `object`; the last argument is
+    ;;; the value. Returns `""`.
+    ;;;
+    ;;; Examples:
+    ;;; >> let o [Js::object #{a #{}}]
+    ;;; >> Js::set $o a b 5
+    ;;; >> Js::get $o a b
+    ;;; 5
+    proc set {object *keys_and_value} {}
+
+    ;;; Delete a property.
+    ;;;
+    ;;; Examples:
+    ;;; >> let o [Js::object #{x 1}]
+    ;;; >> Js::del $o x
+    ;;; >> Js::typeof $o x
+    ;;; "undefined"
+    proc del {object key} {}
+
+    ;;; Call `method` on `object` with `this` bound to it.
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::call [Js::global Math] max 3 9 4
+    ;;; 9
+    ;;; >> Js::call "abc" toUpperCase
+    ;;; "ABC"
+    ;;; >> Js::call [Js::global Math] nosuch
+    ;;; !! "nosuch" is not a function
+    proc call {object method *args} {}
+
+    ;;; Call a function value (no `this`).
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::invoke [Js::eval {(a, b) => a - b}] 10 4
+    ;;; 6
+    proc invoke {function *args} {}
+
+    ;;; Construct with `new`. `constructor` is a function value or a
+    ;;; dotted name resolved from the global object.
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::call [Js::new Date 0] getTime
+    ;;; 0
+    ;;; >> Js::get [Js::new Map] size
+    ;;; 0
+    ;;; >> Js::new NoSuchThing
+    ;;; !! not a constructor
+    proc new {constructor *args} {}
+
+    ;;; Evaluate JavaScript source in the global scope and return its
+    ;;; completion value.
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::eval {1 + 2}
+    ;;; 3
+    ;;; >> Js::eval {[1, {two: 2}]}
+    ;;; (1 #{"two" 2})
+    ;;; >> Js::eval {throw new Error("no")}
+    ;;; !! no
+    proc eval {source} {}
+
+    ;;; A stable function value for `proc`, for the cases where the
+    ;;; same function identity matters (`removeEventListener`). Any
+    ;;; proc passed to JavaScript directly is wrapped the same way.
+    ;;;
+    ;;; Examples:
+    ;;; >> let f [Js::fn [lambda {a b} { + $a $b }]]
+    ;;; >> Js::typeof $f
+    ;;; "function"
+    ;;; >> Js::invoke $f 2 3
+    ;;; 5
+    proc fn {proc} {}
+
+    ;;; JavaScript's `typeof` of a value or of the property at a key
+    ;;; path, with `null` reported as `"null"`.
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::typeof [Js::eval {null}]
+    ;;; "string"
+    ;;; >> Js::eval {globalThis.lcl_doc_null = null}
+    ;;; >> Js::typeof [Js::global] lcl_doc_null
+    ;;; "null"
+    ;;; >> Js::typeof [Js::global] Math
+    ;;; "object"
+    proc typeof {value *keys} {}
+
+    ;;; A fresh Lcl list of a reference's elements: a [Js::array], a
+    ;;; `Set`, a `NodeList`, any iterable or array-like. (An array that
+    ;;; arrives from JavaScript directly is already a list.)
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::to_list [Js::new Set (1 2 2 3)]
+    ;;; (1 2 3)
+    ;;; >> let a [Js::array (1)]
+    ;;; >> Js::call $a push 2
+    ;;; >> Js::to_list $a
+    ;;; (1 2)
+    proc to_list {reference} {}
+
+    ;;; A fresh Lcl dict of a reference's own enumerable properties, or
+    ;;; of a `Map`'s entries. (A plain object that arrives from
+    ;;; JavaScript directly is already a dict.)
+    ;;;
+    ;;; Examples:
+    ;;; >> Js::to_dict [Js::new Map ((x 1) (y two))]
+    ;;; #{"x" 1 "y" "two"}
+    ;;; >> let o [Js::object #{x 1}]
+    ;;; >> Js::set $o y two
+    ;;; >> Js::to_dict $o
+    ;;; #{"x" 1 "y" "two"}
+    proc to_dict {reference} {}
+
+    ;;; Drop a reference now rather than when its last Lcl value dies.
+    ;;; Using it afterwards is an error.
+    ;;;
+    ;;; Examples:
+    ;;; >> let o [Js::object]
+    ;;; >> Js::release $o
+    ;;; >> Js::get $o x
+    ;;; !! has been released
+    proc release {ref} {}
+
+    ;;; A JavaScript object held by reference, optionally initialised
+    ;;; from `dict`: mutations through [Js::set] are visible to
+    ;;; JavaScript, and it keeps its identity when passed around.
+    ;;;
+    ;;; Examples:
+    ;;; >> let o [Js::object #{x 1}]
+    ;;; >> type $o
+    ;;; "opaque"
+    ;;; >> Js::set $o y 2
+    ;;; >> Js::call [Js::global JSON] stringify $o
+    ;;; "{\"x\":1,\"y\":2}"
+    proc object {(dict #{})} {}
+
+    ;;; A JavaScript array held by reference, optionally initialised
+    ;;; from `list`.
+    ;;;
+    ;;; Examples:
+    ;;; >> let a [Js::array (3 1 2)]
+    ;;; >> Js::call $a sort
+    ;;; >> Js::to_list $a
+    ;;; (1 2 3)
+    proc array {(list ())} {}
+}

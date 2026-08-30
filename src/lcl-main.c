@@ -44,6 +44,10 @@
 #include <lcl-random.h>
 #endif
 
+#ifdef LCL_HAVE_JS
+#include <lcl-js.h>
+#endif
+
 #ifdef LCL_HAVE_EXPECT
 #include "expect-data.h"
 #include <lcl-expect.h>
@@ -302,6 +306,10 @@ static lcl_interp *create_interp(void) {
 
 #ifdef LCL_HAVE_RANDOM
   lcl_register_random(interp);
+#endif
+
+#ifdef LCL_HAVE_JS
+  lcl_register_js(interp);
 #endif
 
 #ifdef LCL_HAVE_EXPECT

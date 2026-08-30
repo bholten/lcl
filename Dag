@@ -76,7 +76,8 @@ project lcl {
                    -DLCL_BUILD_REGEX=ON
                    -DLCL_BUILD_TIME=ON
                    -DLCL_BUILD_MATH=ON
-                   -DLCL_BUILD_RANDOM=ON)
+                   -DLCL_BUILD_RANDOM=ON
+                   -DLCL_BUILD_JS=ON)
 
     task emcc {
         inputs ${lcl::SOURCES}
@@ -120,14 +121,27 @@ project lcl {
         }
     }
 
+    ;; Filtering WASM for now, since it needs to run a different binary to doctest
+    let DOCS_MINUS_WASM [List::filter ${lcl::DOCS} [lambda {d} { == -1 [String::find $d "Js.lcl"]}]]
+
     task doctest {
-        inputs ${lcl::DOCS}
+        inputs ${lcl::DOCS_MINUS_WASM}
         outputs build/.doctest.sentinel
         depends_on lcl::build
         run {
             set -e
-            ${lcl::build::outputs}/lcl tools/docs.lcl doctest
+            ${lcl::build::outputs}/lcl tools/docs.lcl doctest ${lcl::doctest::inputs}
             touch ${lcl::doctest::outputs}
+        }
+    }
+
+    task doctest-emcc {
+        inputs packages/lcl-js/docs/Js.lcl
+        outputs site/packages/Js.html
+        depends_on lcl::emcc
+        run {
+            set -e
+            node build-emcc/lcl.js tools/docs.lcl doctest packages/lcl-js/docs/Js.lcl
         }
     }
 

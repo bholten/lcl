@@ -88,7 +88,7 @@ namespace Xoshiro {
 
     ;;; Draw a uniform integer in `[lo, hi]`, both ends inclusive.
     ;;;
-    ;;; The whole `long` range is supported, including `lo` equal to
+    ;;; The whole 64-bit integer range is supported, including `lo` equal to
     ;;; `hi` and negative bounds. Values are drawn from the top bits
     ;;; of the generator by rejection sampling, so there is no modulo
     ;;; bias. `lo` greater than `hi`, a non-integer bound, or a first

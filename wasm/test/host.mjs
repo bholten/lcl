@@ -138,6 +138,18 @@ test('JS functions pass through as procedure values', () => {
   assert.equal(lcl.eval('bridge $echo'), 'a|b');
 });
 
+test('JavaScript objects reach scripts as Js:: references', () => {
+  const m = new Map();
+  lcl.define('m', m);
+  assert.equal(lcl.eval('Js::call $m set a 1; Js::get $m size'), 1);
+  assert.equal(m.get('a'), 1);
+  lcl.define('give', () => new Set([1, 2, 2]));
+  assert.deepEqual(lcl.eval('Js::to_list [give]'), [1, 2]);
+  /* Plain data still crosses by value on both paths. */
+  assert.deepEqual(lcl.eval('Js::eval {({a: [1, {b: 2}]})}'), { a: [1, { b: 2 }] });
+  assert.equal(lcl.eval('Js::call [Js::global JSON] stringify $items'), '[1,"b",{"c":[1,0,""]}]');
+});
+
 test('namespaces surface as handles that stringify', () => {
   lcl.eval('namespace Shape { proc area {r} { * $r $r } }');
   const ns = lcl.get('Shape');
