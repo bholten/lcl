@@ -317,9 +317,9 @@ Test::suite "Multiline Subcommands" {
     Test::case "multiline cond inside brackets" {
         let x 5
         let result [cond
-            [< $x 0]   {negative}
-            [== $x 0]  {zero}
-            else       {positive}]
+            [< $x 0]   "negative"
+            [== $x 0]  "zero"
+            else       "positive"]
         Test::eq $result positive
     }
 
@@ -428,6 +428,6 @@ proc ea_two {} { 2 }} "*buf*" 40
     Test::case "errors propagate with the source's message" {
         let rc [catch {eval_at {ea_no_such_cmd} "*buf*" 3} r e]
         Test::eq $rc 1
-        Test::eq $e {unknown command: ea_no_such_cmd}
+        Test::eq $e {unknown command: ea_no_such_cmd (a bare word is a command; quote it to use it as a value)}
     }
 }

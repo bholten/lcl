@@ -472,7 +472,7 @@
 ;;; >> if [< $cx 0] { "negative" } else { if [== $cx 0] { "zero" } else { "positive" } }
 ;;; "negative"
 ;;; >> if 0 { red } else { blue }
-;;; !! unknown command: blue
+;;; !! unknown command: blue (a bare word is a command; quote it to use it as a value)
 ;;;
 ;;; `repeat` runs a body n times (compiled once; `break`/`continue`/
 ;;; `return` work as in `while`; the last body value is returned).
@@ -483,27 +483,40 @@
 ;;; 3
 ;;;
 ;;; `cond` is a multi-branch conditional (like Scheme/Lisp): it
-;;; evaluates conditions in order and returns the first truthy branch's
-;;; value. `else` is the default case; without one, no match is an
-;;; error.
+;;; evaluates tests in order and takes the first truthy clause's
+;;; branch. `else` is the default clause; without one, no match is an
+;;; error. A branch follows the same rule as an `if` body: a braced
+;;; branch is *code* (run in the enclosing scope; `break`, `continue`
+;;; and `return` work, and a self-call in it is a tail call), while any
+;;; other word is an expression whose value is the result -- `"text"`,
+;;; `42`, `$x`, `[+ $a $b]`. Bare words inside braces are commands, so
+;;; write a plain value branch as `"negative"`, not `{negative}`.
 ;;;
 ;;; Examples:
 ;;; >> let cv 5
-;;; >> cond [< $cv 0] {negative} [== $cv 0] {zero} else {positive}
+;;; >> cond [< $cv 0] "negative" [== $cv 0] "zero" else "positive"
 ;;; "positive"
-;;; >> cond [< $cv 0] {negative}
+;;; >> cond [< $cv 0] { "negative" } else { let d [* $cv 2]; "big $d" }
+;;; "big 10"
+;;; >> cond [< $cv 0] "negative"
 ;;; !! no matching clause
+;;; >> cond [> $cv 0] { positive }
+;;; !! unknown command: positive
 ;;;
-;;; `case` is value dispatch (like switch/match): it compares a value
-;;; against keys and returns the matching expression. Keys are
-;;; evaluated, so `$variables` work.
+;;; `case` is value dispatch (like switch/match): it evaluates the
+;;; scrutinee once, compares it against each key with `==`, and takes
+;;; the matching branch. Keys are evaluated (so `$variables` work) and
+;;; a braced key is a literal string; branches follow the `cond` rule
+;;; above.
 ;;;
 ;;; Examples:
 ;;; >> let op "sub"
-;;; >> case $op {add} [+ 5 3] {sub} [- 5 3] {mul} [* 5 3] else {unknown op}
+;;; >> case $op {add} [+ 5 3] {sub} [- 5 3] {mul} [* 5 3] else "unknown op"
 ;;; 2
-;;; >> case "pow" {add} [+ 5 3] else {unknown op}
+;;; >> case "pow" {add} [+ 5 3] else "unknown op"
 ;;; "unknown op"
+;;; >> case $op {add} { let k 5; + $k 3 } {sub} { let k 5; - $k 3 }
+;;; 2
 ;;;
 ;;; `while` re-evaluates a braced condition each iteration; `for` takes
 ;;; init, condition, step and body.
@@ -797,7 +810,7 @@
 ;;; >> if 1 { "red" } else { "blue" }
 ;;; "red"
 ;;; >> if 1 { red } else { blue }
-;;; !! unknown command: red
+;;; !! unknown command: red (a bare word is a command; quote it to use it as a value)
 ;;;
 ;;; To dispatch a value form (a closure held in a variable, or a command
 ;;; name stored as a string), use `apply`. The `@` operator spreads a
@@ -1028,8 +1041,10 @@
 ;;;
 ;;; Braces are literal (no substitution); double quotes substitute;
 ;;; brackets are command substitution; parens are a list literal
-;;; (`(a b c)` is `[list a b c]`); hash-braces are a dict literal
-;;; (`#{a 1 b 2}` is `[dict a 1 b 2]`).
+;;; (`(a b c)` is `[::list a b c]`); hash-braces are a dict literal
+;;; (`#{a 1 b 2}` is `[::dict a 1 b 2]`). The literals name the root
+;;; `list`/`dict` explicitly, so a local binding called `list` or `dict`
+;;; cannot hijack them.
 ;;;
 ;;; Examples:
 ;;; >> let qa 7
@@ -1174,14 +1189,14 @@
 ;;;   {add}  [+ $a $b] \
 ;;;   {sub}  [- $a $b] \
 ;;;   {mul}  [* $a $b] \
-;;;   else   {unknown}
+;;;   else   "unknown"
 ;;;
 ;;; ;; Same command wrapped in brackets - backslashes not needed inside
 ;;; let result [case $cmd
 ;;;              {add}  [+ $a $b]
 ;;;              {sub}  [- $a $b]
 ;;;              {mul}  [* $a $b]
-;;;              else   {unknown}]
+;;;              else   "unknown"]
 ;;; ```
 ;;;
 ;;; Semicolons and newlines inside `{...}` braces and `"..."` quotes are

@@ -758,8 +758,21 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
     if (lcl_env_get_command(interp, cmd_name, &callee) != LCL_OK) {
       {
         char msg[900];
+        size_t used;
 
         describe_name_failure(interp, cmd_name, 1, msg, sizeof(msg));
+        used = strlen(msg);
+
+        /* A one-word command is most often a body written as data
+         * (`if $x { className }`); the dispatch rule is the surprise,
+         * so name it. */
+        if (cmd->argc == 1 && strstr(cmd_name, "::") == NULL &&
+            used < sizeof(msg)) {
+          snprintf(msg + used, sizeof(msg) - used,
+                   " (a bare word is a command; quote it to use it as a "
+                   "value)");
+        }
+
         LCL_ERR_MSG_DUP(interp, msg);
         lcl_ref_dec(name);
       }
