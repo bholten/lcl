@@ -251,6 +251,17 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
     return LCL_RC_ERR;
   }
 
+  if (rc == LCL_RC_BREAK || rc == LCL_RC_CONTINUE) {
+    if (*out) {
+      lcl_ref_dec(*out);
+      *out = NULL;
+    }
+
+    LCL_ERR_MSG(interp, rc == LCL_RC_BREAK ? "break invoked outside a loop"
+                                           : "continue invoked outside a loop");
+    rc = LCL_RC_ERR;
+  }
+
   if (out == &dummy && dummy) {
     lcl_ref_dec(dummy);
   }

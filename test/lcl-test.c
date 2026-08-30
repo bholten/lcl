@@ -2843,6 +2843,50 @@ static int test_list_pop_del_cow(void) {
  * anchor and fails cleanly.  (c) Live self-reference through re-entry
  * (the old M -> f -> M cycle error). Fresh interp so teardown runs
  * with live anchors. */
+/* A break/continue escaping a proc called through lcl_call_proc has no
+ * loop to reach: the public contract is OK or ERR, *out NULL on error,
+ * and the control payload must not leak. */
+static int test_call_proc_break_is_error(void) {
+  extern lcl_interp *lcl_test_interp;
+  extern const char *lcl_interp_error_msg(lcl_interp * interp);
+  extern int lcl_is_callable(lcl_value * value);
+  extern lcl_return_code lcl_call_proc(lcl_interp * interp, lcl_value * proc,
+                                       int argc, lcl_value **argv,
+                                       lcl_value **out);
+  lcl_value *fn = NULL;
+  lcl_value *arg;
+  lcl_value *res = NULL;
+  const char *err;
+
+  ASSERT_TRUE(lcl_eval_string(lcl_test_interp, "lambda {x} { break }", &fn) ==
+              LCL_RC_OK);
+  ASSERT_TRUE(fn != NULL && lcl_is_callable(fn));
+  arg = lcl_string_new("a");
+  ASSERT_TRUE(arg != NULL);
+
+  lcl_clear_error(lcl_test_interp);
+  ASSERT_TRUE(lcl_call_proc(lcl_test_interp, fn, 1, &arg, &res) == LCL_RC_ERR);
+  ASSERT_TRUE(res == NULL);
+  err = lcl_interp_error_msg(lcl_test_interp);
+  ASSERT_TRUE(err != NULL && strstr(err, "break invoked outside a loop"));
+  lcl_clear_error(lcl_test_interp);
+  lcl_ref_dec(fn);
+  fn = NULL;
+
+  /* continue, and a NULL out: the payload still has to be released */
+  ASSERT_TRUE(lcl_eval_string(lcl_test_interp, "lambda {x} { continue }",
+                              &fn) == LCL_RC_OK);
+  ASSERT_TRUE(fn != NULL);
+  ASSERT_TRUE(lcl_call_proc(lcl_test_interp, fn, 1, &arg, NULL) == LCL_RC_ERR);
+  err = lcl_interp_error_msg(lcl_test_interp);
+  ASSERT_TRUE(err != NULL && strstr(err, "continue invoked outside a loop"));
+  lcl_clear_error(lcl_test_interp);
+
+  lcl_ref_dec(fn);
+  lcl_ref_dec(arg);
+  return 1;
+}
+
 static int test_ns_anchor_lifecycle(void) {
   lcl_interp *in = lcl_interp_new();
   lcl_value *out = NULL;
@@ -2974,6 +3018,7 @@ int run_test(void) {
   RUN(test_path_join_and_dirname);
   RUN(test_require_module_key_hook);
   RUN(test_ns_anchor_lifecycle);
+  RUN(test_call_proc_break_is_error);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

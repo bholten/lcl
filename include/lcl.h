@@ -268,6 +268,11 @@ void lcl_get_stats(lcl_stats *out);
  *
  * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
  * On error, use lcl_interp_error_file/line for location info.
+ *
+ * A `break` or `continue` that escapes the top level of the script
+ * comes back as LCL_RC_BREAK / LCL_RC_CONTINUE with no error message
+ * set; *out then holds the (empty) control payload and must still be
+ * released. Hosts that want an error there map it themselves.
  */
 lcl_return_code lcl_eval_string(lcl_interp *interp, const char *src,
                                 lcl_value **out);
@@ -902,8 +907,11 @@ int lcl_is_callable(lcl_value *value);
  *   argv   - array of argument values (caller retains ownership)
  *   out    - receives the return value (with +1 refcount), may be NULL
  *
- * Returns LCL_RC_OK on success, LCL_RC_ERR on error.
- * Note: LCL_RC_RETURN from the procedure is converted to LCL_RC_OK.
+ * Returns LCL_RC_OK on success, LCL_RC_ERR on error; *out is NULL on
+ * error. LCL_RC_RETURN from the procedure is converted to LCL_RC_OK.
+ * A `break` or `continue` escaping the procedure body is an error
+ * ("break invoked outside a loop"): there is no loop of the caller's
+ * for it to reach.
  *
  * The caller is responsible for:
  *   - Creating argument values (lcl_string_new, etc.)

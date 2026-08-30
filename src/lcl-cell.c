@@ -8,6 +8,7 @@
 #include "lcl-compile.h"
 #include "lcl-values.h"
 
+
 typedef struct {
   lcl_value **cells;
   int count;
@@ -24,35 +25,85 @@ static void cell_set_free(cell_set *s) {
   free(s->cells);
 }
 
+static size_t cell_set_slot(const cell_set *s, lcl_value *cell) {
+  size_t h = (size_t)(const char *)cell;
+
+  h ^= h >> 17;
+  h *= (size_t)0x9E3779B1UL;
+  h ^= h >> 13;
+  return h & (size_t)(s->cap - 1);
+}
+
 static int cell_set_contains(cell_set *s, lcl_value *cell) {
-  int i;
-  for (i = 0; i < s->count; i++) {
+  size_t i;
+
+  if (s->cap == 0) {
+    return 0;
+  }
+
+  i = cell_set_slot(s, cell);
+
+  while (s->cells[i]) {
     if (s->cells[i] == cell) {
       return 1;
     }
+
+    i = (i + 1) & (size_t)(s->cap - 1);
   }
+
   return 0;
 }
 
+static int cell_set_grow(cell_set *s) {
+  lcl_value **old = s->cells;
+  int oldcap = s->cap;
+  int newcap = oldcap ? oldcap * 2 : 16;
+  lcl_value **fresh = (lcl_value **)calloc((size_t)newcap, sizeof(*fresh));
+  int i;
+
+  if (!fresh) {
+    return 0;
+  }
+
+  s->cells = fresh;
+  s->cap = newcap;
+
+  for (i = 0; i < oldcap; i++) {
+    if (old[i]) {
+      size_t j = cell_set_slot(s, old[i]);
+
+      while (s->cells[j]) {
+        j = (j + 1) & (size_t)(newcap - 1);
+      }
+
+      s->cells[j] = old[i];
+    }
+  }
+
+  free(old);
+  return 1;
+}
+
 static int cell_set_add(cell_set *s, lcl_value *cell) {
+  size_t i;
+
   if (cell_set_contains(s, cell)) {
     return 1;
   }
 
-  if (s->count >= s->cap) {
-    int newcap = s->cap ? s->cap * 2 : 8;
-    lcl_value **newcells =
-        realloc(s->cells, (size_t)newcap * sizeof(lcl_value *));
-
-    if (!newcells) {
-      return 0;
-    }
-
-    s->cells = newcells;
-    s->cap = newcap;
+  /* keep the table at most half full so probes stay short */
+  if (s->count * 2 >= s->cap && !cell_set_grow(s)) {
+    return 0;
   }
 
-  s->cells[s->count++] = cell;
+  i = cell_set_slot(s, cell);
+
+  while (s->cells[i]) {
+    i = (i + 1) & (size_t)(s->cap - 1);
+  }
+
+  s->cells[i] = cell;
+  s->count++;
   return 1;
 }
 
@@ -97,9 +148,11 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
     return cycle_check_proc(target, val->as.procedure.proc, visited);
 
   case LCL_LIST: {
-    /* Bugfix: A proc capturing `target` may be hidden inside any list
-       element. */
     size_t i;
+
+    if (cell_set_contains(visited, val) || !cell_set_add(visited, val)) {
+      return 0;
+    }
 
     for (i = 0; i < val->as.list.len; i++) {
       if (cycle_check_value(target, val->as.list.items[i], visited)) {
@@ -114,6 +167,10 @@ static int cycle_check_value(lcl_value *target, lcl_value *val,
     hash_iter it;
     const char *k;
     lcl_value *v;
+
+    if (cell_set_contains(visited, val) || !cell_set_add(visited, val)) {
+      return 0;
+    }
 
     it.i = 0;
 

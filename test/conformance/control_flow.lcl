@@ -414,6 +414,50 @@ Test::suite "Break" {
         }
         Test::eq $first a
     }
+
+    Test::case "break through a proc call exits the enclosing loop" {
+        proc stop {} { break }
+        var seen [list]
+        foreach x (1 2 3) {
+            List::push! seen $x
+            stop
+        }
+        Test::eq $seen (1)
+    }
+}
+
+;; A callback invoked from C (List::map, Dict::filter, ...) has no
+;; loop of the caller's to reach, so an escaping break/continue is an
+;; error there rather than a control code (fuzz find: the payload leaked).
+Test::suite "Break/continue escaping a C callback" {
+    Test::case "break in a List::map lambda is an error" {
+        Test::raises_with { List::map (1 2 3) [lambda {x} { break }] } \
+            "break invoked outside a loop"
+    }
+
+    Test::case "continue in a List::filter lambda is an error" {
+        Test::raises_with { List::filter (1 2 3) [lambda {x} { continue }] } \
+            "continue invoked outside a loop"
+    }
+
+    Test::case "break in a Dict::reduce lambda is an error" {
+        Test::raises_with { Dict::reduce #{a 1} 0 [lambda {acc k v} { break }] } \
+            "break invoked outside a loop"
+    }
+
+    Test::case "break in a sort_by key proc is an error" {
+        Test::raises_with { List::sort_by (3 1 2) [lambda {x} { break }] } \
+            "break invoked outside a loop"
+    }
+
+    Test::case "the error is catchable and the loop outside is unaffected" {
+        var n 0
+        foreach x (1 2 3) {
+            set! n [+ $n 1]
+            catch { List::map (1) [lambda {x} { break }] }
+        }
+        Test::eq $n 3
+    }
 }
 
 ;; ============================================================================
