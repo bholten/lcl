@@ -53,6 +53,13 @@
 #include <lcl-js.h>
 #endif
 
+#ifdef LCL_HAVE_DOM_LIB
+#include "dom-lib-data.h"
+
+static const lcl_embedded_lib dom_lib = {
+    "lib/dom/src/Dom.lcl", lib_dom_src_Dom_lcl, sizeof(lib_dom_src_Dom_lcl)};
+#endif
+
 #ifdef LCL_HAVE_TEST
 #include "test-framework-data.h"
 
@@ -211,6 +218,11 @@ lcl_interp *lclw_new(void) {
 #endif
 #ifdef LCL_HAVE_JS
   lcl_register_js(interp);
+#endif
+#ifdef LCL_HAVE_DOM_LIB
+  if (lcl_register_embedded_lib(interp, &dom_lib) != LCL_OK) {
+    fprintf(stderr, "Warning: Failed to load dom library\n");
+  }
 #endif
 #ifdef LCL_HAVE_TEST
   if (lcl_register_embedded_lib(interp, &test_framework_lib) != LCL_OK) {

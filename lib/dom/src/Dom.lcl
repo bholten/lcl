@@ -1,0 +1,561 @@
+;;; # Dom
+;;;
+;;; A declarative DOM library for Lcl in the browser: describe the page
+;;; as a tree of plain values, let `Dom::` render it and, when the
+;;; description changes, patch the real DOM to match. The same trees
+;;; render to HTML text with [Dom::html], so the description is
+;;; equally at home on a server.
+;;;
+;;; ## Requirements
+;;;
+;;; - Lcl core built with Emscripten and `LCL_BUILD_JS=ON` (rendering
+;;;   goes through `Js::`); [Dom::h] and [Dom::html] are pure Lcl and
+;;;   run anywhere.
+;;;
+;;; ## Nodes
+;;;
+;;; A node is a dict `#{tag ... attrs #{...} children (...)}` built by
+;;; [Dom::h] or by the tag procedures in `Html::` (`Html::div`,
+;;; `Html::p`, ... one per common HTML element). Strings and numbers
+;;; are text nodes. Children are ordinary arguments; a list argument
+;;; is spliced, so `[List::map $items $render_item]` drops straight
+;;; in, and an empty string is skipped, so `[if $cond { ... } else {
+;;; "" }]` is a conditional child.
+;;;
+;;; ```tcl
+;;; eval [Dom::html_tags]          ;; div, p, ul, ... as bare names
+;;;
+;;; proc view {todos} {
+;;;     div #{class app} \
+;;;         [h1 "Todos ([len $todos])"] \
+;;;         [ul [List::map $todos [lambda {t} { li #{key $t} $t }]]] \
+;;;         [if [== [len $todos] 0] { p #{class empty} "Nothing to do" } else { "" }]
+;;; }
+;;; ```
+;;;
+;;; Attributes are a dict given first. `class`, `value`, `checked`,
+;;; `disabled`, `selected` and `readonly` set the element's property;
+;;; `style` takes a dict of CSS properties; `on<event>` takes a
+;;; procedure that receives the event (as a `Js::ref`) -- take a rest
+;;; parameter if you do not need it; `key` identifies a child across
+;;; renders so reordering moves elements instead of rewriting them;
+;;; everything else is `setAttribute`.
+;;;
+;;; ## Rendering
+;;;
+;;; [Dom::mount] renders a node into a container and returns a mount
+;;; handle; [Dom::update] patches what is mounted to a new node,
+;;; touching only what changed. [Dom::app] wraps the common shape --
+;;; some state, a render procedure, re-render on [Dom::set_state]:
+;;;
+;;; ```tcl
+;;; Dom::app [Js::global document body] #{count 0} [lambda {state app} {
+;;;     let n [get $state count]
+;;;     div [h1 "Clicked $n times"] \
+;;;         [button #{onclick [lambda {*_} { Dom::set_state $app #{count [+ $n 1]} }]} "+1"]
+;;; }]
+;;; ```
+;;;
+;;; Examples:
+;;; >> Dom::h p #{class note} "hi " [Dom::h b "there"]
+;;; #{"children" ("hi " #{"children" ("there") "tag" "b" "attrs" #{}}) "tag" "p" "attrs" #{"class" "note"}}
+;;; >> Dom::html [Dom::h ul [List::map (a b) [lambda {x} { Dom::h li $x }]]]
+;;; "<ul><li>a</li><li>b</li></ul>"
+namespace Dom {
+
+    ;;; Is `v` an element node (as opposed to text)?
+    ;;;
+    ;;; Examples:
+    ;;; >> Dom::node? [Dom::h p]
+    ;;; 1
+    ;;; >> Dom::node? "text"
+    ;;; 0
+    proc node? {v} {
+        and [dict? $v] [has? $v tag] [has? $v children]
+    }
+
+    proc _attrs? {v} {
+        and [dict? $v] [not [node? $v]]
+    }
+
+    ;;; Build an element node: `tag`, an optional attribute dict, then
+    ;;; children -- nodes, text, or lists of either (spliced). Numbers
+    ;;; become text; empty strings are dropped.
+    ;;;
+    ;;; Examples:
+    ;;; >> Dom::h br
+    ;;; #{"children" () "tag" "br" "attrs" #{}}
+    ;;; >> get [Dom::h a #{href /x} "link"] attrs
+    ;;; #{"href" "/x"}
+    ;;; >> get [Dom::h p "n = " 42 "" ("x" "y")] children
+    ;;; ("n = " "42" "x" "y")
+    proc h {tag *args} {
+        var attrs #{}
+        var kids [List::flatten $args]
+
+        if [and [> [len $kids] 0] [_attrs? [get $kids 0]]] {
+            set! attrs [get $kids 0]
+            set! kids [List::slice $kids 1]
+        }
+
+        var out ()
+
+        foreach k $kids {
+            if [dict? $k] {
+                List::push! out $k
+            } else {
+                let s [String::from $k]
+
+                if [> [len $s] 0] {
+                    List::push! out $s
+                }
+            }
+        }
+
+        dict tag $tag attrs $attrs children $out
+    }
+
+    ;;; The common HTML elements, defined as procedures in `Html::`.
+    let TAGS (a abbr article aside b blockquote body br button canvas
+              caption code col colgroup dd details dialog div dl dt em
+              fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6
+              head header hr html i iframe img input kbd label legend li
+              link main mark menu meta nav ol optgroup option p pre progress
+              q s samp section select small span strong style sub summary
+              sup table tbody td template textarea tfoot th thead time
+              title tr u ul video)
+
+    ;;; Lcl source that defines the `Html::` tag procedures as bare
+    ;;; names in the scope that evaluates it -- `eval [Dom::html_tags]`
+    ;;; at the top of a file, or `[Dom::html_tags (div p ul li)]` for a
+    ;;; chosen few. Bare `a`, `b`, `i`, `s`, `u` and `q` are deliberately
+    ;;; short; take only what you use if that bites.
+    ;;;
+    ;;; Examples:
+    ;;; >> eval [Dom::html_tags (article p)]
+    ;;; >> Dom::html [article [p "one"] [p "two"]]
+    ;;; "<article><p>one</p><p>two</p></article>"
+    proc html_tags {(names "")} {
+        let want [if [== $names ""] { $TAGS } else { $names }]
+
+        var src ""
+
+        foreach t $want {
+            set! src "$src\nproc $t {*args} { ::Html::$t \$args }"
+        }
+
+        $src
+    }
+
+    let VOID (area base br col embed hr img input link meta source track wbr)
+
+    ;;; HTML-escape text.
+    ;;;
+    ;;; Examples:
+    ;;; >> Dom::escape {a < b & "c"}
+    ;;; "a &lt; b &amp; &quot;c&quot;"
+    proc escape {s} {
+        var out [String::replace [String::from $s] "&" "&amp;"]
+
+        set! out [String::replace $out "<" "&lt;"]
+        set! out [String::replace $out ">" "&gt;"]
+
+        String::replace $out "\"" "&quot;"
+    }
+
+    proc _style_text {style} {
+        if [dict? $style] {
+            var parts ()
+
+            foreach k [List::sort [Dict::keys $style]] {
+                List::push! parts "$k:[get $style $k]"
+            }
+
+            String::join $parts ";"
+        } else {
+            String::from $style
+        }
+    }
+
+    proc _event? {k} {
+        and [> [len $k] 2] [== [String::range $k 0 2] on]
+    }
+
+    ;;; Render a node to HTML text: attributes in sorted order, `style`
+    ;;; dicts as CSS text, event handlers and `key` omitted, void
+    ;;; elements unclosed, text escaped.
+    ;;;
+    ;;; Examples:
+    ;;; >> Dom::html [Dom::h input #{type text value "a<b" disabled 1}]
+    ;;; "<input disabled=\"1\" type=\"text\" value=\"a&lt;b\">"
+    ;;; >> Dom::html [Dom::h div #{style #{color red margin 0} onclick x key k} "t"]
+    ;;; "<div style=\"color:red;margin:0\">t</div>"
+    ;;; >> Dom::html "1 < 2"
+    ;;; "1 &lt; 2"
+    proc html {node} {
+        if [not [node? $node]] { return [escape $node] }
+
+        let tag [get $node tag]
+        let attrs [get $node attrs]
+        var out "<$tag"
+
+        foreach k [List::sort [Dict::keys $attrs]] {
+            if [or [_event? $k] [== $k key]] { continue }
+
+            let v [get $attrs $k]
+            let text [if [== $k style] { _style_text $v } else { String::from $v }]
+
+            set! out "$out $k=\"[escape $text]\""
+        }
+
+        set! out "$out>"
+
+        if [List::any? $VOID [lambda {v} { == $v $tag }]] { return $out }
+
+        foreach kid [get $node children] {
+            set! out "$out[html $kid]"
+        }
+
+        "$out</$tag>"
+    }
+
+    ;; ---- the live DOM -------------------------------------------------
+    ;;
+    ;; An instance mirrors the DOM behind a node without holding any
+    ;; procedure: #{tag T attrs A el R kids (instances) listeners L} for
+    ;; an element (attrs without its on* entries) and #{text S el R} for
+    ;; text. Event handlers live on the JavaScript side, in a holder
+    ;; object per element and event whose stable listener calls the
+    ;; current handler -- so re-rendering never re-registers listeners,
+    ;; and a handler closing over the app handle forms no Lcl cycle.
+    ;; Handles are dicts carrying a cell, #{cell C}, so a handle passes
+    ;; through `$app` intact while the cell inside is updated in place.
+
+    proc _doc {} { Js::global document }
+
+    proc _same? {a b} {
+        Js::call [Js::global Object] is $a $b
+    }
+
+    var listener_factory ""
+
+    proc _holder {el event} {
+        if [== $listener_factory ""] {
+            set! listener_factory [Js::eval {(el, event) => {
+                const holder = new (class LclHandler { constructor() { this.fn = null; } })();
+                el.addEventListener(event, ev => { if (typeof holder.fn === "function") holder.fn(ev); });
+                return holder;
+            }}]
+        }
+
+        Js::invoke $listener_factory $el $event
+    }
+
+    let PROPS (class value checked disabled selected readonly)
+
+    proc _prop_name {k} {
+        if [== $k class] { "className" } else { $k }
+    }
+
+    proc _prop? {k} {
+        List::any? $PROPS [lambda {p} { == $p $k }]
+    }
+
+    ;; Apply one non-event attribute to an element.
+    proc _set_attr {el k v} {
+        if [== $k style] {
+            if [dict? $v] {
+                foreach kv $v { Js::set $el style [get $kv 0] [get $kv 1] }
+            } else {
+                Js::call $el setAttribute style [String::from $v]
+            }
+        } else {
+            if [_prop? $k] {
+                Js::set $el [_prop_name $k] $v
+            } else {
+                Js::call $el setAttribute $k [String::from $v]
+            }
+        }
+
+        ""
+    }
+
+    ;; Undo a non-event attribute that disappeared.
+    proc _unset_attr {el k old} {
+        if [== $k style] {
+            if [dict? $old] {
+                foreach kv $old { Js::set $el style [get $kv 0] "" }
+            } else {
+                Js::call $el removeAttribute style
+            }
+        } else {
+            if [_prop? $k] {
+                Js::set $el [_prop_name $k] [if [== $k class] { "" } else { 0 }]
+            } else {
+                Js::call $el removeAttribute $k
+            }
+        }
+
+        ""
+    }
+
+    ;; Bring `el` from attributes `old` to `new`; returns #{attrs A listeners L}
+    ;; where A is `new` without handlers and L the holders by event.
+    proc _patch_attrs {el old new listeners} {
+        var plain #{}
+        var holders $listeners
+
+        foreach kv $new {
+            let k [get $kv 0]
+            let v [get $kv 1]
+
+            if [_event? $k] {
+                let event [String::range $k 2 [len $k]]
+
+                if [not [has? $holders $event]] {
+                    put! holders $event [_holder $el $event]
+                }
+                Js::set [get $holders $event] fn $v
+            } else {
+                if [== $k key] {
+                    put! plain $k $v
+                } else {
+                    put! plain $k $v
+
+                    if [or [not [has? $old $k]] [!= [String::from [get $old $k]] [String::from $v]]] {
+                        _set_attr $el $k $v
+                    }
+                }
+            }
+        }
+
+        foreach kv $old {
+            let k [get $kv 0]
+
+            if [and [not [has? $plain $k]] [!= $k key]] {
+                _unset_attr $el $k [get $kv 1]
+            }
+        }
+
+        foreach kv $holders {
+            let event [get $kv 0]
+
+            if [not [has? $new "on$event"]] {
+                Js::set [get $kv 1] fn ""
+            }
+        }
+
+        dict attrs $plain listeners $holders
+    }
+
+    proc _create {node} {
+        if [not [node? $node]] {
+            let text [String::from $node]
+            return [dict text $text el [Js::call [_doc] createTextNode $text]]
+        }
+
+        let el [Js::call [_doc] createElement [get $node tag]]
+        let a [_patch_attrs $el #{} [get $node attrs] #{}]
+        var kids ()
+
+        foreach kid [get $node children] {
+            let inst [_create $kid]
+            Js::call $el appendChild [get $inst el]
+            List::push! kids $inst
+        }
+
+        dict tag [get $node tag] attrs [get $a attrs] el $el kids $kids listeners [get $a listeners]
+    }
+
+    proc _node_key {node} {
+        if [node? $node] { get [get $node attrs] key "" } else { "" }
+    }
+
+    proc _inst_key {inst} {
+        if [has? $inst tag] { get [get $inst attrs] key "" } else { "" }
+    }
+
+    ;; Put `el` at position `i` of `parent` unless it is there already.
+    proc _place {parent i el} {
+        let cur [Js::get $parent childNodes $i]
+
+        if [== $cur ""] {
+            Js::call $parent appendChild $el
+        } else {
+            if [not [_same? $cur $el]] { Js::call $parent insertBefore $el $cur }
+        }
+
+        ""
+    }
+
+    proc _patch_children {parent olds nodes} {
+        let keyed [List::any? $nodes [lambda {n} { != [_node_key $n] "" }]]
+        var next ()
+
+        if $keyed {
+            var by_key #{}
+
+            foreach old $olds {
+                let k [_inst_key $old]
+                if [!= $k ""] { put! by_key $k $old }
+            }
+
+            var used #{}
+
+            foreach node $nodes {
+                let k [_node_key $node]
+
+                if [and [!= $k ""] [has? $by_key $k]] {
+                    List::push! next [Dom::_patch $parent [get $by_key $k] $node]
+                    put! used $k 1
+                } else {
+                    let inst [_create $node]
+                    Js::call $parent appendChild [get $inst el]
+                    List::push! next $inst
+                }
+            }
+
+            foreach old $olds {
+                let k [_inst_key $old]
+
+                if [or [== $k ""] [not [has? $used $k]]] {
+                    Js::call $parent removeChild [get $old el]
+                }
+            }
+
+            var i 0
+
+            foreach inst $next {
+                _place $parent $i [get $inst el]
+                set! i [+ $i 1]
+            }
+        } else {
+            var i 0
+
+            foreach node $nodes {
+                if [< $i [len $olds]] {
+                    List::push! next [Dom::_patch $parent [get $olds $i] $node]
+                } else {
+                    let inst [_create $node]
+                    Js::call $parent appendChild [get $inst el]
+                    List::push! next $inst
+                }
+
+                set! i [+ $i 1]
+            }
+
+            while {[< $i [len $olds]]} {
+                Js::call $parent removeChild [get [get $olds $i] el]
+                set! i [+ $i 1]
+            }
+        }
+
+        $next
+    }
+
+    ;; Patch the DOM behind `inst` to match `node`; returns the new instance.
+    proc _patch {parent inst node} {
+        let el [get $inst el]
+
+        if [and [not [node? $node]] [has? $inst text]] {
+            let text [String::from $node]
+
+            if [!= $text [get $inst text]] {
+                Js::set $el data $text
+            }
+
+            return [put $inst text $text]
+        }
+
+        if [and [node? $node] [has? $inst tag] [== [get $node tag] [get $inst tag]]] {
+            let a [_patch_attrs $el [get $inst attrs] [get $node attrs] [get $inst listeners]]
+            let kids [_patch_children $el [get $inst kids] [get $node children]]
+            return [dict tag [get $inst tag] attrs [get $a attrs] el $el kids $kids listeners [get $a listeners]]
+        }
+
+        let fresh [_create $node]
+        Js::call $parent replaceChild [get $fresh el] $el
+
+        $fresh
+    }
+
+    proc _handle {contents} { dict cell [ref $contents] }
+
+    proc _read {handle} {
+        let c [get $handle cell]
+        $c
+    }
+
+    proc _write {handle contents} {
+        let c [get $handle cell]
+        set! c $contents
+        ""
+    }
+
+    ;;; Render `node` into `container` (a `Js::ref` element, appended
+    ;;; after whatever is there) and return a mount handle.
+    ;;;
+    ;;; ```tcl
+    ;;; let m [Dom::mount [Js::global document body] [Html::p "hello"]]
+    ;;; Dom::update $m [Html::p "hello again"]
+    ;;; ```
+    proc mount {container node} {
+        let inst [_create $node]
+        Js::call $container appendChild [get $inst el]
+        _handle [dict container $container inst $inst]
+    }
+
+    ;;; Patch a mount to show `node`, changing only what differs from
+    ;;; the node it currently shows.
+    proc update {handle node} {
+        let m [_read $handle]
+        let inst [_patch [get $m container] [get $m inst] $node]
+        _write $handle [put $m inst $inst]
+    }
+
+    ;;; Remove a mount's element from the document.
+    proc unmount {handle} {
+        let m [_read $handle]
+        Js::call [get $m container] removeChild [get [get $m inst] el]
+    }
+
+    ;;; The element a mount rendered (a `Js::ref`).
+    proc element {handle} {
+        get [get [_read $handle] inst] el
+    }
+
+    ;;; Mount `[apply $render $state $app]` into `container`, where `app`
+    ;;; is the handle returned; [Dom::set_state] re-renders with new
+    ;;; state and [Dom::refresh] with the same. `render` receives the
+    ;;; state and the handle.
+    proc app {container state render} {
+        let handle [_handle [dict container $container inst "" state $state render $render]]
+        let inst [_create [apply $render $state $handle]]
+        Js::call $container appendChild [get $inst el]
+        _write $handle [put [_read $handle] inst $inst]
+        $handle
+    }
+
+    ;;; Replace an app's state and re-render.
+    proc set_state {handle state} {
+        _write $handle [put [_read $handle] state $state]
+        Dom::refresh $handle
+    }
+
+    ;;; An app's current state.
+    proc state {handle} {
+        get [_read $handle] state
+    }
+
+    ;;; Re-render an app from its current state.
+    proc refresh {handle} {
+        let m [_read $handle]
+        update $handle [apply [get $m render] [get $m state] $handle]
+    }
+}
+
+namespace Html {
+    foreach t ${Dom::TAGS} {
+        proc $t {*args} { ::Dom::h $t $args }
+    }
+}

@@ -16,7 +16,7 @@ emcmake cmake -S . -B build-emcc -DCMAKE_BUILD_TYPE=Release \
       -DLCL_BUILD_TESTS=ON -DLCL_BUILD_TEST_LIB=ON \
       -DLCL_BUILD_IO=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_REGEX=ON \
       -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON \
-      -DLCL_BUILD_JS=ON
+      -DLCL_BUILD_JS=ON -DLCL_BUILD_DOM_LIB=ON
 cmake --build build-emcc --parallel
 ctest --test-dir build-emcc
 ```
@@ -28,7 +28,8 @@ here -- their browser counterparts (`fetch`, WebCrypto) are reached
 through `Js::` (lcl-js, on by default under Emscripten: the
 JavaScript host engine as a package, see its docs page), not as
 ports. The pure-Lcl libraries
-(`Test`, `Doc`, `Bench`) are embedded and need no filesystem.
+(`Test`, `Doc`, `Bench`, and `Dom` -- the declarative DOM library,
+on by default under Emscripten) are embedded and need no filesystem.
 
 ## The JavaScript host
 

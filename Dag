@@ -77,7 +77,8 @@ project lcl {
                    -DLCL_BUILD_TIME=ON
                    -DLCL_BUILD_MATH=ON
                    -DLCL_BUILD_RANDOM=ON
-                   -DLCL_BUILD_JS=ON)
+                   -DLCL_BUILD_JS=ON
+                   -DLCL_BUILD_DOM_LIB=ON)
 
     task emcc {
         inputs ${lcl::SOURCES}
