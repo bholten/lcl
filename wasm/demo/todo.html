@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lcl Todos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 24px; font: 15px/1.5 system-ui, sans-serif; max-width: 520px; }
+  .app h1 { font-size: 22px; margin: 0 0 12px; }
+  .app form { display: flex; gap: 8px; margin-bottom: 12px; }
+  .app input[type=text] { flex: 1; font: inherit; padding: 6px 8px; }
+  .app button { font: inherit; padding: 6px 10px; }
+  .app ul { list-style: none; padding: 0; margin: 0; }
+  .app li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #8884; }
+  .app li.done span { text-decoration: line-through; opacity: .6; }
+  .app li span { flex: 1; }
+  .app .empty { opacity: .6; }
+  .app footer { margin-top: 12px; font-size: 13px; opacity: .7; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- The whole application is Lcl; the page only boots the interpreter. -->
+<script type="text/lcl" id="app">
+eval [Dom::html_tags (div h1 form input button ul li span p footer label)]
+
+proc change {app f} {
+    Dom::set_state $app [apply $f [Dom::state $app]]
+}
+
+proc render {state app} {
+    let todos [get $state todos]
+    let draft [get $state draft]
+    let left [len [List::filter $todos [lambda {t} { not [get $t done] }]]]
+
+    div #{class app} \
+        [h1 "Todos"] \
+        [form #{onsubmit [lambda {ev *_} {
+                    Js::call $ev preventDefault
+                    if [!= [String::trim $draft] ""] {
+                        change $app [lambda {s} {
+                            let item [dict id [get $s next] text [String::trim $draft] done 0]
+                            put [put [put $s todos [List::push [get $s todos] $item]] draft ""] next [+ [get $s next] 1]
+                        }]
+                    }
+                }]} \
+            [input #{type text value $draft placeholder "What needs doing?"
+                     oninput [lambda {ev *_} {
+                         change $app [lambda {s} { put $s draft [Js::get $ev target value] }]
+                     }]}] \
+            [button #{type submit} "Add"]] \
+        [if [== [len $todos] 0] { p #{class empty} "Nothing to do." } else {
+            ul [List::map $todos [lambda {t} {
+                let id [get $t id]
+                li #{key $id class [if [get $t done] { "done" } else { "" }]} \
+                    [input #{type checkbox checked [get $t done]
+                             onchange [lambda {*_} {
+                                 change $app [lambda {s} {
+                                     put $s todos [List::map [get $s todos] [lambda {u} {
+                                         if [== [get $u id] $id] { put $u done [not [get $u done]] } else { $u }
+                                     }]]
+                                 }]
+                             }]}] \
+                    [span [get $t text]] \
+                    [button #{onclick [lambda {*_} {
+                        change $app [lambda {s} {
+                            put $s todos [List::filter [get $s todos] [lambda {u} { != [get $u id] $id }]]
+                        }]
+                    }]} "✕"]
+            }]]
+        }] \
+        [footer "$left left · rendered by Lcl"]
+}
+
+Dom::app [Js::call [Js::global document] getElementById root] #{todos () draft "" next 1} $render
+</script>
+
+<script type="module">
+/*
+ *   cp wasm/demo/todo.html build-emcc/ && python3 -m http.server -d build-emcc 8000
+ */
+import createLcl from './lcl.mjs';
+const lcl = await createLcl();
+lcl.setBudget(5_000_000);
+try {
+  lcl.eval(document.getElementById('app').textContent, 'todo.html');
+} catch (e) {
+  document.body.textContent = `${e.file}:${e.line}: ${e.message}`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+;; lib/dom: the declarative DOM library, exercised against a small
+;; fake DOM (below) so it runs under node; the reconciler only ever
+;; uses the handful of DOM operations the fake implements.
+
+Js::eval {
+  (() => {
+    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    class Text {
+      constructor(data) { this.data = String(data); this.parentNode = null; }
+      get outerHTML() { return esc(this.data); }
+    }
+    class Element {
+      constructor(tag) {
+        this.tagName = tag; this.childNodes = []; this.attrs = {}; this.listeners = {};
+        this.style = {}; this.parentNode = null; this.className = ""; this.value = "";
+        this.ops = 0;
+      }
+      _detach(c) { if (c.parentNode) c.parentNode.removeChild(c); }
+      appendChild(c) { this._detach(c); c.parentNode = this; this.childNodes.push(c); this.ops++; return c; }
+      insertBefore(c, ref) {
+        this._detach(c); c.parentNode = this;
+        const i = this.childNodes.indexOf(ref);
+        if (i < 0) throw new Error("insertBefore: reference is not a child");
+        this.childNodes.splice(i, 0, c); this.ops++; return c;
+      }
+      removeChild(c) {
+        const i = this.childNodes.indexOf(c);
+        if (i < 0) throw new Error("removeChild: not a child");
+        this.childNodes.splice(i, 1); c.parentNode = null; this.ops++; return c;
+      }
+      replaceChild(n, o) {
+        const i = this.childNodes.indexOf(o);
+        if (i < 0) throw new Error("replaceChild: not a child");
+        this._detach(n); this.childNodes[i] = n; n.parentNode = this; o.parentNode = null; this.ops++; return o;
+      }
+      setAttribute(k, v) { this.attrs[k] = String(v); }
+      removeAttribute(k) { delete this.attrs[k]; }
+      addEventListener(e, f) { (this.listeners[e] ||= []).push(f); }
+      removeEventListener(e, f) { this.listeners[e] = (this.listeners[e] || []).filter(g => g !== f); }
+      fire(e, detail) { (this.listeners[e] || []).forEach(f => f({ type: e, detail, target: this })); return (this.listeners[e] || []).length; }
+      get outerHTML() {
+        const a = Object.entries(this.attrs).map(([k, v]) => ` ${k}="${esc(v)}"`);
+        if (this.className) a.push(` class="${esc(this.className)}"`);
+        const style = Object.entries(this.style).filter(([, v]) => v !== "").map(([k, v]) => `${k}:${v}`).join(";");
+        if (style) a.push(` style="${style}"`);
+        if (this.value) a.push(` value="${esc(this.value)}"`);
+        for (const p of ["checked", "disabled", "selected"]) if (this[p]) a.push(` ${p}`);
+        a.sort();
+        return `<${this.tagName}${a.join("")}>${this.childNodes.map(c => c.outerHTML).join("")}</${this.tagName}>`;
+      }
+    }
+    globalThis.document = { createElement: t => new Element(t), createTextNode: d => new Text(d) };
+    globalThis.fakeRoot = () => new Element("root");
+  })();
+}
+
+eval [Dom::html_tags (div p ul li span button input b)]
+
+proc html_of {root} { Js::get $root outerHTML }
+proc ops_of {root} { Js::get $root ops }
+
+Test::suite "Dom: mounting renders the tree" {
+    Test::case "elements, text, attributes, properties, styles" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        Dom::mount $root [div #{id main class app data-x 1 style #{color red}} \
+            [p "hello " [b "world"]] [input #{value typed disabled 1}]]
+        Test::eq [html_of $root] {<root><div class="app" data-x="1" id="main" style="color:red"><p>hello <b>world</b></p><input disabled value="typed"></input></div></root>}
+    }
+
+    Test::case "numbers become text and empty strings vanish" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        Dom::mount $root [p "n=" 42 "" [if 0 { span x } else { "" }]]
+        Test::eq [html_of $root] {<root><p>n=42</p></root>}
+    }
+
+    Test::case "mount returns a handle to the rendered element" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [p "a"]]
+        Test::eq [Js::get [Dom::element $m] tagName] p
+        Dom::unmount $m
+        Test::eq [html_of $root] {<root></root>}
+    }
+}
+
+Test::suite "Dom: update patches in place" {
+    Test::case "text and attributes change without recreating elements" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [div #{class a title t} [p "one"]]]
+        let before [Js::get $root childNodes 0]
+        Dom::update $m [div #{class b} [p "two"]]
+        Test::eq [html_of $root] {<root><div class="b"><p>two</p></div></root>}
+        Test::eq [Js::call [Js::global Object] is $before [Js::get $root childNodes 0]] 1
+    }
+
+    Test::case "a changed tag replaces the element" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [div [p "x"]]]
+        Dom::update $m [div [span "x"]]
+        Test::eq [html_of $root] {<root><div><span>x</span></div></root>}
+        Dom::update $m [div "just text"]
+        Test::eq [html_of $root] {<root><div>just text</div></root>}
+    }
+
+    Test::case "children grow and shrink by index" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [ul [li "a"]]]
+        Dom::update $m [ul [li "a"] [li "b"] [li "c"]]
+        Test::eq [html_of $root] {<root><ul><li>a</li><li>b</li><li>c</li></ul></root>}
+        Dom::update $m [ul [li "c"]]
+        Test::eq [html_of $root] {<root><ul><li>c</li></ul></root>}
+    }
+
+    Test::case "keyed children move instead of being rewritten" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let items [lambda {ks} { ul [List::map $ks [lambda {k} { li #{key $k} "item $k" }]] }]
+        let m [Dom::mount $root [apply $items (a b c)]]
+        let ul_el [Js::get $root childNodes 0]
+        let el_c [Js::get $ul_el childNodes 2]
+        Dom::update $m [apply $items (c a b)]
+        Test::eq [html_of $root] {<root><ul><li>item c</li><li>item a</li><li>item b</li></ul></root>}
+        Test::eq [Js::call [Js::global Object] is $el_c [Js::get $ul_el childNodes 0]] 1
+        Dom::update $m [apply $items (b d)]
+        Test::eq [html_of $root] {<root><ul><li>item b</li><li>item d</li></ul></root>}
+    }
+
+    Test::case "an unchanged tree touches nothing" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [div #{class x} [p "same"] [ul [li #{key 1} "1"]]]]
+        let ul_el [Js::get $root childNodes 0 childNodes 1]
+        let ops [ops_of $ul_el]
+        Dom::update $m [div #{class x} [p "same"] [ul [li #{key 1} "1"]]]
+        Test::eq [ops_of $ul_el] $ops
+    }
+
+    Test::case "styles and properties are undone when they disappear" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let m [Dom::mount $root [div #{style #{color red} class c title t}]]
+        Dom::update $m [div]
+        Test::eq [html_of $root] {<root><div></div></root>}
+    }
+}
+
+Test::suite "Dom: events" {
+    Test::case "handlers receive the event and the listener stays stable" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        var clicks ()
+        let view [lambda {tag} { button #{onclick [lambda {ev} { List::push! clicks "$tag:[Js::get $ev detail]" }]} "go" }]
+        let m [Dom::mount $root [apply $view first]]
+        let btn [Js::get $root childNodes 0]
+        Test::eq [Js::call $btn fire click 1] 1
+        Dom::update $m [apply $view second]
+        Test::eq [Js::call $btn fire click 2] 1
+        Test::eq $clicks (first:1 second:2)
+    }
+
+    Test::case "a removed handler no longer fires" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        var n 0
+        let m [Dom::mount $root [button #{onclick [lambda {*_} { set! n [+ $n 1] }]} "x"]]
+        let btn [Js::get $root childNodes 0]
+        Js::call $btn fire click
+        Dom::update $m [button "x"]
+        Js::call $btn fire click
+        Test::eq $n 1
+    }
+
+    Test::case "an error in a handler surfaces as a JavaScript exception" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        Dom::mount $root [button #{onclick [lambda {*_} { error "handler failed" }]} "x"]
+        let btn [Js::get $root childNodes 0]
+        Test::raises_with { Js::call $btn fire click } {handler failed}
+    }
+}
+
+Test::suite "Dom: apps" {
+    Test::case "state drives the render, set_state re-renders" {
+        let root [Js::invoke [Js::global fakeRoot]]
+        let app [Dom::app $root #{count 0} [lambda {state app} {
+            let n [get $state count]
+            div [p "count: $n"] [button #{onclick [lambda {*_} { Dom::set_state $app #{count [+ $n 1]} }]} "+"]
+        }]]
+        Test::eq [html_of $root] {<root><div><p>count: 0</p><button>+</button></div></root>}
+        let btn [Js::get $root childNodes 0 childNodes 1]
+        Js::call $btn fire click
+        Js::call $btn fire click
+        Test::eq [html_of $root] {<root><div><p>count: 2</p><button>+</button></div></root>}
+        Test::eq [Dom::state $app] #{count 2}
+        Dom::refresh $app
+        Test::eq [html_of $root] {<root><div><p>count: 2</p><button>+</button></div></root>}
+    }
+}
+
+Test::suite "Dom: html rendering" {
+    Test::case "renders the same trees to text" {
+        Test::eq [Dom::html [div #{class a} [p "x < y"] [input #{type text}]]] {<div class="a"><p>x &lt; y</p><input type="text"></div>}
+        Test::eq [Dom::html [ul [List::map (1 2) [lambda {i} { li #{key $i onclick x} $i }]]]] {<ul><li>1</li><li>2</li></ul>}
+    }
+}
+
+exit [Test::run]

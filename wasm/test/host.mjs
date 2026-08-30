@@ -167,6 +167,12 @@ test('modules come from the host through setModuleSource', () => {
   assert.throws(() => lcl.eval('load main.lcl'), /could not read file/);
 });
 
+test('the embedded libraries are present in the browser host', () => {
+  assert.equal(lcl.eval('Dom::html [Dom::h p #{class x} "hi"]'), '<p class="x">hi</p>');
+  assert.equal(lcl.eval('type $Dom'), 'namespace');
+  assert.equal(lcl.eval('Dom::html [Html::br]'), '<br>');
+});
+
 test('namespaces surface as handles that stringify', () => {
   lcl.eval('namespace Shape { proc area {r} { * $r $r } }');
   const ns = lcl.get('Shape');

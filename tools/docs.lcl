@@ -87,8 +87,28 @@ namespace DocSite {
 
     ;; ---- doctest --------------------------------------------------
 
+    ;; The namespace a page documents -- its first namespace declaration --
+    ;; or "" when it declares none.
+    proc _page_namespace {path} {
+        foreach line [String::split [Io::read_file $path] "\n"] {
+            if [and [> [String::length $line] 10] [String::eq? [String::range $line 0 10] "namespace "]] {
+                let rest [String::trim [String::range $line 10 [String::length $line]]]
+                return [get [String::split $rest " "] 0]
+            }
+        }
+        ""
+    }
+
+    ;; Is the namespace named `ns` bound in this interpreter?
+    proc _built? {ns} {
+        == [catch { eval "\${$ns}" }] 0
+    }
+
     ;; Run the doctests of the given files (all `.lcl` pages when the
-    ;; list is empty); returns the total number of failures.
+    ;; list is empty); returns the total number of failures. A page
+    ;; whose namespace is not built into this interpreter (a package
+    ;; or library this build lacks, e.g. `Js::` outside Emscripten) is
+    ;; skipped and named, not failed.
     proc doctest {files} {
         var srcs $files
 
@@ -105,7 +125,17 @@ namespace DocSite {
         var fails 0
         var passes 0
 
+        var skipped 0
+
         foreach f $srcs {
+            let doctest_page_ns [_page_namespace $f]
+
+            if [and [!= $doctest_page_ns ""] [not [_built? $doctest_page_ns]]] {
+                puts "skip $f ($doctest_page_ns is not built into this interpreter)"
+                set! skipped [+ $skipped 1]
+                continue
+            }
+
             let r [Doc::doctest_file $f]
             let nf [get $r fail]
 
@@ -118,7 +148,7 @@ namespace DocSite {
             }
         }
 
-        puts "doctest: $passes passed, $fails failed across [len $srcs] files"
+        puts "doctest: $passes passed, $fails failed across [- [len $srcs] $skipped] files[if $skipped { ", $skipped skipped" } else { "" }]"
         $fails
     }
 

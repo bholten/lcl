@@ -45,12 +45,20 @@ option(LCL_BUILD_MATH "Build Lcl with the Math extension library" OFF)
 option(LCL_BUILD_RANDOM "Build Lcl with the Random (xoshiro128**) extension library" OFF)
 option(LCL_BUILD_EXPECT "Build Lcl with the Expect extension library" OFF)
 
+if(EMSCRIPTEN)
+  set(LCL_JS_DEFAULT ON)
+else()
+  set(LCL_JS_DEFAULT OFF)
+endif()
+option(LCL_BUILD_JS "Build Lcl with the JavaScript host bindings (Emscripten only)" ${LCL_JS_DEFAULT})
+
 # Lcl libraries
 option(LCL_BUILD_TEST_LIB "Build Lcl with the Test library" OFF)
 option(LCL_BUILD_SH_LIB "Build Lcl with the Sh library" OFF)
 option(LCL_BUILD_CURL_DSL_LIB "Build Lcl with the cURL DSL library" OFF)
 option(LCL_BUILD_DOC_LIB "Build Lcl with the Doc library" OFF)
 option(LCL_BUILD_BENCH_LIB "Build Lcl with the Bench library (needs LCL_BUILD_TIME)" OFF)
+option(LCL_BUILD_DOM_LIB "Build Lcl with the Dom library (needs LCL_BUILD_JS)" ${LCL_JS_DEFAULT})
 
 # True when Lcl is the top-level CMake project (i.e. the user invoked
 # cmake on this directory directly, not as a subproject). Package
@@ -538,6 +546,25 @@ if(LCL_BUILD_BENCH_LIB)
   endif()
 endif()
 
+if(LCL_BUILD_DOM_LIB)
+  if(NOT LCL_BUILD_JS)
+    message(FATAL_ERROR "LCL_BUILD_DOM_LIB requires LCL_BUILD_JS=ON (Dom renders through Js::)")
+  endif()
+
+  lcl_embed_file(
+    INPUT  lib/dom/src/Dom.lcl
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/dom-lib-data.h
+    SYMBOL lib_dom_src_Dom_lcl
+    TARGET generate_dom_lib_data
+  )
+
+  if(LCL_BUILD_CLI)
+    add_dependencies(lcl-cli generate_dom_lib_data)
+    target_compile_definitions(lcl-cli PRIVATE LCL_HAVE_DOM_LIB)
+    target_include_directories(lcl-cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()
+
 # ==============================================================================
 # WebAssembly host (Emscripten only)
 # ==============================================================================
@@ -696,6 +723,15 @@ if(LCL_BUILD_TESTS)
       NAME cli-exit-status
       COMMAND sh -c "${LCL_CLI_LAUNCHER_STR} $<TARGET_FILE:lcl-cli> -c 'catch { exit 7 }; puts unreachable'; test $? -eq 7"
     )
+
+    if(LCL_BUILD_DOM_LIB)
+      add_test(
+        NAME dom-lib
+        COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
+                "${CMAKE_CURRENT_SOURCE_DIR}/lib/dom/test/test.lcl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      )
+    endif()
 
     if(LCL_BUILD_BENCH_LIB)
       add_test(
