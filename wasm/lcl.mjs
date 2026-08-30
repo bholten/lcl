@@ -78,6 +78,7 @@ export class Lcl {
   #nextHostId = 1;
   #hostFnPtr;
   #stepFnPtr = 0;
+  #sourceFnPtr = 0;
 
   constructor(core) {
     this.#core = core;
@@ -178,6 +179,44 @@ export class Lcl {
     this.#core._lclw_set_step_hook(this.#interp, this.#stepFnPtr, interval);
   }
 
+  /*
+   * Where `require` and `load` get module text: `source(path)` returns
+   * the module's source as a string, or null/undefined for "no such
+   * module"; throwing reports the exception's message instead of the
+   * list of paths tried. A plain object maps paths to sources. Pass
+   * null to go back to the (virtual) filesystem.
+   */
+  setModuleSource(source) {
+    if (this.#sourceFnPtr) {
+      this.#core.removeFunction(this.#sourceFnPtr);
+      this.#sourceFnPtr = 0;
+    }
+    if (source) {
+      const lookup = typeof source === 'function'
+        ? source
+        : path => (Object.hasOwn(source, path) ? source[path] : null);
+      this.#sourceFnPtr = this.#core.addFunction((interp, pathPtr, lenPtr) => {
+        try {
+          const text = lookup(this.#core.UTF8ToString(pathPtr));
+          if (text === null || text === undefined) return 0;
+          if (lenPtr) this.#core.HEAPU32[lenPtr >> 2] = this.#core.lengthBytesUTF8(String(text));
+          return this.#cstr(text);
+        } catch (e) {
+          this.#js.setError(interp, e);
+          return 0;
+        }
+      }, 'iiii');
+    }
+    this.#core._lclw_set_module_source_fn(this.#interp, this.#sourceFnPtr);
+  }
+
+  /* A directory bare `require` names are looked up under, in order. */
+  addRequireRoot(dir) {
+    const p = this.#cstr(dir);
+    this.#core._lcl_add_require_root(this.#interp, p);
+    this.#core._free(p);
+  }
+
   /* A hard per-eval command budget. */
   setBudget(commands) {
     this.setStepHook(commands > 0 ? () => true : null, commands);
@@ -189,6 +228,7 @@ export class Lcl {
   free() {
     if (!this.#interp) return;
     this.setStepHook(null);
+    this.setModuleSource(null);
     this.#core._lclw_free(this.#interp);
     this.#interp = 0;
     this.#core.removeFunction(this.#hostFnPtr);

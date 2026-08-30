@@ -81,9 +81,14 @@ typedef int (*lclw_host_fn)(lcl_interp *interp, long id, lcl_value *args,
 
 typedef int (*lclw_step_fn)(lcl_interp *interp);
 
+/* A module-source hook without userdata (see lcl_set_module_source_fn). */
+typedef char *(*lclw_source_fn)(lcl_interp *interp, const char *path,
+                                size_t *len);
+
 struct lclw_host {
   lclw_host_fn host_fn;
   lclw_step_fn step_fn;
+  lclw_source_fn source_fn;
 };
 
 static struct lclw_host *host_of(lcl_interp *interp) {
@@ -138,6 +143,13 @@ static int step_thunk(lcl_interp *interp, void *userdata) {
   struct lclw_host *host = (struct lclw_host *)userdata;
 
   return host->step_fn ? host->step_fn(interp) : 0;
+}
+
+static char *source_thunk(lcl_interp *interp, const char *path, size_t *len,
+                          void *userdata) {
+  struct lclw_host *host = (struct lclw_host *)userdata;
+
+  return host->source_fn ? host->source_fn(interp, path, len) : NULL;
 }
 
 const char *lclw_version(void) {
@@ -241,6 +253,13 @@ void lclw_set_step_hook(lcl_interp *interp, lclw_step_fn fn,
 
   host->step_fn = fn;
   lcl_set_step_hook(interp, fn ? step_thunk : NULL, host, interval);
+}
+
+void lclw_set_module_source_fn(lcl_interp *interp, lclw_source_fn fn) {
+  struct lclw_host *host = host_of(interp);
+
+  host->source_fn = fn;
+  lcl_set_module_source_fn(interp, fn ? source_thunk : NULL, host);
 }
 
 void lclw_abort(lcl_interp *interp) {

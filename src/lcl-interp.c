@@ -46,6 +46,8 @@ lcl_interp *lcl_interp_new(void) {
   interp->require_stack_cap = 0;
   interp->module_key_fn = NULL;
   interp->module_key_ud = NULL;
+  interp->module_source_fn = NULL;
+  interp->module_source_ud = NULL;
   interp->step_fn = NULL;
   interp->step_ud = NULL;
   interp->step_interval = 0;
@@ -228,4 +230,16 @@ void lcl_set_module_key_fn(lcl_interp *interp,
 
   interp->module_key_fn = fn;
   interp->module_key_ud = userdata;
+}
+
+void lcl_set_module_source_fn(lcl_interp *interp,
+                              char *(*fn)(lcl_interp *interp, const char *path,
+                                          size_t *len, void *userdata),
+                              void *userdata) {
+  if (!interp) {
+    return;
+  }
+
+  interp->module_source_fn = fn;
+  interp->module_source_ud = userdata;
 }

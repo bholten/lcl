@@ -2426,6 +2426,107 @@ static int test_require_search_roots_order(void) {
   return 1;
 }
 
+/* The module-source hook replaces file reading for require and load:
+ * candidates are offered to it in resolution order, the lexical path
+ * stays the module's name (so nested ./ requires resolve against it),
+ * the cache still applies, a NULL answer reports every path tried,
+ * and a hook that sets an error is quoted instead. */
+extern void lcl_set_error(lcl_interp *interp, const char *msg);
+extern void lcl_set_module_source_fn(lcl_interp *interp,
+                                     char *(*fn)(lcl_interp *, const char *,
+                                                 size_t *, void *),
+                                     void *userdata);
+
+static const char *source_hook_last_path;
+static int source_hook_calls;
+
+static char *source_hook(lcl_interp *in, const char *path, size_t *len,
+                         void *ud) {
+  static const struct {
+    const char *path;
+    const char *src;
+  } table[] = {
+      {"lib/foo.lcl", "namespace Foo { let who [String::from foo] }\n"
+                      "require ./bar.lcl\n"},
+      {"lib/bar.lcl", "namespace Bar { let who bar }\n"         },
+      {"plain.lcl",   "let loaded_from_hook 42\n"               },
+  };
+  size_t i;
+  (void)ud;
+
+  source_hook_calls++;
+  source_hook_last_path = path;
+
+  if (strcmp(path, "lib/forbidden.lcl") == 0) {
+    lcl_set_error(in, "source hook: forbidden.lcl is off limits");
+    return NULL;
+  }
+
+  for (i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
+    if (strcmp(path, table[i].path) == 0) {
+      if (len) {
+        *len = strlen(table[i].src);
+      }
+
+      return strdup(table[i].src);
+    }
+  }
+
+  return NULL;
+}
+
+static int test_require_module_source_hook(void) {
+  lcl_interp *in = lcl_interp_new();
+  lcl_value *out = NULL;
+  int ok = 1;
+
+  ASSERT_TRUE(in != NULL);
+  lcl_register_core(in);
+  lcl_add_require_root(in, "lib");
+  lcl_set_module_source_fn(in, source_hook, NULL);
+
+  /* A bare name resolves under the root and nested ./bar.lcl against
+   * foo.lcl's lexical directory, both served by the hook. */
+  ok = ok && req_eval_expect(in, "require foo.lcl\n${Foo::who}", "foo");
+  ok = ok && req_eval_expect(in, "${Bar::who}", "bar");
+
+  /* Cached: a second require answers without evaluating again. */
+  {
+    int calls = source_hook_calls;
+    ok = ok && req_eval_expect(in, "require foo.lcl\n${Foo::who}", "foo");
+    ASSERT_TRUE(source_hook_calls == calls + 1); /* the probe only */
+  }
+
+  /* load goes through the hook too. */
+  ok = ok && req_eval_expect(in, "load plain.lcl\n$loaded_from_hook", "42");
+
+  /* Unknown module: the tried paths are reported, none opened. */
+  ASSERT_TRUE(lcl_eval_string_file(in, "require nope.lcl", "t.lcl", &out) ==
+              LCL_RC_ERR);
+  ASSERT_TRUE(in->err_msg && strstr(in->err_msg, "cannot find \"nope.lcl\"") &&
+              strstr(in->err_msg, "lib/nope.lcl"));
+  lcl_clear_error(in);
+
+  /* A hook that sets an error is quoted verbatim. */
+  ASSERT_TRUE(lcl_eval_string_file(in, "require forbidden.lcl", "t.lcl",
+                                   &out) == LCL_RC_ERR);
+  ASSERT_TRUE(in->err_msg && strstr(in->err_msg, "off limits"));
+  lcl_clear_error(in);
+  ASSERT_TRUE(lcl_eval_string_file(in, "load lib/forbidden.lcl", "t.lcl",
+                                   &out) == LCL_RC_ERR);
+  ASSERT_TRUE(in->err_msg && strstr(in->err_msg, "off limits"));
+  lcl_clear_error(in);
+
+  /* Removing the hook restores file reading. */
+  lcl_set_module_source_fn(in, NULL, NULL);
+  ASSERT_TRUE(lcl_eval_string_file(in, "load plain.lcl", "t.lcl", &out) ==
+              LCL_RC_ERR);
+  ASSERT_TRUE(in->err_msg && strstr(in->err_msg, "could not read file"));
+
+  lcl_interp_free(in);
+  return ok;
+}
+
 static int test_require_cycle_detection(void) {
   char root[] = "/tmp/lcl-req-cyc-XXXXXX";
   char path[1024];
@@ -3066,6 +3167,7 @@ int run_test(void) {
   RUN(test_path_clean_table);
   RUN(test_path_join_and_dirname);
   RUN(test_require_module_key_hook);
+  RUN(test_require_module_source_hook);
   RUN(test_ns_anchor_lifecycle);
   RUN(test_call_proc_break_is_error);
 

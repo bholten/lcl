@@ -583,6 +583,7 @@ if(EMSCRIPTEN AND LCL_BUILD_WASM)
   set(_wasm_exports
     _malloc _free
     _lclw_version _lclw_new _lclw_free _lclw_set_host_fn _lclw_set_step_hook
+    _lclw_set_module_source_fn _lcl_add_require_root
     _lclw_abort _lclw_eval _lclw_define_host_proc _lclw_define_take _lclw_get
     _lcl_ref_dec _lcl_interp_error_msg _lcl_interp_error_file
     _lcl_interp_error_line _lcl_set_error _lcl_clear_error)
@@ -590,7 +591,7 @@ if(EMSCRIPTEN AND LCL_BUILD_WASM)
   target_link_options(lcl-wasm PRIVATE
     -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createLclCore
     "-sEXPORTED_FUNCTIONS=${_wasm_exports_csv}"
-    "-sEXPORTED_RUNTIME_METHODS=cwrap,UTF8ToString,stringToNewUTF8,addFunction,removeFunction,HEAPU32"
+    "-sEXPORTED_RUNTIME_METHODS=cwrap,UTF8ToString,stringToNewUTF8,lengthBytesUTF8,addFunction,removeFunction,HEAPU32"
     -sALLOW_TABLE_GROWTH=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0
     # lcl_int is a wasm i64: it crosses to JavaScript as a BigInt.
     -sWASM_BIGINT=1

@@ -150,6 +150,23 @@ test('JavaScript objects reach scripts as Js:: references', () => {
   assert.equal(lcl.eval('Js::call [Js::global JSON] stringify $items'), '[1,"b",{"c":[1,0,""]}]');
 });
 
+test('modules come from the host through setModuleSource', () => {
+  lcl.setModuleSource({
+    'lib/geo.lcl': 'namespace Geo { proc area {r} { * $r $r } }\nrequire ./units.lcl',
+    'lib/units.lcl': 'namespace Units { let name m }',
+    'main.lcl': 'let from_load "loaded"',
+  });
+  lcl.addRequireRoot('lib');
+  assert.equal(lcl.eval('require geo.lcl; Geo::area 3'), 9);
+  assert.equal(lcl.eval('${Units::name}'), 'm');
+  assert.equal(lcl.eval('load main.lcl; $from_load'), 'loaded');
+  assert.throws(() => lcl.eval('require nope.lcl'), /cannot find "nope.lcl".*lib\/nope\.lcl/);
+  lcl.setModuleSource(path => { throw new Error(`no network for ${path}`); });
+  assert.throws(() => lcl.eval('require geo2.lcl'), /no network for lib\/geo2\.lcl/);
+  lcl.setModuleSource(null);
+  assert.throws(() => lcl.eval('load main.lcl'), /could not read file/);
+});
+
 test('namespaces surface as handles that stringify', () => {
   lcl.eval('namespace Shape { proc area {r} { * $r $r } }');
   const ns = lcl.get('Shape');

@@ -161,6 +161,11 @@ struct lcl_interp {
    * cur_file — identity only. */
   char *(*module_key_fn)(const char *lexical_path, void *userdata);
   void *module_key_ud;
+  /* Module-source hook (lcl_set_module_source_fn): where require/load
+   * read text from. NULL = the filesystem. */
+  char *(*module_source_fn)(lcl_interp *interp, const char *path, size_t *len,
+                            void *userdata);
+  void *module_source_ud;
   int (*step_fn)(lcl_interp *interp, void *userdata);
   void *step_ud;
   unsigned long step_interval;
