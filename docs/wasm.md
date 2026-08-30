@@ -15,7 +15,8 @@ JavaScript module. Two things come out of an `emcmake` build:
 emcmake cmake -S . -B build-emcc -DCMAKE_BUILD_TYPE=Release \
       -DLCL_BUILD_TESTS=ON -DLCL_BUILD_TEST_LIB=ON \
       -DLCL_BUILD_IO=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_REGEX=ON \
-      -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON
+      -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON \
+      -DLCL_BUILD_JS=ON
 cmake --build build-emcc --parallel
 ctest --test-dir build-emcc
 ```
@@ -23,8 +24,10 @@ ctest --test-dir build-emcc
 `Dag emcc` runs exactly that. The packages listed are the portable
 set (ANSI C, or POSIX that musl provides); `Curl`, `Crypto`,
 `Process`, `Posix` and `Expect` are platform-bound and do not build
-here -- their browser counterparts (`fetch`, WebCrypto) will arrive
-through the JavaScript binding, not as ports. The pure-Lcl libraries
+here -- their browser counterparts (`fetch`, WebCrypto) are reached
+through `Js::` (lcl-js, on by default under Emscripten: the
+JavaScript host engine as a package, see its docs page), not as
+ports. The pure-Lcl libraries
 (`Test`, `Doc`, `Bench`) are embedded and need no filesystem.
 
 ## The JavaScript host
@@ -96,6 +99,12 @@ the garbage collector reaches first. `free()` invalidates all of
 them.
 
 ### How it is put together
+
+Value marshalling is lcl-js's bridge (`Module.LclJs`, from
+`packages/lcl-js/src/lcl-js-library.js`): the same code that backs
+`Js::` converts host-procedure arguments and results, so a JavaScript
+object handed to a host procedure arrives in Lcl as a `Js::ref` and a
+proc returned to JavaScript is a callable function on both paths.
 
 `wasm/lcl-wasm.c` is the browser counterpart of `src/lcl-main.c`: it
 registers the core, the packages and the embedded libraries, and

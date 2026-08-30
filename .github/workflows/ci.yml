@@ -175,7 +175,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release -DLCL_WERROR=ON \
             -DLCL_BUILD_TESTS=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_DOC_LIB=ON \
             -DLCL_BUILD_IO=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_REGEX=ON \
-            -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON
+            -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON \
+            -DLCL_BUILD_JS=ON
 
       - name: Build
         run: cmake --build build-emcc --parallel

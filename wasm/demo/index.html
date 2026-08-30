@@ -60,7 +60,7 @@ lcl.define('js_time', () => Date.now());
 /* Stop runaway loops rather than freezing the tab. */
 lcl.setBudget(5_000_000);
 
-log(';; try: puts [js_time]   ;   proc sq {x} { * $x $x }; List::map (1 2 3) $sq', 'in');
+log(';; try: puts [js_time]   ;   Js::set [Js::global document] title "Lcl!"   ;   Js::call [Js::global console] log hi', 'in');
 
 document.getElementById('form').addEventListener('submit', e => e.preventDefault());
 src.addEventListener('keydown', e => {

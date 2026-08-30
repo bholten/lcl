@@ -6,18 +6,19 @@
  *   lcl.define('greet', name => `hello, ${name}`);
  *   lcl.eval('puts [greet world]');
  *
- * Values cross the boundary by type, not by text: an Lcl int is a JS
- * number, a list an Array, a dict a plain object, a proc a callable
- * function. Anything else (namespaces, opaques) comes back as an
+ * Values cross the boundary by type, not by text, through lcl-js's
+ * bridge (Module.LclJs -- the same code that backs `Js::`): an Lcl
+ * int is a JS number (BigInt beyond 2^53), a list an Array, a dict a
+ * plain object, a proc a callable function, a Js::ref the JavaScript
+ * object it refers to. Namespaces and other opaques come back as an
  * LclValue handle that stringifies like the interpreter would.
  *
  * Going the other way, integral JS numbers and BigInts become Lcl
- * ints and other numbers floats, booleans become 1/0, null and
- * undefined the empty string, Arrays lists, plain objects dicts,
- * functions host procs. The int/float distinction of a value that
- * round-trips through JS is therefore not preserved (2.0 comes back
- * as 2); JS has one number type. Ints beyond 2^53 arrive as BigInt
- * so no digits are lost.
+ * ints and other numbers floats, booleans 1/0, null and undefined
+ * the empty string, Arrays lists, plain objects dicts, and any other
+ * object -- a DOM node, a Map, a function -- a Js::ref the script
+ * drives with `Js::`. The int/float distinction of a value that
+ * round-trips through JS is not preserved (2.0 comes back as 2).
  *
  * Every Lcl reference JS holds is released when the wrapper that
  * owns it is released -- explicitly via .release(), or by the
@@ -25,17 +26,6 @@
  */
 
 import createLclCore from './lcl-core.mjs';
-
-const T_STRING = 0, T_INT = 1, T_FLOAT = 2, T_LIST = 3, T_DICT = 4,
-      T_CELL = 5, T_PROC = 6, T_CPROC = 7;
-
-/* An Lcl int is 64-bit on every host and crosses the boundary as a
- * wasm i64, i.e. a BigInt. Values within Number's safe range are
- * handed to JS as numbers; beyond it they stay BigInt. */
-const INT_MIN = -(2n ** 63n), INT_MAX = 2n ** 63n - 1n;
-const SAFE = BigInt(Number.MAX_SAFE_INTEGER);
-
-const PTR = Symbol('lcl.ptr');
 
 export class LclError extends Error {
   constructor(message, file, line) {
@@ -46,16 +36,30 @@ export class LclError extends Error {
   }
 }
 
-/* A namespace or opaque value held by reference. */
+const registry = typeof FinalizationRegistry === 'function'
+  ? new FinalizationRegistry(({ core, interp, ptr }) => {
+      if (core.LclJs.open.has(interp)) core._lcl_ref_dec(ptr);
+    })
+  : null;
+
+/* A namespace or non-JavaScript opaque value, held by reference. */
 export class LclValue {
-  #lcl;
-  constructor(lcl, ptr) {
-    this.#lcl = lcl;
-    this[PTR] = ptr;
-    lcl._track(this, ptr);
+  #core;
+  #interp;
+  constructor(core, interp, ptr) {
+    this.#core = core;
+    this.#interp = interp;
+    this[core.LclJs.PTR] = ptr;
+    registry?.register(this, { core, interp, ptr }, this);
   }
-  toString() { return this.#lcl._str(this[PTR]); }
-  release() { this.#lcl._release(this); }
+  toString() { return this.#core.LclJs.str(this[this.#core.LclJs.PTR]); }
+  release() {
+    const PTR = this.#core.LclJs.PTR;
+    if (!this[PTR]) return;
+    registry?.unregister(this);
+    if (this.#core.LclJs.open.has(this.#interp)) this.#core._lcl_ref_dec(this[PTR]);
+    this[PTR] = 0;
+  }
 }
 
 export default async function createLcl(options = {}) {
@@ -68,16 +72,20 @@ export default async function createLcl(options = {}) {
 
 export class Lcl {
   #core;
+  #js;
   #interp;
   #hosts = new Map();
   #nextHostId = 1;
   #hostFnPtr;
   #stepFnPtr = 0;
-  #registry;
-  #alive = true;
 
   constructor(core) {
     this.#core = core;
+    this.#js = core.LclJs;
+    if (!this.#js) throw new Error('lcl: this build lacks lcl-js (LCL_BUILD_JS)');
+    this.#js.LclError = LclError;
+    this.#js.makeHandle = (interp, ptr) => new LclValue(core, interp, ptr);
+
     this.#interp = core._lclw_new();
     if (!this.#interp) throw new Error('lcl: failed to create interpreter');
 
@@ -86,19 +94,15 @@ export class Lcl {
       const fn = this.#hosts.get(id);
       try {
         if (!fn) throw new Error(`host procedure ${id} is not registered`);
-        const result = fn(...this.#toJs(argsPtr));
-        core.HEAPU32[outPtr >> 2] = this.#fromJs(result);
+        const result = fn(...this.#js.toJs(interp, argsPtr));
+        core.HEAPU32[outPtr >> 2] = this.#js.fromJs(interp, result);
         return 0;
       } catch (e) {
-        this.#setError(e instanceof Error ? e.message : String(e));
+        this.#js.setError(interp, e);
         return 1;
       }
     }, 'iiiii');
     core._lclw_set_host_fn(this.#interp, this.#hostFnPtr);
-
-    this.#registry = typeof FinalizationRegistry === 'function'
-      ? new FinalizationRegistry(ptr => { if (this.#alive) core._lcl_ref_dec(ptr); })
-      : null;
   }
 
   get version() { return this.#core.UTF8ToString(this.#core._lclw_version()); }
@@ -120,18 +124,18 @@ export class Lcl {
   define(name, value) {
     const namePtr = this.#cstr(name);
     try {
-      if (typeof value === 'function' && !value[PTR]) {
+      if (typeof value === 'function' && !value[this.#js.PTR]) {
         const id = this.#nextHostId++;
         this.#hosts.set(id, value);
         if (this.#core._lclw_define_host_proc(this.#interp, namePtr, id) !== 0) {
           this.#hosts.delete(id);
-          throw this.#takeError();
+          throw this.#js.takeError(this.#interp);
         }
         return;
       }
-      const ptr = this.#fromJs(value);
+      const ptr = this.#js.fromJs(this.#interp, value);
       if (this.#core._lclw_define_take(this.#interp, namePtr, ptr) !== 0) {
-        throw this.#takeError();
+        throw this.#js.takeError(this.#interp);
       }
     } finally {
       this.#core._free(namePtr);
@@ -152,9 +156,10 @@ export class Lcl {
 
   /* Call an Lcl procedure value (as returned by eval/get) with JS args. */
   call(proc, ...args) {
-    const procPtr = proc?.[PTR];
-    if (!procPtr) throw new TypeError('lcl.call: not an Lcl procedure');
-    return this.#callPtr(procPtr, args);
+    if (typeof proc !== 'function' || !proc[this.#js.PTR]) {
+      throw new TypeError('lcl.call: not an Lcl procedure');
+    }
+    return proc(...args);
   }
 
   /*
@@ -182,181 +187,25 @@ export class Lcl {
   abort() { this.#core._lclw_abort(this.#interp); }
 
   free() {
-    if (!this.#alive) return;
-    this.#alive = false;
+    if (!this.#interp) return;
     this.setStepHook(null);
     this.#core._lclw_free(this.#interp);
+    this.#interp = 0;
     this.#core.removeFunction(this.#hostFnPtr);
     this.#hosts.clear();
   }
 
   /* ---- internal ------------------------------------------------------ */
 
-  _track(owner, ptr) { this.#registry?.register(owner, ptr, owner); }
-
-  _release(owner) {
-    const ptr = owner[PTR];
-    if (!ptr) return;
-    owner[PTR] = 0;
-    this.#registry?.unregister(owner);
-    if (this.#alive) this.#core._lcl_ref_dec(ptr);
-  }
-
-  _str(ptr) { return this.#core.UTF8ToString(this.#core._lcl_value_to_string(ptr)); }
-
   #cstr(s) { return this.#core.stringToNewUTF8(String(s)); }
-
-  #setError(message) {
-    const p = this.#cstr(message);
-    this.#core._lcl_set_error(this.#interp, p);
-    this.#core._free(p);
-  }
-
-  #takeError() {
-    const c = this.#core;
-    const msgPtr = c._lcl_interp_error_msg(this.#interp);
-    const filePtr = c._lcl_interp_error_file(this.#interp);
-    const err = new LclError(
-      msgPtr ? c.UTF8ToString(msgPtr) : 'evaluation failed',
-      filePtr ? c.UTF8ToString(filePtr) : null,
-      c._lcl_interp_error_line(this.#interp));
-    c._lcl_clear_error(this.#interp);
-    return err;
-  }
 
   /* A +1 result pointer (or 0 on error) into a JS value. */
   #takeResult(r) {
-    if (!r) throw this.#takeError();
+    if (!r) throw this.#js.takeError(this.#interp);
     try {
-      return this.#toJs(r);
+      return this.#js.toJs(this.#interp, r);
     } finally {
       this.#core._lcl_ref_dec(r);
     }
-  }
-
-  #callPtr(procPtr, args) {
-    const listPtr = this.#fromJs(args);
-    let r;
-    try {
-      r = this.#core._lclw_call(this.#interp, procPtr, listPtr);
-    } finally {
-      this.#core._lcl_ref_dec(listPtr);
-    }
-    return this.#takeResult(r);
-  }
-
-  #wrapProc(ptr) {
-    const c = this.#core;
-    c._lcl_ref_inc(ptr);
-    const f = (...args) => {
-      if (!f[PTR]) throw new Error('lcl: procedure has been released');
-      return this.#callPtr(f[PTR], args);
-    };
-    f[PTR] = ptr;
-    f.release = () => this._release(f);
-    f.toString = () => this._str(ptr);
-    this._track(f, ptr);
-    return f;
-  }
-
-  /* Borrowed pointer -> JS value. */
-  #toJs(ptr) {
-    const c = this.#core;
-    if (!ptr) return '';
-    switch (c._lcl_value_type_of(ptr)) {
-      case T_STRING: return this._str(ptr);
-      case T_INT: {
-        const i = c._lclw_int_of(ptr);
-        return i >= -SAFE && i <= SAFE ? Number(i) : i;
-      }
-      case T_FLOAT: return c._lclw_float_of(ptr);
-      case T_LIST: {
-        const n = c._lcl_list_len(ptr), out = new Array(n);
-        for (let i = 0; i < n; i++) out[i] = this.#toJs(c._lcl_list_peek(ptr, i));
-        return out;
-      }
-      case T_DICT: {
-        const keys = c._lclw_dict_keys(ptr);
-        if (!keys) throw new Error('lcl: out of memory');
-        const out = {};
-        try {
-          const n = c._lcl_list_len(keys);
-          for (let i = 0; i < n; i++) {
-            const kPtr = c._lcl_value_to_string(c._lcl_list_peek(keys, i));
-            out[c.UTF8ToString(kPtr)] = this.#toJs(c._lcl_dict_peek(ptr, kPtr));
-          }
-        } finally {
-          c._lcl_ref_dec(keys);
-        }
-        return out;
-      }
-      case T_CELL: return this.#toJs(c._lcl_cell_peek(ptr));
-      case T_PROC:
-      case T_CPROC: return this.#wrapProc(ptr);
-      default:
-        c._lcl_ref_inc(ptr);
-        return new LclValue(this, ptr);
-    }
-  }
-
-  /* JS value -> new +1 pointer. */
-  #fromJs(v) {
-    const c = this.#core;
-    let ptr;
-    if (v === null || v === undefined) v = '';
-    if (typeof v === 'string') {
-      const p = this.#cstr(v);
-      ptr = c._lcl_string_new(p);
-      c._free(p);
-    } else if (typeof v === 'number') {
-      ptr = Number.isInteger(v) && Number.isSafeInteger(v)
-        ? c._lcl_int_new(BigInt(v)) : c._lcl_float_new(v);
-    } else if (typeof v === 'boolean') {
-      ptr = c._lcl_int_new(v ? 1n : 0n);
-    } else if (typeof v === 'bigint') {
-      if (v < INT_MIN || v > INT_MAX) throw new RangeError('lcl: integer out of range');
-      ptr = c._lcl_int_new(v);
-    } else if (v[PTR]) {
-      ptr = c._lcl_ref_inc(v[PTR]);
-    } else if (typeof v === 'function') {
-      ptr = this.#anonymousHostProc(v);
-    } else if (Array.isArray(v)) {
-      ptr = c._lcl_list_new();
-      for (const item of v) {
-        ptr = ptr && c._lclw_list_push_take(ptr, this.#fromJs(item));
-      }
-    } else if (typeof v === 'object') {
-      ptr = c._lcl_dict_new();
-      for (const [k, item] of Object.entries(v)) {
-        if (!ptr) break;
-        const kPtr = this.#cstr(k);
-        ptr = c._lclw_dict_put_take(ptr, kPtr, this.#fromJs(item));
-        c._free(kPtr);
-      }
-    } else {
-      throw new TypeError(`lcl: cannot convert ${typeof v}`);
-    }
-    if (!ptr) throw new Error('lcl: out of memory');
-    return ptr;
-  }
-
-  /* A JS function passed by value: a lambda forwarding to the host. */
-  #anonymousHostProc(fn) {
-    const id = this.#nextHostId++;
-    this.#hosts.set(id, fn);
-    const src = this.#cstr(`lambda {*args} { ::Wasm::_host ${id} $args }`);
-    const file = this.#cstr('<host>');
-    let r;
-    try {
-      r = this.#core._lclw_eval(this.#interp, src, file);
-    } finally {
-      this.#core._free(src);
-      this.#core._free(file);
-    }
-    if (!r) {
-      this.#hosts.delete(id);
-      throw this.#takeError();
-    }
-    return r;
   }
 }

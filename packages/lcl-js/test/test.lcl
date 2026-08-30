@@ -1,0 +1,187 @@
+;; lcl-js: the JavaScript host as Js:: (runs under node or a browser)
+
+Test::suite "Js: globals and property access" {
+    Test::case "global with no keys is the global object" {
+        Test::eq [type [Js::global]] opaque
+        Test::eq [Js::typeof [Js::global]] object
+    }
+
+    Test::case "global walks a key path" {
+        Test::eq [Js::global Math PI] 3.141592653589793
+        Test::eq [Js::typeof [Js::global] JSON stringify] function
+        Test::eq [Js::typeof [Js::global] no_such_thing] undefined
+    }
+
+    Test::case "get and set on a fresh object" {
+        let o [Js::object]
+        Js::set $o answer 42
+        Js::set $o name lcl
+        Test::eq [Js::get $o answer] 42
+        Test::eq [Js::get $o name] lcl
+        Test::eq [Js::typeof $o missing] undefined
+        Js::del $o answer
+        Test::eq [Js::typeof $o answer] undefined
+    }
+
+    Test::case "nested keys walk on get and set" {
+        let o [Js::object #{a #{b #{c 1}}}]
+        Test::eq [Js::get $o a b c] 1
+        Js::set $o a b c 2
+        Test::eq [Js::get $o a b c] 2
+        Test::raises_with { Js::get $o a x y } {cannot read "y"}
+    }
+}
+
+Test::suite "Js: values cross by type" {
+    Test::case "primitives come back as Lcl values" {
+        Test::eq [Js::eval {"text"}] text
+        Test::eq [type [Js::eval {7}]] int
+        Test::eq [type [Js::eval {7.5}]] float
+        Test::eq [Js::eval {true}] 1
+        Test::eq [Js::eval {false}] 0
+        Test::eq [Js::eval {null}] ""
+        Test::eq [Js::eval {undefined}] ""
+        Test::eq [Js::eval {2n ** 62n}] 4611686018427387904
+        Test::eq [Js::eval {9007199254740993n}] 9007199254740993
+    }
+
+    Test::case "arrays and plain objects cross by value" {
+        Test::eq [Js::eval {[1, [2, "three"]]}] (1 (2 three))
+        Test::eq [type [Js::eval {[1]}]] list
+        Test::eq [Js::eval {({x: 1, y: {z: 2}})}] #{x 1 y #{z 2}}
+        Test::eq [type [Js::eval {({})}]] dict
+    }
+
+    Test::case "namespace objects, instances and functions are references" {
+        Test::eq [type [Js::global Math]] opaque
+        Test::eq [type [Js::global JSON]] opaque
+        Test::eq [type [Js::new Map]] opaque
+        Test::eq [type [Js::eval {() => 1}]] opaque
+    }
+
+    Test::case "Js::array and Js::object hold containers by reference" {
+        let arr [Js::array (1 2 3)]
+        Test::eq [type $arr] opaque
+        Test::eq [Js::get $arr length] 3
+        Js::call $arr push 4
+        Test::eq [Js::to_list $arr] (1 2 3 4)
+        Test::eq [Js::get $arr 3] 4
+        let o [Js::object #{x 1}]
+        Js::set $o y 2
+        Test::eq [Js::to_dict $o] #{x 1 y 2}
+        Test::eq [Js::to_list [Js::array]] ()
+        Test::eq [Js::to_dict [Js::object]] #{}
+    }
+
+    Test::case "the same object yields the same reference" {
+        let a [Js::global Math]
+        let b [Js::global Math]
+        Test::eq [Js::call [Js::global Object] is $a $b] 1
+    }
+
+    Test::case "Lcl lists and dicts go in as fresh arrays and objects" {
+        Test::eq [Js::call [Js::global JSON] stringify (1 two (3))] {[1,"two",[3]]}
+        Test::eq [Js::call [Js::global JSON] stringify #{k v}] {{"k":"v"}}
+        Test::eq [Js::call [Js::global JSON] stringify 2.5] 2.5
+        Test::eq [Js::invoke [Js::global String] -9223372036854775808] -9223372036854775808
+        Test::eq [Js::invoke [Js::global String] 9007199254740993] 9007199254740993
+    }
+
+    Test::case "a reference passes back as the object itself" {
+        let arr [Js::array (3 1 2)]
+        Test::eq [Js::call [Js::global Array] isArray $arr] 1
+        let same [Js::eval {(a) => a}]
+        Test::eq [Js::call [Js::global Object] is [Js::invoke $same $arr] $arr] 1
+        Test::eq [Js::to_list [Js::call [Js::global Array] from [Js::new Set (1 2 2)]]] (1 2)
+    }
+}
+
+Test::suite "Js: calling into JavaScript" {
+    Test::case "call binds this to the object" {
+        Test::eq [Js::call [Js::global Math] max 3 9 4] 9
+        Test::eq [Js::call [Js::global] parseInt "42"] 42
+        Test::eq [Js::call "abc" toUpperCase] ABC
+    }
+
+    Test::case "invoke calls a function value" {
+        let f [Js::eval {(a, b) => a * b}]
+        Test::eq [Js::invoke $f 6 7] 42
+        Test::eq [Js::typeof $f] function
+    }
+
+    Test::case "new constructs, by name or by value" {
+        let d [Js::new Date 0]
+        Test::eq [Js::call $d getTime] 0
+        let m [Js::new [Js::global Map]]
+        Js::call $m set k v
+        Test::eq [Js::call $m get k] v
+        Test::eq [Js::get $m size] 1
+        Test::eq [Js::to_dict [Js::new Map ((a 1) (b 2))]] #{a 1 b 2}
+    }
+
+    Test::case "exceptions become Lcl errors" {
+        Test::raises_with { Js::eval {throw new Error("boom")} } boom
+        Test::raises_with { Js::call [Js::global Math] nosuch } {"nosuch" is not a function}
+        Test::raises_with { Js::new NoSuchCtor } {not a constructor}
+        Test::eq [Js::get 42 x] ""
+        Test::eq [Js::get abc length] 3
+        Test::raises_with { Js::call } {expected: Js::call}
+        Test::eq [catch { Js::eval {undefined.x} } r e] 1
+    }
+}
+
+Test::suite "Js: callbacks into Lcl" {
+    Test::case "a proc passed to JavaScript is callable there" {
+        ;; Array.prototype.map passes (element, index, array): take the rest.
+        let doubled [Js::call [Js::eval {[1, 2, 3]}] map [lambda {x *_} { * $x 2 }]]
+        Test::eq [Js::to_list $doubled] (2 4 6)
+    }
+
+    Test::case "Js::fn gives a stable function value" {
+        let f [Js::fn [lambda {a b} { + $a $b }]]
+        Test::eq [Js::typeof $f] function
+        Test::eq [Js::invoke $f 2 3] 5
+        let reduce [Js::eval {(f) => [1, 2, 3, 4].reduce((a, b) => f(a, b), 0)}]
+        Test::eq [Js::invoke $reduce $f] 10
+    }
+
+    Test::case "callbacks see Lcl values and closures" {
+        var seen ()
+        let push [lambda {x *_} { List::push! seen $x; "" }]
+        Js::call [Js::eval {["a", "b"]}] forEach $push
+        Test::eq $seen (a b)
+    }
+
+    Test::case "an Lcl error inside a callback surfaces as a JS exception, then an Lcl error" {
+        Test::raises_with {
+            Js::call [Js::eval {[1]}] map [lambda {*_} { error "inner failure" }]
+        } {inner failure}
+        let guarded [Js::eval {(f) => { try { f(); return "caught"; } catch (e) { return "js saw: " + e.message; } }}]
+        Test::eq [Js::invoke $guarded [lambda {} { error nope }]] "js saw: nope"
+    }
+
+    Test::case "a proc round-trips through JavaScript as the same proc" {
+        let p [lambda {} { 7 }]
+        let back [Js::invoke [Js::eval {(f) => f}] $p]
+        Test::eq [type $back] proc
+        Test::eq [apply $back] 7
+    }
+}
+
+Test::suite "Js: reference lifetime" {
+    Test::case "release drops the reference explicitly" {
+        let o [Js::object]
+        Js::release $o
+        Test::raises_with { Js::get $o x } {has been released}
+    }
+
+    Test::case "a released reference is safe to hold and to drop again" {
+        var o [Js::object]
+        Js::release $o
+        Js::release $o
+        set! o ""
+        Test::eq $o ""
+    }
+}
+
+exit [Test::run]

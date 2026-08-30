@@ -28,3 +28,5 @@ if(LCL_IS_TOP_LEVEL)
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 endif()
+
+lcl_add_package_test(NAME lcl-random COMMAND test/test.lcl)
