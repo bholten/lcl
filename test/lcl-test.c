@@ -473,7 +473,7 @@ static int test_quoted_close_paren_in_list(void) {
   const char *src = "puts [concat (bar \")\" baz)]\n";
   const char *exp =
       "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"concat\"] "
-      "[sub:{cmd(line=1): [lit:\"list\"] [lit:\"bar\"] [lit:\")\"] [lit:\"baz\"]}]}]";
+      "[sub:{cmd(line=1): [lit:\"::list\"] [lit:\"bar\"] [lit:\")\"] [lit:\"baz\"]}]}]";
   return compile_and_dump(src, exp);
 }
 
@@ -481,7 +481,7 @@ static int test_comment_in_list_literal(void) {
   /* ;; comment inside () should be stripped — "comment" must not appear */
   const char *src = "puts (foo ;; comment\nbar)\n";
   const char *exp =
-      "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"list\"] "
+      "cmd(line=1): [lit:\"puts\"] [sub:{cmd(line=1): [lit:\"::list\"] "
       "[lit:\"foo\"] [lit:\"bar\"]}]";
   return compile_and_dump(src, exp);
 }

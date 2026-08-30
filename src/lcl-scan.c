@@ -244,8 +244,8 @@ void lcl_scan_init_bytes(lcl_scan *sc, const char *src, size_t len) {
 
 /* Compile the span between a just-consumed opening delimiter and its
  * balanced closer into a SUBCMD piece. `prefix` is the desugaring
- * command head ("list " for `(...)`, "dict " for `#{...}`, "" for a
- * plain `[...]` subcommand). Top-level newlines/`;` in the span
+ * command head ("::list " for `(...)`, "::dict " for `#{...}`, "" for
+ * a plain `[...]` subcommand). Top-level newlines/`;` in the span
  * separate *words*, not commands, so the copy is normalized before
  * compiling. Compiles by byte length, so embedded NUL bytes reach the
  * subcompiler instead of truncating the program. */
@@ -321,17 +321,17 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
     return 1;
   }
 
-  /* () list literal - desugars to [list ...] */
+  /* () list literal - desugars to [::list ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '(') {
     sc->i++;
-    return scan_sub_literal(sc, w, "list ", '(', ')');
+    return scan_sub_literal(sc, w, "::list ", '(', ')');
   }
 
-  /* #{} dict literal - desugars to [dict ...] */
+  /* #{} dict literal - desugars to [::dict ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '#' && sc->i + 1 < sc->len &&
       sc->s[sc->i + 1] == '{') {
     sc->i += 2;
-    return scan_sub_literal(sc, w, "dict ", '{', '}');
+    return scan_sub_literal(sc, w, "::dict ", '{', '}');
   }
 
   if (sc->i < sc->len && sc->s[sc->i] == '"') {
