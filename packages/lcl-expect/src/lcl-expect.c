@@ -96,7 +96,7 @@ static lcl_return_code c_expect_pattern(lcl_interp *interp, int argc,
     lcl_value *v = NULL;
 
     if (lcl_dict_get(argv[1], "nocase", &v) == LCL_OK) {
-      long n;
+      lcl_int n;
 
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         nocase = (int)n;
@@ -156,7 +156,7 @@ static lcl_return_code c_expect_regex(lcl_interp *interp, int argc,
     lcl_value *v = NULL;
 
     if (lcl_dict_get(argv[1], "nocase", &v) == LCL_OK) {
-      long n;
+      lcl_int n;
 
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         nocase = (int)n;
@@ -506,7 +506,7 @@ static lcl_return_code c_expect_match_buffer(lcl_interp *interp, int argc,
     lcl_dict_put(&result, "matched", tmp);
     lcl_ref_dec(tmp);
 
-    tmp = lcl_int_new((long)best_idx);
+    tmp = lcl_int_new((lcl_int)best_idx);
     lcl_dict_put(&result, "index", tmp);
     lcl_ref_dec(tmp);
 
@@ -584,7 +584,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
     opts = argv[2];
 
     if (lcl_dict_get(opts, "timeout", &v) == LCL_OK) {
-      long n;
+      lcl_int n;
 
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         timeout_ms = (int)n;
@@ -740,7 +740,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
     if (strlen(chunk) == 0) {
       lcl_value *alive_proc = NULL;
       lcl_value *alive_result = NULL;
-      long is_alive = 1;
+      lcl_int is_alive = 1;
 
       if (lcl_get(interp, "::Process::alive?", &alive_proc) == LCL_OK) {
         read_args[0] = handle;
@@ -802,7 +802,7 @@ static lcl_return_code c_expect_read_match(lcl_interp *interp, int argc,
   lcl_dict_put(&result, "matched", tmp);
   lcl_ref_dec(tmp);
 
-  tmp = lcl_int_new((long)matched_idx);
+  tmp = lcl_int_new((lcl_int)matched_idx);
   lcl_dict_put(&result, "index", tmp);
   lcl_ref_dec(tmp);
 
@@ -857,7 +857,7 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
   int timeout_ms = 10000;
   lcl_value *match_result = NULL;
   lcl_value *match_args[3];
-  long matched_idx;
+  lcl_int matched_idx;
   lcl_value *handler;
   lcl_value *handler_args[1];
   lcl_return_code rc;
@@ -875,7 +875,7 @@ static lcl_return_code c_expect_match(lcl_interp *interp, int argc,
     opts = argv[2];
 
     if (lcl_dict_get(opts, "timeout", &v) == LCL_OK) {
-      long n;
+      lcl_int n;
 
       if (lcl_value_to_int(v, &n) == LCL_OK) {
         timeout_ms = (int)n;

@@ -73,7 +73,7 @@ static cJSON *lcl_to_cjson(lcl_value *value) {
   }
 
   case LCL_INT: {
-    long n;
+    lcl_int n;
 
     if (lcl_value_to_int(value, &n) != LCL_OK) {
       return NULL;
@@ -236,9 +236,11 @@ static lcl_value *cjson_to_lcl(cJSON *json) {
   if (cJSON_IsNumber(json)) {
     double val = cJSON_GetNumberValue(json);
 
-    if (val == (double)(long)val && val >= (double)LONG_MIN &&
-        val <= (double)LONG_MAX) {
-      return lcl_int_new((long)val);
+    /* Integral and inside [-2^63, 2^63): both bounds are exact doubles,
+     * so the cast below is defined. */
+    if (val >= (double)LCL_INT_MIN && val < -(double)LCL_INT_MIN &&
+        val == (double)(lcl_int)val) {
+      return lcl_int_new((lcl_int)val);
     }
 
     return lcl_float_new(val);

@@ -44,18 +44,16 @@ lcl_value *lcl_string_new(const char *str) {
 }
 
 static void lcl_reify_str_int(lcl_value *value) {
-  char buf[32];
-  int m = snprintf(buf, sizeof(buf), "%ld", value->as.i);
-  if (m < 0 || (size_t)m >= sizeof(buf)) {
-    return;
-  }
-  value->str_repr = (char *)malloc((size_t)m + 1);
+  char buf[LCL_INT_STRLEN];
+  size_t m = lcl_int_format(buf, value->as.i);
+
+  value->str_repr = (char *)malloc(m + 1);
 
   if (!value->str_repr) {
     return;
   }
 
-  memcpy(value->str_repr, buf, (size_t)m + 1);
+  memcpy(value->str_repr, buf, m + 1);
 }
 
 static void lcl_reify_str_float(lcl_value *value) {

@@ -90,7 +90,7 @@ static struct lclw_host *host_of(lcl_interp *interp) {
 static lcl_return_code c_host(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   struct lclw_host *host = host_of(interp);
-  long id;
+  lcl_int id;
 
   if (argc != 2 || lcl_value_to_int(argv[0], &id) != LCL_OK) {
     lcl_set_error(interp, "Wasm::_host: expected an integer id and an "
@@ -105,7 +105,7 @@ static lcl_return_code c_host(lcl_interp *interp, int argc, lcl_value **argv,
 
   *out = NULL;
 
-  if (host->host_fn(interp, id, argv[1], out) != 0) {
+  if (host->host_fn(interp, (long)id, argv[1], out) != 0) {
     if (*out) {
       lcl_ref_dec(*out);
       *out = NULL;
@@ -352,17 +352,25 @@ int lclw_is_callable(lcl_value *value) {
   return lcl_is_callable(value);
 }
 
-/* Numeric payload of an int or float value as a double (0.0 otherwise). */
-double lclw_number_of(lcl_value *value) {
-  long i;
+/* The integer payload (0 for non-ints). An lcl_int is a wasm i64, so
+ * this crosses to JavaScript as a BigInt (WASM_BIGINT). */
+lcl_int lclw_int_of(lcl_value *value) {
+  lcl_int i;
+
+  return lcl_value_type_of(value) == LCL_INT &&
+                 lcl_value_to_int(value, &i) == LCL_OK
+             ? i
+             : 0;
+}
+
+/* The float payload (0.0 for non-floats). */
+double lclw_float_of(lcl_value *value) {
   double f;
 
-  /* Dispatch on the tag: lcl_value_to_int would truncate a float. */
-  if (lcl_value_type_of(value) == LCL_FLOAT) {
-    return lcl_value_to_float(value, &f) == LCL_OK ? f : 0.0;
-  }
-
-  return lcl_value_to_int(value, &i) == LCL_OK ? (double)i : 0.0;
+  return lcl_value_type_of(value) == LCL_FLOAT &&
+                 lcl_value_to_float(value, &f) == LCL_OK
+             ? f
+             : 0.0;
 }
 
 /* Append `value` (consumed) to `list` (consumed); the resulting list (+1). */

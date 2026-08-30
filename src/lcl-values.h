@@ -1,6 +1,8 @@
 #ifndef LCL_VALUES_H
 #define LCL_VALUES_H
 
+#include <lcl-int.h>
+
 #include "lcl-compile.h"
 
 typedef enum lcl_type {
@@ -23,7 +25,7 @@ struct lcl_value {
   int refc;
   char *str_repr;
   union {
-    long i;
+    lcl_int i;
     double f;
     struct {
       lcl_value **items;
@@ -72,11 +74,13 @@ const char *lcl_type_name(lcl_type t);
 /* malloc'd type-aware representation; NULL on OOM. */
 char *lcl_value_repr(lcl_value *v);
 
-lcl_value *lcl_int_new(const long n);
+lcl_value *lcl_int_new(const lcl_int n);
 lcl_value *lcl_float_new(const double f);
-lcl_result lcl_value_to_int(lcl_value *value, long *out);
+lcl_result lcl_value_to_int(lcl_value *value, lcl_int *out);
 lcl_result lcl_value_to_float(lcl_value *value, double *out);
-lcl_result lcl_double_to_long(double f, long *out);
+lcl_result lcl_double_to_int(double f, lcl_int *out);
+lcl_result lcl_int_parse(const char *s, size_t n, lcl_int *out);
+size_t lcl_int_format(char *buf, lcl_int n);
 void lcl_normalize_decimal_to_c(char *buf);
 size_t lcl_parse_double_c(const char *s, double *out);
 

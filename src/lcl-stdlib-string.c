@@ -348,7 +348,7 @@ static lcl_return_code c_string_find(lcl_interp *interp, int argc,
   found = strstr(haystack, needle);
 
   if (found) {
-    *out = lcl_int_new((long)(found - haystack));
+    *out = lcl_int_new((lcl_int)(found - haystack));
   } else {
     *out = lcl_int_new(-1);
   }
@@ -474,7 +474,7 @@ static lcl_return_code c_string_length(lcl_interp *interp, int argc,
   if (!lcl_std_arg_str(interp, "String::length", argv[0], &src)) {
     return LCL_RC_ERR;
   }
-  *out = lcl_int_new((long)strlen(src));
+  *out = lcl_int_new((lcl_int)strlen(src));
 
   return LCL_RC_OK;
 }
@@ -483,7 +483,7 @@ static lcl_return_code c_string_length(lcl_interp *interp, int argc,
 static lcl_return_code c_string_index(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   const char *src;
-  long idx;
+  lcl_int idx;
   size_t len;
   char buf[2];
 
@@ -501,10 +501,10 @@ static lcl_return_code c_string_index(lcl_interp *interp, int argc,
   }
 
   if (idx < 0) {
-    idx = (long)len + idx;
+    idx = (lcl_int)len + idx;
   }
 
-  if (idx < 0 || (size_t)idx >= len) {
+  if (!lcl_std_index(idx, len, NULL)) {
     LCL_ERR_MSG(interp, "string index out of range");
     return LCL_RC_ERR;
   }
@@ -520,8 +520,8 @@ static lcl_return_code c_string_index(lcl_interp *interp, int argc,
 static lcl_return_code c_string_range(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   const char *src;
-  long start;
-  long end;
+  lcl_int start;
+  lcl_int end;
   size_t len;
   size_t sub_len;
   char *result;
@@ -541,11 +541,11 @@ static lcl_return_code c_string_range(lcl_interp *interp, int argc,
   }
 
   if (start < 0) {
-    start = (long)len + start;
+    start = (lcl_int)len + start;
   }
 
   if (end < 0) {
-    end = (long)len + end;
+    end = (lcl_int)len + end;
   }
 
   if (start < 0) {
@@ -556,12 +556,12 @@ static lcl_return_code c_string_range(lcl_interp *interp, int argc,
     end = 0;
   }
 
-  if ((size_t)start > len) {
-    start = (long)len;
+  if (start > (lcl_int)len) {
+    start = (lcl_int)len;
   }
 
-  if ((size_t)end > len) {
-    end = (long)len;
+  if (end > (lcl_int)len) {
+    end = (lcl_int)len;
   }
 
   if (start >= end) {

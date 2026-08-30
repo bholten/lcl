@@ -255,7 +255,7 @@ lcl_num_class lcl_num_text_classify(const char *s, size_t n) {
   return (has_frac || has_exp) ? LCL_NUM_FLOAT : LCL_NUM_INT;
 }
 
-lcl_value *lcl_int_new(const long n) {
+lcl_value *lcl_int_new(const lcl_int n) {
   lcl_value *v = lcl_value_alloc();
 
   if (!v) {
@@ -287,32 +287,103 @@ lcl_value *lcl_float_new(const double f) {
   return v;
 }
 
-/* Bugfix: Convert a double to long, rejecting NaN, Inf, and
+/* Convert a double to an lcl_int, rejecting NaN, Inf, and
  * out-of-range inputs.
  *
- * The classic safe range is [LONG_MIN, -(double)LONG_MIN): LONG_MIN
- * is exactly representable as a double, and -(double)LONG_MIN equals
- * 2^N (one past LONG_MAX) and is also exactly representable.
- *
- * Casting (long)f is defined for any finite f in this half-open
- * range. */
-lcl_result lcl_double_to_long(double f, long *out) {
+ * The safe range is [LCL_INT_MIN, -(double)LCL_INT_MIN): the minimum
+ * is exactly representable as a double, and its negation is 2^63 (one
+ * past LCL_INT_MAX), also exactly representable. Casting is defined
+ * for any finite f in this half-open range. */
+lcl_result lcl_double_to_int(double f, lcl_int *out) {
   /* C89 has no isnan(). Infinities need no special case: they fail
    * the range check below. */
   if (f != f) {
     return LCL_ERROR;
   }
 
-  if (f < (double)LONG_MIN || f >= -(double)LONG_MIN) {
+  if (f < (double)LCL_INT_MIN || f >= -(double)LCL_INT_MIN) {
     return LCL_ERROR;
   }
 
-  *out = (long)f;
+  *out = (lcl_int)f;
 
   return LCL_OK;
 }
 
-lcl_result lcl_value_to_int(lcl_value *value, long *out) {
+/* Digits accumulate as an unsigned magnitude so the minimum,
+ * -9223372036854775808, parses without ever forming +2^63 as a
+ * signed value; the sign is applied last in unsigned arithmetic. */
+lcl_result lcl_int_parse(const char *s, size_t n, lcl_int *out) {
+  lcl_u64 mag = 0;
+  lcl_u64 limit;
+  size_t i = 0;
+  int neg = 0;
+
+  if (!s || n == 0) {
+    return LCL_ERROR;
+  }
+
+  if (s[0] == '-' || s[0] == '+') {
+    neg = s[0] == '-';
+    i = 1;
+  }
+
+  if (i == n) {
+    return LCL_ERROR;
+  }
+
+  limit = neg ? (lcl_u64)LCL_INT_MAX + 1 : (lcl_u64)LCL_INT_MAX;
+
+  for (; i < n; i++) {
+    unsigned d;
+
+    if (s[i] < '0' || s[i] > '9') {
+      return LCL_ERROR;
+    }
+
+    d = (unsigned)(s[i] - '0');
+
+    if (mag > (limit - d) / 10) {
+      return LCL_ERROR;
+    }
+
+    mag = mag * 10 + d;
+  }
+
+  *out = neg ? (lcl_int)((lcl_u64)0 - mag) : (lcl_int)mag;
+
+  return LCL_OK;
+}
+
+size_t lcl_int_format(char *buf, lcl_int n) {
+  char tmp[LCL_INT_STRLEN];
+  size_t len = 0;
+  size_t i;
+  /* The magnitude of the minimum does not fit an lcl_int; negate in
+   * the unsigned domain, where it does. */
+  lcl_u64 mag = n < 0 ? (lcl_u64)0 - (lcl_u64)n : (lcl_u64)n;
+
+  do {
+    tmp[len++] = (char)('0' + (int)(mag % 10));
+    mag /= 10;
+  } while (mag != 0);
+
+  i = 0;
+
+  if (n < 0) {
+    buf[i++] = '-';
+  }
+
+  while (len > 0) {
+    buf[i++] = tmp[--len];
+  }
+
+  buf[i] = '\0';
+
+  return i;
+}
+
+lcl_result lcl_value_to_int(lcl_value *value, lcl_int *out) {
   if (!value || !out) {
     return LCL_ERROR;
   }
@@ -320,27 +391,23 @@ lcl_result lcl_value_to_int(lcl_value *value, long *out) {
   switch (value->type) {
   case LCL_INT: *out = value->as.i; return LCL_OK;
 
-  case LCL_FLOAT: return lcl_double_to_long(value->as.f, out);
+  case LCL_FLOAT: return lcl_double_to_int(value->as.f, out);
 
   case LCL_STRING: {
-    char *endptr;
     const char *str = lcl_value_to_string(value);
-    long val;
+    size_t n;
 
     if (!str) {
       break;
     }
 
-    if (lcl_num_text_classify(str, strlen(str)) != LCL_NUM_INT) {
+    n = strlen(str);
+
+    if (lcl_num_text_classify(str, n) != LCL_NUM_INT) {
       break;
     }
 
-    errno = 0;
-    val = strtol(str, &endptr, 10);
-
-    if (*endptr == '\0' && errno != ERANGE) {
-      *out = val;
-
+    if (lcl_int_parse(str, n, out) == LCL_OK) {
       return LCL_OK;
     }
 

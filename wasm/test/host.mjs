@@ -48,6 +48,24 @@ test('eval returns typed values', () => {
   assert.equal(lcl.eval(''), '');
 });
 
+test('integers are 64-bit across the boundary', () => {
+  assert.equal(lcl.eval('9007199254740991'), 9007199254740991);
+  assert.equal(lcl.eval('9223372036854775807'), 9223372036854775807n);
+  assert.equal(lcl.eval('-9223372036854775808'), -9223372036854775808n);
+  assert.equal(lcl.eval('- 9223372036854775807 1'), 9223372036854775806n);
+  assert.throws(() => lcl.eval('+ 9223372036854775807 1'), /overflow/);
+  lcl.define('big', 2n ** 62n);
+  assert.equal(lcl.eval('+ $big [- $big 1]'), 2n ** 63n - 1n);
+  assert.throws(() => lcl.eval('* $big 2'), /overflow/);
+  assert.equal(lcl.eval('String::from $big'), '4611686018427387904');
+  lcl.define('n', 12);
+  assert.equal(lcl.eval('type $n'), 'int');
+  assert.throws(() => lcl.define('toobig', 2n ** 63n), RangeError);
+  lcl.define('echo_int', x => x);
+  assert.equal(lcl.eval('echo_int 9223372036854775807'), 9223372036854775807n);
+  assert.equal(lcl.eval('+ [echo_int 5] 1'), 6);
+});
+
 test('puts goes to the print option', () => {
   lines.length = 0;
   lcl.eval('puts hello; puts "two words"');

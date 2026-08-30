@@ -1269,7 +1269,7 @@ static lcl_return_code s_eval_at(lcl_interp *interp, int argc,
   lcl_value *line_v = NULL;
   const char *text;
   const char *file;
-  long line = 1;
+  lcl_int line = 1;
   lcl_program *prog;
 
   if (!lcl_std_chk_argc(interp, "eval_at", argc, 2, 3)) {
@@ -1318,7 +1318,7 @@ static lcl_return_code s_eval_at(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  prog = lcl_compile_report_at(interp, text, file, line);
+  prog = lcl_compile_report_at(interp, text, file, (long)line);
   lcl_ref_dec(file_v);
   lcl_ref_dec(text_v);
 

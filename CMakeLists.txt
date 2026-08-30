@@ -565,7 +565,7 @@ if(EMSCRIPTEN AND LCL_BUILD_WASM)
     _malloc _free
     _lclw_version _lclw_new _lclw_free _lclw_set_host_fn _lclw_set_step_hook
     _lclw_abort _lclw_eval _lclw_call _lclw_define_host_proc _lclw_define_take
-    _lclw_get _lclw_is_callable _lclw_number_of _lclw_list_push_take
+    _lclw_get _lclw_is_callable _lclw_int_of _lclw_float_of _lclw_list_push_take
     _lclw_dict_put_take _lclw_dict_keys
     _lcl_ref_inc _lcl_ref_dec _lcl_value_type_of _lcl_value_to_string
     _lcl_string_new _lcl_int_new _lcl_float_new _lcl_list_new _lcl_list_len
@@ -578,6 +578,8 @@ if(EMSCRIPTEN AND LCL_BUILD_WASM)
     "-sEXPORTED_FUNCTIONS=${_wasm_exports_csv}"
     "-sEXPORTED_RUNTIME_METHODS=cwrap,UTF8ToString,stringToNewUTF8,addFunction,removeFunction,HEAPU32"
     -sALLOW_TABLE_GROWTH=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0
+    # lcl_int is a wasm i64: it crosses to JavaScript as a BigInt.
+    -sWASM_BIGINT=1
     -sSTACK_SIZE=${LCL_WASM_STACK_SIZE})
 
   configure_file(wasm/lcl.mjs ${CMAKE_CURRENT_BINARY_DIR}/lcl.mjs COPYONLY)
@@ -729,6 +731,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   install(FILES
     include/lcl.h
+    include/lcl-int.h
     ${LCL_VERSION_HEADER_DIR}/lcl-version.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )

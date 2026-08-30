@@ -6,13 +6,13 @@ static lcl_return_code c_add(lcl_interp *interp, int argc, lcl_value **argv,
   (void)interp;
 
   if (lcl_std_all_args_integral(argc, argv)) {
-    long sum = 0;
+    lcl_int sum = 0;
 
     for (i = 0; i < argc; i++) {
-      long v;
+      lcl_int v;
       lcl_value_to_int(argv[i], &v);
 
-      if (!lcl_std_safe_add_long(sum, v, &sum)) {
+      if (!lcl_std_safe_add_int(sum, v, &sum)) {
         LCL_ERR_MSG(interp, "integer overflow in +");
 
         return LCL_RC_ERR;
@@ -48,14 +48,14 @@ static lcl_return_code c_sub(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (lcl_std_all_args_integral(argc, argv)) {
-    long result;
+    lcl_int result;
     lcl_value_to_int(argv[0], &result);
 
     for (i = 1; i < argc; i++) {
-      long v;
+      lcl_int v;
       lcl_value_to_int(argv[i], &v);
 
-      if (!lcl_std_safe_sub_long(result, v, &result)) {
+      if (!lcl_std_safe_sub_int(result, v, &result)) {
         LCL_ERR_MSG(interp, "integer overflow in -");
 
         return LCL_RC_ERR;
@@ -92,13 +92,13 @@ static lcl_return_code c_mult(lcl_interp *interp, int argc, lcl_value **argv,
   (void)interp;
 
   if (lcl_std_all_args_integral(argc, argv)) {
-    long product = 1;
+    lcl_int product = 1;
 
     for (i = 0; i < argc; i++) {
-      long v;
+      lcl_int v;
       lcl_value_to_int(argv[i], &v);
 
-      if (!lcl_std_safe_mul_long(product, v, &product)) {
+      if (!lcl_std_safe_mul_int(product, v, &product)) {
         LCL_ERR_MSG(interp, "integer overflow in *");
         return LCL_RC_ERR;
       }
@@ -156,9 +156,9 @@ static lcl_return_code c_div(lcl_interp *interp, int argc, lcl_value **argv,
 
 static lcl_return_code c_mod(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
-  long result;
-  long dividend;
-  long divisor;
+  lcl_int result;
+  lcl_int dividend;
+  lcl_int divisor;
 
   if (!lcl_std_chk_argc(interp, "%", argc, 2, 2)) {
     return LCL_RC_ERR;
@@ -177,7 +177,7 @@ static lcl_return_code c_mod(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  if (dividend == LONG_MIN && divisor == -1) {
+  if (dividend == LCL_INT_MIN && divisor == -1) {
     *out = lcl_int_new(0);
     return LCL_RC_OK;
   }
@@ -193,15 +193,15 @@ static lcl_return_code c_compare(lcl_interp *interp, const char *name, int argc,
                                  lcl_value **argv, int op, lcl_value **out) {
   double left;
   double right;
-  long result;
+  lcl_int result;
 
   if (!lcl_std_chk_argc(interp, name, argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
   if (lcl_std_all_args_integral(argc, argv)) {
-    long li;
-    long ri;
+    lcl_int li;
+    lcl_int ri;
 
     if (!lcl_std_arg_int(interp, name, argv[0], &li) ||
         !lcl_std_arg_int(interp, name, argv[1], &ri)) {
@@ -312,7 +312,7 @@ static lcl_return_code c_is_float(lcl_interp *interp, int argc,
 /* int x - convert value to integer */
 static lcl_return_code c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
-  long val;
+  lcl_int val;
   double fval;
 
   if (!lcl_std_chk_argc(interp, "int", argc, 1, 1)) {
@@ -331,7 +331,7 @@ static lcl_return_code c_to_int(lcl_interp *interp, int argc, lcl_value **argv,
 
   /* String fallback: parse as float, then range-check before casting. */
   if (lcl_value_to_float(argv[0], &fval) == LCL_OK) {
-    if (lcl_double_to_long(fval, &val) != LCL_OK) {
+    if (lcl_double_to_int(fval, &val) != LCL_OK) {
       LCL_ERR_MSG(interp, "int: value out of range");
       return LCL_RC_ERR;
     }

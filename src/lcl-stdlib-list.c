@@ -30,7 +30,7 @@ static lcl_return_code c_list(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   lcl_value *list;
-  long idx;
+  lcl_int idx;
   (void)interp;
 
   if (!lcl_std_chk_argc(interp, "List::index", argc, 1, -1)) {
@@ -72,7 +72,8 @@ static lcl_return_code c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
       return LCL_RC_OK;
     }
 
-    if (lcl_list_get(list, (size_t)idx, out) != LCL_OK) {
+    if (!lcl_std_index(idx, lcl_list_len(list), NULL) ||
+        lcl_list_get(list, (size_t)idx, out) != LCL_OK) {
       *out = lcl_string_new("");
     }
 
@@ -109,7 +110,8 @@ static lcl_return_code c_lindex(lcl_interp *interp, int argc, lcl_value **argv,
         return LCL_RC_ERR;
       }
 
-      if (idx < 0 || lcl_list_get(current, (size_t)idx, &next) != LCL_OK) {
+      if (!lcl_std_index(idx, lcl_list_len(current), NULL) ||
+          lcl_list_get(current, (size_t)idx, &next) != LCL_OK) {
         lcl_ref_dec(current);
         *out = lcl_string_new("");
 
@@ -130,10 +132,10 @@ static lcl_return_code c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   lcl_value *result;
   lcl_value *num;
-  long start;
-  long end;
-  long step;
-  long i;
+  lcl_int start;
+  lcl_int end;
+  lcl_int step;
+  lcl_int i;
   (void)interp;
 
   if (!lcl_std_chk_argc(interp, "List::range", argc, 2, 3)) {
@@ -172,7 +174,7 @@ static lcl_return_code c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
     i = start;
 
     while (i < end) {
-      long next;
+      lcl_int next;
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
@@ -188,7 +190,7 @@ static lcl_return_code c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
 
       lcl_ref_dec(num);
 
-      if (!lcl_std_safe_add_long(i, step, &next)) {
+      if (!lcl_std_safe_add_int(i, step, &next)) {
         break;
       }
 
@@ -198,7 +200,7 @@ static lcl_return_code c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
     i = start;
 
     while (i > end) {
-      long next;
+      lcl_int next;
       num = lcl_int_new(i);
 
       if (!num || lcl_list_push(&result, num) != LCL_OK) {
@@ -213,7 +215,7 @@ static lcl_return_code c_lrange(lcl_interp *interp, int argc, lcl_value **argv,
 
       lcl_ref_dec(num);
 
-      if (!lcl_std_safe_add_long(i, step, &next)) {
+      if (!lcl_std_safe_add_int(i, step, &next)) {
         break;
       }
 
@@ -428,8 +430,8 @@ static lcl_return_code c_list_pop(lcl_interp *interp, int argc,
 /* list::slice x start [end] - return sublist */
 static lcl_return_code c_list_slice(lcl_interp *interp, int argc,
                                     lcl_value **argv, lcl_value **out) {
-  long start;
-  long end;
+  lcl_int start;
+  lcl_int end;
   size_t len;
   size_t i;
   lcl_value *result;
@@ -454,23 +456,23 @@ static lcl_return_code c_list_slice(lcl_interp *interp, int argc,
       return LCL_RC_ERR;
     }
   } else {
-    end = (long)len;
+    end = (lcl_int)len;
   }
 
   if (start < 0) {
-    start = (long)len + start;
+    start = (lcl_int)len + start;
   }
 
   if (end < 0) {
-    end = (long)len + end;
+    end = (lcl_int)len + end;
   }
 
   if (start < 0) {
     start = 0;
   }
 
-  if (end > (long)len) {
-    end = (long)len;
+  if (end > (lcl_int)len) {
+    end = (lcl_int)len;
   }
 
   if (start > end) {
@@ -784,8 +786,8 @@ static int lcl_order_cmp(lcl_value *a, lcl_value *b) {
   pair[1] = b;
 
   if (lcl_std_all_args_integral(2, pair)) {
-    long ia;
-    long ib;
+    lcl_int ia;
+    lcl_int ib;
 
     if (lcl_value_to_int(a, &ia) == LCL_OK &&
         lcl_value_to_int(b, &ib) == LCL_OK) {
@@ -836,7 +838,7 @@ static int cmp_pair_user(void *ctx, const lcl_sort_pair *a,
   lcl_user_cmp_ctx *u = (lcl_user_cmp_ctx *)ctx;
   lcl_value *cmp_args[2];
   lcl_value *res = NULL;
-  long v;
+  lcl_int v;
 
   cmp_args[0] = a->val;
   cmp_args[1] = b->val;
@@ -1295,7 +1297,7 @@ static lcl_return_code c_list_flatten(lcl_interp *interp, int argc,
   struct flatten_frame *stack;
   size_t depth;
   size_t cap;
-  long limit = -1;
+  lcl_int limit = -1;
 
   if (!lcl_std_chk_argc(interp, "List::flatten", argc, 1, 2)) {
     return LCL_RC_ERR;
@@ -1342,7 +1344,8 @@ static lcl_return_code c_list_flatten(lcl_interp *interp, int argc,
 
     top->idx++;
 
-    if (elem->type == LCL_LIST && (limit < 0 || depth <= (size_t)limit)) {
+    if (elem->type == LCL_LIST &&
+        (limit < 0 || (lcl_u64)depth <= (lcl_u64)limit)) {
       if (depth == cap) {
         struct flatten_frame *grown;
         cap *= 2;

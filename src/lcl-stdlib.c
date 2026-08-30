@@ -5,14 +5,14 @@
 #include "lcl-eval.h"
 #include "lcl-stdlib-internal.h"
 
-/* Bugfix: portable C89 overflow-checked arithmetic on long.  Each
- * returns 1 on success (writes *out), 0 on overflow. */
-int lcl_std_safe_add_long(long a, long b, long *out) {
-  if (b > 0 && a > LONG_MAX - b) {
+/* Portable C89 overflow-checked arithmetic on lcl_int. Each returns
+ * 1 on success (writes *out), 0 on overflow. */
+int lcl_std_safe_add_int(lcl_int a, lcl_int b, lcl_int *out) {
+  if (b > 0 && a > LCL_INT_MAX - b) {
     return 0;
   }
 
-  if (b < 0 && a < LONG_MIN - b) {
+  if (b < 0 && a < LCL_INT_MIN - b) {
     return 0;
   }
 
@@ -21,24 +21,24 @@ int lcl_std_safe_add_long(long a, long b, long *out) {
   return 1;
 }
 
-int lcl_std_safe_sub_long(long a, long b, long *out) {
-  /* a - LONG_MIN = a + 2^63. -LONG_MIN is not representable, so
-   * handle separately via unsigned arithmetic when b == LONG_MIN. */
-  if (b == LONG_MIN) {
+int lcl_std_safe_sub_int(lcl_int a, lcl_int b, lcl_int *out) {
+  /* a - LCL_INT_MIN = a + 2^63. -LCL_INT_MIN is not representable, so
+   * handle separately via unsigned arithmetic when b == LCL_INT_MIN. */
+  if (b == LCL_INT_MIN) {
     if (a >= 0) {
       return 0;
     }
 
-    *out = (long)((unsigned long)a - (unsigned long)b);
+    *out = (lcl_int)((lcl_u64)a - (lcl_u64)b);
 
     return 1;
   }
 
-  if (b > 0 && a < LONG_MIN + b) {
+  if (b > 0 && a < LCL_INT_MIN + b) {
     return 0;
   }
 
-  if (b < 0 && a > LONG_MAX + b) {
+  if (b < 0 && a > LCL_INT_MAX + b) {
     return 0;
   }
 
@@ -61,33 +61,66 @@ int lcl_std_safe_add_size(size_t a, size_t b, size_t *out) {
   return 1;
 }
 
-int lcl_std_safe_mul_long(long a, long b, long *out) {
+int lcl_std_index(lcl_int idx, size_t len, size_t *out) {
+  if (idx < 0 || (lcl_u64)idx >= (lcl_u64)len) {
+    return 0;
+  }
+
+  if (out) {
+    *out = (size_t)idx;
+  }
+
+  return 1;
+}
+
+int lcl_std_int_to_size(lcl_int n, size_t *out) {
+  lcl_u64 host_max = (lcl_u64)(size_t)-1;
+
+  if (n < 0 || (lcl_u64)n > host_max) {
+    return 0;
+  }
+
+  *out = (size_t)n;
+
+  return 1;
+}
+
+void lcl_std_err_index(lcl_interp *interp, const char *cmd, lcl_int idx) {
+  char num[LCL_INT_STRLEN];
+  char msg[128];
+
+  lcl_int_format(num, idx);
+  snprintf(msg, sizeof(msg), "%s: index %s out of range", cmd, num);
+  LCL_ERR_MSG_DUP(interp, msg);
+}
+
+int lcl_std_safe_mul_int(lcl_int a, lcl_int b, lcl_int *out) {
   if (a == 0 || b == 0) {
     *out = 0;
     return 1;
   }
 
-  /* |LONG_MIN| isn't representable, so it gets a dedicated path. */
-  if (a == LONG_MIN) {
+  /* |LCL_INT_MIN| isn't representable, so it gets a dedicated path. */
+  if (a == LCL_INT_MIN) {
     if (b == 1) {
-      *out = LONG_MIN;
+      *out = LCL_INT_MIN;
       return 1;
     }
     return 0;
   }
 
-  if (b == LONG_MIN) {
+  if (b == LCL_INT_MIN) {
     if (a == 1) {
-      *out = LONG_MIN;
+      *out = LCL_INT_MIN;
       return 1;
     }
     return 0;
   }
 
   {
-    long aa = a < 0 ? -a : a;
-    long bb = b < 0 ? -b : b;
-    if (aa > LONG_MAX / bb) {
+    lcl_int aa = a < 0 ? -a : a;
+    lcl_int bb = b < 0 ? -b : b;
+    if (aa > LCL_INT_MAX / bb) {
       return 0;
     }
   }
@@ -157,7 +190,7 @@ lcl_return_code lcl_std_err_undefined(lcl_interp *interp, const char *name,
  * a proc-naming diagnostic on failure. Return 1 on success, 0 on
  * error. */
 int lcl_std_arg_int(lcl_interp *interp, const char *name, lcl_value *v,
-                    long *out) {
+                    lcl_int *out) {
   if (lcl_value_to_int(v, out) != LCL_OK) {
     lcl_std_err_expected_got(interp, name, "integer", v);
     return 0;
@@ -290,7 +323,7 @@ int lcl_std_all_args_integral(int argc, lcl_value **argv) {
   int i;
 
   for (i = 0; i < argc; i++) {
-    long dummy;
+    lcl_int dummy;
 
     if (argv[i]->type == LCL_FLOAT) {
       return 0;
@@ -690,8 +723,7 @@ void lcl_std_free_if_owned(lcl_program *p, int owned) {
    string) */
 int lcl_value_is_true(lcl_value *v) {
   const char *s;
-  long n;
-  char *endptr;
+  lcl_int n;
 
   if (!v) {
     return 0;
@@ -711,15 +743,12 @@ int lcl_value_is_true(lcl_value *v) {
   }
 
   /* Falsy iff the string is integer-shaped numeric text equal to 0
-   * ("0", "-0", "+0"). The grammar gate (not raw strtol) keeps libc's
-   * whitespace skip out of truthiness: " 0" is truthy. Float-shaped
-   * text ("0.0") stays truthy, as ever. */
-  if (lcl_num_text_classify(s, strlen(s)) == LCL_NUM_INT) {
-    n = strtol(s, &endptr, 10);
-
-    if (*endptr == '\0') {
-      return n != 0;
-    }
+   * ("0", "-0", "+0"). The grammar gate keeps whitespace out of
+   * truthiness: " 0" is truthy. Float-shaped text ("0.0") stays
+   * truthy, as ever; out-of-range integer text is nonzero, so truthy. */
+  if (lcl_num_text_classify(s, strlen(s)) == LCL_NUM_INT &&
+      lcl_int_parse(s, strlen(s), &n) == LCL_OK) {
+    return n != 0;
   }
 
   return 1;
@@ -784,11 +813,11 @@ static lcl_return_code c_len(lcl_interp *interp, int argc, lcl_value **argv,
 
   switch (argv[0]->type) {
   case LCL_LIST:
-    *out = lcl_int_new((long)lcl_list_len(argv[0]));
+    *out = lcl_int_new((lcl_int)lcl_list_len(argv[0]));
     return LCL_RC_OK;
 
   case LCL_DICT:
-    *out = lcl_int_new((long)lcl_dict_len(argv[0]));
+    *out = lcl_int_new((lcl_int)lcl_dict_len(argv[0]));
     return LCL_RC_OK;
 
   case LCL_STRING: {
@@ -798,12 +827,12 @@ static lcl_return_code c_len(lcl_interp *interp, int argc, lcl_value **argv,
       return LCL_RC_ERR;
     }
 
-    *out = lcl_int_new((long)strlen(s));
+    *out = lcl_int_new((lcl_int)strlen(s));
     return LCL_RC_OK;
   }
 
   case LCL_NAMESPACE:
-    *out = lcl_int_new((long)argv[0]->as.namespace.namespace->len);
+    *out = lcl_int_new((lcl_int)argv[0]->as.namespace.namespace->len);
     return LCL_RC_OK;
 
   default:
@@ -856,23 +885,21 @@ static lcl_return_code c_generic_get(lcl_interp *interp, int argc,
 
   switch (argv[0]->type) {
   case LCL_LIST: {
-    long idx;
+    lcl_int idx;
 
     if (!lcl_std_arg_int(interp, "get", argv[1], &idx)) {
       return LCL_RC_ERR;
     }
 
-    if (lcl_list_get(argv[0], (size_t)idx, out) != LCL_OK) {
-      char msg[96];
-
+    if (!lcl_std_index(idx, lcl_list_len(argv[0]), NULL) ||
+        lcl_list_get(argv[0], (size_t)idx, out) != LCL_OK) {
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
 
         return LCL_RC_OK;
       }
 
-      snprintf(msg, sizeof(msg), "get: index %ld out of range", idx);
-      LCL_ERR_MSG_DUP(interp, msg);
+      lcl_std_err_index(interp, "get", idx);
       return LCL_RC_ERR;
     }
 
@@ -904,7 +931,7 @@ static lcl_return_code c_generic_get(lcl_interp *interp, int argc,
   }
 
   case LCL_STRING: {
-    long idx;
+    lcl_int idx;
     const char *str;
     char buf[2];
 
@@ -916,17 +943,14 @@ static lcl_return_code c_generic_get(lcl_interp *interp, int argc,
       return LCL_RC_ERR;
     }
 
-    if (idx < 0 || (size_t)idx >= strlen(str)) {
-      char msg[96];
-
+    if (!lcl_std_index(idx, strlen(str), NULL)) {
       if (argc == 3) {
         *out = lcl_ref_inc(argv[2]);
 
         return LCL_RC_OK;
       }
 
-      snprintf(msg, sizeof(msg), "get: index %ld out of range", idx);
-      LCL_ERR_MSG_DUP(interp, msg);
+      lcl_std_err_index(interp, "get", idx);
       return LCL_RC_ERR;
     }
 
@@ -991,7 +1015,7 @@ static lcl_return_code c_put(lcl_interp *interp, int argc, lcl_value **argv,
 
   switch (argv[0]->type) {
   case LCL_LIST: {
-    long idx;
+    lcl_int idx;
     lcl_value *copy;
     int borrowed;
 
@@ -1002,11 +1026,9 @@ static lcl_return_code c_put(lcl_interp *interp, int argc, lcl_value **argv,
     borrowed = (argv[0]->refc == 1);
     copy = borrowed ? argv[0] : lcl_ref_inc(argv[0]);
 
-    if (lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
-      char msg[96];
-
-      snprintf(msg, sizeof(msg), "put: index %ld out of range", idx);
-      LCL_ERR_MSG_DUP(interp, msg);
+    if (!lcl_std_index(idx, lcl_list_len(copy), NULL) ||
+        lcl_list_set(&copy, (size_t)idx, argv[2]) != LCL_OK) {
+      lcl_std_err_index(interp, "put", idx);
 
       if (!borrowed) {
         lcl_ref_dec(copy);
@@ -1083,7 +1105,7 @@ static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   case LCL_LIST: {
-    long idx;
+    lcl_int idx;
     size_t len;
     size_t i;
     lcl_value *result;
@@ -1094,11 +1116,8 @@ static lcl_return_code c_del(lcl_interp *interp, int argc, lcl_value **argv,
 
     len = lcl_list_len(argv[0]);
 
-    if (idx < 0 || (size_t)idx >= len) {
-      char msg[96];
-
-      snprintf(msg, sizeof(msg), "del: index %ld out of range", idx);
-      LCL_ERR_MSG_DUP(interp, msg);
+    if (!lcl_std_index(idx, len, NULL)) {
+      lcl_std_err_index(interp, "del", idx);
       return LCL_RC_ERR;
     }
 
@@ -1278,7 +1297,7 @@ static lcl_return_code mut_put_del(lcl_interp *interp, const char *cmd,
   }
 
   if (inner->type == LCL_LIST) {
-    long idx;
+    lcl_int idx;
     size_t len = lcl_list_len(inner);
     lcl_result r;
 
@@ -1286,11 +1305,8 @@ static lcl_return_code mut_put_del(lcl_interp *interp, const char *cmd,
       goto done;
     }
 
-    if (idx < 0 || (size_t)idx >= len) {
-      char msg[96];
-
-      snprintf(msg, sizeof(msg), "%s: index %ld out of range", cmd, idx);
-      LCL_ERR_MSG_DUP(interp, msg);
+    if (!lcl_std_index(idx, len, NULL)) {
+      lcl_std_err_index(interp, cmd, idx);
       goto done;
     }
 
@@ -1388,7 +1404,7 @@ static lcl_return_code c_interp_stats(lcl_interp *interp, int argc,
   }
 
   for (i = 0; i < 5; i++) {
-    lcl_value *v = lcl_int_new((long)vals[i]);
+    lcl_value *v = lcl_int_new((lcl_int)vals[i]);
 
     if (!v || lcl_dict_put(&d, keys[i], v) != LCL_OK) {
       lcl_ref_dec(v);

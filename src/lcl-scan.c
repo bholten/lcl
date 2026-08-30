@@ -652,13 +652,9 @@ static int scan_type_numeric_word(lcl_scan *sc, lcl_word *w) {
 
   switch (lcl_num_literal_classify(s, n)) {
   case LCL_NUM_INT: {
-    char *endptr;
-    long v;
+    lcl_int v;
 
-    errno = 0;
-    v = strtol(s, &endptr, 10);
-
-    if (errno == ERANGE) {
+    if (lcl_int_parse(s, n, &v) != LCL_OK) {
       return scan_fail(sc, "integer literal out of range", sc->line);
     }
 

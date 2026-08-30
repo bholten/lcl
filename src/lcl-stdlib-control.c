@@ -20,7 +20,7 @@
  * evaluated collections. */
 static lcl_return_code and_or_impl(lcl_interp *interp, int argc,
                                    const lcl_word **args, lcl_value **out,
-                                   int stop_when_truthy, long identity,
+                                   int stop_when_truthy, lcl_int identity,
                                    const char *name) {
   lcl_value *val = NULL;
   int i;
@@ -688,8 +688,8 @@ static lcl_return_code s_repeat(lcl_interp *interp, int argc,
   int body_owned = 0;
   lcl_value *n_v = NULL;
   lcl_value *last = NULL;
-  long n;
-  long i;
+  lcl_int n;
+  lcl_int i;
   lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "repeat", argc, 2, 2)) {

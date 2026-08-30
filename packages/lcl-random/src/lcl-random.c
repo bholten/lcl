@@ -101,10 +101,10 @@ static lcl_return_code get_rng(lcl_interp *interp, const char *who,
   return LCL_RC_OK;
 }
 
-static unsigned long uniform_below(struct xoshiro *r, unsigned long width) {
+static lcl_u64 uniform_below(struct xoshiro *r, lcl_u64 width) {
   int k = 0;
-  unsigned long tmp = width;
-  unsigned long cand;
+  lcl_u64 tmp = width;
+  lcl_u64 cand;
 
   while (tmp) {
     k++;
@@ -119,11 +119,11 @@ static unsigned long uniform_below(struct xoshiro *r, unsigned long width) {
     if (k <= 32) {
       cand = xoshiro_next(r) >> (32 - k);
     } else {
-      unsigned long hi = xoshiro_next(r);
-      unsigned long lo = xoshiro_next(r);
-      unsigned long mask = (k >= (int)(sizeof(unsigned long) * CHAR_BIT))
-                               ? ULONG_MAX
-                               : ((1UL << k) - 1UL);
+      lcl_u64 hi = xoshiro_next(r);
+      lcl_u64 lo = xoshiro_next(r);
+      lcl_u64 mask = (k >= (int)(sizeof(lcl_u64) * CHAR_BIT))
+                         ? LCL_U64_MAX
+                         : ((LCL_U64_C(1) << k) - 1);
 
       cand = (((hi << 16) << 16) | lo) & mask;
     }
@@ -146,14 +146,14 @@ static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (argc == 1) {
-    long s;
+    lcl_int s;
 
     if (lcl_value_to_int(argv[0], &s) != LCL_OK) {
       lcl_set_error(interp, "Xoshiro::new: seed must be an integer");
       return LCL_RC_ERR;
     }
 
-    seed = (u32)(unsigned long)s & U32_MASK;
+    seed = (u32)(lcl_u64)s & U32_MASK;
   } else {
     seed = default_seed();
   }
@@ -181,10 +181,10 @@ static lcl_return_code c_new(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   struct xoshiro *r;
-  long lo;
-  long hi;
-  unsigned long width;
-  unsigned long off;
+  lcl_int lo;
+  lcl_int hi;
+  lcl_u64 width;
+  lcl_u64 off;
 
   if (argc != 3) {
     lcl_set_error(interp, "Xoshiro::int: expected 3 arguments (stream lo hi)");
@@ -206,9 +206,9 @@ static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  width = (unsigned long)hi - (unsigned long)lo;
+  width = (lcl_u64)hi - (lcl_u64)lo;
   off = uniform_below(r, width);
-  *out = lcl_int_new((long)((unsigned long)lo + off));
+  *out = lcl_int_new((lcl_int)((lcl_u64)lo + off));
 
   return *out ? LCL_RC_OK : LCL_RC_ERR;
 }
@@ -244,8 +244,8 @@ static lcl_return_code c_float(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Xoshiro::shuffle stream list -> new list, Fisher-Yates */
-static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
-                                 lcl_value **argv, lcl_value **out) {
+static lcl_return_code c_shuffle(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
   struct xoshiro *r;
   lcl_value **elems;
   lcl_value *result;
@@ -288,7 +288,7 @@ static lcl_return_code c_shuffle(lcl_interp *interp, int argc,
   }
 
   for (i = n; i > 1; i--) {
-    size_t j = (size_t)uniform_below(r, (unsigned long)(i - 1));
+    size_t j = (size_t)uniform_below(r, (lcl_u64)(i - 1));
     lcl_value *t = elems[i - 1];
 
     elems[i - 1] = elems[j];
@@ -326,6 +326,5 @@ void lcl_register_random(lcl_interp *interp) {
   lcl_ns_def_take(ns, "new", lcl_c_proc_new("Xoshiro::new", c_new));
   lcl_ns_def_take(ns, "int", lcl_c_proc_new("Xoshiro::int", c_int));
   lcl_ns_def_take(ns, "float", lcl_c_proc_new("Xoshiro::float", c_float));
-  lcl_ns_def_take(ns, "shuffle",
-                  lcl_c_proc_new("Xoshiro::shuffle", c_shuffle));
+  lcl_ns_def_take(ns, "shuffle", lcl_c_proc_new("Xoshiro::shuffle", c_shuffle));
 }

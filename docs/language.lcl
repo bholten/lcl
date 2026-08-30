@@ -1112,9 +1112,11 @@
 ;;; ZIP fragment, so Lcl refuses to guess, and non-canonical spellings
 ;;; are never normalized. Runtime *data* is another matter -- numeric
 ;;; contexts accept any string that fully parses as a number, leading
-;;; zeros and all, without retagging the original value. A literal that
-;;; matches the grammar but overflows the numeric range is a compile
-;;; error, never a silent string:
+;;; zeros and all, without retagging the original value. Integers are
+;;; 64-bit on every host (-9223372036854775808 through
+;;; 9223372036854775807, whatever the C `long` of the platform); a
+;;; literal that matches the grammar but overflows that range is a
+;;; compile error, never a silent string:
 ;;;
 ;;; Examples:
 ;;; >> + 1 "007"
