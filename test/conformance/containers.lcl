@@ -412,6 +412,27 @@ Test::suite "In-place mutation (! forms)" {
         Test::eq $d #{}
     }
 
+    Test::case "the cycle check does not unfold a shared DAG" {
+        ;; each push appends the previous list, so the value shares
+        ;; every earlier list: 2^n nodes if walked as a tree (fuzz
+        ;; timeout), n if each list is searched once
+        var ps ()
+        repeat 300 { List::push! ps $ps }
+        Test::eq [len $ps] 300
+        var ds #{}
+        repeat 300 { put! ds [len $ds] $ds }
+        Test::eq [len $ds] 300
+    }
+
+    Test::case "a cycle behind an already-searched sub-list is still found" {
+        var acc ()
+        let inner ([lambda {} { $acc }])
+        let dag ((1) (1) $inner $inner)
+        Test::eq [catch { List::push! acc $dag } r err] 1
+        Test::assert [> [String::find $err "reference cycle"] 0]
+        Test::eq $acc ()
+    }
+
     Test::case "the form works on a var captured by a closure" {
         var log ()
         proc record {x} { List::push! log $x }

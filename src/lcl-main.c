@@ -392,6 +392,13 @@ int main(int argc, char **argv) {
   if (rc != LCL_RC_OK && !exit_requested) {
     const char *err_file = lcl_interp_error_file(interp);
     const char *err_msg = lcl_interp_error_msg(interp);
+
+    if (!err_msg && rc == LCL_RC_BREAK) {
+      err_msg = "break invoked outside a loop";
+    } else if (!err_msg && rc == LCL_RC_CONTINUE) {
+      err_msg = "continue invoked outside a loop";
+    }
+
     fprintf(stderr, "Error at %s:%d", err_file ? err_file : "<unknown>",
             lcl_interp_error_line(interp));
 

@@ -70,5 +70,10 @@ write discoveries to `corpus/<target>/`.
    regression to the conformance suite or `test/lcl-test.c` as usual.
 
 Known open class: single-command resource bombs (`List::range 0
-1000000000` and friends, #95) show as `oom-*`; the step budget cannot
-see inside one command.
+1000000000` and friends) show as `oom-*`; the step budget cannot see
+inside one command. The self-referential DAG `var ps (); repeat n {
+List::push! ps $ps }` is the same class in two guises: its canonical
+string is `2^n` bytes (`oom-*` in `lcl_reify_str_list`), and the
+`push!`  cycle check costs `O(edges) = O(n^2)` per push, so `n ≈ 1800`
+still takes ~35 s in the instrumented build (`timeout-*` in
+`lcl_value_would_cycle`; ~3 s in a release build).
