@@ -69,7 +69,7 @@ lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
 lcl_return_code c_posix_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   const char *path;
-  long mode = 0755;
+  lcl_int mode = 0755;
 
   if (argc < 1) {
     return LCL_RC_ERR;
@@ -201,7 +201,7 @@ lcl_return_code c_posix_file_size(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_int_new((long)st.st_size);
+  *out = lcl_int_new((lcl_int)st.st_size);
   return LCL_RC_OK;
 }
 
@@ -223,7 +223,7 @@ lcl_return_code c_posix_file_mtime(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_int_new((long)st.st_mtime);
+  *out = lcl_int_new((lcl_int)st.st_mtime);
   return LCL_RC_OK;
 }
 

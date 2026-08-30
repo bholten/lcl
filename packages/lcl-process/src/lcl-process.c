@@ -190,7 +190,7 @@ static char *read_all(int fd, size_t *out_len, size_t limit) {
 
 static int get_opt_int(lcl_value *opts, const char *key, int def) {
   lcl_value *v = NULL;
-  long n;
+  lcl_int n;
   int result;
 
   if (!opts) {
@@ -907,7 +907,7 @@ static lcl_return_code c_process_send(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_int_new((long)written);
+  *out = lcl_int_new((lcl_int)written);
 
   return LCL_RC_OK;
 }
@@ -1276,7 +1276,7 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
   lcl_dict_put(&result, "pattern", tmp);
   lcl_ref_dec(tmp);
 
-  tmp = lcl_int_new((long)matched_idx);
+  tmp = lcl_int_new((lcl_int)matched_idx);
   lcl_dict_put(&result, "index", tmp);
   lcl_ref_dec(tmp);
 
@@ -1496,7 +1496,7 @@ static lcl_return_code c_process_kill(lcl_interp *interp, int argc,
     } else if (strcmp(sig_str, "HUP") == 0 || strcmp(sig_str, "SIGHUP") == 0) {
       sig = SIGHUP;
     } else {
-      long n;
+      lcl_int n;
       lcl_value *v = get_opt_val(opts, "signal");
 
       if (v && lcl_value_to_int(v, &n) == LCL_OK) {
@@ -1598,8 +1598,8 @@ static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
                                              lcl_value **argv,
                                              lcl_value **out) {
   process_handle *h;
-  long rows;
-  long cols;
+  lcl_int rows;
+  lcl_int cols;
   struct winsize ws;
   (void)interp;
 

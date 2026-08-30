@@ -23,9 +23,9 @@ int lcl_is_callable(lcl_value *value);
 lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
                               lcl_value **argv, lcl_value **out);
 
-int lcl_std_safe_add_long(long a, long b, long *out);
-int lcl_std_safe_sub_long(long a, long b, long *out);
-int lcl_std_safe_mul_long(long a, long b, long *out);
+int lcl_std_safe_add_int(lcl_int a, lcl_int b, lcl_int *out);
+int lcl_std_safe_sub_int(lcl_int a, lcl_int b, lcl_int *out);
+int lcl_std_safe_mul_int(lcl_int a, lcl_int b, lcl_int *out);
 int lcl_std_safe_add_size(size_t a, size_t b, size_t *out);
 
 int lcl_std_chk_argc(lcl_interp *interp, const char *name, int argc, int min,
@@ -36,7 +36,18 @@ lcl_return_code lcl_std_err_undefined(lcl_interp *interp, const char *name,
                                       const char *var);
 
 int lcl_std_arg_int(lcl_interp *interp, const char *name, lcl_value *v,
-                    long *out);
+                    lcl_int *out);
+
+/* The lcl_int <-> size_t boundary. An Lcl integer is 64-bit on every
+ * host; a container index or count is whatever size_t is (32 bits on
+ * wasm32), so the conversion is checked, never a cast.
+ * lcl_std_index: 1 when 0 <= idx < len, writing the index to *out
+ * (NULL allowed). lcl_std_int_to_size: 1 when n is a non-negative
+ * value the host can hold. lcl_std_err_index records the standard
+ * "<cmd>: index N out of range" error. */
+int lcl_std_index(lcl_int idx, size_t len, size_t *out);
+int lcl_std_int_to_size(lcl_int n, size_t *out);
+void lcl_std_err_index(lcl_interp *interp, const char *cmd, lcl_int idx);
 int lcl_std_arg_float(lcl_interp *interp, const char *name, lcl_value *v,
                       double *out);
 int lcl_std_arg_str(lcl_interp *interp, const char *name, lcl_value *v,

@@ -52,7 +52,7 @@ static const EVP_MD *get_md_by_name(const char *name) {
 static lcl_return_code c_crypto_random_bytes(lcl_interp *interp, int argc,
                                              lcl_value **argv,
                                              lcl_value **out) {
-  long n;
+  lcl_int n;
   unsigned char *buf;
   char *hex;
 

@@ -615,7 +615,7 @@ static int test_issue22_list_set_clone_oom(void) {
  */
 
 static int test_issue35_public_api_null_safety(void) {
-  long iv = 0;
+  lcl_int iv = 0;
   double fv = 0.0;
   lcl_value *out = NULL;
   lcl_value *null_dict = NULL;
@@ -755,7 +755,7 @@ static int test_issue75_numeric_text(void) {
       {"-",       LCL_NUM_NONE },
   };
   size_t i;
-  long iv;
+  lcl_int iv;
   double fv;
   const char *sv;
   lcl_value *v;
@@ -790,7 +790,7 @@ static int test_issue75_numeric_text(void) {
   ASSERT_TRUE(v && lcl_value_to_float(v, &fv) == LCL_OK && fv == 0.5);
   lcl_ref_dec(v);
 
-  /* NaN→long guard, now only reachable from C (scripts can no longer
+  /* NaN→int guard, now only reachable from C (scripts can no longer
    * materialize NaN via `float "nan"`). */
   {
     volatile double zero = 0.0;
@@ -1743,21 +1743,69 @@ static int test_issue102_ns_def_ownership(void) {
   return 1;
 }
 
-/* lcl_double_to_long rejects NaN via `f != f` (no C99 isnan) and
+/* lcl_double_to_int rejects NaN via `f != f` (no C99 isnan) and
  * relies on the range check for infinities. HUGE_VAL is C89. */
-static int test_double_to_long_rejects_non_finite(void) {
+static int test_double_to_int_rejects_non_finite(void) {
   double inf = HUGE_VAL;
   double nan = inf - inf;
-  long out = 123;
+  lcl_int out = 123;
 
-  ASSERT_TRUE(lcl_double_to_long(nan, &out) == LCL_ERROR);
-  ASSERT_TRUE(lcl_double_to_long(inf, &out) == LCL_ERROR);
-  ASSERT_TRUE(lcl_double_to_long(-inf, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_int(nan, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_int(inf, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_int(-inf, &out) == LCL_ERROR);
   ASSERT_TRUE(out == 123);
-  ASSERT_TRUE(lcl_double_to_long(-3.7, &out) == LCL_OK && out == -3);
-  ASSERT_TRUE(lcl_double_to_long((double)LONG_MIN, &out) == LCL_OK &&
-              out == LONG_MIN);
-  ASSERT_TRUE(lcl_double_to_long(-(double)LONG_MIN, &out) == LCL_ERROR);
+  ASSERT_TRUE(lcl_double_to_int(-3.7, &out) == LCL_OK && out == -3);
+  ASSERT_TRUE(lcl_double_to_int((double)LCL_INT_MIN, &out) == LCL_OK &&
+              out == LCL_INT_MIN);
+  ASSERT_TRUE(lcl_double_to_int(-(double)LCL_INT_MIN, &out) == LCL_ERROR);
+  return 1;
+}
+
+/* An Lcl integer is 64-bit on every host, independent of `long`: the
+ * extremes survive construction, conversion, formatting and parsing,
+ * and one past either end is rejected rather than wrapped. */
+static int test_int_width_contract(void) {
+  char buf[LCL_INT_STRLEN];
+  lcl_int n = 0;
+  lcl_value *v;
+
+  ASSERT_TRUE(sizeof(lcl_int) == 8);
+  ASSERT_TRUE(LCL_INT_MAX == LCL_I64_C(9223372036854775807));
+  ASSERT_TRUE(LCL_INT_MIN + LCL_INT_MAX == -1);
+
+  v = lcl_int_new(LCL_INT_MAX);
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_OK && n == LCL_INT_MAX);
+  ASSERT_TRUE(strcmp(lcl_value_to_string(v), "9223372036854775807") == 0);
+  lcl_ref_dec(v);
+
+  v = lcl_int_new(LCL_INT_MIN);
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_OK && n == LCL_INT_MIN);
+  ASSERT_TRUE(strcmp(lcl_value_to_string(v), "-9223372036854775808") == 0);
+  lcl_ref_dec(v);
+
+  ASSERT_TRUE(lcl_int_format(buf, 0) == 1 && strcmp(buf, "0") == 0);
+  ASSERT_TRUE(lcl_int_format(buf, -7) == 2 && strcmp(buf, "-7") == 0);
+  ASSERT_TRUE(lcl_int_format(buf, LCL_INT_MIN) == 20 &&
+              strcmp(buf, "-9223372036854775808") == 0);
+
+  /* Strings convert through the same parser: the extremes round-trip,
+   * one past them does not. */
+  v = lcl_string_new("-9223372036854775808");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_OK && n == LCL_INT_MIN);
+  lcl_ref_dec(v);
+  v = lcl_string_new("9223372036854775807");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_OK && n == LCL_INT_MAX);
+  lcl_ref_dec(v);
+  v = lcl_string_new("9223372036854775808");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_ERROR);
+  lcl_ref_dec(v);
+  v = lcl_string_new("-9223372036854775809");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_ERROR);
+  lcl_ref_dec(v);
+  v = lcl_string_new("+42");
+  ASSERT_TRUE(v && lcl_value_to_int(v, &n) == LCL_OK && n == 42);
+  lcl_ref_dec(v);
+
   return 1;
 }
 
@@ -2652,7 +2700,7 @@ static int test_require_module_key_hook(void) {
 static int call_hook_enters = 0;
 static int call_hook_exits = 0;
 static char call_hook_last[64];
-static long call_hook_last_arg = -1;
+static lcl_int call_hook_last_arg = -1;
 
 static void call_hook_count(lcl_interp *interp, lcl_value *proc,
                             const char *name, int argc, lcl_value **argv,
@@ -2928,7 +2976,7 @@ static int test_ns_anchor_lifecycle(void) {
   ASSERT_TRUE(rc == LCL_RC_OK);
   ASSERT_TRUE(out != NULL);
   {
-    long n = 0;
+    lcl_int n = 0;
 
     ASSERT_TRUE(lcl_value_to_int(out, &n) == LCL_OK);
     ASSERT_TRUE(n == 7);
@@ -3005,7 +3053,8 @@ int run_test(void) {
   RUN(test_issue102_set_error_copies);
   RUN(test_issue102_ns_def_ownership);
   RUN(test_peek_accessors_borrow);
-  RUN(test_double_to_long_rejects_non_finite);
+  RUN(test_double_to_int_rejects_non_finite);
+  RUN(test_int_width_contract);
   RUN(test_issue99_step_budget_empty_body_loops);
   RUN(test_issue47_param_bind_oom);
   RUN(test_issue58_cleared_cell_returns_error);

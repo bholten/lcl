@@ -32,7 +32,7 @@
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
-    long val;                                                                  \
+    lcl_int val;                                                               \
     (void)interp;                                                              \
     (void)out;                                                                 \
     if (argc < 2)                                                              \
@@ -41,7 +41,7 @@
       return LCL_RC_ERR;                                                       \
     if (lcl_value_to_int(argv[1], &val) != LCL_OK)                             \
       return LCL_RC_ERR;                                                       \
-    return (curl_easy_setopt(ctx->curl, curl_opt, val) == CURLE_OK)            \
+    return (curl_easy_setopt(ctx->curl, curl_opt, (long)val) == CURLE_OK)      \
                ? LCL_RC_OK                                                     \
                : LCL_RC_ERR;                                                   \
   }
@@ -711,7 +711,7 @@ static lcl_return_code c_curl_get_last_error(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_int_new((long)ctx->last_result);
+  *out = lcl_int_new((lcl_int)ctx->last_result);
 
   return LCL_RC_OK;
 }

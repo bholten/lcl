@@ -144,7 +144,7 @@ lcl_return_code c_io_is_eof(lcl_interp *interp, int argc, lcl_value **argv,
 lcl_return_code c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
                            lcl_value **out) {
   FILE *handle = NULL;
-  long buff_size;
+  lcl_int buff_size;
   char *buff;
 
   (void)interp;

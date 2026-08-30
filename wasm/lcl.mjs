@@ -11,12 +11,13 @@
  * function. Anything else (namespaces, opaques) comes back as an
  * LclValue handle that stringifies like the interpreter would.
  *
- * Going the other way, integral JS numbers become Lcl ints and the
- * rest floats, booleans become 1/0, null and undefined the empty
- * string, Arrays lists, plain objects dicts, functions host procs.
- * The int/float distinction of a value that round-trips through JS
- * is therefore not preserved (2.0 comes back as 2); JS has one
- * number type.
+ * Going the other way, integral JS numbers and BigInts become Lcl
+ * ints and other numbers floats, booleans become 1/0, null and
+ * undefined the empty string, Arrays lists, plain objects dicts,
+ * functions host procs. The int/float distinction of a value that
+ * round-trips through JS is therefore not preserved (2.0 comes back
+ * as 2); JS has one number type. Ints beyond 2^53 arrive as BigInt
+ * so no digits are lost.
  *
  * Every Lcl reference JS holds is released when the wrapper that
  * owns it is released -- explicitly via .release(), or by the
@@ -28,9 +29,11 @@ import createLclCore from './lcl-core.mjs';
 const T_STRING = 0, T_INT = 1, T_FLOAT = 2, T_LIST = 3, T_DICT = 4,
       T_CELL = 5, T_PROC = 6, T_CPROC = 7;
 
-/* Lcl ints are C `long`s: 32 bits under wasm32. Integral JS numbers
- * outside this range are passed as floats. */
-const INT_MIN = -2147483648, INT_MAX = 2147483647;
+/* An Lcl int is 64-bit on every host and crosses the boundary as a
+ * wasm i64, i.e. a BigInt. Values within Number's safe range are
+ * handed to JS as numbers; beyond it they stay BigInt. */
+const INT_MIN = -(2n ** 63n), INT_MAX = 2n ** 63n - 1n;
+const SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
 const PTR = Symbol('lcl.ptr');
 
@@ -262,8 +265,11 @@ export class Lcl {
     if (!ptr) return '';
     switch (c._lcl_value_type_of(ptr)) {
       case T_STRING: return this._str(ptr);
-      case T_INT:
-      case T_FLOAT: return c._lclw_number_of(ptr);
+      case T_INT: {
+        const i = c._lclw_int_of(ptr);
+        return i >= -SAFE && i <= SAFE ? Number(i) : i;
+      }
+      case T_FLOAT: return c._lclw_float_of(ptr);
       case T_LIST: {
         const n = c._lcl_list_len(ptr), out = new Array(n);
         for (let i = 0; i < n; i++) out[i] = this.#toJs(c._lcl_list_peek(ptr, i));
@@ -303,12 +309,13 @@ export class Lcl {
       ptr = c._lcl_string_new(p);
       c._free(p);
     } else if (typeof v === 'number') {
-      ptr = Number.isInteger(v) && v >= INT_MIN && v <= INT_MAX
-        ? c._lcl_int_new(v) : c._lcl_float_new(v);
+      ptr = Number.isInteger(v) && Number.isSafeInteger(v)
+        ? c._lcl_int_new(BigInt(v)) : c._lcl_float_new(v);
     } else if (typeof v === 'boolean') {
-      ptr = c._lcl_int_new(v ? 1 : 0);
+      ptr = c._lcl_int_new(v ? 1n : 0n);
     } else if (typeof v === 'bigint') {
-      throw new TypeError('lcl: BigInt values are not supported');
+      if (v < INT_MIN || v > INT_MAX) throw new RangeError('lcl: integer out of range');
+      ptr = c._lcl_int_new(v);
     } else if (v[PTR]) {
       ptr = c._lcl_ref_inc(v[PTR]);
     } else if (typeof v === 'function') {

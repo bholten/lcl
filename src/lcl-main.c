@@ -201,7 +201,7 @@ static int exit_status;
 
 static lcl_return_code c_exit(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
-  long code = 0;
+  lcl_int code = 0;
   (void)out;
 
   if (argc > 1) {

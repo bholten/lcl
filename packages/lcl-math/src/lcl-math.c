@@ -115,7 +115,6 @@ static lcl_return_code c_isnan(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-
   *out = lcl_int_new(value != value ? 1 : 0);
 
   return LCL_RC_OK;

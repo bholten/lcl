@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 
+#include "lcl-int.h"
 #include "lcl-version.h"
 
 #ifdef __cplusplus
@@ -509,7 +510,7 @@ lcl_value *lcl_string_new(const char *str);
 /*
  * Create a new integer value.
  */
-lcl_value *lcl_int_new(long n);
+lcl_value *lcl_int_new(lcl_int n);
 
 /*
  * Create a new float value.
@@ -568,7 +569,15 @@ lcl_result lcl_value_to_cstring(lcl_interp *interp, lcl_value *value,
  * Convert a value to an integer.
  * Returns LCL_OK on success, LCL_ERROR if the value cannot be converted.
  */
-lcl_result lcl_value_to_int(lcl_value *value, long *out);
+lcl_result lcl_value_to_int(lcl_value *value, lcl_int *out);
+
+/*
+ * Render `n` in decimal into `buf` (at least LCL_INT_STRLEN bytes);
+ * returns the length written, NUL excluded. The one integer
+ * formatter in the tree: printf has no portable conversion for
+ * lcl_int under C89.
+ */
+size_t lcl_int_format(char *buf, lcl_int n);
 
 /*
  * Convert a value to a float.
@@ -803,7 +812,7 @@ lcl_value *lcl_c_proc_new(const char *name, lcl_c_proc_fn fn);
  * Example:
  *   lcl_return_code my_add(lcl_interp *interp, int argc, lcl_value **argv,
  *                          lcl_value **out) {
- *     long a, b;
+ *     lcl_int a, b;
  *     if (argc != 2) {
  *       lcl_set_error(interp, "my-add: expected 2 arguments");
  *       return LCL_RC_ERR;

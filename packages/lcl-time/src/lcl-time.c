@@ -35,7 +35,7 @@ static lcl_value *tm_to_dict(const struct tm *tm) {
   return d;
 }
 
-static int tm_field(lcl_value *d, const char *key, long *val) {
+static int tm_field(lcl_value *d, const char *key, lcl_int *val) {
   lcl_value *v = NULL;
   int ok = 0;
 
@@ -48,7 +48,7 @@ static int tm_field(lcl_value *d, const char *key, long *val) {
 }
 
 static int dict_to_tm(lcl_value *d, struct tm *tm) {
-  long val;
+  lcl_int val;
 
   memset(tm, 0, sizeof(*tm));
 
@@ -92,7 +92,7 @@ static lcl_return_code c_time(lcl_interp *interp, int argc, lcl_value **argv,
   (void)argc;
   (void)argv;
 
-  *out = lcl_int_new((long)time(NULL));
+  *out = lcl_int_new((lcl_int)time(NULL));
   return LCL_RC_OK;
 }
 
@@ -105,7 +105,7 @@ static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
   (void)argv;
 
   c = clock();
-  *out = lcl_int_new((long)(c * 1000000 / CLOCKS_PER_SEC));
+  *out = lcl_int_new((lcl_int)(c * 1000000 / CLOCKS_PER_SEC));
 
   return LCL_RC_OK;
 }
@@ -114,7 +114,7 @@ static lcl_return_code c_clock(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   struct timespec ts;
-  unsigned long usec;
+  lcl_u64 usec;
   (void)interp;
   (void)argc;
   (void)argv;
@@ -123,14 +123,10 @@ static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  /* On 64-bit platforms `long` is wide enough to hold microseconds
-   * since boot for any realistic uptime. On 32-bit it wraps after ~35
-   * minutes — acceptable since lcl_int_new takes long. Unsigned
-   * arithmetic keeps the wrap well-defined. */
-  usec =
-      (unsigned long)ts.tv_sec * 1000000UL + (unsigned long)(ts.tv_nsec / 1000);
+  /* 64-bit on every host, so microseconds since boot never wrap. */
+  usec = (lcl_u64)ts.tv_sec * 1000000 + (lcl_u64)(ts.tv_nsec / 1000);
 
-  *out = lcl_int_new((long)usec);
+  *out = lcl_int_new((lcl_int)usec);
   return LCL_RC_OK;
 }
 
@@ -139,7 +135,7 @@ static lcl_return_code c_localtime(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
   time_t t;
   struct tm *tm;
-  long ts;
+  lcl_int ts;
 
   if (argc >= 1) {
     if (lcl_value_to_int(argv[0], &ts) != LCL_OK) {
@@ -173,7 +169,7 @@ static lcl_return_code c_gmtime(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
   time_t t;
   struct tm *tm;
-  long ts;
+  lcl_int ts;
 
   if (argc >= 1) {
     if (lcl_value_to_int(argv[0], &ts) != LCL_OK) {
@@ -238,7 +234,7 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
   struct tm *tm;
   char buf[256];
   size_t len;
-  long ts;
+  lcl_int ts;
 
   if (argc < 1) {
     lcl_set_error(interp, "Time::strftime requires a format string");
@@ -282,8 +278,8 @@ static lcl_return_code c_strftime(lcl_interp *interp, int argc,
 /* Time::difftime t1 t2 -> difference in seconds (t1 - t2) */
 static lcl_return_code c_difftime(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
-  long t1;
-  long t2;
+  lcl_int t1;
+  lcl_int t2;
   double diff;
 
   if (argc < 2) {
@@ -306,7 +302,7 @@ static lcl_return_code c_difftime(lcl_interp *interp, int argc,
 static lcl_return_code c_sleep(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   double secs;
-  long isecs;
+  lcl_int isecs;
   struct timespec ts;
 
   if (argc < 1) {
@@ -342,7 +338,7 @@ static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
   time_t t;
   char *str;
   char buf[64];
-  long ts;
+  lcl_int ts;
   size_t len;
 
   if (argc >= 1) {
@@ -382,14 +378,14 @@ static lcl_return_code c_ctime(lcl_interp *interp, int argc, lcl_value **argv,
 typedef struct {
   char *name;
   unsigned long calls;
-  unsigned long incl_us;
-  unsigned long excl_us;
+  lcl_u64 incl_us;
+  lcl_u64 excl_us;
 } prof_entry;
 
 typedef struct {
   size_t entry;
-  unsigned long start_us;
-  unsigned long child_us;
+  lcl_u64 start_us;
+  lcl_u64 child_us;
 } prof_frame;
 
 typedef struct {
@@ -410,15 +406,14 @@ typedef struct {
 
 static profiler g_prof;
 
-static unsigned long prof_now_us(void) {
+static lcl_u64 prof_now_us(void) {
   struct timespec ts;
 
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
     return 0;
   }
 
-  return (unsigned long)ts.tv_sec * 1000000UL +
-         (unsigned long)(ts.tv_nsec / 1000);
+  return (lcl_u64)ts.tv_sec * 1000000 + (lcl_u64)(ts.tv_nsec / 1000);
 }
 
 static unsigned long prof_hash(const char *s) {
@@ -548,8 +543,8 @@ static void prof_hook(lcl_interp *interp, lcl_value *proc, const char *name,
     p->depth++;
   } else if (p->depth > 0) {
     prof_frame *f = &p->stack[--p->depth];
-    unsigned long incl = prof_now_us() - f->start_us;
-    unsigned long excl = incl > f->child_us ? incl - f->child_us : 0;
+    lcl_u64 incl = prof_now_us() - f->start_us;
+    lcl_u64 excl = incl > f->child_us ? incl - f->child_us : 0;
 
     p->entries[f->entry].incl_us += incl;
     p->entries[f->entry].excl_us += excl;
@@ -620,9 +615,9 @@ static lcl_value *prof_report(profiler *p) {
     lcl_value *row = lcl_dict_new();
 
     if (!row || !prof_row_put(&row, "name", lcl_string_new(e->name)) ||
-        !prof_row_put(&row, "calls", lcl_int_new((long)e->calls)) ||
-        !prof_row_put(&row, "incl_us", lcl_int_new((long)e->incl_us)) ||
-        !prof_row_put(&row, "excl_us", lcl_int_new((long)e->excl_us)) ||
+        !prof_row_put(&row, "calls", lcl_int_new((lcl_int)e->calls)) ||
+        !prof_row_put(&row, "incl_us", lcl_int_new((lcl_int)e->incl_us)) ||
+        !prof_row_put(&row, "excl_us", lcl_int_new((lcl_int)e->excl_us)) ||
         lcl_list_push(&rows, row) != LCL_OK) {
       lcl_ref_dec(row);
       lcl_ref_dec(rows);

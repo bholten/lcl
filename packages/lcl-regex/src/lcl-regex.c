@@ -234,11 +234,11 @@ static lcl_return_code c_find(lcl_interp *interp, int argc, lcl_value **argv,
   result = lcl_list_new();
 
   if (regexec(re, str, 1, &m, 0) == 0) {
-    lcl_value *v = lcl_int_new((long)m.rm_so);
+    lcl_value *v = lcl_int_new((lcl_int)m.rm_so);
 
     lcl_list_push(&result, v);
     lcl_ref_dec(v);
-    v = lcl_int_new((long)m.rm_eo);
+    v = lcl_int_new((lcl_int)m.rm_eo);
     lcl_list_push(&result, v);
     lcl_ref_dec(v);
   }
@@ -340,7 +340,7 @@ static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
   const char *str = NULL;
   regmatch_t *m = NULL;
   size_t nmatch;
-  long from = 0;
+  lcl_int from = 0;
   size_t len;
   lcl_value *result;
 
@@ -391,8 +391,8 @@ static lcl_return_code c_search(lcl_interp *interp, int argc, lcl_value **argv,
     for (i = 0; i < nmatch; i++) {
       lcl_value *pair = lcl_list_new();
       lcl_value *v;
-      long so = (long)m[i].rm_so;
-      long eo = (long)m[i].rm_eo;
+      lcl_int so = (lcl_int)m[i].rm_so;
+      lcl_int eo = (lcl_int)m[i].rm_eo;
 
       if (so != -1) {
         so += from;

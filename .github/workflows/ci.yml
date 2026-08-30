@@ -182,4 +182,4 @@ jobs:
 
       - name: Run tests (ctest, under node)
         working-directory: build-emcc
-        run: ctest --output-on-failure -E '^conformance-smoke$'
+        run: ctest --output-on-failure

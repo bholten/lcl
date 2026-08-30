@@ -290,3 +290,47 @@ Test::suite "Arithmetic type preservation" {
 ;; ============================================================================
 ;; Scanner: escape sequences
 ;; ============================================================================
+
+;; An Lcl integer has the range -2^63 .. 2^63-1 on every host,
+;; independent of the C data model (lcl_int in lcl.h). Container
+;; indexes are host-sized, so an integer that no container can index
+;; fails as out of range rather than wrapping.
+Test::suite "Integer range is 64-bit on every host" {
+    Test::case "extreme literals are accepted" {
+        Test::eq [String::from 9223372036854775807] "9223372036854775807"
+        Test::eq [String::from -9223372036854775808] "-9223372036854775808"
+        Test::eq [type 9223372036854775807] int
+        Test::eq [type -9223372036854775808] int
+    }
+
+    Test::case "one past either end is rejected at compile time" {
+        Test::raises_with { eval {puts 9223372036854775808} } "out of range"
+        Test::raises_with { eval {puts -9223372036854775809} } "out of range"
+    }
+
+    Test::case "extremes round-trip through text" {
+        Test::eq [int "9223372036854775807"] 9223372036854775807
+        Test::eq [int "-9223372036854775808"] -9223372036854775808
+        Test::eq [+ "-9223372036854775808" 0] -9223372036854775808
+        Test::raises_with { int "9223372036854775808" } "out of range"
+    }
+
+    Test::case "arithmetic at the edges is overflow-checked" {
+        Test::eq [+ 9223372036854775806 1] 9223372036854775807
+        Test::raises_with { + 9223372036854775807 1 } "overflow"
+        Test::eq [- -9223372036854775807 1] -9223372036854775808
+        Test::raises_with { - -9223372036854775808 1 } "overflow"
+        Test::raises_with { * -9223372036854775808 -1 } "overflow"
+        Test::eq [% -9223372036854775808 -1] 0
+    }
+
+    Test::case "indexes beyond the host's size_t fail cleanly" {
+        Test::raises_with { get (a b c) 5000000000 } "index 5000000000 out of range"
+        Test::raises_with { get abc 4294967296 } "index 4294967296 out of range"
+        Test::raises_with { String::index abc 4294967296 } "out of range"
+        Test::eq [get (a b c) 5000000000 dflt] dflt
+        Test::eq [List::index (a b c) 4294967296] ""
+        Test::eq [List::slice (a b c) 0 5000000000] (a b c)
+        Test::eq [String::range abcdef 2 5000000000] cdef
+    }
+}
