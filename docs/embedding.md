@@ -56,6 +56,18 @@ value/clone counters behind `Interp::stats`. `lcl_interp_abort`
 triggers the same sticky abort from inside a C procedure -- it is how
 the CLI implements `exit`.
 
+Two more hooks shape the module loader. `lcl_set_module_source_fn` is
+where `require` and `load` get their text: with it installed the core
+reads no files -- every candidate path is offered to the hook, which
+returns a malloc'd source or NULL, so a host with no filesystem (a
+browser page, an application with modules in a bundle) serves modules
+itself; a hook that sets an error with `lcl_set_error` has that
+message reported instead of the list of paths tried.
+`lcl_set_module_key_fn` derives the require cache/cycle key from the
+resolved lexical path (physical-file deduplication on POSIX, for
+instance) and affects identity only. `lcl_add_require_root` registers
+the directories bare `require` names are looked up under.
+
 ## Linking
 
 To consume Lcl from your own CMake project after `cmake --install`:

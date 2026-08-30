@@ -165,6 +165,37 @@ void lcl_set_module_key_fn(lcl_interp *interp, lcl_module_key_fn fn,
                            void *userdata);
 
 /*
+ * Install a module-source hook: where `require` and `load` get their
+ * text from.
+ *
+ * By default both read files. With a hook installed they read nothing
+ * themselves: every candidate path `require` resolves (see
+ * lcl_add_require_root) and every `load` path is offered to the hook
+ * instead, which returns the module's source as a malloc'd,
+ * NUL-terminated buffer the core takes ownership of (optionally
+ * writing its length to *len), or NULL for "no such module". The
+ * first candidate the hook answers is the module; its lexical path
+ * remains the module's name for diagnostics, for nested relative
+ * requires, and for the identity hook. A NULL answer normally makes
+ * `require` try the next candidate and finally report every path it
+ * tried; a hook that wants to explain a failure (a network error, a
+ * forbidden path) calls lcl_set_error first, and that message is
+ * reported instead.
+ *
+ * This is how a host without a filesystem -- a browser page, an
+ * application with modules in a bundle or a database -- serves Lcl
+ * modules. The hook runs with the interpreter mid-evaluation: it must
+ * not evaluate code on this interp or free it.
+ *
+ * Pass fn = NULL to restore file reading. Modules already in the
+ * require cache stay cached.
+ */
+typedef char *(*lcl_module_source_fn)(lcl_interp *interp, const char *path,
+                                      size_t *len, void *userdata);
+void lcl_set_module_source_fn(lcl_interp *interp, lcl_module_source_fn fn,
+                              void *userdata);
+
+/*
  * Install a step hook: a host callback invoked from the evaluator
  * every `interval` commands.
  *

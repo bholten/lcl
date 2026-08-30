@@ -56,6 +56,16 @@ static char *read_file(const char *path, size_t *out_len) {
   return buf;
 }
 
+static char *module_read(lcl_interp *interp, const char *path,
+                         size_t *out_len) {
+  if (interp->module_source_fn) {
+    return interp->module_source_fn(interp, path, out_len,
+                                    interp->module_source_ud);
+  }
+
+  return read_file(path, out_len);
+}
+
 static lcl_return_code s_load(lcl_interp *interp, int argc,
                               const lcl_word **args, lcl_value **out) {
   lcl_value *path_v = NULL;
@@ -83,13 +93,16 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  src = read_file(path, NULL);
+  src = module_read(interp, path, NULL);
 
   if (!src) {
-    char msg[192];
+    if (!interp->err_msg) {
+      char msg[192];
 
-    snprintf(msg, sizeof(msg), "load: could not read file \"%.128s\"", path);
-    LCL_ERR_MSG_DUP(interp, msg);
+      snprintf(msg, sizeof(msg), "load: could not read file \"%.128s\"", path);
+      LCL_ERR_MSG_DUP(interp, msg);
+    }
+
     lcl_ref_dec(path_v);
     return LCL_RC_ERR;
   }
@@ -317,20 +330,24 @@ static char *require_current_dir(const lcl_interp *interp) {
  *     registered they resolve against the CWD (legacy behavior).
  *
  * Resolution is lexical (lcl-path.h): candidates are normalized by
- * string rules alone and probed with fopen. The filesystem is never
- * asked to canonicalize -- symlinks are not resolved, and the result
- * stays relative when its inputs are relative; what a relative name
- * means is host state, per the contract in lcl.h.
+ * string rules alone and probed by reading them (module_read: the
+ * host's source hook, else fopen). The filesystem is never asked to
+ * canonicalize -- symlinks are not resolved, and the result stays
+ * relative when its inputs are relative; what a relative name means
+ * is host state, per the contract in lcl.h.
  *
- * On success returns the malloc'd lexical path of the first openable
- * candidate. On failure returns NULL with an interp error naming the
- * argument and every candidate path attempted. */
-static char *require_resolve(lcl_interp *interp, const char *arg) {
+ * On success returns the malloc'd lexical path of the first readable
+ * candidate and its source in *src_out (malloc'd). On failure returns
+ * NULL with an interp error naming the argument and every candidate
+ * path attempted -- or the hook's own error, when it set one. */
+static char *require_resolve(lcl_interp *interp, const char *arg,
+                             char **src_out) {
   char **candidates = NULL;
   size_t ncand = 0;
   size_t i;
   char *resolved = NULL;
   int oom = 0;
+  int hook_error = 0;
   int is_dot_relative =
       (arg[0] == '.' && (arg[1] == '/' || (arg[1] == '.' && arg[2] == '/')));
 
@@ -379,19 +396,23 @@ static char *require_resolve(lcl_interp *interp, const char *arg) {
       continue;
     }
 
-    if (!resolved) {
-      FILE *probe = fopen(candidates[i], "rb");
+    if (!resolved && !hook_error) {
+      char *src = module_read(interp, candidates[i], NULL);
 
-      if (probe) {
-        fclose(probe);
+      if (src) {
+        *src_out = src;
         resolved = candidates[i];
         candidates[i] = NULL;
+      } else if (interp->err_msg) {
+        hook_error = 1;
       }
     }
   }
 
   if (!resolved) {
-    if (oom) {
+    if (hook_error) {
+      /* The source hook explained itself; leave its message. */
+    } else if (oom) {
       LCL_ERR_MSG(interp, "require: out of memory resolving path");
     } else {
       char *msg = NULL;
@@ -583,7 +604,7 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  mod_path = require_resolve(interp, path);
+  mod_path = require_resolve(interp, path, &src);
   lcl_ref_dec(path_v);
 
   if (!mod_path) {
@@ -599,6 +620,7 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
   }
 
   if (!mod_key) {
+    free(src);
     free(mod_path);
     LCL_ERR_MSG(interp, "require: out of memory");
     return LCL_RC_ERR;
@@ -608,6 +630,7 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
       lcl_dict_get(interp->require_cache, mod_key, &cached_dict) == LCL_OK) {
     lcl_result lift_rc = lift_namespaces_to_caller(interp, cached_dict);
     lcl_ref_dec(cached_dict);
+    free(src);
     free(mod_path);
     free(mod_key);
 
@@ -622,19 +645,7 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
 
   if (require_stack_contains(interp, mod_key)) {
     require_cycle_error(interp, mod_key, mod_path);
-    free(mod_path);
-    free(mod_key);
-    return LCL_RC_ERR;
-  }
-
-  src = read_file(mod_path, NULL);
-
-  if (!src) {
-    char msg[192];
-
-    snprintf(msg, sizeof(msg), "require: could not read file \"%.128s\"",
-             mod_path);
-    LCL_ERR_MSG_DUP(interp, msg);
+    free(src);
     free(mod_path);
     free(mod_key);
     return LCL_RC_ERR;

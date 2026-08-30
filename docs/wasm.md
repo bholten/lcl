@@ -60,6 +60,8 @@ console.
 | `call(proc, ...args)` | Call an Lcl procedure value; procedures returned by `eval`/`get` are also directly callable. |
 | `setStepHook(fn, interval)` | `fn(lcl)` runs every `interval` commands; returning truthy aborts the evaluation (sticky, uncatchable by the script). |
 | `setBudget(n)` | A hard per-eval command budget; `setBudget(0)` removes it. |
+| `setModuleSource(source)` | Where `require`/`load` get module text: a `{path: source}` object or a `path => source \| null` function (throw to explain a failure); `null` restores the filesystem. |
+| `addRequireRoot(dir)` | A directory bare `require` names are looked up under. |
 | `abort()` | Abort the evaluation in progress, from a host procedure or a step hook. |
 | `free()` | Release the interpreter. |
 | `version` | The Lcl version string. |
@@ -145,10 +147,14 @@ linked with `WASM_BIGINT`. Container indexes remain host-sized
 fails as "out of range" rather than wrapping. The full conformance
 suite passes under this build.
 
-**No module loader.** `require` and `load` read files through the C
-library, which the CLI build sees through the host filesystem
-(`NODERAWFS`) and the browser build does not see at all. The embedded
-libraries need no files. A host-supplied module source hook is the
-planned answer.
+**Modules come from the host.** `require` and `load` read files
+through the C library, which the CLI build sees through the host
+filesystem (`NODERAWFS`) and the browser build does not see at all
+(the embedded libraries need no files). A page serves modules itself
+with `lcl.setModuleSource(...)` -- a `{path: source}` object or a
+`path => source` function, called for every candidate path `require`
+resolves and for every `load` -- which is `lcl_set_module_source_fn`
+underneath; `lcl.addRequireRoot(dir)` registers search roots for bare
+names.
 
 **No `exit`.** `exit` is a CLI procedure; the browser host has none.
