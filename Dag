@@ -157,9 +157,12 @@ project lcl {
 
     task bench {
         inputs ${lcl::SOURCES}
+        outputs build-release/.bench.sentinel
         depends_on lcl::release
         run {
+            set -e
             ${lcl::release::outputs}/lcl bench/run.lcl --baseline bench/baseline.lcl
+            touch build-release/.bench.sentinel
         }
     }
 

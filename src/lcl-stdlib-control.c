@@ -429,11 +429,55 @@ static int word_is_literal(const lcl_word *w, const char *lit) {
   return strcmp(w->wp[0].as.lit.s, lit) == 0;
 }
 
-/* cond test1 expr1 test2 expr2 ... [else exprN]
+/* Evaluate a `cond`/`case` branch. A braced branch is a body and runs
+ * as code, like an `if` body; any other word is an expression whose
+ * value is the result (`[+ $a $b]`, `$x`, `"text"`, `42`). */
+static lcl_return_code eval_branch(lcl_interp *interp, const char *form,
+                                   const lcl_word *w, lcl_value **out) {
+  lcl_value *body_v = NULL;
+  lcl_program *body_p = NULL;
+  const char *body_src;
+  char name[256];
+  lcl_return_code rc;
+
+  if (!w->braced) {
+    return lcl_eval_word(interp, w, out);
+  }
+
+  if (w->compiled) {
+    return lcl_eval_program(interp, w->compiled, out);
+  }
+
+  /* No scan-time program: recompile to surface the compile error. */
+  if (lcl_eval_word_to_str(interp, w, &body_v) != LCL_RC_OK) {
+    return LCL_RC_ERR;
+  }
+
+  if (lcl_value_to_cstring(interp, body_v, &body_src) != LCL_OK) {
+    lcl_ref_dec(body_v);
+    return LCL_RC_ERR;
+  }
+
+  body_p = lcl_compile_report(
+      interp, body_src, lcl_dyn_source_name(interp, form, name, sizeof(name)));
+  lcl_ref_dec(body_v);
+
+  if (!body_p) {
+    return LCL_RC_ERR;
+  }
+
+  rc = lcl_eval_program(interp, body_p, out);
+  lcl_program_free(body_p);
+
+  return rc;
+}
+
+/* cond test1 branch1 test2 branch2 ... [else branchN]
  * Multi-branch conditional with short-circuit evaluation.
- * Evaluates tests left-to-right until one is truthy, then evaluates
- * and returns that clause's expression. The 'else' keyword marks
- * the default clause (must be last). Error if no clause matches.
+ * Evaluates tests left-to-right until one is truthy, then runs that
+ * clause's branch (see eval_branch) and returns its result. The
+ * 'else' keyword marks the default clause (must be last). Error if
+ * no clause matches.
  */
 static lcl_return_code s_cond(lcl_interp *interp, int argc,
                               const lcl_word **args, lcl_value **out) {
@@ -460,7 +504,7 @@ static lcl_return_code s_cond(lcl_interp *interp, int argc,
   for (i = 0; i < argc; i += 2) {
     if (word_is_literal(args[i], "else")) {
       interp->in_tail_position = saved_tail_position;
-      rc = lcl_eval_word(interp, args[i + 1], out);
+      rc = eval_branch(interp, "cond", args[i + 1], out);
       return rc;
     }
 
@@ -476,7 +520,7 @@ static lcl_return_code s_cond(lcl_interp *interp, int argc,
 
     if (is_true) {
       interp->in_tail_position = saved_tail_position;
-      rc = lcl_eval_word(interp, args[i + 1], out);
+      rc = eval_branch(interp, "cond", args[i + 1], out);
       return rc;
     }
   }
@@ -486,12 +530,12 @@ static lcl_return_code s_cond(lcl_interp *interp, int argc,
   return LCL_RC_ERR;
 }
 
-/* case expr key1 expr1 key2 expr2 ... [else exprN]
+/* case expr key1 branch1 key2 branch2 ... [else branchN]
  *
  * Value dispatch with equality comparison.  Evaluates the scrutinee
- * once, then compares keys using == until a match is found. The
- * 'else' keyword marks the default clause (must be last). Error if no
- * clause matches.
+ * once, then compares keys using == until a match is found and runs
+ * that clause's branch (see eval_branch). The 'else' keyword marks
+ * the default clause (must be last). Error if no clause matches.
  */
 static lcl_return_code s_case(lcl_interp *interp, int argc,
                               const lcl_word **args, lcl_value **out) {
@@ -527,7 +571,7 @@ static lcl_return_code s_case(lcl_interp *interp, int argc,
     if (word_is_literal(args[i], "else")) {
       lcl_ref_dec(scrutinee);
       interp->in_tail_position = saved_tail_position;
-      rc = lcl_eval_word(interp, args[i + 1], out);
+      rc = eval_branch(interp, "case", args[i + 1], out);
 
       return rc;
     }
@@ -546,7 +590,7 @@ static lcl_return_code s_case(lcl_interp *interp, int argc,
     if (is_match) {
       lcl_ref_dec(scrutinee);
       interp->in_tail_position = saved_tail_position;
-      rc = lcl_eval_word(interp, args[i + 1], out);
+      rc = eval_branch(interp, "case", args[i + 1], out);
       return rc;
     }
   }

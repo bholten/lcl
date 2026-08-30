@@ -291,18 +291,18 @@ namespace Expect {
             case $cmd \
                 {send}      [Expect::send $session [get $action 1]] \
                 {send-line} [Expect::send-line $session [get $action 1]] \
-                {expect}    [eval {
+                {expect}    {
                     let pattern [get $action 1]
                     let timeout [get $action 2 [get $session timeout]]
                     let r [Expect::expect $session $pattern #{timeout $timeout}]
                     set! results [List::push $results $r]
-                }] \
-                {sleep}     [eval {
+                } \
+                {sleep}     {
                     ;; Simple sleep using Process::run with sleep command
                     let ms [get $action 1]
                     let secs [/ $ms 1000.0]
                     Process::run (sleep $secs)
-                }] \
+                } \
                 else        {}
         }
 
