@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lcl REPL</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+         display: flex; flex-direction: column; height: 100vh; }
+  header { padding: 8px 12px; border-bottom: 1px solid #8884; display: flex; gap: 12px;
+           align-items: baseline; }
+  header b { font-size: 16px; }
+  header span { opacity: .7; }
+  #out { flex: 1; overflow: auto; padding: 8px 12px; white-space: pre-wrap; margin: 0; }
+  #out .in { opacity: .6; }
+  #out .err { color: #d33; }
+  #out .val { color: #38a; }
+  form { display: flex; border-top: 1px solid #8884; }
+  form span { padding: 8px 0 8px 12px; opacity: .6; }
+  #src { flex: 1; font: inherit; border: 0; padding: 8px; background: transparent;
+         color: inherit; outline: none; resize: none; }
+</style>
+</head>
+<body>
+<header><b>Lcl</b> <span id="version">loading…</span>
+  <span>Enter runs; Shift+Enter inserts a newline; Up/Down recall.</span></header>
+<pre id="out"></pre>
+<form id="form"><span>&gt;&gt;</span><textarea id="src" rows="1" autofocus
+  placeholder="puts [+ 1 2]"></textarea></form>
+
+<script type="module">
+  /*
+   * Yo, run after build:
+   *
+   * cp wasm/demo/index.html build-emcc/ && python3 -m http.server -d build-emcc 8000
+   */
+import createLcl from './lcl.mjs';
+
+const out = document.getElementById('out');
+const src = document.getElementById('src');
+const history = [];
+let cursor = 0;
+
+function log(text, cls) {
+  const s = document.createElement('span');
+  s.className = cls;
+  s.textContent = text + '\n';
+  out.append(s);
+  out.scrollTop = out.scrollHeight;
+}
+
+const lcl = await createLcl({ print: line => log(line), printErr: line => log(line, 'err') });
+document.getElementById('version').textContent = `v${lcl.version}`;
+
+/* Two host procedures, to show the direction JS -> Lcl. */
+lcl.define('js_alert', msg => alert(msg));
+lcl.define('js_time', () => Date.now());
+
+/* Stop runaway loops rather than freezing the tab. */
+lcl.setBudget(5_000_000);
+
+log(';; try: puts [js_time]   ;   proc sq {x} { * $x $x }; List::map (1 2 3) $sq', 'in');
+
+document.getElementById('form').addEventListener('submit', e => e.preventDefault());
+src.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const code = src.value.trim();
+    if (!code) return;
+    history.push(code); cursor = history.length;
+    src.value = ''; src.rows = 1;
+    log('>> ' + code, 'in');
+    try {
+      const v = lcl.eval(code, '<repl>');
+      if (v !== '') log(typeof v === 'string' ? v : JSON.stringify(v), 'val');
+    } catch (err) {
+      log(`error at ${err.file}:${err.line}: ${err.message}`, 'err');
+    }
+  } else if (e.key === 'ArrowUp' && cursor > 0 && !src.value.includes('\n')) {
+    src.value = history[--cursor];
+  } else if (e.key === 'ArrowDown' && cursor < history.length && !src.value.includes('\n')) {
+    src.value = history[++cursor] ?? '';
+  }
+});
+src.addEventListener('input', () => { src.rows = Math.min(8, src.value.split('\n').length); });
+</script>
+</body>
+</html>

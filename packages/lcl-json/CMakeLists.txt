@@ -12,6 +12,10 @@ FetchContent_Declare(
 
 set(ENABLE_CJSON_TEST OFF CACHE BOOL "cJSON: Build with unit testing" FORCE)
 
+if(EMSCRIPTEN)
+  set(ENABLE_CUSTOM_COMPILER_FLAGS OFF CACHE BOOL "cJSON: custom compiler flags" FORCE)
+endif()
+
 # cJSON 1.7.19's CMakeLists declares `cmake_minimum_required(VERSION
 # 2.8.5)`, which CMake 4.x rejects on macOS
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)

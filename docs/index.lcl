@@ -15,7 +15,8 @@
 ;;;
 ;;; This page is the overview. [The language manual](core/language.html)
 ;;; covers syntax, data types, scoping, control flow, and metaprogramming
-;;; in depth; [Embedding](core/embedding.html) covers the C API.
+;;; in depth; [Embedding](core/embedding.html) covers the C API and
+;;; [Lcl in the browser](core/wasm.html) the WebAssembly build.
 ;;;
 ;;; > ⚠️⚠️⚠️ **Coming from Tcl? Read this first.** ⚠️⚠️⚠️
 ;;; >

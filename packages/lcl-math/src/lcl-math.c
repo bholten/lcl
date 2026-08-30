@@ -106,13 +106,18 @@ static lcl_return_code c_isnan(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   double value;
   (void)interp;
+
   if (argc < 1) {
     return LCL_RC_ERR;
   }
+
   if (lcl_value_to_float(argv[0], &value) != LCL_OK) {
     return LCL_RC_ERR;
   }
-  *out = lcl_int_new(isnan(value) ? 1 : 0);
+
+
+  *out = lcl_int_new(value != value ? 1 : 0);
+
   return LCL_RC_OK;
 }
 
@@ -130,7 +135,7 @@ static lcl_return_code c_isinf(lcl_interp *interp, int argc, lcl_value **argv,
     return LCL_RC_ERR;
   }
 
-  *out = lcl_int_new(isinf(value) ? 1 : 0);
+  *out = lcl_int_new(value == HUGE_VAL || value == -HUGE_VAL ? 1 : 0);
 
   return LCL_RC_OK;
 }

@@ -68,13 +68,24 @@ project lcl {
         }
     }
 
+    let WASM_PKGS (-DLCL_BUILD_TESTS=ON
+                   -DLCL_BUILD_TEST_LIB=ON
+                   -DLCL_BUILD_DOC_LIB=ON
+                   -DLCL_BUILD_IO=ON
+                   -DLCL_BUILD_JSON=ON
+                   -DLCL_BUILD_REGEX=ON
+                   -DLCL_BUILD_TIME=ON
+                   -DLCL_BUILD_MATH=ON
+                   -DLCL_BUILD_RANDOM=ON)
+
     task emcc {
         inputs ${lcl::SOURCES}
         outputs build-emcc/
         run {
             set -e
-            emcmake cmake -B ${lcl::emcc::outputs}
+            emcmake cmake -B ${lcl::emcc::outputs} -DCMAKE_BUILD_TYPE=Release -DLCL_WERROR=ON ${lcl::WASM_PKGS}
             cmake --build ${lcl::emcc::outputs} --parallel
+            ctest --test-dir ${lcl::emcc::outputs} --output-on-failure
         }
     }
 

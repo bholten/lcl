@@ -44,7 +44,7 @@ function(lcl_add_package_test)
 
     add_test(
         NAME ${PT_NAME}
-        COMMAND $<TARGET_FILE:lcl-cli>
+        COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                 "${CMAKE_CURRENT_SOURCE_DIR}/${PT_COMMAND}"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
@@ -57,7 +57,7 @@ function(lcl_add_package_test)
             get_filename_component(_pt_pkg "${CMAKE_CURRENT_SOURCE_DIR}" NAME)
             add_test(
                 NAME ${_pt_pkg}-doctest
-                COMMAND $<TARGET_FILE:lcl-cli>
+                COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                         "${LCL_SOURCE_DIR}/tools/docs.lcl" doctest ${_pt_docs}
                 WORKING_DIRECTORY ${LCL_SOURCE_DIR}
             )

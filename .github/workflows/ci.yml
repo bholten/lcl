@@ -156,3 +156,30 @@ jobs:
           "$RUNNER_TEMP/lcl-consumer-build/verify-io"
           "$RUNNER_TEMP/lcl-consumer-build/verify-posix"
           "$RUNNER_TEMP/lcl-consumer-build/verify-crypto"
+
+  emscripten:
+    name: emscripten / wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install emsdk
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.69
+
+      - name: Configure
+        run: |
+          emcmake cmake -S . -B build-emcc \
+            -DCMAKE_BUILD_TYPE=Release -DLCL_WERROR=ON \
+            -DLCL_BUILD_TESTS=ON -DLCL_BUILD_TEST_LIB=ON -DLCL_BUILD_DOC_LIB=ON \
+            -DLCL_BUILD_IO=ON -DLCL_BUILD_JSON=ON -DLCL_BUILD_REGEX=ON \
+            -DLCL_BUILD_TIME=ON -DLCL_BUILD_MATH=ON -DLCL_BUILD_RANDOM=ON
+
+      - name: Build
+        run: cmake --build build-emcc --parallel
+
+      - name: Run tests (ctest, under node)
+        working-directory: build-emcc
+        run: ctest --output-on-failure -E '^conformance-smoke$'
