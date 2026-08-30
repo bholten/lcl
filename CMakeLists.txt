@@ -61,6 +61,11 @@ else()
   set(LCL_IS_TOP_LEVEL FALSE)
 endif()
 
+if(EMSCRIPTEN AND LCL_BUILD_SHARED)
+  message(STATUS "Emscripten: LCL_BUILD_SHARED ignored (static + wasm targets only)")
+  set(LCL_BUILD_SHARED OFF)
+endif()
+
 set(LCL_SOURCES
   src/hash-table.c
   src/lcl-api.c
@@ -229,6 +234,20 @@ if(LCL_BUILD_CLI)
     endif()
   endif()
 endif()
+
+if(EMSCRIPTEN)
+  find_program(LCL_NODE node REQUIRED)
+  set(LCL_WASM_STACK_SIZE 8388608)
+  set(LCL_CLI_LAUNCHER ${LCL_NODE} --stack-size=8000)
+  if(LCL_BUILD_CLI)
+    target_link_options(lcl-cli PRIVATE
+      -sNODERAWFS=1 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1
+      -sSTACK_SIZE=${LCL_WASM_STACK_SIZE})
+  endif()
+else()
+  set(LCL_CLI_LAUNCHER "")
+endif()
+string(JOIN " " LCL_CLI_LAUNCHER_STR ${LCL_CLI_LAUNCHER})
 
 # ==============================================================================
 # Optional Packages
@@ -506,6 +525,72 @@ if(LCL_BUILD_BENCH_LIB)
   endif()
 endif()
 
+# ==============================================================================
+# WebAssembly host (Emscripten only)
+# ==============================================================================
+
+if(EMSCRIPTEN)
+  option(LCL_BUILD_WASM "Build the JavaScript host: lcl.mjs + lcl-core.wasm" ON)
+endif()
+
+if(EMSCRIPTEN AND LCL_BUILD_WASM)
+  if(NOT LCL_BUILD_CLI)
+    message(FATAL_ERROR "LCL_BUILD_WASM mirrors the CLI's package set; enable LCL_BUILD_CLI")
+  endif()
+
+  add_executable(lcl-wasm wasm/lcl-wasm.c)
+  set_target_properties(lcl-wasm PROPERTIES OUTPUT_NAME lcl-core SUFFIX .mjs)
+  target_compile_options(lcl-wasm PRIVATE ${LCL_COMPILE_OPTIONS})
+
+  foreach(_prop COMPILE_DEFINITIONS LINK_LIBRARIES INCLUDE_DIRECTORIES
+                MANUALLY_ADDED_DEPENDENCIES)
+    get_target_property(_cli_${_prop} lcl-cli ${_prop})
+  endforeach()
+
+  if(_cli_COMPILE_DEFINITIONS)
+    target_compile_definitions(lcl-wasm PRIVATE ${_cli_COMPILE_DEFINITIONS})
+  endif()
+
+  if(_cli_INCLUDE_DIRECTORIES)
+    target_include_directories(lcl-wasm PRIVATE ${_cli_INCLUDE_DIRECTORIES})
+  endif()
+
+  target_link_libraries(lcl-wasm PRIVATE ${_cli_LINK_LIBRARIES})
+
+  if(_cli_MANUALLY_ADDED_DEPENDENCIES)
+    add_dependencies(lcl-wasm ${_cli_MANUALLY_ADDED_DEPENDENCIES})
+  endif()
+
+  set(_wasm_exports
+    _malloc _free
+    _lclw_version _lclw_new _lclw_free _lclw_set_host_fn _lclw_set_step_hook
+    _lclw_abort _lclw_eval _lclw_call _lclw_define_host_proc _lclw_define_take
+    _lclw_get _lclw_is_callable _lclw_number_of _lclw_list_push_take
+    _lclw_dict_put_take _lclw_dict_keys
+    _lcl_ref_inc _lcl_ref_dec _lcl_value_type_of _lcl_value_to_string
+    _lcl_string_new _lcl_int_new _lcl_float_new _lcl_list_new _lcl_list_len
+    _lcl_list_peek _lcl_dict_new _lcl_dict_len _lcl_dict_peek _lcl_cell_peek
+    _lcl_opaque_type _lcl_interp_error_msg _lcl_interp_error_file
+    _lcl_interp_error_line _lcl_set_error _lcl_clear_error)
+  string(JOIN "," _wasm_exports_csv ${_wasm_exports})
+  target_link_options(lcl-wasm PRIVATE
+    -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createLclCore
+    "-sEXPORTED_FUNCTIONS=${_wasm_exports_csv}"
+    "-sEXPORTED_RUNTIME_METHODS=cwrap,UTF8ToString,stringToNewUTF8,addFunction,removeFunction,HEAPU32"
+    -sALLOW_TABLE_GROWTH=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0
+    -sSTACK_SIZE=${LCL_WASM_STACK_SIZE})
+
+  configure_file(wasm/lcl.mjs ${CMAKE_CURRENT_BINARY_DIR}/lcl.mjs COPYONLY)
+
+  if(LCL_BUILD_TESTS)
+    add_test(
+      NAME wasm-host
+      COMMAND ${LCL_NODE} "${CMAKE_CURRENT_SOURCE_DIR}/wasm/test/host.mjs"
+              "${CMAKE_CURRENT_BINARY_DIR}/lcl.mjs"
+    )
+  endif()
+endif()
+
 if(LCL_BUILD_EXAMPLES)
   add_subdirectory(examples)
 endif()
@@ -554,14 +639,14 @@ if(LCL_BUILD_TESTS)
   if(LCL_BUILD_CLI AND LCL_BUILD_TEST_LIB)
     add_test(
       NAME conformance-smoke
-      COMMAND $<TARGET_FILE:lcl-cli>
+      COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
               "${CMAKE_CURRENT_SOURCE_DIR}/test/conformance_smoke.lcl"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
     add_test(
       NAME anaphoric-macros
-      COMMAND $<TARGET_FILE:lcl-cli>
+      COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
               "${CMAKE_CURRENT_SOURCE_DIR}/test/anaphoric_macros.lcl"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
@@ -569,7 +654,7 @@ if(LCL_BUILD_TESTS)
     if(LCL_BUILD_DOC_LIB)
       add_test(
         NAME doc-lib
-        COMMAND $<TARGET_FILE:lcl-cli>
+        COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                 "${CMAKE_CURRENT_SOURCE_DIR}/lib/doc/test/test.lcl"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
@@ -578,7 +663,7 @@ if(LCL_BUILD_TESTS)
         file(GLOB _lcl_core_docs "${CMAKE_CURRENT_SOURCE_DIR}/docs/*.lcl")
         add_test(
           NAME doctest-core
-          COMMAND $<TARGET_FILE:lcl-cli>
+          COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                   "${CMAKE_CURRENT_SOURCE_DIR}/tools/docs.lcl" doctest ${_lcl_core_docs}
           WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
@@ -587,18 +672,18 @@ if(LCL_BUILD_TESTS)
 
     add_test(
       NAME cli-argv
-      COMMAND $<TARGET_FILE:lcl-cli> -c "puts $argv" a b
+      COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli> -c "puts $argv" a b
     )
     set_tests_properties(cli-argv PROPERTIES PASS_REGULAR_EXPRESSION "^a b")
     add_test(
       NAME cli-exit-status
-      COMMAND sh -c "$<TARGET_FILE:lcl-cli> -c 'catch { exit 7 }; puts unreachable'; test $? -eq 7"
+      COMMAND sh -c "${LCL_CLI_LAUNCHER_STR} $<TARGET_FILE:lcl-cli> -c 'catch { exit 7 }; puts unreachable'; test $? -eq 7"
     )
 
     if(LCL_BUILD_BENCH_LIB)
       add_test(
         NAME bench-lib
-        COMMAND $<TARGET_FILE:lcl-cli>
+        COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                 "${CMAKE_CURRENT_SOURCE_DIR}/lib/bench/test/test.lcl"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
@@ -607,7 +692,7 @@ if(LCL_BUILD_TESTS)
       # numbers are not asserted, only the copy-vs-in-place ratios.
       add_test(
         NAME bench-smoke
-        COMMAND $<TARGET_FILE:lcl-cli>
+        COMMAND ${LCL_CLI_LAUNCHER} $<TARGET_FILE:lcl-cli>
                 "${CMAKE_CURRENT_SOURCE_DIR}/bench/run.lcl" --smoke
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       )
