@@ -568,3 +568,19 @@ Test::suite "root references inside the builder" {
         namespace NrRbV { let k 1; Test::eq [catch { ${::NrRbV} }] 1 }
     }
 }
+
+Test::suite "literal container syntax dispatches to globally-referenced names" {
+    Test::case "should be able to shadow `list` without breaking `()`" {
+        let list ""
+        let foo (1 2 3 4)
+
+        Test::eq (1 2 3 4) $foo
+    }
+
+    Test::case "should be able to shadow `dict` without breaking `#{}`" {
+        let dict ""
+        let bar #{a 1 b 2 c 3}
+
+        Test::eq #{a 1 b 2 c 3} $bar
+    }
+}
