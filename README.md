@@ -29,6 +29,9 @@ Lcl is implemented in **C89** with no dependencies except for a hosted C standar
 > - **`42` is an int, `"42"` is a string.** Literals are typed at
 >   compile time; interpolation preserves types.
 > - **`$a::b` is invalid.** Qualified names are `${a::b}`.
+> - **Extended names need braces.** `let foo-bar` and `proc empty?`
+>   are fine, and `${foo-bar}`/`${empty?}` substitute them; bare
+>   `$name` is POSIX-shaped, so `-`, `?`, `!` end it.
 > - **`[$x]` does not dispatch.** It yields `$x`; use `[apply $x]`.
 > - **Namespaces are values** built with `namespace name { ... }`;
 >   `proc a::b` outside one is an error. **No** `namespace eval`!

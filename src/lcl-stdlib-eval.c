@@ -518,9 +518,9 @@ static int parse_unquote_word(const char *src, size_t len, size_t pos,
     return 1;
   }
 
-  if (isalnum((unsigned char)src[i]) || src[i] == '_' || src[i] == '-') {
-    while (i < len && (lcl_name_is_char((unsigned char)src[i]) ||
-                       src[i] == ':' || src[i] == '-')) {
+  if (lcl_name_is_ref_char((unsigned char)src[i])) {
+    while (i < len &&
+           (lcl_name_is_ref_char((unsigned char)src[i]) || src[i] == ':')) {
       i++;
     }
 
