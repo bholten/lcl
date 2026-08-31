@@ -10,47 +10,8 @@ int lcl_name_is_char(int c) {
   return (lcl_name_is_start(c) || (c >= '0' && c <= '9'));
 }
 
-lcl_name_kind lcl_name_classify_n(const char *s, size_t n) {
-  size_t i = 0;
-  int nseg = 0;
-
-  if (s == NULL || n == 0) {
-    return LCL_NAME_INVALID;
-  }
-
-  for (;;) {
-    size_t seg = 0;
-
-    if (i < n && lcl_name_is_start((unsigned char)s[i])) {
-      i++;
-      seg = 1;
-
-      while (i < n && lcl_name_is_char((unsigned char)s[i])) {
-        i++;
-      }
-    }
-
-    if (!seg) {
-      return LCL_NAME_INVALID;
-    }
-
-    nseg++;
-
-    if (i == n) {
-      return (nseg > 1) ? LCL_NAME_QUALIFIED : LCL_NAME_SIMPLE;
-    }
-
-    if (i + 1 < n && s[i] == ':' && s[i + 1] == ':') {
-      i += 2;
-      continue;
-    }
-
-    return LCL_NAME_INVALID;
-  }
-}
-
-lcl_name_kind lcl_name_classify(const char *s) {
-  return s ? lcl_name_classify_n(s, strlen(s)) : LCL_NAME_INVALID;
+int lcl_name_is_ref_char(int c) {
+  return (lcl_name_is_char(c) || c == '-' || c == '?' || c == '!');
 }
 
 const char *lcl_name_check_ref(const char *s, size_t n) {
@@ -79,7 +40,7 @@ const char *lcl_name_check_ref(const char *s, size_t n) {
     }
 
     if (!lcl_name_is_start((unsigned char)s[i])) {
-      if (lcl_name_is_char((unsigned char)s[i])) {
+      if (lcl_name_is_ref_char((unsigned char)s[i])) {
         return "name segment must start with a letter or '_'"; /* ${a::1b} */
       }
 
@@ -88,7 +49,7 @@ const char *lcl_name_check_ref(const char *s, size_t n) {
 
     i++;
 
-    while (i < n && lcl_name_is_char((unsigned char)s[i])) {
+    while (i < n && lcl_name_is_ref_char((unsigned char)s[i])) {
       i++;
     }
 

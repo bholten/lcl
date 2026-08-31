@@ -2146,6 +2146,13 @@ static int test_issue67_compile_ex_msg_and_line(void) {
       {"let x ${foo::1bad}\n",                         "name segment must start with a letter or '_'",
        1                                                                                                },
       {"let x ${foo bar}\n",                           "invalid character in variable name",           1},
+      {"let x ${-foo}\n",
+       "name segment must start with a letter or '_'",
+       1                                                                                                },
+      {"let x ${foo::-x}\n",
+       "name segment must start with a letter or '_'",
+       1                                                                                                },
+      {"let x ${+}\n",                                 "invalid character in variable name",           1},
       {"let x ${fo\no}\n",                             "invalid character in variable name",           1},
   };
   size_t i;

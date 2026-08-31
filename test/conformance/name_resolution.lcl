@@ -584,3 +584,71 @@ Test::suite "literal container syntax dispatches to globally-referenced names" {
         Test::eq #{a 1 b 2 c 3} $bar
     }
 }
+
+namespace nx-ext {
+    let empty? 7
+    let big-count 8
+}
+
+Test::suite "Extended reference names" {
+    Test::case "kebab let is readable via braces" {
+        let foo-bar 42
+        Test::eq ${foo-bar} 42
+    }
+
+    Test::case "predicate and mutator spellings" {
+        let done? 1
+        let bump! 2
+        Test::eq ${done?} 1
+        Test::eq ${bump!} 2
+    }
+
+    Test::case "grammar is lexical, not stylistic" {
+        let foo- 1
+        let foo--bar 2
+        let foo!?bar 3
+        Test::eq ${foo-} 1
+        Test::eq ${foo--bar} 2
+        Test::eq ${foo!?bar} 3
+    }
+
+    Test::case "qualification composes with extended segments" {
+        Test::eq ${nx-ext::empty?} 7
+        Test::eq ${nx-ext::big-count} 8
+    }
+
+    Test::case "bare dollar stays POSIX-shaped" {
+        let foo 1
+        let foo-bar 99
+        Test::eq "$foo-bar" "1-bar"
+        let user "bob"
+        Test::eq "$user?" "bob?"
+    }
+
+    Test::case "kebab proc dispatches and substitutes" {
+        proc add-one {n} { + $n 1 }
+        Test::eq [add-one 41] 42
+        Test::eq [apply ${add-one} 1] 2
+    }
+
+    Test::case "operators are binding names, not reference names" {
+        Test::eq [catch { eval "puts \${+}" } r e] 1
+    }
+
+    Test::case "segments must start with a letter or underscore" {
+        Test::eq [catch { eval "puts \${-foo}" } r e] 1
+        Test::eq [catch { eval "puts \${foo::-x}" } r e] 1
+        Test::eq [catch { eval "puts \${1-up}" } r e] 1
+    }
+
+    Test::case "empty segments stay invalid, root form stays valid" {
+        Test::eq [catch { eval "puts \${foo-bar::}" } r e] 1
+        Test::eq [catch { eval "puts \${a::::b}" } r e] 1
+        Test::eq [catch { ${::nx-ext} } r e] 0
+    }
+
+    Test::case "quasiquote braced unquote reaches extended names" {
+        let qq-val 5
+        Test::eq [quasiquote {a ,${qq-val} b}] "a 5 b"
+    }
+}

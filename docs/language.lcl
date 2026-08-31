@@ -708,6 +708,35 @@
 ;;; lexer and avoids issues with variable substitution when
 ;;; interoperating with shells.
 ;;;
+;;; 8. **Three name classes.** *Binding names* are nearly
+;;;    unrestricted: `let foo-bar 42`, `proc empty? ...`, even
+;;;    operators like `+` -- binding forms do not own separate name
+;;;    grammars, so `proc f? ...` and `let f? [lambda ...]` are the
+;;;    same thing. *Reference names* are what braced substitution
+;;;    `${name}` accepts: segments starting with a letter or `_`,
+;;;    continuing with letters, digits, `_`, `-`, `?`, `!`, joined by
+;;;    `::`. The grammar is lexical, not stylistic -- `${foo--bar}`
+;;;    and `${a!?b}` are valid; typography is your call. *Bare names*
+;;;    `$name` are a POSIX-shell-shaped shorthand
+;;;    (letters/digits/`_` only, one segment); `-`, `?`, `!` end a
+;;;    bare name, always. Operators are binding names but not
+;;;    reference names: reach `+` with `apply` or `getvar`.
+;;;
+;;; Examples:
+;;; >> let max-len 42
+;;; >> ${max-len}
+;;; 42
+;;; >> "$max-len"
+;;; !! undefined variable "max"
+;;; >> let done? 1
+;;; >> ${done?}
+;;; 1
+;;; >> proc add-one {n} { + $n 1 }
+;;; >> apply ${add-one} 41
+;;; 42
+;;; >> ${+}
+;;; !! invalid character in variable name
+;;;
 ;;; ### Import
 ;;;
 ;;; The `import` command copies bindings from a namespace into the
