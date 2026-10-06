@@ -225,6 +225,61 @@ Test::suite "compile errors carry a message" {
     }
 }
 
+proc quoting_compile_err {src} {
+    let r [catch { Lex::commands $src } res err]
+    if [== $r 0] { return "" }
+    $err
+}
+
+Test::suite "a word has one quoting form" {
+    ;; The first character fixes a word's quoting form; quoted, braced
+    ;; and container-literal forms must occupy the entire word, and an
+    ;; unescaped quote inside a bare word is reserved (mistaken quoting
+    ;; is far likelier than literal data). Every case here used to be
+    ;; accepted silently: the bare prefix of `a="b"` was dropped and the
+    ;; others split into two words. Sources are double-quoted: a braced
+    ;; body is compiled with this file, so malformed text cannot sit in one.
+    Test::case "quote inside an unquoted word is an error" {
+        Test::eq [quoting_compile_err "puts a=\"b\""] {Lex::commands: unexpected '"' inside unquoted word (quote the whole word, "--flag=$x", or escape it, a\"b) (line 1)}
+        Test::eq [quoting_compile_err "puts --flag=\"\$x\""] {Lex::commands: unexpected '"' inside unquoted word (quote the whole word, "--flag=$x", or escape it, a\"b) (line 1)}
+    }
+
+    Test::case "characters after a closing quote are an error" {
+        Test::eq [quoting_compile_err "puts \"e\"f"] {Lex::commands: characters after closing '"' (a quoted string must form a complete word) (line 1)}
+        Test::eq [quoting_compile_err "puts \"e\"\[f]"] {Lex::commands: characters after closing '"' (a quoted string must form a complete word) (line 1)}
+    }
+
+    Test::case "characters after a closing brace are an error" {
+        Test::eq [quoting_compile_err "puts {a}b"] "Lex::commands: characters after closing '\}' (a braced string must form a complete word) (line 1)"
+    }
+
+    Test::case "characters after a container literal are an error" {
+        Test::eq [quoting_compile_err "puts (a)b"] {Lex::commands: characters after closing ')' (a list literal must form a complete word) (line 1)}
+        Test::eq [quoting_compile_err "puts #{a 1}b"] "Lex::commands: characters after closing '\}' (a dict literal must form a complete word) (line 1)"
+    }
+
+    Test::case "error line is the line of the offending word" {
+        Test::eq [quoting_compile_err "puts ok\nputs {a}b"] "Lex::commands: characters after closing '\}' (a braced string must form a complete word) (line 2)"
+    }
+
+    Test::case "escaped quote and embedded brace stay ordinary data" {
+        Test::eq [len a\"b] 3
+        Test::eq [len a{b}] 4
+    }
+
+    Test::case "bracket pieces still concatenate within a bare word" {
+        Test::eq [len a[len xy]c] 3
+        Test::eq [len [len xy]c] 2
+    }
+
+    Test::case "a complete quoted or braced word may end at any delimiter" {
+        Test::eq [quoting_compile_err {puts "a";puts {b}}] ""
+        Test::eq [quoting_compile_err {puts ["a"] [{b}]}] ""
+        Test::eq [quoting_compile_err "puts \"a\"\nputs {b}\t"] ""
+        Test::eq [quoting_compile_err {puts @"a" @{b} @(c)}] ""
+    }
+}
+
 Test::suite "unknown bare identifier at head errors (no self-quote)" {
     Test::case "unknown bare id as one-word command errors" {
         let r [catch { i74_no_such_cmd } res err]
