@@ -1075,6 +1075,26 @@
 ;;; `list`/`dict` explicitly, so a local binding called `list` or `dict`
 ;;; cannot hijack them.
 ;;;
+;;; **A word has one quoting form.** The first character decides it: a
+;;; word is bare, double-quoted, braced, or a `(...)`/`#{...}` literal,
+;;; and a quoted, braced, or literal form must occupy the entire word.
+;;; Characters after the closing delimiter are a compile error (`"a"b`,
+;;; `{a}b`, `(a)b`), and an unescaped `"` inside a bare word is also an
+;;; error, because it is almost always an attempt at quoting
+;;; (`--flag="$x"`) rather than data. Write `"--flag=$x"` to interpolate
+;;; the whole word, or `a\"b` for a literal quote. A `{` inside a bare
+;;; word stays ordinary data (`a{b}`), and `[...]` pieces concatenate
+;;; freely (`[f]suffix`). Lcl does not currently support shell-style
+;;; concatenation of adjacent quoted and unquoted fragments.
+;;;
+;;; Examples:
+;;; >> len a\"b
+;;; 3
+;;; >> len a{b}
+;;; 4
+;;; >> catch { eval {puts "a"b} } r e; [$e]
+;;; "characters after closing '\"' (a quoted string must form a complete word)"
+;;;
 ;;; Examples:
 ;;; >> let qa 7
 ;;; >> {$qa [+ 1 2]}

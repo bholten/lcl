@@ -290,6 +290,19 @@ static int scan_sub_literal(lcl_scan *sc, lcl_word *w, const char *prefix,
   return 1;
 }
 
+static int at_word_end(const lcl_scan *sc) {
+  char c;
+
+  if (sc->i >= sc->len) {
+    return 1;
+  }
+
+  c = sc->s[sc->i];
+
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ';' ||
+         c == ']';
+}
+
 static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   int in_quotes = 0;
   long quote_line = 0;
@@ -309,6 +322,13 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
       return -1;
     }
 
+    if (!at_word_end(sc)) {
+      return scan_fail(sc,
+                       "characters after closing '}' (a braced string must "
+                       "form a complete word)",
+                       sc->line);
+    }
+
     if (!lcl_word_add_lit(w, sc->s + start, (size_t)(sc->i - start - 1))) {
       return scan_fail(sc, "out of memory", sc->line);
     }
@@ -324,14 +344,38 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
   /* () list literal - desugars to [::list ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '(') {
     sc->i++;
-    return scan_sub_literal(sc, w, "::list ", '(', ')');
+
+    if (scan_sub_literal(sc, w, "::list ", '(', ')') < 0) {
+      return -1;
+    }
+
+    if (!at_word_end(sc)) {
+      return scan_fail(sc,
+                       "characters after closing ')' (a list literal must "
+                       "form a complete word)",
+                       sc->line);
+    }
+
+    return 1;
   }
 
   /* #{} dict literal - desugars to [::dict ...] */
   if (sc->i < sc->len && sc->s[sc->i] == '#' && sc->i + 1 < sc->len &&
       sc->s[sc->i + 1] == '{') {
     sc->i += 2;
-    return scan_sub_literal(sc, w, "::dict ", '{', '}');
+
+    if (scan_sub_literal(sc, w, "::dict ", '{', '}') < 0) {
+      return -1;
+    }
+
+    if (!at_word_end(sc)) {
+      return scan_fail(sc,
+                       "characters after closing '}' (a dict literal must "
+                       "form a complete word)",
+                       sc->line);
+    }
+
+    return 1;
   }
 
   if (sc->i < sc->len && sc->s[sc->i] == '"') {
@@ -488,14 +532,21 @@ static int scan_word_pieces(lcl_scan *sc, lcl_word *w) {
         sc->i++;
         in_quotes = 0;
         start = sc->i;
+
+        if (!at_word_end(sc)) {
+          return scan_fail(sc,
+                           "characters after closing '\"' (a quoted string "
+                           "must form a complete word)",
+                           sc->line);
+        }
+
         break;
-      } else {
-        sc->i++;
-        in_quotes = 1;
-        quote_line = sc->line;
-        start = sc->i;
-        continue;
       }
+
+      return scan_fail(sc,
+                       "unexpected '\"' inside unquoted word (quote the whole "
+                       "word, \"--flag=$x\", or escape it, a\\\"b)",
+                       sc->line);
     }
 
     if (c == '\\') {
