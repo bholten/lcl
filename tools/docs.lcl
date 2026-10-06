@@ -322,11 +322,15 @@ namespace DocSite {
         $out
     }
 
-    proc _write_html {md_path html_path title} {
-        Sh::run (pandoc -s -f markdown -t html --metadata "pagetitle=$title" -o $html_path $md_path)
+    proc _write_html {md_path html_path title (meta "")} {
+        if $meta {
+            Sh::run (pandoc -s -f markdown -t html --metadata "pagetitle=$title" -V "header-includes=$meta" -o $html_path $md_path)
+        } else {
+            Sh::run (pandoc -s -f markdown -t html --metadata "pagetitle=$title" -o $html_path $md_path)
+        }
     }
 
-    proc _emit {out p md html} {
+    proc _emit {out p md html (meta "")} {
         let dir [get $p dir]
         let name [get $p name]
         var base $out
@@ -342,7 +346,7 @@ namespace DocSite {
         Io::write_file $md_path "[_nav $dir][String::trim $md]\n"
 
         if $html {
-            _write_html $md_path $html_path $name
+            _write_html $md_path $html_path $name $meta
             puts "wrote $html_path"
         } else {
             puts "wrote $md_path"
@@ -395,7 +399,10 @@ namespace DocSite {
         set! index_md "$index_md\n<a id=\"sec-packages\"></a>\n\n## Packages\n\n[_section_list $pgs packages $summaries]"
         set! index_md "$index_md\n<a id=\"sec-lib\"></a>\n\n## Libraries\n\n[_section_list $pgs lib $summaries]"
 
-        _emit $out #{dir {} name index href "index.html"} $index_md $html
+        let google_tag {<meta name="google-site-verification" content="4ZRhCiV-VLnABSwH0eG_i-6-4uWjn2QFeEe3JkTGFKM" />}
+
+        _emit $out #{dir {} name index href "index.html"} $index_md $html $google_tag
+
         + $n 1
     }
 
