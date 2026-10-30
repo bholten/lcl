@@ -56,8 +56,8 @@ static char *read_file(const char *path) {
   return buf;
 }
 
-lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
-                               lcl_value **out) {
+static lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
+                                      lcl_value **out) {
   const char *filename;
   const char *file_perm;
   FILE *handle;
@@ -88,8 +88,8 @@ lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
-                                lcl_value **out) {
+static lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
+                                       lcl_value **out) {
   FILE *handle = NULL;
   (void)interp;
 
@@ -119,8 +119,8 @@ lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_is_eof(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_is_eof(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   FILE *handle = NULL;
   (void)interp;
 
@@ -193,8 +193,8 @@ lcl_return_code c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
+                                  lcl_value **out) {
   FILE *handle = NULL;
   const char *str;
 
@@ -223,8 +223,8 @@ lcl_return_code c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
-                               lcl_value **out) {
+static lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
+                                      lcl_value **out) {
   char *contents = NULL;
   const char *path;
 
@@ -252,8 +252,8 @@ lcl_return_code c_io_read_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
-                                lcl_value **out) {
+static lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
+                                       lcl_value **out) {
   const char *path;
   const char *contents;
   size_t len;
@@ -296,8 +296,8 @@ lcl_return_code c_io_write_file(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -306,8 +306,8 @@ lcl_return_code c_io_stdout(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -316,8 +316,8 @@ lcl_return_code c_io_stderr(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv,
+                                  lcl_value **out) {
   (void)interp;
   (void)argc;
   (void)argv;
@@ -326,8 +326,8 @@ lcl_return_code c_io_stdin(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_flush(lcl_interp *interp, int argc, lcl_value **argv,
-                           lcl_value **out) {
+static lcl_return_code c_io_flush(lcl_interp *interp, int argc, lcl_value **argv,
+                                  lcl_value **out) {
   FILE *handle = NULL;
 
   (void)interp;
@@ -353,8 +353,8 @@ lcl_return_code c_io_flush(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_OK;
 }
 
-lcl_return_code c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   const char *env;
   const char *env_val;
 
@@ -378,8 +378,8 @@ lcl_return_code c_io_getenv(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Io::remove path - remove file */
-lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   const char *path;
 
   if (argc < 1) {
@@ -399,8 +399,8 @@ lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Io::rename old new - rename/move file or directory */
-lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
-                            lcl_value **out) {
+static lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
+                                   lcl_value **out) {
   const char *old_path;
   const char *new_path;
 
@@ -425,8 +425,8 @@ lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **argv,
 }
 
 /* Io::copy src dst - copy file contents */
-lcl_return_code c_io_copy(lcl_interp *interp, int argc, lcl_value **argv,
-                          lcl_value **out) {
+static lcl_return_code c_io_copy(lcl_interp *interp, int argc, lcl_value **argv,
+                                 lcl_value **out) {
   const char *src_path;
   const char *dst_path;
   FILE *src;
