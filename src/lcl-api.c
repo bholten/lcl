@@ -173,6 +173,39 @@ lcl_result lcl_define_take(lcl_interp *interp, const char *name,
   return lcl_env_let_take(&interp->env, name, value);
 }
 
+lcl_result lcl_define_argv(lcl_interp *interp, int argc,
+                           const char *const *argv) {
+  lcl_value *list;
+  int i;
+
+  if (!interp || argc < 0 || (argc > 0 && !argv)) {
+    return LCL_ERROR;
+  }
+
+  list = lcl_list_new();
+
+  if (!list) {
+    return LCL_ERROR;
+  }
+
+  for (i = 0; i < argc; i++) {
+    lcl_value *s = argv[i] ? lcl_string_new(argv[i]) : NULL;
+
+    if (!s || lcl_list_push(&list, s) != LCL_OK) {
+      if (s) {
+        lcl_ref_dec(s);
+      }
+
+      lcl_ref_dec(list);
+      return LCL_ERROR;
+    }
+
+    lcl_ref_dec(s);
+  }
+
+  return lcl_env_let_take(&interp->env, "argv", list);
+}
+
 lcl_result lcl_get(lcl_interp *interp, const char *name, lcl_value **out) {
   if (!interp || !name || !out) {
     return LCL_ERROR;

@@ -26,6 +26,10 @@
 extern void lcl_clear_error(lcl_interp *interp);
 extern lcl_type lcl_value_type_of(const lcl_value *value);
 extern lcl_result lcl_dict_keys(const lcl_value *dict, lcl_value **out);
+extern lcl_result lcl_get(lcl_interp *interp, const char *name,
+                          lcl_value **out);
+extern lcl_result lcl_define_argv(lcl_interp *interp, int argc,
+                                  const char *const *argv);
 extern void lcl_set_step_hook(lcl_interp *interp,
                               int (*fn)(lcl_interp *, void *), void *userdata,
                               unsigned long interval);
@@ -1002,6 +1006,62 @@ static int test_version_surface(void) {
                                         LCL_VERSION_MINOR * 100 +
                                         LCL_VERSION_PATCH);
 
+  return 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * lcl_define_argv — the public helper behind the `$argv` convention.
+ * Binds a list of strings under the fixed name `argv`; an empty slice
+ * binds an empty list; NULL interp / NULL argv with argc > 0 are
+ * rejected without binding anything.
+ * ---------------------------------------------------------------------------
+ */
+static int test_define_argv(void) {
+  lcl_interp *interp = lcl_interp_new();
+  const char *args[] = {"alpha", "key=value", "--flag"};
+  lcl_value *out = NULL;
+  lcl_value *elem = NULL;
+  int i;
+
+  ASSERT_TRUE(interp != NULL);
+  lcl_register_core(interp);
+
+  ASSERT_TRUE(lcl_define_argv(interp, 3, args) == LCL_OK);
+  ASSERT_TRUE(lcl_get(interp, "argv", &out) == LCL_OK);
+  ASSERT_TRUE(out != NULL);
+  ASSERT_TRUE(lcl_value_type_of(out) == LCL_LIST);
+  ASSERT_TRUE(lcl_list_len(out) == 3);
+
+  for (i = 0; i < 3; i++) {
+    ASSERT_TRUE(lcl_list_get(out, (size_t)i, &elem) == LCL_OK);
+    ASSERT_TRUE(lcl_value_type_of(elem) == LCL_STRING);
+    ASSERT_STREQ(lcl_value_to_string(elem), args[i]);
+    lcl_ref_dec(elem);
+  }
+
+  lcl_ref_dec(out);
+  out = NULL;
+
+  /* Script-side view: the same binding is reachable as `$argv`. */
+  ASSERT_TRUE(lcl_eval_string(interp, "get $argv 1", &out) == LCL_RC_OK);
+  ASSERT_STREQ(lcl_value_to_string(out), "key=value");
+  lcl_ref_dec(out);
+  out = NULL;
+
+  /* Rebinding with an empty slice yields an empty list, not an error. */
+  ASSERT_TRUE(lcl_define_argv(interp, 0, NULL) == LCL_OK);
+  ASSERT_TRUE(lcl_get(interp, "argv", &out) == LCL_OK);
+  ASSERT_TRUE(lcl_value_type_of(out) == LCL_LIST);
+  ASSERT_TRUE(lcl_list_len(out) == 0);
+  lcl_ref_dec(out);
+  out = NULL;
+
+  /* Contract violations are rejected cleanly. */
+  ASSERT_TRUE(lcl_define_argv(NULL, 3, args) == LCL_ERROR);
+  ASSERT_TRUE(lcl_define_argv(interp, 3, NULL) == LCL_ERROR);
+  ASSERT_TRUE(lcl_define_argv(interp, -1, args) == LCL_ERROR);
+
+  lcl_interp_free(interp);
   return 1;
 }
 
@@ -2146,12 +2206,8 @@ static int test_issue67_compile_ex_msg_and_line(void) {
       {"let x ${foo::1bad}\n",                         "name segment must start with a letter or '_'",
        1                                                                                                },
       {"let x ${foo bar}\n",                           "invalid character in variable name",           1},
-      {"let x ${-foo}\n",
-       "name segment must start with a letter or '_'",
-       1                                                                                                },
-      {"let x ${foo::-x}\n",
-       "name segment must start with a letter or '_'",
-       1                                                                                                },
+      {"let x ${-foo}\n",                              "name segment must start with a letter or '_'", 1},
+      {"let x ${foo::-x}\n",                           "name segment must start with a letter or '_'", 1},
       {"let x ${+}\n",                                 "invalid character in variable name",           1},
       {"let x ${fo\no}\n",                             "invalid character in variable name",           1},
   };
@@ -3141,6 +3197,7 @@ int run_test(void) {
   RUN(test_issue75_numeric_text);
   RUN(test_issue59_eval_program_cur_file_uaf);
   RUN(test_version_surface);
+  RUN(test_define_argv);
   RUN(test_issue37_push_command_leak);
   RUN(test_issue39_import_cleared_cell);
   RUN(test_issue40_namespace_max_depth_leak);

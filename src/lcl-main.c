@@ -106,6 +106,7 @@ static char *read_stdin(void) {
   size_t capacity = 4096;
   size_t len = 0;
   char *buf = (char *)malloc(capacity);
+
   if (!buf) {
     return NULL;
   }
@@ -127,7 +128,9 @@ static char *read_stdin(void) {
       buf = new_buf;
     }
   }
+
   buf[len] = '\0';
+
   return buf;
 }
 
@@ -232,25 +235,17 @@ static lcl_return_code c_exit(lcl_interp *interp, int argc, lcl_value **argv,
   return LCL_RC_ERR;
 }
 
-/* `argv`: the arguments after the script (or after the -c code). */
-static void define_argv(lcl_interp *interp, int argc, char **argv, int from) {
-  lcl_value *list = lcl_list_new();
-  int i;
+static int define_script_argv(lcl_interp *interp, int argc, char **argv,
+                              int from) {
+  const char *const *rest = (const char *const *)(argv + from);
+  int n = argc > from ? argc - from : 0;
 
-  if (!list) {
-    return;
+  if (lcl_define_argv(interp, n, rest) != LCL_OK) {
+    fprintf(stderr, "Error: Failed to bind argv\n");
+    return 0;
   }
 
-  for (i = from; i < argc; i++) {
-    lcl_value *s = lcl_string_new(argv[i]);
-
-    if (s) {
-      lcl_list_push(&list, s);
-      lcl_ref_dec(s);
-    }
-  }
-
-  lcl_define_take(interp, "argv", list);
+  return 1;
 }
 
 static lcl_interp *create_interp(void) {
@@ -389,7 +384,11 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    define_argv(interp, argc, argv, 3);
+    if (!define_script_argv(interp, argc, argv, 3)) {
+      lcl_interp_free(interp);
+      return 1;
+    }
+
     rc = lcl_eval_string(interp, argv[2], &result);
   }
 
@@ -402,11 +401,20 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    define_argv(interp, argc, argv, 2);
+    if (!define_script_argv(interp, argc, argv, 2)) {
+      free(src);
+      lcl_interp_free(interp);
+      return 1;
+    }
+
     rc = lcl_eval_string(interp, src, &result);
     free(src);
   } else {
-    define_argv(interp, argc, argv, 2);
+    if (!define_script_argv(interp, argc, argv, 2)) {
+      lcl_interp_free(interp);
+      return 1;
+    }
+
     rc = lcl_eval_file(interp, argv[1], &result);
   }
 
