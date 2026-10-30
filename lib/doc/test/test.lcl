@@ -468,6 +468,57 @@ proc dt_k {} { 0 }}
         Test::eq [get $r pass] 2
         Test::eq [get $r fail] 0
     }
+
+    Test::case "~~ parses as an approx expectation" {
+        let ex [get [Doc::parse "x\n\nExamples:\n>> + 0.1 0.2\n~~ 0.3"] examples]
+        Test::eq [len $ex] 1
+        Test::eq [get [get $ex 0] kind] "approx"
+        Test::eq [get [get $ex 0] expect] "0.3"
+    }
+
+    Test::case "~~ accepts last-ulp differences and ints" {
+        let src {;;; Examples:
+;;; >> + 0.1 0.2
+;;; ~~ 0.3
+;;; >> float 12.801827480081469
+;;; ~~ 12.80182748008147
+;;; >> + 2 2
+;;; ~~ 4.0
+;;; >> - 1.5 1.5
+;;; ~~ 0
+proc dt_l {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 4
+        Test::eq [get $r fail] 0
+    }
+
+    Test::case "~~ rejects a wrong digit, zero vs nonzero, and non-numbers" {
+        let src {;;; Examples:
+;;; >> float 12.80182748008147
+;;; ~~ 12.80182748108147
+;;; >> float 1e-15
+;;; ~~ 0
+;;; >> String::upper "hi"
+;;; ~~ 1
+;;; >> + 1 1
+;;; ~~ two
+proc dt_m {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r pass] 0
+        Test::eq [get $r fail] 4
+        let f [get [get $r failures] 0]
+        Test::eq [get $f expect] "~~ 12.80182748108147"
+        Test::eq [get $f got] "12.80182748008147"
+    }
+
+    Test::case "~~ still fails on an error" {
+        let src {;;; Examples:
+;;; >> + 1 x
+;;; ~~ 2
+proc dt_n {} { 0 }}
+        let r [Doc::doctest [Doc::extract $src]]
+        Test::eq [get $r fail] 1
+    }
 }
 
 Test::suite "Doc self-hosting" {

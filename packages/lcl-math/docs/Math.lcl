@@ -112,7 +112,7 @@ namespace Math {
     ;;; >> Math::asin 0
     ;;; 0
     ;;; >> Math::asin 1
-    ;;; 1.5707963267948966
+    ;;; ~~ 1.5707963267948966
     ;;; >> Math::isnan [Math::asin 2]
     ;;; 1
     proc asin {x} {}
@@ -123,7 +123,7 @@ namespace Math {
     ;;; >> Math::acos 1
     ;;; 0
     ;;; >> Math::acos -1
-    ;;; 3.141592653589793
+    ;;; ~~ 3.141592653589793
     proc acos {x} {}
 
     ;;; Arc tangent of `x`, in `[-pi/2, pi/2]`.
@@ -132,7 +132,7 @@ namespace Math {
     ;;; >> Math::atan 0
     ;;; 0
     ;;; >> Math::atan 1
-    ;;; 0.7853981633974483
+    ;;; ~~ 0.7853981633974483
     proc atan {x} {}
 
     ;;; Arc tangent of `y/x` using the signs of both to pick the
@@ -140,11 +140,11 @@ namespace Math {
     ;;;
     ;;; Examples:
     ;;; >> Math::atan2 1 1
-    ;;; 0.7853981633974483
+    ;;; ~~ 0.7853981633974483
     ;;; >> Math::atan2 0 -1
-    ;;; 3.141592653589793
+    ;;; ~~ 3.141592653589793
     ;;; >> Math::atan2 -1 0
-    ;;; -1.5707963267948966
+    ;;; ~~ -1.5707963267948966
     proc atan2 {y x} {}
 
     ;;; Hyperbolic sine of `x`.
@@ -153,7 +153,7 @@ namespace Math {
     ;;; >> Math::sinh 0
     ;;; 0
     ;;; >> Math::sinh 1
-    ;;; 1.1752011936438014
+    ;;; ~~ 1.1752011936438014
     proc sinh {x} {}
 
     ;;; Hyperbolic cosine of `x`.
@@ -162,7 +162,7 @@ namespace Math {
     ;;; >> Math::cosh 0
     ;;; 1
     ;;; >> Math::cosh 1
-    ;;; 1.5430806348152437
+    ;;; ~~ 1.5430806348152437
     proc cosh {x} {}
 
     ;;; Hyperbolic tangent of `x`.
@@ -171,7 +171,7 @@ namespace Math {
     ;;; >> Math::tanh 0
     ;;; 0
     ;;; >> Math::tanh 1
-    ;;; 0.7615941559557649
+    ;;; ~~ 0.7615941559557649
     proc tanh {x} {}
 
     ;;; Inverse hyperbolic sine of `x`.
@@ -180,7 +180,7 @@ namespace Math {
     ;;; >> Math::asinh 0
     ;;; 0
     ;;; >> Math::asinh 1
-    ;;; 0.881373587019543
+    ;;; ~~ 0.881373587019543
     proc asinh {x} {}
 
     ;;; Inverse hyperbolic cosine of `x`; NaN below 1.
@@ -189,7 +189,7 @@ namespace Math {
     ;;; >> Math::acosh 1
     ;;; 0
     ;;; >> Math::acosh 2
-    ;;; 1.3169578969248166
+    ;;; ~~ 1.3169578969248166
     ;;; >> Math::isnan [Math::acosh 0]
     ;;; 1
     proc acosh {x} {}
@@ -201,7 +201,7 @@ namespace Math {
     ;;; >> Math::atanh 0
     ;;; 0
     ;;; >> Math::atanh 0.5
-    ;;; 0.5493061443340548
+    ;;; ~~ 0.5493061443340548
     ;;; >> Math::isinf [Math::atanh 1]
     ;;; 1
     proc atanh {x} {}
@@ -212,7 +212,7 @@ namespace Math {
     ;;; >> Math::exp 0
     ;;; 1
     ;;; >> Math::exp 1
-    ;;; 2.718281828459045
+    ;;; ~~ 2.718281828459045
     ;;; >> Math::isinf [Math::exp 1000]
     ;;; 1
     proc exp {x} {}
@@ -234,7 +234,7 @@ namespace Math {
     ;;; >> Math::log [Math::e]
     ;;; 1
     ;;; >> Math::log 10
-    ;;; 2.302585092994046
+    ;;; ~~ 2.302585092994046
     ;;; >> Math::isinf [Math::log 0]
     ;;; 1
     ;;; >> Math::isnan [Math::log -1]
@@ -301,7 +301,7 @@ namespace Math {
     ;;; >> Math::cbrt -8
     ;;; -2
     ;;; >> Math::cbrt 2
-    ;;; 1.2599210498948734
+    ;;; ~~ 1.2599210498948734
     proc cbrt {x} {}
 
     ;;; `sqrt(x*x + y*y)` computed without intermediate overflow.
@@ -312,7 +312,7 @@ namespace Math {
     ;;; >> Math::hypot 5 12
     ;;; 13
     ;;; >> Math::hypot 1 1
-    ;;; 1.4142135623730951
+    ;;; ~~ 1.4142135623730951
     proc hypot {x y} {}
 
     ;;; Round `x` up to the nearest integral value.
@@ -386,7 +386,7 @@ namespace Math {
     ;;; >> Math::erf 0
     ;;; 0
     ;;; >> Math::erf 1
-    ;;; 0.8427007929497149
+    ;;; ~~ 0.8427007929497149
     ;;; >> Math::erf 10
     ;;; 1
     proc erf {x} {}
@@ -397,7 +397,7 @@ namespace Math {
     ;;; >> Math::erfc 0
     ;;; 1
     ;;; >> Math::erfc 1
-    ;;; 0.15729920705028513
+    ;;; ~~ 0.15729920705028513
     proc erfc {x} {}
 
     ;;; Gamma function of `x`; `tgamma (n+1)` is `n!` for
@@ -409,7 +409,7 @@ namespace Math {
     ;;; >> Math::tgamma 10
     ;;; 362880
     ;;; >> Math::tgamma 0.5
-    ;;; 1.772453850905516
+    ;;; ~~ 1.772453850905516
     ;;; >> Math::isinf [Math::tgamma 0]
     ;;; 1
     proc tgamma {x} {}
@@ -420,9 +420,9 @@ namespace Math {
     ;;; >> Math::lgamma 1
     ;;; 0
     ;;; >> Math::lgamma 3
-    ;;; 0.6931471805599453
+    ;;; ~~ 0.6931471805599453
     ;;; >> Math::lgamma 10
-    ;;; 12.80182748008147
+    ;;; ~~ 12.80182748008147
     proc lgamma {x} {}
 
     ;;; Return 1 if `x` is NaN, else 0.

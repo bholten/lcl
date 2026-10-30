@@ -30,7 +30,9 @@
 ;;;
 ;;; Each `>>` line is a command; the following non-blank line is the
 ;;; expected `repr` of its result (`!!` expects an error whose message
-;;; contains the given text; no expectation just checks it runs).
+;;; contains the given text; `~~` expects a number within a relative
+;;; 1e-13 of the given one, for results that depend on the host's
+;;; libm; no expectation just checks it runs).
 ;;; Consecutive `>>` lines join into one multi-line command while the
 ;;; accumulated text fails to parse (an open `{`, `"`, or `[`); a
 ;;; line that parses complete closes the command, so single-line
@@ -51,6 +53,26 @@ namespace Doc {
 
     proc _starts {s p} {
         _streq [String::range $s 0 [String::length $p]] $p
+    }
+
+    ;; Numeric closeness for `~~` expectations. A relative 1e-13 is
+    ;; hundreds of ulps, so it absorbs the last-digit disagreements
+    ;; between libm implementations while a wrong digit anywhere a
+    ;; reader would look still fails. Zero only matches zero.
+    proc _approx {got want} {
+        var g 0
+        var w 0
+
+        if [catch {set! g [float $got]; set! w [float $want]}] { return 0 }
+
+        var d [- $g $w]
+        var scale $w
+
+        if [< $d 0] { set! d [- 0 $d] }
+        if [< $scale 0] { set! scale [- 0 $scale] }
+        if [== $scale 0] { return [== $d 0] }
+
+        <= [/ $d $scale] 1e-13
     }
 
     proc _lines {text} {
@@ -452,11 +474,16 @@ namespace Doc {
                         set! ex [put $ex kind "error"]
                         set! ex [put $ex expect [String::trim [String::range $t 2 [String::length $t]]]]
                     } else {
-                        if [== [get $ex kind] "value"] {
-                            set! ex [put $ex expect "[get $ex expect]\n$t"]
+                        if [_starts $t "~~"] {
+                            set! ex [put $ex kind "approx"]
+                            set! ex [put $ex expect [String::trim [String::range $t 2 [String::length $t]]]]
                         } else {
-                            set! ex [put $ex kind "value"]
-                            set! ex [put $ex expect $t]
+                            if [== [get $ex kind] "value"] {
+                                set! ex [put $ex expect "[get $ex expect]\n$t"]
+                            } else {
+                                set! ex [put $ex kind "value"]
+                                set! ex [put $ex expect $t]
+                            }
                         }
                     }
                 }
@@ -710,7 +737,11 @@ namespace Doc {
                     if [== $_dtkind "none"] {
                         set! _dtok 1
                     } else {
-                        if [_streq $_dtgot $_dtwant] { set! _dtok 1 }
+                        if [== $_dtkind "approx"] {
+                            if [_approx $_dtgot $_dtwant] { set! _dtok 1 }
+                        } else {
+                            if [_streq $_dtgot $_dtwant] { set! _dtok 1 }
+                        }
                     }
                 } else {
                     set! _dtgot "(error) $_dterr"
@@ -724,6 +755,10 @@ namespace Doc {
 
                 if [== $_dtkind "error"] {
                     set! _dtshow "!! $_dtwant"
+                }
+
+                if [== $_dtkind "approx"] {
+                    set! _dtshow "~~ $_dtwant"
                 }
 
                 if [== $_dtkind "none"] {
