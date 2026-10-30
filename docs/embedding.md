@@ -43,6 +43,22 @@ cmake --build build
 ./build/examples/embed_example
 ```
 
+## Script arguments
+
+`lcl_define_argv` binds the `argv` convention for you: a list of
+strings under the fixed name `argv`, built from the slice you pass.
+Hand it the arguments after the script, excluding the program
+and script names, and `$argv` means the same thing in your host as it
+does under the `lcl` CLI (which is itself a caller).
+
+```c
+/* my-host [host-options] <script.lcl> [args...] */
+if (lcl_define_argv(interp, argc - i - 1,
+                    (const char *const *)(argv + i + 1)) != LCL_OK) {
+    /* allocation failure: nothing was bound */
+}
+```
+
 ## Host hooks
 
 Two host hooks cover budgets and observability. `lcl_set_step_hook`

@@ -789,6 +789,17 @@ lcl_result lcl_define_take(lcl_interp *interp, const char *name,
                            lcl_value *value);
 
 /*
+ * Bind `argv` in the current scope: a list of strings built from
+ * argv[0..argc). By convention a host passes the arguments after the
+ * script, excluding the program and script names, so `$argv` means
+ * the same thing in every Lcl host (the `lcl` CLI follows this). argc
+ * of 0 binds an empty list. Returns LCL_ERROR on a NULL interp or
+ * argv, or on allocation failure, in which case nothing is bound.
+ */
+lcl_result lcl_define_argv(lcl_interp *interp, int argc,
+                           const char *const *argv);
+
+/*
  * Get a value from the interpreter by name.
  * Supports qualified names like "ns::name".
  * The returned value has +1 refcount.
