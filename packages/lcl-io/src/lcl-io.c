@@ -147,32 +147,32 @@ lcl_return_code c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_int buff_size;
   char *buff;
 
-  (void)interp;
-
   if (argc < 2) {
+    lcl_set_error(interp, "Io::fgets: expected 2 arguments (handle size)");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_int(argv[1], &buff_size) != LCL_OK) {
+    lcl_set_error(interp, "Io::fgets: size must be an int");
     return LCL_RC_ERR;
   }
 
   if (buff_size < 2 || buff_size > INT_MAX) {
+    lcl_set_error(interp, "Io::fgets: size must be between 2 and INT_MAX");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
-      LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (!handle) {
+          LCL_OK ||
+      !handle) {
+    lcl_set_error(interp, "Io::fgets: expected an open file handle");
     return LCL_RC_ERR;
   }
 
   buff = malloc((size_t)buff_size);
 
   if (!buff) {
+    lcl_set_error(interp, "Io::fgets: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -180,6 +180,7 @@ lcl_return_code c_io_fgets(lcl_interp *interp, int argc, lcl_value **argv,
     free(buff);
 
     if (ferror(handle)) {
+      lcl_set_error(interp, "Io::fgets: read error");
       return LCL_RC_ERR;
     }
 

@@ -1,67 +1,379 @@
-;; expect_test.lcl - Tests for the lcl-expect package
+;; Tests for the Expect:: namespace.
+;;
+;; Children are `sh`, `cat` and `sleep`; pipe mode wherever a PTY adds
+;; nothing, so the suite does not depend on tty echo timing.
 
-Test::suite "expect library" {
-    Test::case "Pattern creation" {
-        let pat1 [Expect::pattern "hello"]
-        let pat2 [Expect::regex {[a-z]+}]
-        let pat3 [Expect::timeout]
-        let pat4 [Expect::eof]
-
-        assert_eq literal [Expect::pattern-kind $pat1]
-        assert_eq regex [Expect::pattern-kind $pat2]
-        assert_eq timeout [Expect::pattern-kind $pat3]
-        assert_eq eof [Expect::pattern-kind $pat4]
+Test::suite "Expect patterns" {
+    Test::case "constructors and kinds" {
+        Test::eq [Expect::pattern-kind [Expect::literal "hello"]] literal
+        Test::eq [Expect::pattern-kind [Expect::regex {[a-z]+}]] regex
+        Test::eq [Expect::pattern-kind [Expect::timeout]] timeout
+        Test::eq [Expect::pattern-kind [Expect::eof]] eof
+        Test::eq [Expect::pattern? [Expect::literal x]] 1
+        Test::eq [Expect::pattern? "x"] 0
+        Test::eq [Expect::pattern? 42] 0
     }
 
-    Test::case "Pattern matching on buffer" {
-        let buf "user@host:~$ ls -la"
-        let patterns [list "password:" "$ " "# "]
-        let r [Expect::match-buffer $buf $patterns]
-
-        assert_eq 1 [get $r matched]
-        assert_eq 1 [get $r index]
-        assert_eq user@host:~ [get $r before]
-        assert_eq {$ } [get $r match]
-        assert_eq "ls -la" [get $r after]
-    }
-
-    Test::case "PTY spawning + Send and receive" {
-        let s [Expect::spawn (cat)]
-
-        assert_eq 1 [Expect::pty? $s]
-
-        Expect::send-line $s "hello world"
-
-        let r [Expect::wait-for $s "hello"]
-
-        assert_eq 1 [get $r matched]
-        assert_eq "hello world" [String::trim [get $r data]]
-
-        Expect::send-line $s "password: secret"
-
-        let result [Expect::match [get $s handle] (
-            ("password:" [lambda {m} {
-                let d [get $m data]
-                String::trim $d
-            }])
-            ("$ " [lambda {m} { "got prompt" }])
-        ) #{timeout 2000}]
-        
-        assert_eq "password: secret" $result
-
-        Expect::close $s        
-    }
-
-    Test::case "Pipe mode spawn" {
-        let s2 [Expect::spawn (echo done) #{pty 0}]
-        assert_eq 0 [Expect::pty? $s2]
-        
-        let r [Expect::wait-for $s2 "done"]
-        assert_eq 1 [get $r matched]
-
-        Expect::close $s2
+    Test::case "constructor errors" {
+        Test::raises_with { Expect::literal "" } "must not be empty"
+        Test::raises_with { Expect::regex "" } "must not be empty"
+        Test::raises_with { Expect::regex {(} } "invalid regex"
+        Test::raises_with { Expect::literal "x" #{nocase yes} } "nocase must be an integer"
+        Test::raises_with { Expect::literal "x" "nocase"} "options must be a dict"
+        Test::raises_with { Expect::pattern-kind "x" } "expected a pattern object"
+        Test::raises_with { Expect::timeout 1 } "takes no arguments"
     }
 }
 
+Test::suite "Expect::search" {
+    Test::case "slices around a literal" {
+        let r [Expect::search "user@host:~$ ls -la" ("password:" {$ } "# ")]
+        Test::eq [get $r matched] 1
+        Test::eq [get $r index] 1
+        Test::eq [get $r before] "user@host:~"
+        Test::eq [get $r match] {$ }
+        Test::eq [get $r after] "ls -la"
+        Test::eq [get $r groups] ()
+    }
+
+    Test::case "earliest match wins, clause order breaks ties" {
+        Test::eq [get [Expect::search "ab" ("b" "a")] index] 1
+        Test::eq [get [Expect::search "ab" ("a" "ab")] index] 0
+        Test::eq [get [Expect::search "ab" ("ab" "a")] index] 0
+    }
+
+    Test::case "regex captures" {
+        let r [Expect::search "Uptime: 4 days, 3 hours" [Expect::regex {([0-9]+) days, ([0-9]+) hours}]]
+        Test::eq [get $r matched] 1
+        Test::eq [get $r groups] ("4 days, 3 hours" "4" "3")
+        ;; an optional group that did not take part is ""
+        let r2 [Expect::search "ac" [Expect::regex {a(b)?c}]]
+        Test::eq [get $r2 groups] ("ac" "")
+    }
+
+    Test::case "options" {
+        Test::eq [get [Expect::search "Hello" "hello"] matched] 0
+        Test::eq [get [Expect::search "Hello" [Expect::literal "hello" #{nocase 1}]] matched] 1
+        Test::eq [get [Expect::search "Hello" [Expect::regex "h.llo" #{nocase 1}]] matched] 1
+        Test::eq [get [Expect::search "one\ntwo" [Expect::regex {^two}]] matched] 0
+        Test::eq [get [Expect::search "one\ntwo" [Expect::regex {^two} #{newline 1}]] matched] 1
+    }
+
+    Test::case "sentinels never match text; no match" {
+        Test::eq [get [Expect::search "timeout eof" ([Expect::timeout] [Expect::eof])] matched] 0
+        Test::eq [Expect::search "nothing" "x"] #{matched 0}
+        Test::raises_with { Expect::search "x" () } "must not be empty"
+        Test::raises_with { Expect::search "x" ("") } "must not be empty"
+        Test::raises_with { Expect::search "x" (("a" "b")) } "string or pattern object"
+    }
+}
+
+Test::suite "Expect sessions (pipe mode)" {
+    Test::case "spawn validation and handle" {
+        Test::raises_with { Expect::spawn () } "non-empty argv list"
+        Test::raises_with { Expect::spawn "cat" } "non-empty argv list"
+        Test::raises_with { Expect::spawn (cat) #{timeout soon} } "timeout must be an integer"
+        Test::raises_with { Expect::spawn (cat) #{limit 0} } "limit must be positive"
+        Test::raises_with { Expect::send "not a session" "x" } "expected a session"
+
+        let s [Expect::spawn (cat) #{pty 0 timeout 1234}]
+        Test::eq [Expect::pty? $s] 0
+        Test::eq [Process::pty? [Expect::handle $s]] 0
+        Test::eq [Expect::get-timeout $s] 1234
+        Test::eq [Expect::set-timeout $s 500] 500
+        Test::eq [Expect::get-timeout $s] 500
+        Test::eq [Expect::out $s] #{}
+        Test::eq [Expect::buffer $s] ""
+        Test::eq [Expect::eof? $s] 0
+        Expect::close $s
+    }
+
+    Test::case "the buffer survives across waits" {
+        let s [Expect::spawn (sh -c {printf "alpha beta gamma\n"; sleep 0.2; printf "delta\n"}) #{pty 0}]
+        let r1 [Expect::wait-for $s "beta"]
+        Test::eq [get $r1 index] 0
+        Test::eq [get $r1 before] "alpha "
+        Test::eq [get $r1 match] "beta"
+        Test::eq [get $r1 buffer] "alpha beta"
+        Test::eq [get $r1 timeout] 0
+        Test::eq [get $r1 eof] 0
+        ;; gamma arrived in the same chunk: no new output is needed
+        let r2 [Expect::wait-for $s "gamma" #{timeout 0}]
+        Test::eq [get $r2 before] " "
+        Test::eq [Expect::buffer $s] "\n"
+        Test::eq [Expect::out $s] $r2
+        ;; delta arrives later; the newline before it is still there
+        let r3 [Expect::wait-for $s [Expect::regex {(del)(ta)}]]
+        Test::eq [get $r3 before] "\n"
+        Test::eq [get $r3 groups] ("delta" "del" "ta")
+        Expect::close $s
+    }
+
+    Test::case "a pattern list reports the index" {
+        let s [Expect::spawn (sh -c {echo "foo qux baz"}) #{pty 0}]
+        let r [Expect::wait-for $s ("bar" "qux" "baz")]
+        Test::eq [get $r index] 1
+        Test::eq [get $r match] "qux"
+        Expect::close $s
+    }
+
+    Test::case "eof: claimed by a sentinel, sticky, otherwise an error" {
+        let s [Expect::spawn (sh -c {echo hi; exit 3}) #{pty 0}]
+        let r [Expect::wait-for $s ("never" [Expect::eof])]
+        Test::eq [get $r eof] 1
+        Test::eq [get $r index] 1
+        Test::eq [get $r match] ""
+        Test::eq [Expect::eof? $s] 1
+        Test::eq [Expect::buffer $s] "hi\n"
+        Test::eq [get [Expect::wait-for $s [Expect::eof]] eof] 1
+        ;; buffered text still matches after eof
+        Test::eq [get [Expect::wait-for $s "hi"] match] "hi"
+        Test::raises_with { Expect::wait-for $s "never" } "child closed its output before matching \"never\" (buffer ends with \"\\n\")"
+        Test::raises_with { Expect::send $s "x" } "child has exited"
+        let w [Expect::close $s]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 3
+    }
+
+    Test::case "timeout: session default, per-call override, sentinel, error text" {
+        let s [Expect::spawn (sleep 5) #{pty 0 timeout 100}]
+        Test::raises_with { Expect::wait-for $s "x" } "Expect::wait-for: timed out after 100 ms waiting for \"x\" (buffer empty)"
+        Test::raises_with { Expect::wait-for $s ("x" [Expect::regex {y+}]) #{timeout 50} } "after 50 ms waiting for \"x\" | /y+/"
+        let r [Expect::wait-for $s ("x" [Expect::timeout]) #{timeout 50}]
+        Test::eq [get $r timeout] 1
+        Test::eq [get $r index] 1
+        Test::raises_with { Expect::wait-for $s "x" #{timeout "later"} } "timeout must be an integer"
+        Test::raises_with { Expect::wait-for $s "x" 50 } "options must be a dict"
+        let w [Expect::close $s #{grace 0}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w signal] 15
+    }
+
+    Test::case "a chatty child still times out and the buffer stays bounded" {
+        let s [Expect::spawn (sh -c {while :; do echo tick; done}) #{pty 0 limit 64}]
+        Test::raises_with { Expect::wait-for $s "never" #{timeout 200} } "timed out after 200 ms"
+        Test::lte [len [Expect::buffer $s]] 64
+        Test::assert [has? [Expect::buffer $s] "tick"]
+        Expect::close $s #{grace 100}
+    }
+
+    Test::case "drain returns everything so far and empties the buffer" {
+        let s [Expect::spawn (sh -c {echo one; echo two; sleep 0.3; echo three}) #{pty 0}]
+        Expect::wait-for $s "one"
+        let d [Expect::drain $s #{quiet 50}]
+        Test::eq $d "\ntwo\n"
+        Test::eq [Expect::buffer $s] ""
+        Test::eq [Expect::drain $s #{quiet 500}] "three\n"
+        Expect::close $s
+    }
+
+    Test::case "send and send-line" {
+        let s [Expect::spawn (cat) #{pty 0}]
+        Test::eq [Expect::send $s "ab"] 2
+        Test::eq [Expect::send-line $s "c"] 2
+        Test::eq [Expect::send-line $s] 1
+        Test::eq [get [Expect::wait-for $s "abc\n\n"] before] ""
+        Expect::close-stdin $s
+        Test::eq [get [Expect::wait-for $s [Expect::eof]] eof] 1
+        Test::eq [get [Expect::close $s] status] 0
+    }
+
+    Test::case "closed sessions refuse further work" {
+        let s [Expect::spawn (cat) #{pty 0}]
+        let w [Expect::close $s]
+        Test::eq [get $w exited] 1
+        Test::eq [Expect::eof? $s] 1
+        Test::raises_with { Expect::send $s "x" } "session is closed"
+        Test::raises_with { Expect::wait-for $s "x" } "session is closed"
+        Test::raises_with { Expect::expect $s ("x" {}) } "session is closed"
+        ;; closing again just reports the remembered status
+        Test::eq [Expect::close $s] $w
+    }
+}
+
+Test::suite "Expect::expect" {
+    Test::case "clause list validation" {
+        let s [Expect::spawn (cat) #{pty 0}]
+        Test::raises_with { Expect::expect $s () } "pattern/body pairs"
+        Test::raises_with { Expect::expect $s ("x") } "pattern/body pairs"
+        Test::raises_with { Expect::expect $s "x {}" } "list of pattern/body pairs"
+        Test::raises_with { Expect::expect $s ("x" 5) } "clause body must be a braced script"
+        Test::raises_with { Expect::expect $s (() {}) } "pattern list must not be empty"
+        Test::raises_with { Expect::expect $s ("" {}) } "must not be empty"
+        Expect::close $s
+    }
+
+    Test::case "handlers run in the caller's scope; the match dict is returned" {
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        var hits 0
+        Expect::send-line $s "ping"
+        let r [Expect::expect $s (
+            "pong"   { error "wrong clause" }
+            "ping"   { set! hits [+ $hits 1]; let seen_in_handler [get [Expect::out $s] match] }
+        )]
+        Test::eq $hits 1
+        Test::eq [get $r index] 1
+        Test::eq [get $r match] "ping"
+        Test::eq $seen_in_handler "ping"
+        Test::eq [Expect::out $s] $r
+        Expect::close $s
+    }
+
+    Test::case "continue keeps matching; alternatives share a body; stream order wins" {
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        var order ()
+        Expect::send $s "one\ntwo\nstop\n"
+        let r [Expect::expect $s (
+            "stop"          { List::push! order stop }
+            ("one" "two")   { List::push! order [get [Expect::out $s] match]; continue }
+        )]
+        Test::eq $order (one two stop)
+        Test::eq [get $r index] 0
+        Test::eq [Expect::buffer $s] "\n"
+        Expect::close $s
+    }
+
+    Test::case "break stops the loop and still returns the match" {
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        var after_break 0
+        Expect::send-line $s "x"
+        let r [Expect::expect $s ( "x" { break; set! after_break 1 } )]
+        Test::eq $after_break 0
+        Test::eq [get $r match] "x"
+        Expect::close $s
+    }
+
+    Test::case "return leaves the enclosing proc" {
+        proc first_word {s} {
+            Expect::expect $s ( [Expect::regex {([a-z]+) }] { return [get [get [Expect::out $s] groups] 1] } )
+            "not reached"
+        }
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        Expect::send-line $s "hello world"
+        Test::eq [first_word $s] "hello"
+        Expect::close $s
+    }
+
+    Test::case "errors in handlers propagate" {
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        Expect::send-line $s "boom"
+        Test::raises_with { Expect::expect $s ( "boom" { error "handler failed: [get [Expect::out $s] match]" } ) } "handler failed: boom"
+        Expect::close $s
+    }
+
+    Test::case "timeout and eof clauses" {
+        let s [Expect::spawn (cat) #{pty 0}]
+        var what ""
+        let r [Expect::expect $s (
+            "never"            { set! what text }
+            [Expect::timeout]  { set! what timeout }
+        ) #{timeout 50}]
+        Test::eq $what timeout
+        Test::eq [get $r timeout] 1
+        Test::raises_with { Expect::expect $s ("never" {}) #{timeout 50} } "timed out after 50 ms waiting for \"never\""
+        Expect::close-stdin $s
+        Expect::expect $s (
+            "never"        { set! what text }
+            [Expect::eof]  { set! what eof }
+        ) #{timeout 2000}
+        Test::eq $what eof
+        Test::raises_with { Expect::expect $s ("never" {}) } "child closed its output"
+        Expect::close $s
+    }
+
+    Test::case "a handler can wait on the same session" {
+        let s [Expect::spawn (cat) #{pty 0 timeout 2000}]
+        var value ""
+        Expect::send-line $s "key=42"
+        Expect::expect $s (
+            "key=" { set! value [get [Expect::wait-for $s "\n"] before] }
+        )
+        Test::eq $value "42"
+        Expect::close $s
+    }
+
+    Test::case "timeout 0 polls what is already buffered" {
+        let s [Expect::spawn (cat) #{pty 0}]
+        Test::raises_with { Expect::wait-for $s "x" #{timeout 0} } "timed out after 0 ms"
+        Expect::send-line $s "x"
+        Expect::wait-for $s "x\n"
+        Expect::send-line $s "y"
+        ;; give cat a moment, then poll
+        Expect::wait-for $s "y"
+        Test::eq [get [Expect::wait-for $s "\n" #{timeout 0}] match] "\n"
+        Expect::close $s
+    }
+}
+
+Test::suite "Expect sessions (PTY mode)" {
+    Test::case "PTY is the default and input is echoed" {
+        let s [Expect::spawn (cat) #{timeout 3000}]
+        Test::eq [Expect::pty? $s] 1
+        Test::eq [get [Expect::get-winsize $s] cols] 80
+        Expect::set-winsize $s 30 100
+        Test::eq [Expect::get-winsize $s] #{rows 30 cols 100}
+        Expect::send-line $s "hello"
+        ;; the terminal echoes the line, then cat repeats it
+        Test::eq [get [Expect::wait-for $s "hello\r\n"] before] ""
+        Test::eq [get [Expect::wait-for $s "hello\r\n"] before] ""
+        Expect::close $s
+    }
+
+    Test::case "send-ctrl" {
+        let s [Expect::spawn (cat) #{timeout 3000}]
+        Test::raises_with { Expect::send-ctrl $s "1" } "key must be a letter"
+        Test::raises_with { Expect::send-ctrl $s "cc" } "key must be a letter"
+        Expect::send-ctrl $s c
+        Test::eq [get [Expect::wait-for $s [Expect::eof]] eof] 1
+        Test::eq [Expect::alive? $s] 0
+        let w [Expect::close $s]
+        Test::eq [get $w signal] 2
+    }
+
+    Test::case "an interrupt sent immediately after spawn is delivered every time" {
+        ;; Nothing may sit between spawn and send-ctrl: the point is
+        ;; that delivery no longer depends on the child winning a
+        ;; race.
+        repeat 20 {
+            let s [Expect::spawn (cat) #{timeout 3000}]
+            Expect::send-ctrl $s c
+            Test::eq [get [Expect::wait-for $s [Expect::eof]] eof] 1
+            Test::eq [get [Expect::close $s] signal] 2
+        }
+    }
+
+    Test::case "close-stdin sends the terminal's end-of-file" {
+        let s [Expect::spawn (cat) #{timeout 3000}]
+        Expect::send-line $s "last"
+        Expect::wait-for $s "last\r\nlast\r\n"
+        Expect::close-stdin $s
+        Test::eq [get [Expect::wait-for $s [Expect::eof]] eof] 1
+        Test::eq [get [Expect::close $s] status] 0
+    }
+
+    Test::case "lifecycle wrappers" {
+        let s [Expect::spawn (sleep 5)]
+        Test::eq [Expect::alive? $s] 1
+        Test::eq [get [Expect::wait $s #{timeout 10}] exited] 0
+        Test::eq [Expect::kill $s] 1
+        let w [Expect::wait $s #{timeout 2000}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w signal] 15
+        Test::eq [Expect::alive? $s] 0
+        Test::eq [Expect::close $s] $w
+    }
+}
+
+Test::suite "Expect::close" {
+    Test::case "escalates from close to TERM to KILL" {
+        ;; a child that ignores the hang-up and TERM only goes on KILL
+        let s [Expect::spawn (sh -c {trap "" HUP TERM; while :; do sleep 1; done}) #{pty 0}]
+        Test::eq [Expect::alive? $s] 1
+        let w [Expect::close $s #{grace 100}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w signal] 9
+        Test::raises_with { Expect::close $s #{grace -1} } "grace must not be negative"
+    }
+}
 
 exit [Test::run]

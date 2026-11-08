@@ -772,3 +772,219 @@ Test::suite "repeat" {
         Test::eq $err boom
     }
 }
+
+;; ============================================================================
+;; Control codes escaping a [...] operand of a special for,
+;;
+;; A special form decides when its operands are evaluated; it never
+;; reinterprets the result. Only a loop owns break/continue from its
+;; body and only a proc activation owns return, so a control code that
+;; surfaces from an operand travels through the form untouched,
+;; payload included, and nothing the form would have written is
+;; written.
+;; ============================================================================
+
+Test::suite "Control codes escaping special-form operands" {
+    Test::case "continue through a set! operand (the #109 report)" {
+        var out ""
+        var seen ()
+        foreach x (1 2 3) {
+            set! out [case $x 2 { continue } else { "v$x" }]
+            List::push! seen $out
+        }
+        Test::eq $seen (v1 v3)
+        Test::eq $out v3
+    }
+
+    Test::case "break through a set! operand leaves the old value in place" {
+        var y 0
+        foreach x (1 2 3) {
+            set! y [if [== $x 2] { break } else { $x }]
+        }
+        Test::eq $y 1
+    }
+
+    Test::case "continue through a var operand" {
+        var seen ()
+        foreach x (1 2 3) {
+            var y [if [== $x 2] { continue } else { $x }]
+            List::push! seen $y
+        }
+        Test::eq $seen (1 3)
+    }
+
+    Test::case "continue through an if condition" {
+        var seen ()
+        foreach x (1 2 3) {
+            if [if [== $x 2] { continue } else { 1 }] { List::push! seen $x }
+        }
+        Test::eq $seen (1 3)
+    }
+
+    Test::case "break through a cond test" {
+        var seen ()
+        foreach x (1 2 3) {
+            cond [if [== $x 2] { break } else { 1 }] { List::push! seen $x }
+        }
+        Test::eq $seen (1)
+    }
+
+    Test::case "continue through a case scrutinee and a case key" {
+        var seen ()
+        foreach x (1 2 3) {
+            case [if [== $x 2] { continue } else { $x }] 1 { List::push! seen a } else { List::push! seen b }
+        }
+        Test::eq $seen (a b)
+        set! seen ()
+        foreach x (1 2 3) {
+            case $x [if [== $x 2] { continue } else { 1 }] { List::push! seen a } else { List::push! seen b }
+        }
+        Test::eq $seen (a b)
+    }
+
+    Test::case "a while condition does not own break: it leaves the enclosing loop" {
+        var seen ()
+        foreach x (1 2 3) {
+            while [if [== $x 2] { break } else { 0 }] { }
+            List::push! seen $x
+        }
+        Test::eq $seen (1)
+        set! seen ()
+        foreach x (1 2 3) {
+            while {if [== $x 2] { break } else { 0 }} { }
+            List::push! seen $x
+        }
+        Test::eq $seen (1) "braced and bracketed conditions agree"
+    }
+
+    Test::case "a for condition does not own continue either" {
+        var seen ()
+        foreach x (1 2 3) {
+            for {var i 0} [if [== $x 2] { continue } else { < $i 1 }] {set! i [+ $i 1]} { }
+            List::push! seen $x
+        }
+        Test::eq $seen (1 3)
+    }
+
+    Test::case "break through a repeat count and a foreach iterable" {
+        var seen ()
+        foreach x (1 2 3) {
+            repeat [if [== $x 2] { break } else { 1 }] { List::push! seen $x }
+        }
+        Test::eq $seen (1)
+        set! seen ()
+        foreach x (1 2 3) {
+            foreach y [if [== $x 2] { continue } else { (a) }] { List::push! seen $x }
+        }
+        Test::eq $seen (1 3)
+    }
+
+    Test::case "and/or operands propagate, and skipped operands stay skipped" {
+        var seen ()
+        foreach x (1 2 3) {
+            and 1 [if [== $x 2] { break } else { 1 }]
+            List::push! seen $x
+        }
+        Test::eq $seen (1)
+        set! seen ()
+        foreach x (1 2 3) {
+            or 0 [if [== $x 2] { continue } else { 1 }]
+            List::push! seen $x
+        }
+        Test::eq $seen (1 3)
+        set! seen ()
+        foreach x (1 2 3) {
+            and 0 [break]
+            or 1 [break]
+            List::push! seen $x
+        }
+        Test::eq $seen (1 2 3) "short-circuited break never ran"
+    }
+
+    Test::case "mutation forms commit nothing when the operand escapes" {
+        var l ()
+        foreach x (1 2 3 4) {
+            List::push! l [if [== $x 3] { break } else { $x }]
+        }
+        Test::eq $l (1 2)
+        var d #{}
+        foreach x (1 2 3) {
+            put! d k$x [if [== $x 2] { continue } else { $x }]
+        }
+        Test::eq $d #{k1 1 k3 3}
+        foreach x (1 2) {
+            del! d [if [== $x 1] { continue } else { "k1" }]
+        }
+        Test::eq $d #{k3 3}
+    }
+
+    Test::case "the enclosing loop can be while, for or repeat" {
+        var i 0
+        var seen ()
+        while [< $i 5] {
+            set! i [+ $i 1]
+            var y [if [== $i 3] { break } else { $i }]
+            List::push! seen $y
+        }
+        Test::eq $seen (1 2)
+        set! seen ()
+        for {var j 0} [< $j 5] {set! j [+ $j 1]} {
+            set! i [if [== $j 2] { continue } else { $j }]
+            List::push! seen $j
+        }
+        Test::eq $seen (0 1 3 4)
+        set! seen ()
+        set! i 0
+        repeat 5 {
+            set! i [+ $i 1]
+            List::push! seen [cond [== $i 4] { break } else { $i }]
+        }
+        Test::eq $seen (1 2 3)
+    }
+
+    Test::case "return keeps its value through set!, if, and/or, interpolation and a while condition" {
+        proc via_set {} {
+            var y 0
+            foreach x (1 2 3) { set! y [if [== $x 2] { return "done" } else { $x }] }
+            "fell"
+        }
+        Test::eq [via_set] done
+        proc via_if {} { if [return "cond"] { "then" } else { "else" } }
+        Test::eq [via_if] cond
+        proc via_or {} { or 0 [return "or"] 1 }
+        Test::eq [via_or] or
+        proc via_and {} { and 1 [return "and"] 0 }
+        Test::eq [via_and] and
+        proc via_str {} { foreach x (1 2) { let s "s[if [== $x 2] { return "str" } else { $x }]" }; "fell" }
+        Test::eq [via_str] str
+        proc via_while {} { while [return "while"] { }; "fell" }
+        Test::eq [via_while] while
+        proc via_push {} { var l (); List::push! l [return "push"]; "fell" }
+        Test::eq [via_push] push
+        proc via_qq {} { quasiquote {a ,[return "qq"] b} }
+        Test::eq [via_qq] qq
+    }
+
+    Test::case "real errors in an operand keep their message" {
+        var y 0
+        Test::eq [catch { set! y [error boom] } r e] 1
+        Test::eq $e boom
+        Test::eq [catch { if [error boom2] { 1 } } r e] 1
+        Test::eq $e boom2
+        Test::eq [catch { and 1 [error boom3] } r e] 1
+        Test::eq $e boom3
+        Test::eq [catch { List::push! y [error boom4] } r e] 1
+        Test::eq $e boom4
+        Test::eq $y 0
+    }
+
+    Test::case "thousands of escapes through mutation forms leak nothing" {
+        var n 0
+        var l ()
+        repeat 3000 { set! n [if 1 { continue } else { 7 }] }
+        repeat 3000 { List::push! l [if 1 { continue } else { 7 }] }
+        repeat 3000 { put! l 0 [if 1 { continue } else { 7 }] }
+        Test::eq $n 0
+        Test::eq $l ()
+    }
+}

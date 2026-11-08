@@ -95,6 +95,37 @@ Test::suite "Process::read-until" {
     }
 }
 
+Test::suite "Process::eof?" {
+    Test::case "pipe: end-of-file after the writer exits" {
+        let h [Process::spawn (echo done)]
+        Process::wait $h
+        Test::eq [Process::eof? $h] 0
+        Test::eq [Process::read $h] "done\n"
+        Test::eq [Process::read $h] ""
+        Test::eq [Process::eof? $h] 1
+        Test::eq [Process::eof? $h #{stderr 1}] 0
+        Process::close $h
+        Test::eq [Process::eof? $h #{stderr 1}] 1
+    }
+
+    Test::case "pty: hang-up is end-of-file, output before it survives" {
+        let h [Process::spawn (sh -c "echo hi; exit 3") #{pty 1}]
+        Process::wait $h #{timeout 5000}
+        Test::eq [Process::read $h #{timeout 1000}] "hi\r\n"
+        Test::eq [Process::read $h #{timeout 1000}] ""
+        Test::eq [Process::eof? $h] 1
+        Process::close $h
+    }
+
+    Test::case "send to an exited pipe child is an error, not SIGPIPE" {
+        let h [Process::spawn (true)]
+        Process::wait $h
+        Test::raises_with { Process::send $h "data" } "child has closed its input"
+        Process::close $h
+        Test::raises_with { Process::send $h "data" } "stdin is closed"
+    }
+}
+
 Test::suite "Process::spawn" {
     Test::case "spawn and wait" {
         let h [Process::spawn (echo spawned)]
@@ -170,6 +201,49 @@ Test::suite "Process::spawn" {
         let w [Process::wait $h #{timeout 1000}]
         Test::eq [get $w exited] 1
         Process::close $h
+    }
+}
+
+;; spawn returns only once the child has finished its pre-exec setup
+;; and reached exec, or exited. The handshake pipe's write end is
+;; close-on-exec; if it ever leaked into the child, every spawn of a
+;; long-lived program (the `cat` cases above) would hang, so those
+;; cases double as the leak check. The interrupt-delivery half of the
+;; guarantee is tested in lcl-expect, which can send control
+;; characters.
+Test::suite "Process::spawn handshake" {
+    Test::case "a pre-exec failure (bad cwd) neither hangs nor leaks, pipes" {
+        let h [Process::spawn (cat) #{cwd /nonexistent/lcl-spawn-test}]
+        let w [Process::wait $h #{timeout 3000}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 127
+        Process::close $h
+    }
+
+    Test::case "a pre-exec failure (bad cwd) neither hangs nor leaks, pty" {
+        let h [Process::spawn (cat) #{cwd /nonexistent/lcl-spawn-test pty 1}]
+        let w [Process::wait $h #{timeout 3000}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 127
+        Process::close $h
+    }
+
+    Test::case "a program that cannot be executed still exits 127 on a pty" {
+        let h [Process::spawn (lcl-no-such-program-xyz) #{pty 1}]
+        let w [Process::wait $h #{timeout 3000}]
+        Test::eq [get $w exited] 1
+        Test::eq [get $w status] 127
+        Process::close $h
+    }
+
+    Test::case "a pty child is ready to use the moment spawn returns" {
+        repeat 10 {
+            let h [Process::spawn (cat) #{pty 1}]
+            Process::send $h "now\n"
+            let r [Process::read-until $h "now" #{timeout 3000}]
+            Test::eq [get $r matched] 1
+            Process::close $h
+        }
     }
 }
 

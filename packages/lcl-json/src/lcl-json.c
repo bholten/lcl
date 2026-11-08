@@ -313,15 +313,17 @@ static lcl_return_code c_json_encode(lcl_interp *interp, int argc,
                                      lcl_value **argv, lcl_value **out) {
   cJSON *json;
   char *str;
-  (void)interp;
 
   if (argc != 1) {
+    lcl_set_error(interp, "Json::encode: expected 1 argument");
     return LCL_RC_ERR;
   }
 
   json = lcl_to_cjson(argv[0]);
 
   if (!json) {
+    lcl_set_error(interp, "Json::encode: value has no JSON form (procs, "
+                          "cells and other opaque values cannot be encoded)");
     return LCL_RC_ERR;
   }
 
@@ -329,6 +331,7 @@ static lcl_return_code c_json_encode(lcl_interp *interp, int argc,
   cJSON_Delete(json);
 
   if (!str) {
+    lcl_set_error(interp, "Json::encode: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -344,6 +347,7 @@ static lcl_return_code c_json_decode(lcl_interp *interp, int argc,
   cJSON *json;
 
   if (argc != 1) {
+    lcl_set_error(interp, "Json::decode: expected 1 argument");
     return LCL_RC_ERR;
   }
 
@@ -353,6 +357,7 @@ static lcl_return_code c_json_decode(lcl_interp *interp, int argc,
   json = cJSON_Parse(json_str);
 
   if (!json) {
+    lcl_set_error(interp, "Json::decode: invalid JSON");
     return LCL_RC_ERR;
   }
 

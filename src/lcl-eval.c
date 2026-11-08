@@ -850,6 +850,7 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     interp->in_tail_position = saved_tail_position;
     rc = callee->as.c_proc.fn->fn.spec(interp, spec_argc, raw, out);
+    LCL_ERR_AUDIT_CMD(interp, rc, invoked_name);
     free(raw);
     lcl_ref_dec(callee);
 
@@ -878,6 +879,7 @@ lcl_return_code lcl_call_from_words(lcl_interp *interp, const lcl_command *cmd,
 
     if (callee->type == LCL_CPROC) {
       rc = callee->as.c_proc.fn->fn.proc(interp, argc, argv, out);
+      LCL_ERR_AUDIT_CMD(interp, rc, invoked_name);
     } else if (callee->type == LCL_PROC) {
       lcl_proc *p = (lcl_proc *)callee->as.procedure.proc;
 
@@ -1023,6 +1025,7 @@ lcl_return_code lcl_eval_string_file(lcl_interp *interp, const char *src,
   }
 
   rc = lcl_eval_program(interp, P, out);
+  LCL_ERR_AUDIT(interp, rc);
   lcl_program_free(P);
 
   return rc;
@@ -1054,6 +1057,7 @@ lcl_return_code lcl_eval_bytes_file(lcl_interp *interp, const char *src,
   }
 
   rc = lcl_eval_program(interp, P, out);
+  LCL_ERR_AUDIT(interp, rc);
   lcl_program_free(P);
 
   return rc;
@@ -1203,11 +1207,8 @@ lcl_return_code lcl_eval_word_to_str(lcl_interp *interp, const lcl_word *w,
       interp->in_subcmd = saved_in_subcmd;
 
       if (rc != LCL_RC_OK) {
-        /* Fuzzing: a control code (BREAK/CONTINUE/RETURN) carries a
-         * +1 payload; the concatenation consumes it here so this
-         * function never hands a value to its caller on non-OK. */
-        lcl_ref_dec(result);
         free(buf);
+        *out = result;
         return rc;
       }
 

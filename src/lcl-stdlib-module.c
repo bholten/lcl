@@ -84,8 +84,11 @@ static lcl_return_code s_load(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &path_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &path_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = path_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, path_v, &path) != LCL_OK) {
@@ -595,8 +598,11 @@ static lcl_return_code s_require(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &path_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &path_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = path_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, path_v, &path) != LCL_OK) {

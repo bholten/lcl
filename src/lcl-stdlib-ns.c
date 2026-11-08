@@ -284,9 +284,11 @@ static lcl_return_code s_isolate(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_get_body_program(interp, args[0], "isolate", &prog,
-                               &prog_owned) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_get_body_program(interp, args[0], "isolate", &prog, &prog_owned,
+                                out);
+
+  if (rc != LCL_RC_OK) {
+    return rc;
   }
 
   saved_def_floor = interp->def_floor;
@@ -516,8 +518,11 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
   if (named) {
     const char *name_cstr;
 
-    if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    rc = lcl_eval_word_to_str(interp, args[0], &name_v);
+
+    if (rc != LCL_RC_OK) {
+      *out = name_v;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, name_v, &name_cstr) != LCL_OK) {
@@ -542,10 +547,12 @@ static lcl_return_code s_namespace(lcl_interp *interp, int argc,
   {
     int prog_owned_flag = 0;
 
-    if (lcl_std_get_body_program(interp, body_word, "namespace", &prog,
-                                 &prog_owned_flag) != LCL_RC_OK) {
+    rc = lcl_std_get_body_program(interp, body_word, "namespace", &prog,
+                                  &prog_owned_flag, out);
+
+    if (rc != LCL_RC_OK) {
       free(ns_name);
-      return LCL_RC_ERR;
+      return rc;
     }
 
     prog_owned = prog_owned_flag;
@@ -956,14 +963,17 @@ static lcl_return_code s_import(lcl_interp *interp, int argc,
   lcl_value *ns = NULL;
   const char *ns_name;
   int i;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "import", argc, 1, -1)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, argv[0], &ns_name_v) != LCL_RC_OK) {
-    lcl_ref_dec(ns_name_v);
-    return LCL_RC_ERR;
+  rc = lcl_eval_word(interp, argv[0], &ns_name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = ns_name_v;
+    return rc;
   }
 
   if (ns_name_v->type == LCL_NAMESPACE) {
@@ -1049,9 +1059,12 @@ static lcl_return_code s_import(lcl_interp *interp, int argc,
       lcl_value *value = NULL;
       lcl_value *existing = NULL;
 
-      if (lcl_eval_word_to_str(interp, argv[i], &name_v) != LCL_RC_OK) {
+      rc = lcl_eval_word_to_str(interp, argv[i], &name_v);
+
+      if (rc != LCL_RC_OK) {
         lcl_ref_dec(ns);
-        return LCL_RC_ERR;
+        *out = name_v;
+        return rc;
       }
 
       if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {

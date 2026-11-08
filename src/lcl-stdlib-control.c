@@ -23,6 +23,7 @@ static lcl_return_code and_or_impl(lcl_interp *interp, int argc,
                                    int stop_when_truthy, lcl_int identity,
                                    const char *name) {
   lcl_value *val = NULL;
+  lcl_return_code rc;
   int i;
 
   for (i = 0; i < argc; i++) {
@@ -43,10 +44,11 @@ static lcl_return_code and_or_impl(lcl_interp *interp, int argc,
   for (i = 0; i < argc; i++) {
     lcl_ref_dec(val);
     val = NULL;
+    rc = lcl_eval_word(interp, args[i], &val);
 
-    if (lcl_eval_word(interp, args[i], &val) != LCL_RC_OK) {
-      lcl_ref_dec(val);
-      return LCL_RC_ERR;
+    if (rc != LCL_RC_OK) {
+      *out = val;
+      return rc;
     }
 
     if (lcl_value_is_true(val) == stop_when_truthy) {
@@ -101,7 +103,9 @@ static lcl_return_code s_return(lcl_interp *interp, int argc,
     return LCL_RC_RETURN;
   }
 
-  return LCL_RC_ERR;
+  /* return [break] and other silliness: the operand's own control
+     code wins. */
+  return rc;
 }
 
 /* break - exit from innermost loop */
@@ -170,8 +174,11 @@ static lcl_return_code c_catch(lcl_interp *interp, int argc,
     lcl_value *rv = NULL;
     const char *rv_s;
 
-    if (lcl_eval_word_to_str(interp, args[1], &rv) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    rc = lcl_eval_word_to_str(interp, args[1], &rv);
+
+    if (rc != LCL_RC_OK) {
+      *out = rv;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, rv, &rv_s) != LCL_OK) {
@@ -192,9 +199,12 @@ static lcl_return_code c_catch(lcl_interp *interp, int argc,
     lcl_value *ev = NULL;
     const char *ev_s;
 
-    if (lcl_eval_word_to_str(interp, args[2], &ev) != LCL_RC_OK) {
+    rc = lcl_eval_word_to_str(interp, args[2], &ev);
+
+    if (rc != LCL_RC_OK) {
       free(result_var);
-      return LCL_RC_ERR;
+      *out = ev;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, ev, &ev_s) != LCL_OK) {
@@ -220,10 +230,13 @@ static lcl_return_code c_catch(lcl_interp *interp, int argc,
     lcl_value *body_v = NULL;
     const char *body_src;
 
-    if (lcl_eval_word_to_str(interp, args[0], &body_v) != LCL_RC_OK) {
+    rc = lcl_eval_word_to_str(interp, args[0], &body_v);
+
+    if (rc != LCL_RC_OK) {
       free(result_var);
       free(error_var);
-      return LCL_RC_ERR;
+      *out = body_v;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, body_v, &body_src) != LCL_OK) {
@@ -252,6 +265,8 @@ static lcl_return_code c_catch(lcl_interp *interp, int argc,
     rc = lcl_eval_program(interp, prog, &result);
     lcl_std_free_if_owned(prog, prog_owned);
   }
+
+  LCL_ERR_AUDIT(interp, rc);
 
   if (rc == LCL_RC_ERR && interp->interrupted) {
     lcl_ref_dec(result);
@@ -356,11 +371,12 @@ static lcl_return_code s_if(lcl_interp *interp, int argc, const lcl_word **args,
   }
 
   interp->in_tail_position = 0;
+  rc = lcl_eval_word(interp, args[0], &cond_v);
 
-  if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
-    lcl_ref_dec(cond_v);
+  if (rc != LCL_RC_OK) {
     interp->in_tail_position = saved_tail_position;
-    return LCL_RC_ERR;
+    *out = cond_v;
+    return rc;
   }
 
   is_true = lcl_value_is_true(cond_v);
@@ -381,9 +397,12 @@ static lcl_return_code s_if(lcl_interp *interp, int argc, const lcl_word **args,
     return lcl_eval_program(interp, args[body_idx]->compiled, out);
   }
 
-  if (lcl_eval_word_to_str(interp, args[body_idx], &body_v) != LCL_RC_OK) {
+  rc = lcl_eval_word_to_str(interp, args[body_idx], &body_v);
+
+  if (rc != LCL_RC_OK) {
     interp->in_tail_position = saved_tail_position;
-    return LCL_RC_ERR;
+    *out = body_v;
+    return rc;
   }
 
   {
@@ -449,8 +468,11 @@ static lcl_return_code eval_branch(lcl_interp *interp, const char *form,
   }
 
   /* No scan-time program: recompile to surface the compile error. */
-  if (lcl_eval_word_to_str(interp, w, &body_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, w, &body_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = body_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, body_v, &body_src) != LCL_OK) {
@@ -508,10 +530,12 @@ static lcl_return_code s_cond(lcl_interp *interp, int argc,
       return rc;
     }
 
-    if (lcl_eval_word(interp, args[i], &test_v) != LCL_RC_OK) {
-      lcl_ref_dec(test_v);
+    rc = lcl_eval_word(interp, args[i], &test_v);
+
+    if (rc != LCL_RC_OK) {
       interp->in_tail_position = saved_tail_position;
-      return LCL_RC_ERR;
+      *out = test_v;
+      return rc;
     }
 
     is_true = lcl_value_is_true(test_v);
@@ -561,10 +585,12 @@ static lcl_return_code s_case(lcl_interp *interp, int argc,
 
   interp->in_tail_position = 0;
 
-  if (lcl_eval_word(interp, args[0], &scrutinee) != LCL_RC_OK) {
-    lcl_ref_dec(scrutinee);
+  rc = lcl_eval_word(interp, args[0], &scrutinee);
+
+  if (rc != LCL_RC_OK) {
     interp->in_tail_position = saved_tail_position;
-    return LCL_RC_ERR;
+    *out = scrutinee;
+    return rc;
   }
 
   for (i = 1; i < argc; i += 2) {
@@ -576,11 +602,13 @@ static lcl_return_code s_case(lcl_interp *interp, int argc,
       return rc;
     }
 
-    if (lcl_eval_word(interp, args[i], &key_v) != LCL_RC_OK) {
-      lcl_ref_dec(key_v);
+    rc = lcl_eval_word(interp, args[i], &key_v);
+
+    if (rc != LCL_RC_OK) {
       lcl_ref_dec(scrutinee);
       interp->in_tail_position = saved_tail_position;
-      return LCL_RC_ERR;
+      *out = key_v;
+      return rc;
     }
 
     is_match = lcl_value_equal_deep(scrutinee, key_v, &guard);
@@ -621,16 +649,20 @@ static lcl_return_code s_while(lcl_interp *interp, int argc,
   test_is_braced = args[0]->braced;
 
   if (test_is_braced) {
-    if (lcl_std_get_body_program(interp, args[0], "while-test", &test_p,
-                                 &test_owned) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    rc = lcl_std_get_body_program(interp, args[0], "while-test", &test_p,
+                                  &test_owned, out);
+
+    if (rc != LCL_RC_OK) {
+      return rc;
     }
   }
 
-  if (lcl_std_get_body_program(interp, args[1], "while-body", &body_p,
-                               &body_owned) != LCL_RC_OK) {
+  rc = lcl_std_get_body_program(interp, args[1], "while-body", &body_p,
+                                &body_owned, out);
+
+  if (rc != LCL_RC_OK) {
     lcl_std_free_if_owned(test_p, test_owned);
-    return LCL_RC_ERR;
+    return rc;
   }
 
   for (;;) {
@@ -664,15 +696,17 @@ static lcl_return_code s_while(lcl_interp *interp, int argc,
         return rc;
       }
     } else {
-      if (lcl_eval_word(interp, args[0], &cond_v) != LCL_RC_OK) {
-        lcl_ref_dec(cond_v);
+      rc = lcl_eval_word(interp, args[0], &cond_v);
+
+      if (rc != LCL_RC_OK) {
         lcl_std_free_if_owned(body_p, body_owned);
 
         if (last) {
           lcl_ref_dec(last);
         }
 
-        return LCL_RC_ERR;
+        *out = cond_v;
+        return rc;
       }
     }
 
@@ -740,9 +774,11 @@ static lcl_return_code s_repeat(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[0], &n_v) != LCL_RC_OK) {
-    lcl_ref_dec(n_v);
-    return LCL_RC_ERR;
+  rc = lcl_eval_word(interp, args[0], &n_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = n_v;
+    return rc;
   }
 
   if (!lcl_std_arg_int(interp, "repeat", n_v, &n)) {
@@ -757,9 +793,11 @@ static lcl_return_code s_repeat(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_get_body_program(interp, args[1], "repeat-body", &body_p,
-                               &body_owned) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_get_body_program(interp, args[1], "repeat-body", &body_p,
+                                &body_owned, out);
+
+  if (rc != LCL_RC_OK) {
+    return rc;
   }
 
   for (i = 0; i < n; i++) {
@@ -822,32 +860,40 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
 
   test_is_braced = args[1]->braced;
 
-  if (lcl_std_get_body_program(interp, args[0], "for-start", &start_p,
-                               &start_owned) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_get_body_program(interp, args[0], "for-start", &start_p,
+                                &start_owned, out);
+
+  if (rc != LCL_RC_OK) {
+    return rc;
   }
 
   if (test_is_braced) {
-    if (lcl_std_get_body_program(interp, args[1], "for-test", &test_p,
-                                 &test_owned) != LCL_RC_OK) {
+    rc = lcl_std_get_body_program(interp, args[1], "for-test", &test_p,
+                                  &test_owned, out);
+
+    if (rc != LCL_RC_OK) {
       lcl_std_free_if_owned(start_p, start_owned);
-      return LCL_RC_ERR;
+      return rc;
     }
   }
 
-  if (lcl_std_get_body_program(interp, args[2], "for-next", &next_p,
-                               &next_owned) != LCL_RC_OK) {
+  rc = lcl_std_get_body_program(interp, args[2], "for-next", &next_p,
+                                &next_owned, out);
+
+  if (rc != LCL_RC_OK) {
     lcl_std_free_if_owned(start_p, start_owned);
 
     if (test_p) {
       lcl_std_free_if_owned(test_p, test_owned);
     }
 
-    return LCL_RC_ERR;
+    return rc;
   }
 
-  if (lcl_std_get_body_program(interp, args[3], "for-body", &body_p,
-                               &body_owned) != LCL_RC_OK) {
+  rc = lcl_std_get_body_program(interp, args[3], "for-body", &body_p,
+                                &body_owned, out);
+
+  if (rc != LCL_RC_OK) {
     lcl_std_free_if_owned(start_p, start_owned);
 
     if (test_p) {
@@ -856,7 +902,7 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
 
     lcl_std_free_if_owned(next_p, next_owned);
 
-    return LCL_RC_ERR;
+    return rc;
   }
 
   rc = lcl_eval_program(interp, start_p, &tmp);
@@ -912,8 +958,10 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
         return rc;
       }
     } else {
-      if (lcl_eval_word(interp, args[1], &cond_v) != LCL_RC_OK) {
-        lcl_ref_dec(cond_v);
+      /* Not ours to consume; see s_while. */
+      rc = lcl_eval_word(interp, args[1], &cond_v);
+
+      if (rc != LCL_RC_OK) {
         lcl_std_free_if_owned(body_p, body_owned);
         lcl_std_free_if_owned(next_p, next_owned);
 
@@ -921,7 +969,8 @@ static lcl_return_code s_for(lcl_interp *interp, int argc,
           lcl_ref_dec(last);
         }
 
-        return LCL_RC_ERR;
+        *out = cond_v;
+        return rc;
       }
     }
 
@@ -1127,8 +1176,11 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &varname_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &varname_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = varname_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, varname_v, &varname) != LCL_OK) {
@@ -1136,11 +1188,12 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[1], &iter_v) != LCL_RC_OK) {
-    lcl_ref_dec(iter_v);
-    lcl_ref_dec(varname_v);
+  rc = lcl_eval_word(interp, args[1], &iter_v);
 
-    return LCL_RC_ERR;
+  if (rc != LCL_RC_OK) {
+    lcl_ref_dec(varname_v);
+    *out = iter_v;
+    return rc;
   }
 
   rc = foreach_source(interp, iter_v, &list_v);
@@ -1151,12 +1204,14 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
     return rc;
   }
 
-  if (lcl_std_get_body_program(interp, args[2], "foreach", &body_p,
-                               &body_owned) != LCL_RC_OK) {
+  rc = lcl_std_get_body_program(interp, args[2], "foreach", &body_p,
+                                &body_owned, out);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(varname_v);
     lcl_ref_dec(list_v);
 
-    return LCL_RC_ERR;
+    return rc;
   }
 
   list_len = lcl_list_len(list_v);

@@ -271,6 +271,8 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
 
   if (proc->type == LCL_CPROC) {
     if (proc->as.c_proc.fn->kind == LCL_CK_SPECIAL) {
+      LCL_ERR_MSG(interp,
+                  "cannot call a special form with evaluated arguments");
       return LCL_RC_ERR;
     }
     rc = proc->as.c_proc.fn->fn.proc(interp, argc, argv, out);
@@ -294,6 +296,8 @@ lcl_return_code lcl_call_proc(lcl_interp *interp, lcl_value *proc, int argc,
                                            : "continue invoked outside a loop");
     rc = LCL_RC_ERR;
   }
+
+  LCL_ERR_AUDIT(interp, rc);
 
   if (out == &dummy && dummy) {
     lcl_ref_dec(dummy);

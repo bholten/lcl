@@ -894,7 +894,11 @@ typedef struct lcl_word lcl_word;
  *   args   - array of unevaluated words
  *   out    - set this to the return value (with +1 refcount)
  *
- * Special forms must evaluate their arguments manually using lcl_eval_word().
+ * Special forms must evaluate their arguments manually using
+ * lcl_eval_word().
+ *
+ * A special form decides *when and whether* an operand is evaluated;
+ * it must not reinterpret the result. See lcl_eval_word for the rule.
  */
 typedef lcl_return_code (*lcl_c_spec_fn)(lcl_interp *interp, int argc,
                                          const lcl_word **args,
@@ -914,6 +918,22 @@ lcl_result lcl_register_spec(lcl_interp *interp, const char *name,
 /*
  * Evaluate an unevaluated word to a value.
  * Used by special forms to selectively evaluate their arguments.
+ *
+ * The return code and *out are one result: on LCL_RC_OK *out is the
+ * value (+1); on LCL_RC_ERR the error message is set and *out is
+ * NULL; on LCL_RC_BREAK / LCL_RC_CONTINUE / LCL_RC_RETURN the operand
+ * contained a control statement (`set! x [if $c { break }]`) and *out
+ * is its +1 payload (the `return` value).
+ *
+ * A control code is not a failure. Unless your form is a loop
+ * consuming BREAK/CONTINUE from its own body, release your locals and
+ * hand both back unchanged:
+ *
+ *   rc = lcl_eval_word(interp, args[0], &v);
+ *   if (rc != LCL_RC_OK) { *out = v; return rc; }
+ *
+ * Returning LCL_RC_ERR for every non-OK code silently breaks `break`,
+ * `continue` and `return` inside that operand.
  */
 lcl_return_code lcl_eval_word(lcl_interp *interp, const lcl_word *word,
                               lcl_value **out);

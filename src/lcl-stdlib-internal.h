@@ -59,12 +59,12 @@ int lcl_std_buf_append_char(char **buf, size_t *len, size_t *cap, char c);
 
 lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
                                          const char *tag,
-                                         lcl_program **prog_out, int *owned);
+                                         lcl_program **prog_out, int *owned,
+                                         lcl_value **payload_out);
 void lcl_std_free_if_owned(lcl_program *p, int owned);
 
 lcl_frame *lcl_std_find_global_frame(lcl_frame *f);
 
-/* In-place mutation forms (`List::push!`, `put!`, ...). */
 lcl_return_code lcl_std_mut_cell(lcl_interp *interp, const char *cmd,
                                  const lcl_word *name_w, lcl_value **cell_out,
                                  lcl_value **name_out);

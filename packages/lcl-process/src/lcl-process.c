@@ -41,6 +41,9 @@ typedef struct {
   int pty_master;
   int is_pty;
 
+  int stdout_eof;
+  int stderr_eof;
+
   char *stdout_buf;
   size_t stdout_len;
   size_t stdout_cap;
@@ -70,6 +73,8 @@ static process_handle *process_handle_new(void) {
 
   h->pty_master = -1;
   h->is_pty = 0;
+  h->stdout_eof = 0;
+  h->stderr_eof = 0;
 
   h->stdout_buf = NULL;
   h->stdout_len = 0;
@@ -118,6 +123,15 @@ static process_handle *get_handle(lcl_value *v) {
   }
 
   return (process_handle *)ptr;
+}
+
+/* Child side of the spawn handshake: one byte, then the caller
+ * _exit()s. Async-signal-safe; a failed write is not worth
+ * reporting. */
+static void spawn_report_failure(int fd, int err) {
+  unsigned char b = (unsigned char)(err > 0 && err < 256 ? err : 255);
+  ssize_t n = write(fd, &b, 1);
+  (void)n;
 }
 
 static int set_nonblocking(int fd) {
@@ -609,6 +623,7 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   int stderr_pipe[2] = {-1, -1};
   int pty_master = -1;
   int pty_slave = -1;
+  int sync_pipe[2] = {-1, -1};
   pid_t pid;
   process_handle *h = NULL;
   const char *cwd;
@@ -696,6 +711,12 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     }
   }
 
+  if (pipe(sync_pipe) < 0) {
+    goto error;
+  }
+
+  fcntl(sync_pipe[1], F_SETFD, FD_CLOEXEC);
+
   pid = fork();
 
   if (pid < 0) {
@@ -703,15 +724,38 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (pid == 0) {
+    int sync_fd = sync_pipe[1];
+
+    close(sync_pipe[0]);
+
+    if (sync_fd <= STDERR_FILENO) {
+      int moved = fcntl(sync_fd, F_DUPFD, STDERR_FILENO + 1);
+
+      if (moved >= 0) {
+        close(sync_fd);
+        sync_fd = moved;
+        fcntl(sync_fd, F_SETFD, FD_CLOEXEC);
+      }
+    }
+
     if (cwd && chdir(cwd) < 0) {
+      spawn_report_failure(sync_fd, errno);
       _exit(127);
     }
 
     if (use_pty) {
       close(pty_master);
-      setsid();
+
+      if (setsid() < 0) {
+        spawn_report_failure(sync_fd, errno);
+        _exit(127);
+      }
+
 #ifdef TIOCSCTTY
-      ioctl(pty_slave, TIOCSCTTY, 0);
+      if (ioctl(pty_slave, TIOCSCTTY, 0) < 0) {
+        spawn_report_failure(sync_fd, errno);
+        _exit(127);
+      }
 #endif
       dup2(pty_slave, STDIN_FILENO);
       dup2(pty_slave, STDOUT_FILENO);
@@ -772,8 +816,27 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     }
 
     execvp(exec_argv[0], exec_argv);
+    spawn_report_failure(sync_fd, errno);
     _exit(127);
   }
+
+  /* Parent: wait for exec (EOF) or a pre-exec failure report. */
+  close(sync_pipe[1]);
+  sync_pipe[1] = -1;
+
+  for (;;) {
+    unsigned char report;
+    ssize_t n = read(sync_pipe[0], &report, 1);
+
+    if (n < 0 && errno == EINTR) {
+      continue;
+    }
+
+    break;
+  }
+
+  close(sync_pipe[0]);
+  sync_pipe[0] = -1;
 
   h = process_handle_new();
 
@@ -841,6 +904,14 @@ error:
     close(pty_slave);
   }
 
+  if (sync_pipe[0] >= 0) {
+    close(sync_pipe[0]);
+  }
+
+  if (sync_pipe[1] >= 0) {
+    close(sync_pipe[1]);
+  }
+
   if (stdin_pipe[0] >= 0) {
     close(stdin_pipe[0]);
   }
@@ -879,19 +950,22 @@ static lcl_return_code c_process_send(lcl_interp *interp, int argc,
   process_handle *h;
   const char *data;
   size_t len;
-  ssize_t written;
+  size_t done = 0;
 
   if (argc < 2) {
+    lcl_set_error(interp, "Process::send: expected handle and data");
     return LCL_RC_ERR;
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
+    lcl_set_error(interp, "Process::send: expected a process handle");
     return LCL_RC_ERR;
   }
 
   if (h->stdin_fd < 0) {
+    lcl_set_error(interp, "Process::send: stdin is closed");
     return LCL_RC_ERR;
   }
 
@@ -901,14 +975,44 @@ static lcl_return_code c_process_send(lcl_interp *interp, int argc,
 
   len = strlen(data);
 
-  written = write(h->stdin_fd, data, len);
+  /* A PTY master is non-blocking, so a large send can be cut short or
+   * refused with EAGAIN; keep writing until it is all out. */
+  while (done < len) {
+    ssize_t written = write(h->stdin_fd, data + done, len - done);
 
-  if (written < 0) {
-    return LCL_RC_ERR;
+    if (written < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        fd_set wfds;
+        struct timeval tv;
+
+        FD_ZERO(&wfds);
+        FD_SET(h->stdin_fd, &wfds);
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+
+        if (select(h->stdin_fd + 1, NULL, &wfds, NULL, &tv) < 0 &&
+            errno != EINTR) {
+          lcl_set_error(interp, "Process::send: write failed");
+          return LCL_RC_ERR;
+        }
+
+        continue;
+      }
+
+      lcl_set_error(interp, errno == EPIPE || errno == EIO
+                                ? "Process::send: child has closed its input"
+                                : "Process::send: write failed");
+      return LCL_RC_ERR;
+    }
+
+    done += (size_t)written;
   }
 
-  *out = lcl_int_new((lcl_int)written);
-
+  *out = lcl_int_new((lcl_int)done);
   return LCL_RC_OK;
 }
 
@@ -974,16 +1078,17 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
   fd_set rfds;
   struct timeval tv;
   int ret;
-
-  (void)interp;
+  int *eof_flag;
 
   if (argc < 1) {
+    lcl_set_error(interp, "Process::read: expected a process handle");
     return LCL_RC_ERR;
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
+    lcl_set_error(interp, "Process::read: expected a process handle");
     return LCL_RC_ERR;
   }
 
@@ -996,6 +1101,7 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
   max_bytes = get_opt_int(opts, "n", 4096);
 
   fd = use_stderr ? h->stderr_fd : h->stdout_fd;
+  eof_flag = use_stderr ? &h->stderr_eof : &h->stdout_eof;
 
   if (fd < 0) {
     *out = lcl_string_new("");
@@ -1027,15 +1133,62 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
   if (n < 0) {
     if (errno == EAGAIN || errno == EWOULDBLOCK) {
       n = 0;
+    } else if (errno == EIO && h->is_pty) {
+      /* Linux reports a hung-up PTY (slave side closed) as EIO: that is
+       * this stream's end-of-file, not a failure. */
+      n = 0;
+      *eof_flag = 1;
     } else {
       free(buf);
+      lcl_set_error(interp, "Process::read: read failed");
       return LCL_RC_ERR;
     }
+  } else if (n == 0) {
+    *eof_flag = 1;
   }
 
   buf[n] = '\0';
   *out = lcl_string_new(buf);
   free(buf);
+
+  return LCL_RC_OK;
+}
+
+/*
+ * Process::eof? handle ?opts?
+ *
+ * 1 once the stream has delivered end-of-file (or the handle is
+ * closed), else 0. Options: stderr - 1 to ask about the stderr pipe.
+ */
+static lcl_return_code c_process_eof(lcl_interp *interp, int argc,
+                                     lcl_value **argv, lcl_value **out) {
+  process_handle *h;
+  lcl_value *opts = NULL;
+  int use_stderr;
+
+  if (argc < 1) {
+    lcl_set_error(interp, "Process::eof?: expected a process handle");
+    return LCL_RC_ERR;
+  }
+
+  h = get_handle(argv[0]);
+
+  if (!h) {
+    lcl_set_error(interp, "Process::eof?: expected a process handle");
+    return LCL_RC_ERR;
+  }
+
+  if (argc >= 2) {
+    opts = argv[1];
+  }
+
+  use_stderr = get_opt_int(opts, "stderr", 0);
+
+  if (use_stderr) {
+    *out = lcl_int_new(h->stderr_fd < 0 || h->stderr_eof);
+  } else {
+    *out = lcl_int_new(h->stdout_fd < 0 || h->stdout_eof);
+  }
 
   return LCL_RC_OK;
 }
@@ -1240,6 +1393,14 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
       if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         continue;
       }
+
+      if (n == 0 || (errno == EIO && h->is_pty)) {
+        if (use_stderr) {
+          h->stderr_eof = 1;
+        } else {
+          h->stdout_eof = 1;
+        }
+      }
       break;
     }
 
@@ -1417,15 +1578,16 @@ static lcl_return_code c_process_alive(lcl_interp *interp, int argc,
   process_handle *h;
   int status;
   pid_t ret;
-  (void)interp;
 
   if (argc < 1) {
+    lcl_set_error(interp, "Process::alive?: expected a process handle");
     return LCL_RC_ERR;
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
+    lcl_set_error(interp, "Process::alive?: expected a process handle");
     return LCL_RC_ERR;
   }
 
@@ -1449,6 +1611,7 @@ static lcl_return_code c_process_alive(lcl_interp *interp, int argc,
     }
     *out = lcl_int_new(0);
   } else {
+    lcl_set_error(interp, "Process::alive?: waitpid failed");
     return LCL_RC_ERR;
   }
 
@@ -1702,6 +1865,17 @@ void lcl_register_process(lcl_interp *interp) {
   lcl_value *ns = lcl_ns_new(PROCESS_NS);
   lcl_define_take(interp, PROCESS_NS, ns);
 
+  /* Writing to a child that has exited must surface as an error from
+   * Process::send, not kill the host with SIGPIPE. A handler the host
+   * installed itself is left alone. */
+  {
+    void (*prev)(int) = signal(SIGPIPE, SIG_IGN);
+
+    if (prev != SIG_DFL && prev != SIG_IGN) {
+      signal(SIGPIPE, prev);
+    }
+  }
+
   lcl_ns_def_take(ns, "run", lcl_c_proc_new("Process::run", c_process_run));
   lcl_ns_def_take(ns, "spawn",
                   lcl_c_proc_new("Process::spawn", c_process_spawn));
@@ -1712,6 +1886,7 @@ void lcl_register_process(lcl_interp *interp) {
   lcl_ns_def_take(ns, "read", lcl_c_proc_new("Process::read", c_process_read));
   lcl_ns_def_take(ns, "read-until",
                   lcl_c_proc_new("Process::read-until", c_process_read_until));
+  lcl_ns_def_take(ns, "eof?", lcl_c_proc_new("Process::eof?", c_process_eof));
   lcl_ns_def_take(ns, "wait", lcl_c_proc_new("Process::wait", c_process_wait));
   lcl_ns_def_take(ns, "alive?",
                   lcl_c_proc_new("Process::alive?", c_process_alive));
