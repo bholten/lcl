@@ -599,9 +599,9 @@ Test::suite "control payloads survive nested positions" {
         Test::eq [i93_head] 6
     }
 
-    Test::case "return inside concatenation aborts; the string consumes the value" {
+    Test::case "return inside concatenation aborts and keeps its value" {
         proc i93_cat {} { let x "a[return 7]b"; puts unreachable }
-        Test::eq "v=[i93_cat]" {v=}
+        Test::eq "v=[i93_cat]" {v=7}
     }
 
     Test::case "return value propagates from a threaded head" {

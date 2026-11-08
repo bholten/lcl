@@ -1,3 +1,8 @@
+/* snprintf */
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,39 +16,67 @@
 #define CURL_CONTEXT_TYPE "curl_context"
 #define CURL_NS "Curl"
 
-#define CURL_STRING_OPTION(fn_name, curl_opt)                                  \
+/* "<who>: <libcurl's own description>"; lcl_set_error copies the
+   text. */
+static void curl_set_error_code(lcl_interp *interp, const char *who,
+                                CURLcode cc) {
+  char msg[256];
+
+  snprintf(msg, sizeof(msg), "%s: %s", who, curl_easy_strerror(cc));
+  lcl_set_error(interp, msg);
+}
+
+/* `lcl_name` is a string literal: it is pasted into the messages. */
+#define CURL_STRING_OPTION(fn_name, lcl_name, curl_opt)                        \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
     const char *val;                                                           \
+    CURLcode cc;                                                               \
     (void)out;                                                                 \
-    if (argc < 2)                                                              \
+    if (argc < 2) {                                                            \
+      lcl_set_error(interp, lcl_name ": expected 2 arguments (handle value)"); \
       return LCL_RC_ERR;                                                       \
-    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
+    }                                                                          \
+    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) { \
+      lcl_set_error(interp, lcl_name ": expected a curl handle");              \
       return LCL_RC_ERR;                                                       \
+    }                                                                          \
     if (lcl_value_to_cstring(interp, argv[1], &val) != LCL_OK)                 \
       return LCL_RC_ERR;                                                       \
-    return (curl_easy_setopt(ctx->curl, curl_opt, val) == CURLE_OK)            \
-               ? LCL_RC_OK                                                     \
-               : LCL_RC_ERR;                                                   \
+    cc = curl_easy_setopt(ctx->curl, curl_opt, val);                           \
+    if (cc != CURLE_OK) {                                                      \
+      curl_set_error_code(interp, lcl_name, cc);                               \
+      return LCL_RC_ERR;                                                       \
+    }                                                                          \
+    return LCL_RC_OK;                                                          \
   }
 
-#define CURL_LONG_OPTION(fn_name, curl_opt)                                    \
+#define CURL_LONG_OPTION(fn_name, lcl_name, curl_opt)                          \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
     lcl_int val;                                                               \
-    (void)interp;                                                              \
+    CURLcode cc;                                                               \
     (void)out;                                                                 \
-    if (argc < 2)                                                              \
+    if (argc < 2) {                                                            \
+      lcl_set_error(interp, lcl_name ": expected 2 arguments (handle value)"); \
       return LCL_RC_ERR;                                                       \
-    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
+    }                                                                          \
+    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) { \
+      lcl_set_error(interp, lcl_name ": expected a curl handle");              \
       return LCL_RC_ERR;                                                       \
-    if (lcl_value_to_int(argv[1], &val) != LCL_OK)                             \
+    }                                                                          \
+    if (lcl_value_to_int(argv[1], &val) != LCL_OK) {                           \
+      lcl_set_error(interp, lcl_name ": expected an int");                     \
       return LCL_RC_ERR;                                                       \
-    return (curl_easy_setopt(ctx->curl, curl_opt, (long)val) == CURLE_OK)      \
-               ? LCL_RC_OK                                                     \
-               : LCL_RC_ERR;                                                   \
+    }                                                                          \
+    cc = curl_easy_setopt(ctx->curl, curl_opt, (long)val);                     \
+    if (cc != CURLE_OK) {                                                      \
+      curl_set_error_code(interp, lcl_name, cc);                               \
+      return LCL_RC_ERR;                                                       \
+    }                                                                          \
+    return LCL_RC_OK;                                                          \
   }
 
 #define CURL_INFO_LONG(fn_name, curl_info)                                     \
@@ -438,16 +471,17 @@ static lcl_return_code c_curl_new(lcl_interp *interp, int argc,
                                   lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *c;
-  (void)interp;
   (void)argv;
 
   if (argc > 0) {
+    lcl_set_error(interp, "Curl::new: expected no arguments");
     return LCL_RC_ERR;
   }
 
   ctx = curl_context_new();
 
   if (!ctx) {
+    lcl_set_error(interp, "Curl::new: could not create a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -457,6 +491,7 @@ static lcl_return_code c_curl_new(lcl_interp *interp, int argc,
 
   if (!c) {
     curl_context_free(ctx);
+    lcl_set_error(interp, "Curl::new: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -515,8 +550,8 @@ static lcl_return_code c_curl_reset(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
-CURL_STRING_OPTION(c_curl_set_verb, CURLOPT_CUSTOMREQUEST)
-CURL_STRING_OPTION(c_curl_set_url, CURLOPT_URL)
+CURL_STRING_OPTION(c_curl_set_verb, "Curl::set_verb", CURLOPT_CUSTOMREQUEST)
+CURL_STRING_OPTION(c_curl_set_url, "Curl::set_url", CURLOPT_URL)
 
 static lcl_return_code c_curl_set_header(lcl_interp *interp, int argc,
                                          lcl_value **argv, lcl_value **out) {
@@ -590,98 +625,147 @@ static lcl_return_code c_curl_set_body(lcl_interp *interp, int argc,
 /*
  * Nobody
  */
-CURL_LONG_OPTION(c_curl_set_nobody, CURLOPT_NOBODY)
+CURL_LONG_OPTION(c_curl_set_nobody, "Curl::set_nobody", CURLOPT_NOBODY)
 
 /*
  * Connection Settings
  */
-CURL_LONG_OPTION(c_curl_set_option_accept_timeout_ms, CURLOPT_ACCEPTTIMEOUT_MS)
+CURL_LONG_OPTION(c_curl_set_option_accept_timeout_ms,
+                 "Curl::set_accept_timeout_ms", CURLOPT_ACCEPTTIMEOUT_MS)
 CURL_LONG_OPTION(c_curl_set_option_connection_timeout_ms,
-                 CURLOPT_CONNECTTIMEOUT_MS)
-CURL_STRING_OPTION(c_curl_set_option_interface, CURLOPT_INTERFACE)
-CURL_LONG_OPTION(c_curl_set_option_low_speed_limit, CURLOPT_LOW_SPEED_LIMIT)
-CURL_LONG_OPTION(c_curl_set_option_low_speed_time, CURLOPT_LOW_SPEED_TIME)
-CURL_LONG_OPTION(c_curl_set_option_tcp_keep_alive, CURLOPT_TCP_KEEPALIVE)
-CURL_LONG_OPTION(c_curl_set_option_tcp_keep_idle, CURLOPT_TCP_KEEPIDLE)
-CURL_LONG_OPTION(c_curl_set_option_tcp_keep_intvl, CURLOPT_TCP_KEEPINTVL)
+                 "Curl::set_connection_timeout_ms", CURLOPT_CONNECTTIMEOUT_MS)
+CURL_STRING_OPTION(c_curl_set_option_interface, "Curl::set_interface",
+                   CURLOPT_INTERFACE)
+CURL_LONG_OPTION(c_curl_set_option_low_speed_limit, "Curl::set_low_speed_limit",
+                 CURLOPT_LOW_SPEED_LIMIT)
+CURL_LONG_OPTION(c_curl_set_option_low_speed_time, "Curl::set_low_speed_time",
+                 CURLOPT_LOW_SPEED_TIME)
+CURL_LONG_OPTION(c_curl_set_option_tcp_keep_alive, "Curl::set_tcp_keep_alive",
+                 CURLOPT_TCP_KEEPALIVE)
+CURL_LONG_OPTION(c_curl_set_option_tcp_keep_idle, "Curl::set_tcp_keep_idle",
+                 CURLOPT_TCP_KEEPIDLE)
+CURL_LONG_OPTION(c_curl_set_option_tcp_keep_intvl, "Curl::set_tcp_keep_intvl",
+                 CURLOPT_TCP_KEEPINTVL)
 
 /*
  * HTTP Settings
  */
-CURL_STRING_OPTION(c_curl_set_option_accept_encoding, CURLOPT_ACCEPT_ENCODING)
-CURL_LONG_OPTION(c_curl_set_option_http_version, CURLOPT_HTTP_VERSION)
+CURL_STRING_OPTION(c_curl_set_option_accept_encoding,
+                   "Curl::set_accept_encoding", CURLOPT_ACCEPT_ENCODING)
+CURL_LONG_OPTION(c_curl_set_option_http_version, "Curl::set_http_version",
+                 CURLOPT_HTTP_VERSION)
 
 /*
  * TLS/mTLS
  */
-CURL_LONG_OPTION(c_curl_set_option_ssl_verify_peer, CURLOPT_SSL_VERIFYPEER)
-CURL_LONG_OPTION(c_curl_set_option_ssl_verify_host, CURLOPT_SSL_VERIFYHOST)
-CURL_STRING_OPTION(c_curl_set_option_ca_info, CURLOPT_CAINFO)
-CURL_STRING_OPTION(c_curl_set_option_ca_path, CURLOPT_CAPATH)
-CURL_STRING_OPTION(c_curl_set_option_ssl_cert, CURLOPT_SSLCERT)
-CURL_STRING_OPTION(c_curl_set_option_ssl_cert_type, CURLOPT_SSLCERTTYPE)
-CURL_STRING_OPTION(c_curl_set_option_ssl_key, CURLOPT_SSLKEY)
-CURL_STRING_OPTION(c_curl_set_option_ssl_key_type, CURLOPT_SSLKEYTYPE)
-CURL_STRING_OPTION(c_curl_set_option_key_password, CURLOPT_KEYPASSWD)
-CURL_LONG_OPTION(c_curl_set_option_ssl_version, CURLOPT_SSLVERSION)
-CURL_STRING_OPTION(c_curl_set_option_ssl_cipher_list, CURLOPT_SSL_CIPHER_LIST)
-CURL_STRING_OPTION(c_curl_set_option_tls13_ciphers, CURLOPT_TLS13_CIPHERS)
+CURL_LONG_OPTION(c_curl_set_option_ssl_verify_peer, "Curl::set_ssl_verify_peer",
+                 CURLOPT_SSL_VERIFYPEER)
+CURL_LONG_OPTION(c_curl_set_option_ssl_verify_host, "Curl::set_ssl_verify_host",
+                 CURLOPT_SSL_VERIFYHOST)
+CURL_STRING_OPTION(c_curl_set_option_ca_info, "Curl::set_ca_info",
+                   CURLOPT_CAINFO)
+CURL_STRING_OPTION(c_curl_set_option_ca_path, "Curl::set_ca_path",
+                   CURLOPT_CAPATH)
+CURL_STRING_OPTION(c_curl_set_option_ssl_cert, "Curl::set_ssl_cert",
+                   CURLOPT_SSLCERT)
+CURL_STRING_OPTION(c_curl_set_option_ssl_cert_type, "Curl::set_ssl_cert_type",
+                   CURLOPT_SSLCERTTYPE)
+CURL_STRING_OPTION(c_curl_set_option_ssl_key, "Curl::set_ssl_key",
+                   CURLOPT_SSLKEY)
+CURL_STRING_OPTION(c_curl_set_option_ssl_key_type, "Curl::set_ssl_key_type",
+                   CURLOPT_SSLKEYTYPE)
+CURL_STRING_OPTION(c_curl_set_option_key_password, "Curl::set_key_password",
+                   CURLOPT_KEYPASSWD)
+CURL_LONG_OPTION(c_curl_set_option_ssl_version, "Curl::set_ssl_version",
+                 CURLOPT_SSLVERSION)
+CURL_STRING_OPTION(c_curl_set_option_ssl_cipher_list,
+                   "Curl::set_ssl_cipher_list", CURLOPT_SSL_CIPHER_LIST)
+CURL_STRING_OPTION(c_curl_set_option_tls13_ciphers, "Curl::set_tls13_ciphers",
+                   CURLOPT_TLS13_CIPHERS)
 
 /*
  * Proxy options
  */
-CURL_STRING_OPTION(c_curl_set_option_proxy, CURLOPT_PROXY)
-CURL_LONG_OPTION(c_curl_set_option_proxy_port, CURLOPT_PROXYPORT)
-CURL_LONG_OPTION(c_curl_set_option_proxy_type, CURLOPT_PROXYTYPE)
-CURL_STRING_OPTION(c_curl_set_option_proxy_username, CURLOPT_PROXYUSERNAME)
-CURL_STRING_OPTION(c_curl_set_option_proxy_password, CURLOPT_PROXYPASSWORD)
-CURL_STRING_OPTION(c_curl_set_option_no_proxy, CURLOPT_NOPROXY)
+CURL_STRING_OPTION(c_curl_set_option_proxy, "Curl::set_proxy", CURLOPT_PROXY)
+CURL_LONG_OPTION(c_curl_set_option_proxy_port, "Curl::set_proxy_port",
+                 CURLOPT_PROXYPORT)
+CURL_LONG_OPTION(c_curl_set_option_proxy_type, "Curl::set_proxy_type",
+                 CURLOPT_PROXYTYPE)
+CURL_STRING_OPTION(c_curl_set_option_proxy_username, "Curl::set_proxy_username",
+                   CURLOPT_PROXYUSERNAME)
+CURL_STRING_OPTION(c_curl_set_option_proxy_password, "Curl::set_proxy_password",
+                   CURLOPT_PROXYPASSWORD)
+CURL_STRING_OPTION(c_curl_set_option_no_proxy, "Curl::set_no_proxy",
+                   CURLOPT_NOPROXY)
 CURL_LONG_OPTION(c_curl_set_option_proxy_ssl_verify_peer,
+                 "Curl::set_proxy_ssl_verify_peer",
                  CURLOPT_PROXY_SSL_VERIFYPEER)
 CURL_LONG_OPTION(c_curl_set_option_proxy_ssl_verify_host,
+                 "Curl::set_proxy_ssl_verify_host",
                  CURLOPT_PROXY_SSL_VERIFYHOST)
-CURL_STRING_OPTION(c_curl_set_option_proxy_ca_info, CURLOPT_PROXY_CAINFO)
-CURL_STRING_OPTION(c_curl_set_option_proxy_ca_path, CURLOPT_PROXY_CAPATH)
-CURL_LONG_OPTION(c_curl_set_option_proxy_ssl_version, CURLOPT_PROXY_SSLVERSION)
+CURL_STRING_OPTION(c_curl_set_option_proxy_ca_info, "Curl::set_proxy_ca_info",
+                   CURLOPT_PROXY_CAINFO)
+CURL_STRING_OPTION(c_curl_set_option_proxy_ca_path, "Curl::set_proxy_ca_path",
+                   CURLOPT_PROXY_CAPATH)
+CURL_LONG_OPTION(c_curl_set_option_proxy_ssl_version,
+                 "Curl::set_proxy_ssl_version", CURLOPT_PROXY_SSLVERSION)
 
 /*
  * Redirect options
  */
-CURL_LONG_OPTION(c_curl_set_option_follow_location, CURLOPT_FOLLOWLOCATION)
-CURL_LONG_OPTION(c_curl_set_option_max_redirects, CURLOPT_MAXREDIRS)
-CURL_LONG_OPTION(c_curl_set_option_post_redirect, CURLOPT_POSTREDIR)
+CURL_LONG_OPTION(c_curl_set_option_follow_location, "Curl::set_follow_location",
+                 CURLOPT_FOLLOWLOCATION)
+CURL_LONG_OPTION(c_curl_set_option_max_redirects, "Curl::set_max_redirects",
+                 CURLOPT_MAXREDIRS)
+CURL_LONG_OPTION(c_curl_set_option_post_redirect, "Curl::set_post_redirect",
+                 CURLOPT_POSTREDIR)
 
 /*
  * Authentication options
  */
-CURL_LONG_OPTION(c_curl_set_option_httpauth, CURLOPT_HTTPAUTH)
-CURL_STRING_OPTION(c_curl_set_option_username, CURLOPT_USERNAME)
-CURL_STRING_OPTION(c_curl_set_option_password, CURLOPT_PASSWORD)
-CURL_STRING_OPTION(c_curl_set_option_xoauth2_bearer, CURLOPT_XOAUTH2_BEARER)
+CURL_LONG_OPTION(c_curl_set_option_httpauth, "Curl::set_httpauth",
+                 CURLOPT_HTTPAUTH)
+CURL_STRING_OPTION(c_curl_set_option_username, "Curl::set_username",
+                   CURLOPT_USERNAME)
+CURL_STRING_OPTION(c_curl_set_option_password, "Curl::set_password",
+                   CURLOPT_PASSWORD)
+CURL_STRING_OPTION(c_curl_set_option_xoauth2_bearer, "Curl::set_xoauth2_bearer",
+                   CURLOPT_XOAUTH2_BEARER)
 
 /*
  * Observability options
  */
-CURL_LONG_OPTION(c_curl_set_option_verbose, CURLOPT_VERBOSE)
-CURL_LONG_OPTION(c_curl_set_option_header, CURLOPT_HEADER)
+CURL_LONG_OPTION(c_curl_set_option_verbose, "Curl::set_verbose",
+                 CURLOPT_VERBOSE)
+CURL_LONG_OPTION(c_curl_set_option_header, "Curl::set_include_header",
+                 CURLOPT_HEADER)
 
 /*
  * Power user options
  */
-CURL_STRING_OPTION(c_curl_set_option_doh_url, CURLOPT_DOH_URL)
-CURL_STRING_OPTION(c_curl_set_option_dns_servers, CURLOPT_DNS_SERVERS)
-CURL_LONG_OPTION(c_curl_set_option_fresh_connect, CURLOPT_FRESH_CONNECT)
-CURL_LONG_OPTION(c_curl_set_option_forbid_reuse, CURLOPT_FORBID_REUSE)
+CURL_STRING_OPTION(c_curl_set_option_doh_url, "Curl::set_doh_url",
+                   CURLOPT_DOH_URL)
+CURL_STRING_OPTION(c_curl_set_option_dns_servers, "Curl::set_dns_servers",
+                   CURLOPT_DNS_SERVERS)
+CURL_LONG_OPTION(c_curl_set_option_fresh_connect, "Curl::set_fresh_connect",
+                 CURLOPT_FRESH_CONNECT)
+CURL_LONG_OPTION(c_curl_set_option_forbid_reuse, "Curl::set_forbid_reuse",
+                 CURLOPT_FORBID_REUSE)
 CURL_LONG_OPTION(c_curl_set_option_expect_100_timeout_ms,
+                 "Curl::set_expect_100_timeout_ms",
                  CURLOPT_EXPECT_100_TIMEOUT_MS)
 CURL_LONG_OPTION(c_curl_set_option_max_recv_speed_large,
-                 CURLOPT_MAX_RECV_SPEED_LARGE)
+                 "Curl::set_max_recv_speed", CURLOPT_MAX_RECV_SPEED_LARGE)
 CURL_LONG_OPTION(c_curl_set_option_max_send_speed_large,
-                 CURLOPT_MAX_SEND_SPEED_LARGE)
-CURL_STRING_OPTION(c_curl_set_option_cookie_file, CURLOPT_COOKIEFILE)
-CURL_STRING_OPTION(c_curl_set_option_cookie_jar, CURLOPT_COOKIEJAR)
-CURL_STRING_OPTION(c_curl_set_option_user_agent, CURLOPT_USERAGENT)
-CURL_LONG_OPTION(c_curl_set_option_timeout_ms, CURLOPT_TIMEOUT_MS)
+                 "Curl::set_max_send_speed", CURLOPT_MAX_SEND_SPEED_LARGE)
+CURL_STRING_OPTION(c_curl_set_option_cookie_file, "Curl::set_cookie_file",
+                   CURLOPT_COOKIEFILE)
+CURL_STRING_OPTION(c_curl_set_option_cookie_jar, "Curl::set_cookie_jar",
+                   CURLOPT_COOKIEJAR)
+CURL_STRING_OPTION(c_curl_set_option_user_agent, "Curl::set_user_agent",
+                   CURLOPT_USERAGENT)
+CURL_LONG_OPTION(c_curl_set_option_timeout_ms, "Curl::set_timeout_ms",
+                 CURLOPT_TIMEOUT_MS)
 
 /*
  * Info from last request
@@ -756,14 +840,15 @@ static lcl_return_code c_curl_perform(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
   CURLcode result;
-  (void)interp;
   (void)out;
 
   if (argc < 1) {
+    lcl_set_error(interp, "Curl::perform: expected 1 argument (handle)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::perform: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -775,7 +860,12 @@ static lcl_return_code c_curl_perform(lcl_interp *interp, int argc,
     ctx->headers = NULL;
   }
 
-  return (result == CURLE_OK) ? LCL_RC_OK : LCL_RC_ERR;
+  if (result != CURLE_OK) {
+    curl_set_error_code(interp, "Curl::perform", result);
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static size_t curl_write_wrapper(char *contents, size_t size, size_t nmemb,
@@ -818,20 +908,23 @@ static lcl_return_code c_curl_set_write_callback(lcl_interp *interp, int argc,
                                                  lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *callback_proc;
-  (void)interp;
   (void)out;
 
   if (argc < 2) {
+    lcl_set_error(
+        interp, "Curl::set_write_callback: expected 2 arguments (handle proc)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::set_write_callback: expected a curl handle");
     return LCL_RC_ERR;
   }
 
   callback_proc = argv[1];
 
   if (!lcl_is_callable(callback_proc)) {
+    lcl_set_error(interp, "Curl::set_write_callback: expected a proc");
     return LCL_RC_ERR;
   }
 
@@ -921,20 +1014,24 @@ static lcl_return_code c_curl_set_header_callback(lcl_interp *interp, int argc,
                                                   lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *callback_proc;
-  (void)interp;
   (void)out;
 
   if (argc < 2) {
+    lcl_set_error(
+        interp,
+        "Curl::set_header_callback: expected 2 arguments (handle proc)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::set_header_callback: expected a curl handle");
     return LCL_RC_ERR;
   }
 
   callback_proc = argv[1];
 
   if (!lcl_is_callable(callback_proc)) {
+    lcl_set_error(interp, "Curl::set_header_callback: expected a proc");
     return LCL_RC_ERR;
   }
 
@@ -955,20 +1052,23 @@ static lcl_return_code c_curl_set_sse_callback(lcl_interp *interp, int argc,
                                                lcl_value **out) {
   struct curl_context *ctx;
   lcl_value *callback_proc;
-  (void)interp;
   (void)out;
 
   if (argc < 2) {
+    lcl_set_error(interp,
+                  "Curl::set_sse_callback: expected 2 arguments (handle proc)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::set_sse_callback: expected a curl handle");
     return LCL_RC_ERR;
   }
 
   callback_proc = argv[1];
 
   if (!lcl_is_callable(callback_proc)) {
+    lcl_set_error(interp, "Curl::set_sse_callback: expected a proc");
     return LCL_RC_ERR;
   }
 

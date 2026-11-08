@@ -10,13 +10,17 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
   char *result = NULL;
   size_t result_len = 0;
   size_t result_cap = 0;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "subst", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &input_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &input_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = input_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, input_v, &src) != LCL_OK) {
@@ -828,7 +832,8 @@ static int qq_needs_braces(const char *s) {
 
 /* Build result string from IR, evaluating as needed */
 static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
-                    size_t *result_len, size_t *result_cap) {
+                    size_t *result_len, size_t *result_cap,
+                    lcl_return_code *ctl_rc, lcl_value **ctl_payload) {
   qq_node *node;
 
   for (node = nodes; node; node = node->next) {
@@ -888,7 +893,8 @@ static int qq_build(lcl_interp *interp, qq_node *nodes, char **result,
       lcl_word_free_contents(&w);
 
       if (eval_rc != LCL_RC_OK) {
-        lcl_ref_dec(val);
+        *ctl_rc = eval_rc;
+        *ctl_payload = val;
         return 0;
       }
 
@@ -990,13 +996,19 @@ static lcl_return_code s_quasiquote(lcl_interp *interp, int argc,
   size_t result_cap = 0;
   qq_node *ir = NULL;
   const char *err_msg = NULL;
+  lcl_return_code ctl_rc = LCL_RC_ERR;
+  lcl_value *ctl_payload = NULL;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "quasiquote", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &input_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &input_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = input_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, input_v, &src) != LCL_OK) {
@@ -1013,11 +1025,17 @@ static lcl_return_code s_quasiquote(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (!qq_build(interp, ir, &result, &result_len, &result_cap)) {
+  if (!qq_build(interp, ir, &result, &result_len, &result_cap, &ctl_rc,
+                &ctl_payload)) {
     qq_node_free(ir);
     lcl_ref_dec(input_v);
     free(result);
-    return LCL_RC_ERR;
+
+    if (ctl_rc != LCL_RC_ERR) {
+      *out = ctl_payload;
+    }
+
+    return ctl_rc;
   }
 
   qq_node_free(ir);
@@ -1116,8 +1134,11 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
     lcl_value *script_v = NULL;
     const char *script_src;
 
-    if (lcl_eval_word_to_str(interp, args[0], &script_v) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    lcl_return_code rc = lcl_eval_word_to_str(interp, args[0], &script_v);
+
+    if (rc != LCL_RC_OK) {
+      *out = script_v;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, script_v, &script_src) != LCL_OK) {
@@ -1148,15 +1169,19 @@ static lcl_return_code s_eval(lcl_interp *interp, int argc,
       size_t part_len;
       const char *part_str;
 
-      if (lcl_eval_word_to_str(interp, args[i], &parts[i]) != LCL_RC_OK) {
+      lcl_return_code rc = lcl_eval_word_to_str(interp, args[i], &parts[i]);
+
+      if (rc != LCL_RC_OK) {
         int j;
+
+        *out = parts[i];
 
         for (j = 0; j < i; j++) {
           lcl_ref_dec(parts[j]);
         }
 
         free(parts);
-        return LCL_RC_ERR;
+        return rc;
       }
 
       if (lcl_value_to_cstring(interp, parts[i], &part_str) != LCL_OK) {
@@ -1271,23 +1296,38 @@ static lcl_return_code s_eval_at(lcl_interp *interp, int argc,
   const char *file;
   lcl_int line = 1;
   lcl_program *prog;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "eval_at", argc, 2, 3)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &text_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &text_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = text_v;
+    return rc;
   }
 
-  if (lcl_eval_word_to_str(interp, args[1], &file_v) != LCL_RC_OK) {
+  rc = lcl_eval_word_to_str(interp, args[1], &file_v);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(text_v);
-    return LCL_RC_ERR;
+    *out = file_v;
+    return rc;
   }
 
   if (argc == 3) {
-    if (lcl_eval_word(interp, args[2], &line_v) != LCL_RC_OK ||
-        !lcl_std_arg_int(interp, "eval_at", line_v, &line)) {
+    rc = lcl_eval_word(interp, args[2], &line_v);
+
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(file_v);
+      lcl_ref_dec(text_v);
+      *out = line_v;
+      return rc;
+    }
+
+    if (!lcl_std_arg_int(interp, "eval_at", line_v, &line)) {
       lcl_ref_dec(line_v);
       lcl_ref_dec(file_v);
       lcl_ref_dec(text_v);
@@ -1490,6 +1530,7 @@ static lcl_return_code s_thread_first_core(lcl_interp *interp, int argc,
 
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(current);
+      *out = form_v;
       return rc;
     }
 
@@ -1651,7 +1692,7 @@ static lcl_return_code s_thread_last_core(lcl_interp *interp, int argc,
 
     if (rc != LCL_RC_OK) {
       lcl_ref_dec(current);
-
+      *out = form_v;
       return rc;
     }
 

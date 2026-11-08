@@ -4,6 +4,7 @@
 #include "hash-table.h"
 #include "lcl-lex.h"
 #include "str-compat.h"
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct lcl_interp lcl_interp;
@@ -220,6 +221,36 @@ struct lcl_interp {
     (interp)->err_msg = strdup(msg);                                           \
     (interp)->err_msg_owned = 1;                                               \
   } while (0)
+
+#ifndef NDEBUG
+#define LCL_ERR_AUDIT(interp, rc)                                              \
+  do {                                                                         \
+    if ((rc) == LCL_RC_ERR && !(interp)->err_msg && !(interp)->interrupted) {  \
+      fprintf(stderr,                                                          \
+              "lcl: internal error: LCL_RC_ERR without a message at %s:%d\n",  \
+              (interp)->err_file ? (interp)->err_file : "<unknown>",           \
+              (interp)->err_line);                                             \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+/* Same check at the dispatch site, where the offending command's name
+ * is still known. */
+#define LCL_ERR_AUDIT_CMD(interp, rc, name)                                    \
+  do {                                                                         \
+    if ((rc) == LCL_RC_ERR && !(interp)->err_msg && !(interp)->interrupted) {  \
+      fprintf(stderr,                                                          \
+              "lcl: internal error: `%s` returned LCL_RC_ERR without a "       \
+              "message at %s:%d\n",                                            \
+              (name) ? (name) : "<anonymous>",                                 \
+              (interp)->cur_file ? (interp)->cur_file : "<unknown>",           \
+              (interp)->cur_line);                                             \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+#else
+#define LCL_ERR_AUDIT(interp, rc) ((void)0)
+#define LCL_ERR_AUDIT_CMD(interp, rc, name) ((void)0)
+#endif
 
 lcl_interp *lcl_interp_new(void);
 void lcl_interp_free(lcl_interp *interp);

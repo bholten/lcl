@@ -291,14 +291,22 @@ static lcl_return_code s_list_push_bang(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_mut_cell(interp, "List::push!", args[0], &cell, &name_v) !=
-      LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_mut_cell(interp, "List::push!", args[0], &cell, &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
-  if (lcl_eval_word(interp, args[1], &val_v) != LCL_RC_OK) {
+  rc = lcl_eval_word(interp, args[1], &val_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = val_v;
+    val_v = NULL;
     goto done;
   }
+
+  rc = LCL_RC_ERR;
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
     goto done;
@@ -350,10 +358,14 @@ static lcl_return_code s_list_pop_bang(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_mut_cell(interp, "List::pop!", args[0], &cell, &name_v) !=
-      LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_mut_cell(interp, "List::pop!", args[0], &cell, &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
+
+  rc = LCL_RC_ERR;
 
   inner = lcl_cell_peek(cell);
 

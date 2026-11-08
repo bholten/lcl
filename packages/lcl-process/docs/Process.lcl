@@ -53,6 +53,11 @@
 ;;; [Process::wait] yourself if the process may still be running, or
 ;;; it lingers as a zombie until the interpreter exits.
 ;;;
+;;; Registering the package sets `SIGPIPE` to be ignored (unless the
+;;; host installed a handler of its own), so writing to a child that
+;;; has exited is an error from [Process::send] rather than the end of
+;;; the host process.
+;;;
 ;;; ### Expect-style interaction
 ;;;
 ;;; ```tcl
@@ -73,7 +78,7 @@ namespace Process {
 
     ;;; Procs are listed in groups: running ([Process::run],
     ;;; [Process::spawn]), streams ([Process::send], [Process::close-stdin],
-    ;;; [Process::read], [Process::read-until]), lifecycle ([Process::wait],
+    ;;; [Process::read], [Process::read-until], [Process::eof?]), lifecycle ([Process::wait],
     ;;; [Process::alive?], [Process::kill], [Process::close]) and
     ;;; pseudo-terminals ([Process::pty?], [Process::set-winsize],
     ;;; [Process::get-winsize]).
@@ -134,9 +139,17 @@ namespace Process {
     ;;; - `rows`, `cols` -- initial window size for a PTY (default
     ;;;   24 x 80)
     ;;;
-    ;;; Raises an error if `argv` is empty or the spawn fails. A program
-    ;;; that cannot be executed still yields a handle; it exits with
-    ;;; status 127.
+    ;;; Raises an error if `argv` is empty or the spawn fails. A
+    ;;; program that cannot be executed still yields a handle; it
+    ;;; exits with status 127.
+    ;;;
+    ;;; When `spawn` returns, the child has finished the setup the
+    ;;; handle promises and reached its program (or already exited):
+    ;;; on a PTY it is the terminal's session leader and foreground
+    ;;; process group, so a `^C` sent right away is delivered as
+    ;;; SIGINT rather than echoed and dropped. What the program does
+    ;;; *after* it starts (switching to raw mode, printing a prompt)
+    ;;; is not waited for; synchronize on its output for that.
     ;;;
     ;;; ```tcl
     ;;; let h [Process::spawn (python3 -i) #{pty 1 rows 40 cols 120}]
@@ -145,8 +158,10 @@ namespace Process {
 
     ;;; Write the string `data` to the child's standard input.
     ;;;
-    ;;; Returns the number of bytes written. Raises an error if stdin
-    ;;; has been closed with [Process::close-stdin] or the write fails.
+    ;;; Writes all of `data`, waiting as needed on a PTY, and returns
+    ;;; the number of bytes written. Raises `stdin is closed` after
+    ;;; [Process::close-stdin], `child has closed its input` when the
+    ;;; child is gone, or `write failed`.
     ;;;
     ;;; ```tcl
     ;;; Process::send $h "quit\n"
@@ -184,8 +199,10 @@ namespace Process {
     ;;; string when nothing is available within the timeout, when the
     ;;; child has closed the stream, or when the requested stream does
     ;;; not exist (stderr on a `merge` or PTY handle). A read that gets
-    ;;; nothing and one that hits end-of-file look the same; use
-    ;;; [Process::alive?] to tell them apart.
+    ;;; nothing and one that hits end-of-file look the same; ask
+    ;;; [Process::eof?] afterwards to tell them apart. A hung-up PTY
+    ;;; (the child and everything it started have closed the
+    ;;; terminal) counts as end-of-file, not as an error.
     ;;;
     ;;; ```tcl
     ;;; Process::read $h                  ;; what is there right now
@@ -211,8 +228,10 @@ namespace Process {
     ;;; everything read before giving up), `matched` is 1 on a match
     ;;; and 0 on timeout or end-of-file, `pattern` is the matching
     ;;; string (empty when not matched) and `index` its position in
-    ;;; the list (0 for a single pattern). Bytes after the match are
-    ;;; left unread. Raises an error if `patterns` is an empty list.
+    ;;; the list (0 for a single pattern). Bytes read in the same
+    ;;; chunk after the match are discarded; `lcl-expect` keeps a
+    ;;; buffer across waits when that matters. Raises an error if
+    ;;; `patterns` is an empty list.
     ;;;
     ;;; ```tcl
     ;;; let r [Process::read-until $h ("ok>" "error:") #{timeout 2000}]
@@ -221,6 +240,21 @@ namespace Process {
     ;;; }
     ;;; ```
     proc read-until {handle patterns (opts #{})} {}
+
+    ;;; Return 1 once the child's output has ended, else 0.
+    ;;;
+    ;;; True after a read saw end-of-file -- every writer of the pipe
+    ;;; is gone, or the PTY's slave side was closed -- and on a closed
+    ;;; handle. `#{stderr 1}` asks about the stderr pipe. A child can
+    ;;; exit while output is still unread, so this is the signal to
+    ;;; stop reading; [Process::alive?] is the signal to reap.
+    ;;;
+    ;;; ```tcl
+    ;;; while [not [Process::eof? $h]] {
+    ;;;     puts [Process::read $h #{timeout 100}]
+    ;;; }
+    ;;; ```
+    proc eof? {handle (opts #{})} {}
 
     ;;; Wait for the child to exit.
     ;;;

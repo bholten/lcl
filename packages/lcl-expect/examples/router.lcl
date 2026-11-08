@@ -1,0 +1,122 @@
+;; router.lcl - the lcl-expect guide's scenario, end to end.
+;;
+;; Drives examples/fake-router.sh: log in (recovering from a wrong
+;; password), read structured output with regex captures, page through
+;; a long listing, answer a confirmation, and verify the exit status.
+;; The walkthrough is in docs/Expect.lcl.
+;;
+;;   cd packages/lcl-expect && ../../build/lcl examples/router.lcl
+;;   ./build/lcl packages/lcl-expect/examples/router.lcl    ;; from the repo root
+
+let here [cond [== [get [Process::run (test -f examples/fake-router.sh)] status] 0] \
+    "examples" else "packages/lcl-expect/examples"]
+let device "$here/fake-router.sh"
+
+let prompt [Expect::regex {router-01> $}]
+
+;; Log in, trying each password in turn. Every clause that is not the
+;; final state ends in `continue`, so one `expect` runs the whole
+;; conversation; `return` leaves this proc from inside a handler.
+proc login {s user passwords} {
+    var attempt 0
+
+    Expect::expect $s (
+        "login: "          { Expect::send-line $s $user; continue }
+        "Password: "       {
+            if [>= $attempt [len $passwords]] { error "every password was rejected" }
+            Expect::send-line $s [get $passwords $attempt]
+            set! attempt [+ $attempt 1]
+            continue
+        }
+        "Login incorrect"  { puts "  password [get $passwords [- $attempt 1]] rejected"; continue }
+        "Welcome to"       { return $attempt }
+        [Expect::eof]      { error "the device closed the connection: [Expect::buffer $s]" }
+    )
+}
+
+;; Send a command and return its output: everything between the echoed
+;; command line and the next prompt.
+proc run_command {s cmd} {
+    Expect::send-line $s $cmd
+    Expect::wait-for $s "\n"            ;; the terminal echoes what we typed
+    String::trim [get [Expect::wait-for $s $prompt] before]
+}
+
+let s [Expect::spawn (sh $device) #{timeout 5000}]
+
+puts "logging in..."
+
+let attempts [login $s admin (letmein hunter2)]
+
+puts "  logged in after $attempts attempt(s)"
+Expect::wait-for $s $prompt
+
+puts "version: [run_command $s "show version"]"
+assert_eq "RouterOS 7.2.1 (build 4711)" [run_command $s "show version"]
+
+;; Regex captures: groups 1.. are the parenthesised parts.
+Expect::send-line $s "show uptime"
+
+let up [Expect::wait-for $s [Expect::regex {Uptime: ([0-9]+) days, ([0-9]+) hours}]]
+let days [int [get [get $up groups] 1]]
+let hours [int [get [get $up groups] 2]]
+
+puts "uptime: $days days and $hours hours"
+
+assert_eq (4 3) ($days $hours)
+
+Expect::wait-for $s $prompt
+
+;; A paged listing: keep pressing Enter at --More-- and collect the
+;; text that came before each stop.
+puts "reading the log..."
+
+var log ""
+
+Expect::send-line $s "show log"
+Expect::wait-for $s "\n"
+Expect::expect $s (
+    "--More--" {
+        set! log "$log[get [Expect::out $s] before]"
+        Expect::send-line $s
+        continue
+    }
+    $prompt    { set! log "$log[get [Expect::out $s] before]" }
+)
+
+let entries [List::filter [String::split $log "\n"] [lambda {line} { has? $line "link state" }]]
+
+puts "  [len $entries] log entries"
+assert_eq 25 [len $entries]
+
+;; What a failed wait looks like: the error names the patterns and
+;; shows the tail of what the device actually said.
+Expect::send-line $s "show nothing"
+
+let failed [catch { Expect::wait-for $s "Interfaces:" #{timeout 300} } _ problem]
+
+assert_eq 1 $failed
+puts "a wait that fails says: $problem"
+
+Expect::wait-for $s $prompt
+
+;; Answer a confirmation, then let the device go.
+Expect::send-line $s "reboot"
+Expect::wait-for $s {[y/N]}
+Expect::send-line $s "y"
+Expect::expect $s (
+    "Rebooting..."   { puts "device is rebooting" }
+    "Cancelled."     { error "the reboot was refused" }
+)
+
+;; "Rebooting..." is the device's last word, not its exit: wait for
+;; its output to end before closing. Expect::close hangs up on the
+;; child (closing the terminal sends SIGHUP), and a child caught
+;; between its last line and its exit would report `status -1 signal
+;; 1` instead of the status it was about to exit with.
+Expect::wait-for $s [Expect::eof]
+
+let status [Expect::close $s]
+
+puts "device exited with status [get $status status]"
+assert_eq 0 [get $status status]

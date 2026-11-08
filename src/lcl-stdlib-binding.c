@@ -24,14 +24,17 @@ static lcl_return_code s_binding_cell(lcl_interp *interp, int argc,
   lcl_value *name_v = NULL;
   lcl_value *binding = NULL;
   const char *name;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "binding-cell", argc, 1, 1)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[0], &name_v) != LCL_RC_OK) {
-    lcl_ref_dec(name_v);
-    return LCL_RC_ERR;
+  rc = lcl_eval_word(interp, args[0], &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name) != LCL_OK) {
@@ -67,20 +70,25 @@ static lcl_return_code s_same_binding(lcl_interp *interp, int argc,
   const char *name1;
   const char *name2;
   int same;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "same-binding?", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[0], &name1_v) != LCL_RC_OK) {
-    lcl_ref_dec(name1_v);
-    return LCL_RC_ERR;
+  rc = lcl_eval_word(interp, args[0], &name1_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name1_v;
+    return rc;
   }
 
-  if (lcl_eval_word(interp, args[1], &name2_v) != LCL_RC_OK) {
-    lcl_ref_dec(name2_v);
+  rc = lcl_eval_word(interp, args[1], &name2_v);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(name1_v);
-    return LCL_RC_ERR;
+    *out = name2_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name1_v, &name1) != LCL_OK) {
@@ -266,19 +274,25 @@ static lcl_return_code s_set_bang(lcl_interp *interp, int argc,
   lcl_value *val_v = NULL;
   lcl_value *cell = NULL;
   const char *name_str;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "set!", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
-  if (lcl_eval_word(interp, args[1], &val_v) != LCL_RC_OK) {
-    lcl_ref_dec(val_v);
+  rc = lcl_eval_word(interp, args[1], &val_v);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(name_v);
-    return LCL_RC_ERR;
+    *out = val_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
@@ -348,13 +362,17 @@ static lcl_return_code s_var(lcl_interp *interp, int argc,
   lcl_value *name_v = NULL;
   lcl_value *init_v = NULL;
   const char *name_str;
+  lcl_return_code rc;
 
   if (!lcl_std_chk_argc(interp, "var", argc, 2, 2)) {
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, argv[0], &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, argv[0], &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
@@ -369,10 +387,12 @@ static lcl_return_code s_var(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, argv[1], &init_v) != LCL_RC_OK) {
-    lcl_ref_dec(init_v);
+  rc = lcl_eval_word(interp, argv[1], &init_v);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(name_v);
-    return LCL_RC_ERR;
+    *out = init_v;
+    return rc;
   }
 
   if (interp->def_depth > interp->def_floor) {
@@ -415,19 +435,26 @@ static lcl_return_code make_lambda(lcl_interp *interp, const char *self_name,
   int nupvals = 0;
   const char *params_str;
   const char *body_str;
+  lcl_return_code rc;
 
   pspec.params = NULL;
   pspec.n_required = 0;
   pspec.n_optional = 0;
   pspec.rest_name = NULL;
 
-  if (lcl_eval_word_to_str(interp, params_word, &params_s) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, params_word, &params_s);
+
+  if (rc != LCL_RC_OK) {
+    *out = params_s;
+    return rc;
   }
 
-  if (lcl_eval_word_to_str(interp, body_word, &body_s) != LCL_RC_OK) {
+  rc = lcl_eval_word_to_str(interp, body_word, &body_s);
+
+  if (rc != LCL_RC_OK) {
     lcl_ref_dec(params_s);
-    return LCL_RC_ERR;
+    *out = body_s;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, params_s, &params_str) != LCL_OK) {
@@ -516,8 +543,11 @@ static lcl_return_code s_lambda(lcl_interp *interp, int argc,
     const char *self_name;
     lcl_return_code rc;
 
-    if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    rc = lcl_eval_word_to_str(interp, args[0], &name_v);
+
+    if (rc != LCL_RC_OK) {
+      *out = name_v;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, name_v, &self_name) != LCL_OK) {
@@ -547,8 +577,11 @@ static lcl_return_code s_proc(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
@@ -611,8 +644,11 @@ static lcl_return_code s_macro(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word_to_str(interp, args[0], &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, args[0], &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
@@ -685,7 +721,7 @@ static lcl_return_code s_macroexpand(lcl_interp *interp, int argc,
   rc = lcl_eval_word(interp, args[0], &callee);
 
   if (rc != LCL_RC_OK) {
-    lcl_ref_dec(callee);
+    *out = callee;
     return rc;
   }
 
@@ -739,14 +775,13 @@ static lcl_return_code s_macroexpand(lcl_interp *interp, int argc,
       rc = lcl_eval_word(interp, args[i + 1], &arg_v);
 
       if (rc != LCL_RC_OK) {
-        lcl_ref_dec(arg_v);
-
         while (--i >= 0) {
           lcl_ref_dec(argv[i]);
         }
 
         free(argv);
         lcl_ref_dec(callee);
+        *out = arg_v;
         return rc;
       }
 

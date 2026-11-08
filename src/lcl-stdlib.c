@@ -675,7 +675,10 @@ static lcl_return_code c_not_same(lcl_interp *interp, int argc,
  * caller must free the program, *owned=0 if the word owns it. */
 lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
                                          const char *tag,
-                                         lcl_program **prog_out, int *owned) {
+                                         lcl_program **prog_out, int *owned,
+                                         lcl_value **payload_out) {
+  *payload_out = NULL;
+
   if (w->compiled) {
     *prog_out = w->compiled;
     *owned = 0;
@@ -684,11 +687,12 @@ lcl_return_code lcl_std_get_body_program(lcl_interp *interp, const lcl_word *w,
 
   {
     lcl_value *body_v = NULL;
-
     const char *body_src;
+    lcl_return_code rc = lcl_eval_word_to_str(interp, w, &body_v);
 
-    if (lcl_eval_word_to_str(interp, w, &body_v) != LCL_RC_OK) {
-      return LCL_RC_ERR;
+    if (rc != LCL_RC_OK) {
+      *payload_out = body_v;
+      return rc;
     }
 
     if (lcl_value_to_cstring(interp, body_v, &body_src) != LCL_OK) {
@@ -1167,9 +1171,13 @@ lcl_return_code lcl_std_mut_cell(lcl_interp *interp, const char *cmd,
   lcl_value *name_v = NULL;
   lcl_value *cell = NULL;
   const char *name_str;
+  lcl_return_code rc;
 
-  if (lcl_eval_word_to_str(interp, name_w, &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word_to_str(interp, name_w, &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *name_out = name_v;
+    return rc;
   }
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
@@ -1269,17 +1277,32 @@ static lcl_return_code mut_put_del(lcl_interp *interp, const char *cmd,
     return LCL_RC_ERR;
   }
 
-  if (lcl_std_mut_cell(interp, cmd, args[0], &cell, &name_v) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_std_mut_cell(interp, cmd, args[0], &cell, &name_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = name_v;
+    return rc;
   }
 
-  if (lcl_eval_word(interp, args[1], &key_v) != LCL_RC_OK) {
+  rc = lcl_eval_word(interp, args[1], &key_v);
+
+  if (rc != LCL_RC_OK) {
+    *out = key_v;
+    key_v = NULL;
     goto done;
   }
 
-  if (is_put && lcl_eval_word(interp, args[2], &val_v) != LCL_RC_OK) {
-    goto done;
+  if (is_put) {
+    rc = lcl_eval_word(interp, args[2], &val_v);
+
+    if (rc != LCL_RC_OK) {
+      *out = val_v;
+      val_v = NULL;
+      goto done;
+    }
   }
+
+  rc = LCL_RC_ERR;
 
   if (lcl_value_to_cstring(interp, name_v, &name_str) != LCL_OK) {
     goto done;

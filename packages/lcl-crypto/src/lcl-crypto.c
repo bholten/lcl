@@ -108,6 +108,7 @@ static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
   char *hex;
 
   if (argc != 1) {
+    lcl_set_error(interp, "Crypto::sha256: expected 1 argument");
     return LCL_RC_ERR;
   }
 
@@ -118,6 +119,7 @@ static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
   ctx = EVP_MD_CTX_new();
 
   if (!ctx) {
+    lcl_set_error(interp, "Crypto::sha256: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -125,7 +127,7 @@ static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
       EVP_DigestUpdate(ctx, data, strlen(data)) != 1 ||
       EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
     EVP_MD_CTX_free(ctx);
-
+    lcl_set_error(interp, "Crypto::sha256: digest failed");
     return LCL_RC_ERR;
   }
 
@@ -134,6 +136,7 @@ static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
   hex = bytes_to_hex(hash, hash_len);
 
   if (!hex) {
+    lcl_set_error(interp, "Crypto::sha256: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -198,6 +201,7 @@ static lcl_return_code c_crypto_hmac(lcl_interp *interp, int argc,
   char *hex;
 
   if (argc != 3) {
+    lcl_set_error(interp, "Crypto::hmac: expected 3 arguments (key data algo)");
     return LCL_RC_ERR;
   }
 
@@ -216,17 +220,21 @@ static lcl_return_code c_crypto_hmac(lcl_interp *interp, int argc,
   md = get_md_by_name(algo);
 
   if (!md) {
+    lcl_set_error(interp, "Crypto::hmac: unknown digest (use sha256, sha384 "
+                          "or sha512)");
     return LCL_RC_ERR;
   }
 
   if (!HMAC(md, key, (int)strlen(key), (const unsigned char *)data,
             strlen(data), hmac_result, &hmac_len)) {
+    lcl_set_error(interp, "Crypto::hmac: HMAC failed");
     return LCL_RC_ERR;
   }
 
   hex = bytes_to_hex(hmac_result, hmac_len);
 
   if (!hex) {
+    lcl_set_error(interp, "Crypto::hmac: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -251,8 +259,11 @@ static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
   size_t sig_len = 0;
   char *hex = NULL;
   lcl_return_code result = LCL_RC_ERR;
+  const char *err = "Crypto::sign_rsa_pss: signing failed";
 
   if (argc != 3) {
+    lcl_set_error(interp, "Crypto::sign_rsa_pss: expected 3 arguments "
+                          "(key_pem data algo)");
     return LCL_RC_ERR;
   }
 
@@ -271,22 +282,26 @@ static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
   md = get_md_by_name(algo);
 
   if (!md) {
+    err = "Crypto::sign_rsa_pss: unknown digest (use sha256, sha384 or sha512)";
     goto cleanup;
   }
 
   bio = BIO_new_mem_buf(key_pem, -1);
 
   if (!bio) {
+    err = "Crypto::sign_rsa_pss: out of memory";
     goto cleanup;
   }
 
   pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
 
   if (!pkey) {
+    err = "Crypto::sign_rsa_pss: could not parse a PEM private key";
     goto cleanup;
   }
 
   if (EVP_PKEY_base_id(pkey) != EVP_PKEY_RSA) {
+    err = "Crypto::sign_rsa_pss: key is not an RSA key";
     goto cleanup;
   }
 
@@ -339,6 +354,10 @@ static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
   }
 
 cleanup:
+  if (result != LCL_RC_OK) {
+    lcl_set_error(interp, err);
+  }
+
   free(hex);
   free(sig);
   EVP_MD_CTX_free(md_ctx);
@@ -361,8 +380,11 @@ static lcl_return_code c_crypto_sign_ecdsa(lcl_interp *interp, int argc,
   size_t sig_len = 0;
   char *hex = NULL;
   lcl_return_code result = LCL_RC_ERR;
+  const char *err = "Crypto::sign_ecdsa: signing failed";
 
   if (argc != 3) {
+    lcl_set_error(interp, "Crypto::sign_ecdsa: expected 3 arguments "
+                          "(key_pem data curve)");
     return LCL_RC_ERR;
   }
 
@@ -385,22 +407,27 @@ static lcl_return_code c_crypto_sign_ecdsa(lcl_interp *interp, int argc,
   } else if (strcmp(curve, "p521") == 0) {
     md = EVP_sha512();
   } else {
+    lcl_set_error(interp, "Crypto::sign_ecdsa: unknown curve (use p256, p384 "
+                          "or p521)");
     return LCL_RC_ERR;
   }
 
   bio = BIO_new_mem_buf(key_pem, -1);
 
   if (!bio) {
+    err = "Crypto::sign_ecdsa: out of memory";
     goto cleanup;
   }
 
   pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
 
   if (!pkey) {
+    err = "Crypto::sign_ecdsa: could not parse a PEM private key";
     goto cleanup;
   }
 
   if (EVP_PKEY_base_id(pkey) != EVP_PKEY_EC) {
+    err = "Crypto::sign_ecdsa: key is not an EC key";
     goto cleanup;
   }
 
@@ -444,6 +471,10 @@ static lcl_return_code c_crypto_sign_ecdsa(lcl_interp *interp, int argc,
   }
 
 cleanup:
+  if (result != LCL_RC_OK) {
+    lcl_set_error(interp, err);
+  }
+
   free(hex);
   free(sig);
   EVP_MD_CTX_free(md_ctx);
