@@ -86,4 +86,14 @@ Test::suite "Time::mktime" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "Time::profile forwards a control code from its operand" {
+        proc early {} {
+            Time::profile [return early]
+            "late"
+        }
+        Test::eq [early] "early"
+    }
+}
+
 exit [Test::run]

@@ -1,0 +1,32 @@
+;; Tests for the Math:: namespace
+
+Test::suite "Math::" {
+    Test::case "one-argument functions" {
+        Test::eq [Math::sqrt 16] 4.0
+        Test::eq [Math::floor 2.7] 2.0
+        Test::eq [Math::abs -3] 3.0
+    }
+
+    Test::case "two-argument functions" {
+        Test::eq [Math::pow 2 10] 1024.0
+        Test::eq [Math::min 3 2] 2.0
+        Test::eq [Math::max 3 2] 3.0
+    }
+}
+
+Test::suite "Errors name the command" {
+    Test::case "arity errors say what was expected" {
+        Test::raises_with { Math::sin } "Math::sin: expected 1 argument (x)"
+        Test::raises_with { Math::pow 2 } "Math::pow: expected 2 arguments (x y)"
+        Test::raises_with { Math::min 1 } "Math::min: expected 2 arguments (x y)"
+        Test::raises_with { Math::abs 1 2 } "Math::abs: expected 1 argument (x)"
+    }
+
+    Test::case "type errors say what was wanted" {
+        Test::raises_with { Math::sqrt abc } "Math::sqrt: expected a number"
+        Test::raises_with { Math::isnan x } "Math::isnan: expected a number"
+        Test::raises_with { Math::hypot 1 x } "Math::hypot: expected two numbers"
+    }
+}
+
+exit [Test::run]

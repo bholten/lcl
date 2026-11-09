@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,46 @@
 
 #define FILE_HANDLE_TYPE_TAG "file_handle_type_tag"
 #define IO_NS "Io"
+
+static void cat_bounded(char *buf, size_t cap, const char *s) {
+  size_t n = strlen(buf);
+  size_t m = strlen(s);
+
+  if (n >= cap - 1) {
+    return;
+  }
+
+  if (m > cap - 1 - n) {
+    m = cap - 1 - n;
+  }
+
+  memcpy(buf + n, s, m);
+  buf[n + m] = '\0';
+}
+
+static lcl_return_code io_fail(lcl_interp *interp, const char *who,
+                               const char *what, const char *subject, int err) {
+  char buf[512];
+
+  buf[0] = '\0';
+  cat_bounded(buf, sizeof buf, who);
+  cat_bounded(buf, sizeof buf, ": ");
+  cat_bounded(buf, sizeof buf, what);
+
+  if (subject) {
+    cat_bounded(buf, sizeof buf, " '");
+    cat_bounded(buf, sizeof buf, subject);
+    cat_bounded(buf, sizeof buf, "'");
+  }
+
+  if (err) {
+    cat_bounded(buf, sizeof buf, ": ");
+    cat_bounded(buf, sizeof buf, strerror(err));
+  }
+
+  lcl_set_error(interp, buf);
+  return LCL_RC_ERR;
+}
 
 static char *read_file(const char *path) {
   FILE *f;
@@ -63,8 +104,9 @@ static lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **
   FILE *handle;
   lcl_value *handle_value;
 
-  if (argc < 2) {
-    return LCL_RC_ERR;
+  if (argc != 2) {
+    return io_fail(interp, "Io::open_file", "expected 2 arguments (path mode)",
+                   NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &filename) != LCL_OK) {
@@ -78,7 +120,7 @@ static lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **
   handle = fopen(filename, file_perm);
 
   if (!handle) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::open_file", "cannot open", filename, errno);
   }
 
   handle_value = lcl_opaque_new(handle, FILE_HANDLE_TYPE_TAG, NULL);
@@ -91,19 +133,19 @@ static lcl_return_code c_io_open_file(lcl_interp *interp, int argc, lcl_value **
 static lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value **argv,
                                        lcl_value **out) {
   FILE *handle = NULL;
-  (void)interp;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return io_fail(interp, "Io::close_file", "expected 1 argument (handle)",
+                   NULL, 0);
   }
 
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
       LCL_OK) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::close_file", "expected a file handle", NULL, 0);
   }
 
   if (!handle) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::close_file", "file is closed", NULL, 0);
   }
 
   if (handle == stdin || handle == stdout || handle == stderr) {
@@ -112,7 +154,7 @@ static lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value *
   }
 
   if (fclose(handle) == EOF) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::close_file", "close failed", NULL, errno);
   }
 
   *out = lcl_string_new("");
@@ -122,19 +164,18 @@ static lcl_return_code c_io_close_file(lcl_interp *interp, int argc, lcl_value *
 static lcl_return_code c_io_is_eof(lcl_interp *interp, int argc, lcl_value **argv,
                                    lcl_value **out) {
   FILE *handle = NULL;
-  (void)interp;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return io_fail(interp, "Io::eof?", "expected 1 argument (handle)", NULL, 0);
   }
 
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
       LCL_OK) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::eof?", "expected a file handle", NULL, 0);
   }
 
   if (!handle) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::eof?", "file is closed", NULL, 0);
   }
 
   *out = lcl_int_new(feof(handle) ? 1 : 0);
@@ -199,17 +240,18 @@ static lcl_return_code c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv
   FILE *handle = NULL;
   const char *str;
 
-  if (argc < 2) {
-    return LCL_RC_ERR;
+  if (argc != 2) {
+    return io_fail(interp, "Io::fputs", "expected 2 arguments (handle text)",
+                   NULL, 0);
   }
 
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
       LCL_OK) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::fputs", "expected a file handle", NULL, 0);
   }
 
   if (!handle) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::fputs", "file is closed", NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[1], &str) != LCL_OK) {
@@ -217,7 +259,7 @@ static lcl_return_code c_io_fputs(lcl_interp *interp, int argc, lcl_value **argv
   }
 
   if (fputs(str, handle) == EOF) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::fputs", "write failed", NULL, errno);
   }
 
   *out = lcl_string_new("");
@@ -331,23 +373,22 @@ static lcl_return_code c_io_flush(lcl_interp *interp, int argc, lcl_value **argv
                                   lcl_value **out) {
   FILE *handle = NULL;
 
-  (void)interp;
-
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return io_fail(interp, "Io::flush", "expected 1 argument (handle)", NULL,
+                   0);
   }
 
   if (lcl_opaque_get(argv[0], FILE_HANDLE_TYPE_TAG, (void **)&handle) !=
       LCL_OK) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::flush", "expected a file handle", NULL, 0);
   }
 
   if (!handle) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::flush", "file is closed", NULL, 0);
   }
 
   if (fflush(handle) == EOF) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::flush", "flush failed", NULL, errno);
   }
 
   *out = lcl_string_new("");
@@ -359,8 +400,8 @@ static lcl_return_code c_io_getenv(lcl_interp *interp, int argc, lcl_value **arg
   const char *env;
   const char *env_val;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return io_fail(interp, "Io::getenv", "expected 1 argument (name)", NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &env) != LCL_OK) {
@@ -383,8 +424,8 @@ static lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **arg
                                    lcl_value **out) {
   const char *path;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return io_fail(interp, "Io::remove", "expected 1 argument (path)", NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -392,7 +433,7 @@ static lcl_return_code c_io_remove(lcl_interp *interp, int argc, lcl_value **arg
   }
 
   if (remove(path) != 0) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::remove", "cannot remove", path, errno);
   }
 
   *out = lcl_string_new("");
@@ -405,8 +446,9 @@ static lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **arg
   const char *old_path;
   const char *new_path;
 
-  if (argc < 2) {
-    return LCL_RC_ERR;
+  if (argc != 2) {
+    return io_fail(interp, "Io::rename", "expected 2 arguments (old new)", NULL,
+                   0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &old_path) != LCL_OK) {
@@ -418,7 +460,7 @@ static lcl_return_code c_io_rename(lcl_interp *interp, int argc, lcl_value **arg
   }
 
   if (rename(old_path, new_path) != 0) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::rename", "cannot rename", old_path, errno);
   }
 
   *out = lcl_string_new("");
@@ -435,8 +477,9 @@ static lcl_return_code c_io_copy(lcl_interp *interp, int argc, lcl_value **argv,
   char buf[8192];
   size_t n;
 
-  if (argc < 2) {
-    return LCL_RC_ERR;
+  if (argc != 2) {
+    return io_fail(interp, "Io::copy", "expected 2 arguments (src dst)", NULL,
+                   0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &src_path) != LCL_OK) {
@@ -450,21 +493,23 @@ static lcl_return_code c_io_copy(lcl_interp *interp, int argc, lcl_value **argv,
   src = fopen(src_path, "rb");
 
   if (!src) {
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::copy", "cannot open", src_path, errno);
   }
 
   dst = fopen(dst_path, "wb");
 
   if (!dst) {
     fclose(src);
-    return LCL_RC_ERR;
+    return io_fail(interp, "Io::copy", "cannot create", dst_path, errno);
   }
 
   while ((n = fread(buf, 1, sizeof(buf), src)) > 0) {
     if (fwrite(buf, 1, n, dst) != n) {
+      int err = errno;
+
       fclose(src);
       fclose(dst);
-      return LCL_RC_ERR;
+      return io_fail(interp, "Io::copy", "write failed", dst_path, err);
     }
   }
 

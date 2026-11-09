@@ -96,7 +96,12 @@ static lcl_return_code c_crypto_random_bytes(lcl_interp *interp, int argc,
   *out = lcl_string_new(hex);
   free(hex);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::random_bytes: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
@@ -143,7 +148,12 @@ static lcl_return_code c_crypto_sha256(lcl_interp *interp, int argc,
   *out = lcl_string_new(hex);
   free(hex);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::sha256: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
@@ -155,6 +165,7 @@ static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
   char *hex;
 
   if (argc != 1) {
+    lcl_set_error(interp, "Crypto::sha512: expected 1 argument (data)");
     return LCL_RC_ERR;
   }
 
@@ -165,6 +176,7 @@ static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
   ctx = EVP_MD_CTX_new();
 
   if (!ctx) {
+    lcl_set_error(interp, "Crypto::sha512: out of memory");
     return LCL_RC_ERR;
   }
 
@@ -172,7 +184,7 @@ static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
       EVP_DigestUpdate(ctx, data, strlen(data)) != 1 ||
       EVP_DigestFinal_ex(ctx, hash, &hash_len) != 1) {
     EVP_MD_CTX_free(ctx);
-
+    lcl_set_error(interp, "Crypto::sha512: digest failed");
     return LCL_RC_ERR;
   }
 
@@ -181,13 +193,19 @@ static lcl_return_code c_crypto_sha512(lcl_interp *interp, int argc,
   hex = bytes_to_hex(hash, hash_len);
 
   if (!hex) {
+    lcl_set_error(interp, "Crypto::sha512: out of memory");
     return LCL_RC_ERR;
   }
 
   *out = lcl_string_new(hex);
   free(hex);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::sha512: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_crypto_hmac(lcl_interp *interp, int argc,
@@ -241,7 +259,12 @@ static lcl_return_code c_crypto_hmac(lcl_interp *interp, int argc,
   *out = lcl_string_new(hex);
   free(hex);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::hmac: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_crypto_sign_rsa_pss(lcl_interp *interp, int argc,
@@ -528,7 +551,12 @@ static lcl_return_code c_crypto_base64_encode(lcl_interp *interp, int argc,
   *out = lcl_string_new((const char *)buf);
   free(buf);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::base64_encode: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 /* Strict standard base64: the alphabet, a length that is a multiple
@@ -619,7 +647,12 @@ static lcl_return_code c_crypto_base64_decode(lcl_interp *interp, int argc,
   *out = lcl_string_new((const char *)decoded);
   free(decoded);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Crypto::base64_decode: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 void lcl_register_crypto(lcl_interp *interp) {

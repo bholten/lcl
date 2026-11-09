@@ -101,6 +101,11 @@ jobs:
         working-directory: build
         run: ctest --output-on-failure
 
+      - name: Show example output
+        if: always()
+        working-directory: build
+        run: grep -h "shell closed:\|device exited" Testing/Temporary/LastTest.log || true
+
       - name: Stop lcl-curl echo server (Linux)
         if: always() && runner.os == 'Linux' && matrix.package_set == 'linux-full'
         run: docker compose -f lib/curl-dsl/docker-compose.yml down

@@ -338,7 +338,12 @@ static lcl_return_code c_json_encode(lcl_interp *interp, int argc,
   *out = lcl_string_new(str);
   free(str);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::encode: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_decode(lcl_interp *interp, int argc,
@@ -364,70 +369,98 @@ static lcl_return_code c_json_decode(lcl_interp *interp, int argc,
   *out = cjson_to_lcl(json);
   cJSON_Delete(json);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::decode: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_true(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
-  (void)interp;
   (void)argv;
 
   if (argc != 0) {
+    lcl_set_error(interp, "Json::true: expected no arguments");
     return LCL_RC_ERR;
   }
 
   *out = json_bool_new(1);
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::true: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_false(lcl_interp *interp, int argc,
                                     lcl_value **argv, lcl_value **out) {
-  (void)interp;
   (void)argv;
 
   if (argc != 0) {
+    lcl_set_error(interp, "Json::false: expected no arguments");
     return LCL_RC_ERR;
   }
 
   *out = json_bool_new(0);
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::false: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_null(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
-  (void)interp;
   (void)argv;
 
   if (argc != 0) {
+    lcl_set_error(interp, "Json::null: expected no arguments");
     return LCL_RC_ERR;
   }
 
   *out = json_null_new();
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::null: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_is_bool(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
-  (void)interp;
-
   if (argc != 1) {
+    lcl_set_error(interp, "Json::bool?: expected 1 argument (value)");
     return LCL_RC_ERR;
   }
 
   *out = lcl_int_new(json_bool_get(argv[0], NULL) ? 1 : 0);
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::bool?: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 static lcl_return_code c_json_is_null(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
-  (void)interp;
-
   if (argc != 1) {
+    lcl_set_error(interp, "Json::null?: expected 1 argument (value)");
     return LCL_RC_ERR;
   }
 
   *out = lcl_int_new(json_is_null(argv[0]) ? 1 : 0);
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Json::null?: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 void lcl_register_json(lcl_interp *interp) {

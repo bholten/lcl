@@ -6,80 +6,86 @@
 
 #define MATH_NS "Math"
 
-#define MATH_SINGLE_ARG_FN(fn_name, fn)                                        \
+/* `lcl_name` is a string literal: it is pasted into the messages. */
+#define MATH_SINGLE_ARG_FN(fn_name, lcl_name, fn)                              \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     double value;                                                              \
-    (void)interp;                                                              \
-    if (argc < 1)                                                              \
+    if (argc != 1) {                                                           \
+      lcl_set_error(interp, lcl_name ": expected 1 argument (x)");             \
       return LCL_RC_ERR;                                                       \
-    if (lcl_value_to_float(argv[0], &value) != LCL_OK)                         \
+    }                                                                          \
+    if (lcl_value_to_float(argv[0], &value) != LCL_OK) {                       \
+      lcl_set_error(interp, lcl_name ": expected a number");                   \
       return LCL_RC_ERR;                                                       \
+    }                                                                          \
     *out = lcl_float_new(fn(value));                                           \
     return LCL_RC_OK;                                                          \
   }
 
-#define MATH_TWO_ARG_FN(fn_name, fn)                                           \
+#define MATH_TWO_ARG_FN(fn_name, lcl_name, fn)                                 \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     double a;                                                                  \
     double b;                                                                  \
-    (void)interp;                                                              \
-    if (argc < 2)                                                              \
+    if (argc != 2) {                                                           \
+      lcl_set_error(interp, lcl_name ": expected 2 arguments (x y)");          \
       return LCL_RC_ERR;                                                       \
-    if (lcl_value_to_float(argv[0], &a) != LCL_OK)                             \
+    }                                                                          \
+    if (lcl_value_to_float(argv[0], &a) != LCL_OK ||                           \
+        lcl_value_to_float(argv[1], &b) != LCL_OK) {                           \
+      lcl_set_error(interp, lcl_name ": expected two numbers");                \
       return LCL_RC_ERR;                                                       \
-    if (lcl_value_to_float(argv[1], &b) != LCL_OK)                             \
-      return LCL_RC_ERR;                                                       \
+    }                                                                          \
     *out = lcl_float_new(fn(a, b));                                            \
     return LCL_RC_OK;                                                          \
   }
 
 /* Trigonometric functions */
-MATH_SINGLE_ARG_FN(c_sin, sin)
-MATH_SINGLE_ARG_FN(c_cos, cos)
-MATH_SINGLE_ARG_FN(c_tan, tan)
-MATH_SINGLE_ARG_FN(c_asin, asin)
-MATH_SINGLE_ARG_FN(c_acos, acos)
-MATH_SINGLE_ARG_FN(c_atan, atan)
-MATH_TWO_ARG_FN(c_atan2, atan2)
+MATH_SINGLE_ARG_FN(c_sin, "Math::sin", sin)
+MATH_SINGLE_ARG_FN(c_cos, "Math::cos", cos)
+MATH_SINGLE_ARG_FN(c_tan, "Math::tan", tan)
+MATH_SINGLE_ARG_FN(c_asin, "Math::asin", asin)
+MATH_SINGLE_ARG_FN(c_acos, "Math::acos", acos)
+MATH_SINGLE_ARG_FN(c_atan, "Math::atan", atan)
+MATH_TWO_ARG_FN(c_atan2, "Math::atan2", atan2)
 
 /* Hyperbolic functions */
-MATH_SINGLE_ARG_FN(c_sinh, sinh)
-MATH_SINGLE_ARG_FN(c_cosh, cosh)
-MATH_SINGLE_ARG_FN(c_tanh, tanh)
-MATH_SINGLE_ARG_FN(c_asinh, asinh)
-MATH_SINGLE_ARG_FN(c_acosh, acosh)
-MATH_SINGLE_ARG_FN(c_atanh, atanh)
+MATH_SINGLE_ARG_FN(c_sinh, "Math::sinh", sinh)
+MATH_SINGLE_ARG_FN(c_cosh, "Math::cosh", cosh)
+MATH_SINGLE_ARG_FN(c_tanh, "Math::tanh", tanh)
+MATH_SINGLE_ARG_FN(c_asinh, "Math::asinh", asinh)
+MATH_SINGLE_ARG_FN(c_acosh, "Math::acosh", acosh)
+MATH_SINGLE_ARG_FN(c_atanh, "Math::atanh", atanh)
 
 /* Exponential and logarithmic functions */
-MATH_SINGLE_ARG_FN(c_exp, exp)
-MATH_SINGLE_ARG_FN(c_exp2, exp2)
-MATH_SINGLE_ARG_FN(c_log, log)
-MATH_SINGLE_ARG_FN(c_log2, log2)
-MATH_SINGLE_ARG_FN(c_log10, log10)
+MATH_SINGLE_ARG_FN(c_exp, "Math::exp", exp)
+MATH_SINGLE_ARG_FN(c_exp2, "Math::exp2", exp2)
+MATH_SINGLE_ARG_FN(c_log, "Math::log", log)
+MATH_SINGLE_ARG_FN(c_log2, "Math::log2", log2)
+MATH_SINGLE_ARG_FN(c_log10, "Math::log10", log10)
 
 /* Power functions */
-MATH_TWO_ARG_FN(c_pow, pow)
-MATH_SINGLE_ARG_FN(c_sqrt, sqrt)
-MATH_SINGLE_ARG_FN(c_cbrt, cbrt)
-MATH_TWO_ARG_FN(c_hypot, hypot)
+MATH_TWO_ARG_FN(c_pow, "Math::pow", pow)
+MATH_SINGLE_ARG_FN(c_sqrt, "Math::sqrt", sqrt)
+MATH_SINGLE_ARG_FN(c_cbrt, "Math::cbrt", cbrt)
+MATH_TWO_ARG_FN(c_hypot, "Math::hypot", hypot)
 
 /* Rounding and remainder functions */
-MATH_SINGLE_ARG_FN(c_ceil, ceil)
-MATH_SINGLE_ARG_FN(c_floor, floor)
-MATH_SINGLE_ARG_FN(c_trunc, trunc)
-MATH_SINGLE_ARG_FN(c_round, round)
-MATH_TWO_ARG_FN(c_fmod, fmod)
+MATH_SINGLE_ARG_FN(c_ceil, "Math::ceil", ceil)
+MATH_SINGLE_ARG_FN(c_floor, "Math::floor", floor)
+MATH_SINGLE_ARG_FN(c_trunc, "Math::trunc", trunc)
+MATH_SINGLE_ARG_FN(c_round, "Math::round", round)
+MATH_TWO_ARG_FN(c_fmod, "Math::fmod", fmod)
 
 /* Absolute value */
-MATH_SINGLE_ARG_FN(c_fabs, fabs)
+MATH_SINGLE_ARG_FN(c_fabs, "Math::abs", fabs)
 
 /* Error and gamma functions */
-MATH_SINGLE_ARG_FN(c_erf, erf)
-MATH_SINGLE_ARG_FN(c_erfc, erfc)
-MATH_SINGLE_ARG_FN(c_tgamma, tgamma)
-MATH_SINGLE_ARG_FN(c_lgamma, lgamma)
+MATH_SINGLE_ARG_FN(c_erf, "Math::erf", erf)
+MATH_SINGLE_ARG_FN(c_erfc, "Math::erfc", erfc)
+MATH_SINGLE_ARG_FN(c_tgamma, "Math::tgamma", tgamma)
+MATH_SINGLE_ARG_FN(c_lgamma, "Math::lgamma", lgamma)
 
 /* Math::pi -> constant pi */
 static lcl_return_code c_pi(lcl_interp *interp, int argc, lcl_value **argv,
@@ -105,13 +111,13 @@ static lcl_return_code c_e(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_isnan(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   double value;
-  (void)interp;
-
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Math::isnan: expected 1 argument (x)");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_float(argv[0], &value) != LCL_OK) {
+    lcl_set_error(interp, "Math::isnan: expected a number");
     return LCL_RC_ERR;
   }
 
@@ -124,13 +130,13 @@ static lcl_return_code c_isnan(lcl_interp *interp, int argc, lcl_value **argv,
 static lcl_return_code c_isinf(lcl_interp *interp, int argc, lcl_value **argv,
                                lcl_value **out) {
   double value;
-  (void)interp;
-
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Math::isinf: expected 1 argument (x)");
     return LCL_RC_ERR;
   }
 
   if (lcl_value_to_float(argv[0], &value) != LCL_OK) {
+    lcl_set_error(interp, "Math::isinf: expected a number");
     return LCL_RC_ERR;
   }
 
@@ -144,17 +150,14 @@ static lcl_return_code c_min(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   double a;
   double b;
-  (void)interp;
-
-  if (argc < 2) {
+  if (argc != 2) {
+    lcl_set_error(interp, "Math::min: expected 2 arguments (x y)");
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[0], &a) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[1], &b) != LCL_OK) {
+  if (lcl_value_to_float(argv[0], &a) != LCL_OK ||
+      lcl_value_to_float(argv[1], &b) != LCL_OK) {
+    lcl_set_error(interp, "Math::min: expected two numbers");
     return LCL_RC_ERR;
   }
 
@@ -168,17 +171,14 @@ static lcl_return_code c_max(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
   double a;
   double b;
-  (void)interp;
-
-  if (argc < 2) {
+  if (argc != 2) {
+    lcl_set_error(interp, "Math::max: expected 2 arguments (x y)");
     return LCL_RC_ERR;
   }
 
-  if (lcl_value_to_float(argv[0], &a) != LCL_OK) {
-    return LCL_RC_ERR;
-  }
-
-  if (lcl_value_to_float(argv[1], &b) != LCL_OK) {
+  if (lcl_value_to_float(argv[0], &a) != LCL_OK ||
+      lcl_value_to_float(argv[1], &b) != LCL_OK) {
+    lcl_set_error(interp, "Math::max: expected two numbers");
     return LCL_RC_ERR;
   }
 

@@ -115,11 +115,11 @@ static lcl_return_code c_monotonic_us(lcl_interp *interp, int argc,
                                       lcl_value **argv, lcl_value **out) {
   struct timespec ts;
   lcl_u64 usec;
-  (void)interp;
   (void)argc;
   (void)argv;
 
   if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+    lcl_set_error(interp, "Time::monotonic_us: clock_gettime failed");
     return LCL_RC_ERR;
   }
 
@@ -717,8 +717,11 @@ static lcl_return_code s_profile(lcl_interp *interp, int argc,
     return LCL_RC_ERR;
   }
 
-  if (lcl_eval_word(interp, args[0], &body) != LCL_RC_OK) {
-    return LCL_RC_ERR;
+  rc = lcl_eval_word(interp, args[0], &body);
+
+  if (rc != LCL_RC_OK) {
+    *out = body;
+    return rc;
   }
 
   src = lcl_value_to_string(body);
@@ -829,7 +832,12 @@ static lcl_return_code c_profile_format(lcl_interp *interp, int argc,
   *out = lcl_string_new(buf ? buf : "");
   free(buf);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Time::profile_format: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 void lcl_register_time(lcl_interp *interp) {

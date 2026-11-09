@@ -47,5 +47,11 @@ assert [!= [Crypto::random_bytes 8] [Crypto::random_bytes 8]]
 assert [catch {Crypto::random_bytes -1}]
 puts "16 random bytes (hex): $rb"
 
+;; Errors name the command and say what was expected
+assert [catch {Crypto::sha512} _ err]
+assert [!= [String::find $err "Crypto::sha512: expected 1 argument (data)"] -1]
+assert [catch {Crypto::sha256 a b} _ err]
+assert [!= [String::find $err "Crypto::sha256: expected 1 argument"] -1]
+
 puts ""
 puts "All basic crypto tests passed!"

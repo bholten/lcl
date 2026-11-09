@@ -2,9 +2,11 @@
 #define _XOPEN_SOURCE 700
 
 #include <dirent.h>
+#include <errno.h>
 #include <glob.h>
 #include <libgen.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -14,6 +16,29 @@
 #include <lcl.h>
 
 #define POSIX_NS "Posix"
+
+/* "who: what 'subject': strerror(err)"; subject may be NULL and err
+   0. */
+static lcl_return_code posix_fail(lcl_interp *interp, const char *who,
+                                  const char *what, const char *subject,
+                                  int err) {
+  char buf[PATH_MAX + 256];
+  size_t n;
+
+  if (subject) {
+    snprintf(buf, sizeof buf, "%s: %s '%s'", who, what, subject);
+  } else {
+    snprintf(buf, sizeof buf, "%s: %s", who, what);
+  }
+
+  if (err) {
+    n = strlen(buf);
+    snprintf(buf + n, sizeof buf - n, ": %s", strerror(err));
+  }
+
+  lcl_set_error(interp, buf);
+  return LCL_RC_ERR;
+}
 
 lcl_return_code c_posix_glob(lcl_interp *interp, int argc, lcl_value **argv,
                              lcl_value **out) {
@@ -71,8 +96,9 @@ lcl_return_code c_posix_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
   const char *path;
   lcl_int mode = 0755;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc < 1 || argc > 2) {
+    return posix_fail(interp, "Posix::mkdir",
+                      "expected 1 or 2 arguments (path ?mode?)", NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -81,12 +107,14 @@ lcl_return_code c_posix_mkdir(lcl_interp *interp, int argc, lcl_value **argv,
 
   if (argc >= 2) {
     if (lcl_value_to_int(argv[1], &mode) != LCL_OK) {
-      return LCL_RC_ERR;
+      return posix_fail(interp, "Posix::mkdir", "mode must be an integer", NULL,
+                        0);
     }
   }
 
   if (mkdir(path, (mode_t)mode) != 0) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::mkdir", "cannot create directory", path,
+                      errno);
   }
 
   *out = lcl_string_new("");
@@ -98,8 +126,9 @@ lcl_return_code c_posix_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   const char *path;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::rmdir", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -107,7 +136,8 @@ lcl_return_code c_posix_rmdir(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (rmdir(path) != 0) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::rmdir", "cannot remove directory", path,
+                      errno);
   }
 
   *out = lcl_string_new("");
@@ -120,8 +150,9 @@ lcl_return_code c_posix_exists(lcl_interp *interp, int argc, lcl_value **argv,
   const char *path;
   struct stat st;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::exists?", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -143,8 +174,9 @@ lcl_return_code c_posix_is_file(lcl_interp *interp, int argc, lcl_value **argv,
   const char *path;
   struct stat st;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::file?", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -166,8 +198,9 @@ lcl_return_code c_posix_is_dir(lcl_interp *interp, int argc, lcl_value **argv,
   const char *path;
   struct stat st;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::dir?", "expected 1 argument (path)", NULL,
+                      0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -189,8 +222,9 @@ lcl_return_code c_posix_file_size(lcl_interp *interp, int argc,
   const char *path;
   struct stat st;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::file_size", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -198,7 +232,7 @@ lcl_return_code c_posix_file_size(lcl_interp *interp, int argc,
   }
 
   if (stat(path, &st) != 0) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::file_size", "cannot stat", path, errno);
   }
 
   *out = lcl_int_new((lcl_int)st.st_size);
@@ -211,8 +245,9 @@ lcl_return_code c_posix_file_mtime(lcl_interp *interp, int argc,
   const char *path;
   struct stat st;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::file_mtime", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -220,7 +255,7 @@ lcl_return_code c_posix_file_mtime(lcl_interp *interp, int argc,
   }
 
   if (stat(path, &st) != 0) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::file_mtime", "cannot stat", path, errno);
   }
 
   *out = lcl_int_new((lcl_int)st.st_mtime);
@@ -236,8 +271,9 @@ lcl_return_code c_posix_readdir(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *result;
   lcl_value *item;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::readdir", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -247,7 +283,8 @@ lcl_return_code c_posix_readdir(lcl_interp *interp, int argc, lcl_value **argv,
   dir = opendir(path);
 
   if (!dir) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::readdir", "cannot read directory", path,
+                      errno);
   }
 
   result = lcl_list_new();
@@ -279,7 +316,7 @@ lcl_return_code c_posix_getcwd(lcl_interp *interp, int argc, lcl_value **argv,
   cwd = getcwd(buf, sizeof(buf));
 
   if (!cwd) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::getcwd", "getcwd failed", NULL, errno);
   }
 
   *out = lcl_string_new(cwd);
@@ -291,8 +328,9 @@ lcl_return_code c_posix_chdir(lcl_interp *interp, int argc, lcl_value **argv,
                               lcl_value **out) {
   const char *path;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::chdir", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -300,7 +338,7 @@ lcl_return_code c_posix_chdir(lcl_interp *interp, int argc, lcl_value **argv,
   }
 
   if (chdir(path) != 0) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::chdir", "cannot change to", path, errno);
   }
 
   *out = lcl_string_new("");
@@ -313,8 +351,9 @@ lcl_return_code c_posix_realpath(lcl_interp *interp, int argc, lcl_value **argv,
   lcl_value *path_value = NULL;
   char *actual_path = NULL;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, "Posix::realpath", "expected 1 argument (path)",
+                      NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &filename) != LCL_OK) {
@@ -324,14 +363,15 @@ lcl_return_code c_posix_realpath(lcl_interp *interp, int argc, lcl_value **argv,
   actual_path = realpath(filename, NULL);
 
   if (actual_path == NULL) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::realpath", "cannot resolve", filename,
+                      errno);
   }
 
   path_value = lcl_string_new(actual_path);
 
   if (path_value == NULL) {
     free(actual_path);
-    return LCL_RC_ERR;
+    return posix_fail(interp, "Posix::realpath", "out of memory", NULL, 0);
   }
 
   *out = path_value;
@@ -343,15 +383,15 @@ lcl_return_code c_posix_realpath(lcl_interp *interp, int argc, lcl_value **argv,
 
 /* dirname/basename(3) modify their argument in place, so work on a
  * private copy rather than the value's borrowed string. */
-static lcl_return_code posix_path_part(lcl_interp *interp, int argc,
-                                       lcl_value **argv, lcl_value **out,
-                                       char *(*part)(char *)) {
+static lcl_return_code posix_path_part(lcl_interp *interp, const char *who,
+                                       int argc, lcl_value **argv,
+                                       lcl_value **out, char *(*part)(char *)) {
   const char *path;
   char buf[PATH_MAX];
   size_t n;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return posix_fail(interp, who, "expected 1 argument (path)", NULL, 0);
   }
 
   if (lcl_value_to_cstring(interp, argv[0], &path) != LCL_OK) {
@@ -361,23 +401,27 @@ static lcl_return_code posix_path_part(lcl_interp *interp, int argc,
   n = strlen(path);
 
   if (n >= sizeof buf) {
-    return LCL_RC_ERR;
+    return posix_fail(interp, who, "path is too long", NULL, 0);
   }
 
   memcpy(buf, path, n + 1);
   *out = lcl_string_new(part(buf));
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    return posix_fail(interp, who, "out of memory", NULL, 0);
+  }
+
+  return LCL_RC_OK;
 }
 
 lcl_return_code c_posix_dirname(lcl_interp *interp, int argc, lcl_value **argv,
                                 lcl_value **out) {
-  return posix_path_part(interp, argc, argv, out, dirname);
+  return posix_path_part(interp, "Posix::dirname", argc, argv, out, dirname);
 }
 
 lcl_return_code c_posix_basename(lcl_interp *interp, int argc, lcl_value **argv,
                                  lcl_value **out) {
-  return posix_path_part(interp, argc, argv, out, basename);
+  return posix_path_part(interp, "Posix::basename", argc, argv, out, basename);
 }
 
 void lcl_register_posix(lcl_interp *interp) {
