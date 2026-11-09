@@ -134,6 +134,26 @@ static void spawn_report_failure(int fd, int err) {
   (void)n;
 }
 
+static int set_cloexec(int fd) {
+  int flags = fcntl(fd, F_GETFD, 0);
+
+  if (flags < 0) {
+    return -1;
+  }
+
+  return fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
+static int pipe_cloexec(int fds[2]) {
+  if (pipe(fds) < 0) {
+    return -1;
+  }
+
+  set_cloexec(fds[0]);
+  set_cloexec(fds[1]);
+  return 0;
+}
+
 static int set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
 
@@ -417,15 +437,15 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
     exec_argv[argv_len] = NULL;
   }
 
-  if (pipe(stdout_pipe) < 0) {
+  if (pipe_cloexec(stdout_pipe) < 0) {
     goto cleanup;
   }
 
-  if (!merge && pipe(stderr_pipe) < 0) {
+  if (!merge && pipe_cloexec(stderr_pipe) < 0) {
     goto cleanup;
   }
 
-  if (stdin_str && pipe(stdin_pipe) < 0) {
+  if (stdin_str && pipe_cloexec(stdin_pipe) < 0) {
     goto cleanup;
   }
 
@@ -697,25 +717,26 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     if (openpty(&pty_master, &pty_slave, NULL, NULL, &ws) < 0) {
       goto error;
     }
+
+    set_cloexec(pty_master);
+    set_cloexec(pty_slave);
   } else {
-    if (pipe(stdin_pipe) < 0) {
+    if (pipe_cloexec(stdin_pipe) < 0) {
       goto error;
     }
 
-    if (pipe(stdout_pipe) < 0) {
+    if (pipe_cloexec(stdout_pipe) < 0) {
       goto error;
     }
 
-    if (!merge && pipe(stderr_pipe) < 0) {
+    if (!merge && pipe_cloexec(stderr_pipe) < 0) {
       goto error;
     }
   }
 
-  if (pipe(sync_pipe) < 0) {
+  if (pipe_cloexec(sync_pipe) < 0) {
     goto error;
   }
-
-  fcntl(sync_pipe[1], F_SETFD, FD_CLOEXEC);
 
   pid = fork();
 
@@ -734,7 +755,7 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
       if (moved >= 0) {
         close(sync_fd);
         sync_fd = moved;
-        fcntl(sync_fd, F_SETFD, FD_CLOEXEC);
+        set_cloexec(sync_fd);
       }
     }
 

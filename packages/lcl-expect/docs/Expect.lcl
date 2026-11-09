@@ -319,6 +319,28 @@
 ;;; get [Expect::close $s] status        ;; 0
 ;;; ```
 ;;;
+;;; **Tidying up.** An error in the middle of a conversation would
+;;; leave the child running. `finally` closes the session however the
+;;; dialogue ends, and lets the error (or `return`) carry on
+;;; afterwards. Keep the end-of-file wait *inside* the dialogue when
+;;; the program is expected to exit: that is part of what you are
+;;; checking, not cleanup.
+;;;
+;;; ```tcl
+;;; let s [Expect::spawn (sh fake-router.sh) #{timeout 5000}]
+;;; finally {
+;;;     login $s admin (letmein s3cret)
+;;;     ...
+;;;     Expect::wait-for $s [Expect::eof]
+;;; } {
+;;;     Expect::close $s
+;;; }
+;;; ```
+;;;
+;;; For a program that never means to exit -- a shell, a REPL -- the
+;;; cleanup is the natural ending, and `close`'s hang-up is the right
+;;; one; see `examples/shell.lcl`.
+;;;
 ;;; ## Coming from Tcl's Expect
 ;;;
 ;;; | Tcl | Lcl |

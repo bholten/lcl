@@ -1295,6 +1295,145 @@ static lcl_return_code s_foreach(lcl_interp *interp, int argc,
   return LCL_RC_OK;
 }
 
+/* finally {body} {cleanup}
+ *
+ * Run body, then cleanup, and hand back body's outcome: its value, its
+ * control code (return/break/continue pass through untouched, so a
+ * loop or proc around us never knows we were here) and, for an error,
+ * its message and location. The cleanup therefore runs in a clean
+ * error state and may `catch` freely; the body's state is snapshotted
+ * around it. A cleanup that does not complete normally supersedes the
+ * body's outcome; when both fail the cleanup's message keeps the
+ * original: "<cleanup> (while unwinding: <body>)".
+ *
+ * Neither body is a tail position: a self-recursive call in the body
+ * must return here so the cleanup runs after it, not before. A step
+ * hook abort is not unwound: the abort is sticky and the cleanup's
+ * first command would fail anyway, so it is skipped and the abort
+ * propagates as is. */
+typedef struct {
+  const char *msg;
+  int msg_owned;
+  const char *file;
+  int file_owned;
+  int line;
+} err_snapshot;
+
+static void err_take(lcl_interp *interp, err_snapshot *s) {
+  s->msg = interp->err_msg;
+  s->msg_owned = interp->err_msg_owned;
+  s->file = interp->err_file;
+  s->file_owned = interp->err_file_owned;
+  s->line = interp->err_line;
+  interp->err_msg = NULL;
+  interp->err_msg_owned = 0;
+  interp->err_file = NULL;
+  interp->err_file_owned = 0;
+}
+
+static void err_restore(lcl_interp *interp, const err_snapshot *s) {
+  LCL_ERR_CLEAR(interp);
+  interp->err_msg = s->msg;
+  interp->err_msg_owned = s->msg_owned;
+  interp->err_file = s->file;
+  interp->err_file_owned = s->file_owned;
+  interp->err_line = s->line;
+}
+
+static void err_drop(err_snapshot *s) {
+  if (s->msg_owned && s->msg) {
+    free((void *)s->msg);
+  }
+
+  if (s->file_owned && s->file) {
+    free((void *)s->file);
+  }
+
+  s->msg = NULL;
+  s->file = NULL;
+}
+
+static lcl_return_code s_finally(lcl_interp *interp, int argc,
+                                 const lcl_word **args, lcl_value **out) {
+  lcl_program *body_p = NULL;
+  lcl_program *cleanup_p = NULL;
+  int body_owned = 0;
+  int cleanup_owned = 0;
+  int saved_tail_position = interp->in_tail_position;
+  lcl_value *body_v = NULL;
+  lcl_value *cleanup_v = NULL;
+  lcl_return_code body_rc;
+  lcl_return_code cleanup_rc;
+  err_snapshot pending;
+
+  if (!lcl_std_chk_argc(interp, "finally", argc, 2, 2)) {
+    return LCL_RC_ERR;
+  }
+
+  body_rc = lcl_std_get_body_program(interp, args[0], "finally-body", &body_p,
+                                     &body_owned, out);
+
+  if (body_rc != LCL_RC_OK) {
+    return body_rc;
+  }
+
+  cleanup_rc = lcl_std_get_body_program(interp, args[1], "finally-cleanup",
+                                        &cleanup_p, &cleanup_owned, out);
+
+  if (cleanup_rc != LCL_RC_OK) {
+    lcl_std_free_if_owned(body_p, body_owned);
+    return cleanup_rc;
+  }
+
+  interp->in_tail_position = 0;
+  body_rc = lcl_eval_program(interp, body_p, &body_v);
+
+  if (body_rc == LCL_RC_ERR && interp->interrupted) {
+    lcl_ref_dec(body_v);
+    lcl_std_free_if_owned(body_p, body_owned);
+    lcl_std_free_if_owned(cleanup_p, cleanup_owned);
+    interp->in_tail_position = saved_tail_position;
+    return LCL_RC_ERR;
+  }
+
+  err_take(interp, &pending);
+  cleanup_rc = lcl_eval_program(interp, cleanup_p, &cleanup_v);
+  interp->in_tail_position = saved_tail_position;
+  lcl_std_free_if_owned(body_p, body_owned);
+  lcl_std_free_if_owned(cleanup_p, cleanup_owned);
+
+  if (cleanup_rc == LCL_RC_OK) {
+    lcl_ref_dec(cleanup_v);
+    err_restore(interp, &pending);
+    *out = body_v;
+    return body_rc;
+  }
+
+  lcl_ref_dec(body_v);
+
+  if (cleanup_rc == LCL_RC_ERR && body_rc == LCL_RC_ERR && pending.msg &&
+      interp->err_msg) {
+    const char *tail = " (while unwinding: ";
+    size_t n = strlen(interp->err_msg) + strlen(tail) + strlen(pending.msg) + 2;
+    char *joined = (char *)malloc(n);
+
+    if (joined) {
+      snprintf(joined, n, "%s%s%s)", interp->err_msg, tail, pending.msg);
+
+      if (interp->err_msg_owned) {
+        free((void *)interp->err_msg);
+      }
+
+      interp->err_msg = joined;
+      interp->err_msg_owned = 1;
+    }
+  }
+
+  err_drop(&pending);
+  *out = cleanup_v;
+  return cleanup_rc;
+}
+
 void lcl_std_register_control(lcl_interp *interp) {
   lcl_register_spec(interp, "and", s_and);
   lcl_register_spec(interp, "or", s_or);
@@ -1311,4 +1450,5 @@ void lcl_std_register_control(lcl_interp *interp) {
   lcl_register_spec(interp, "continue", s_continue);
   lcl_register_proc(interp, "error", c_error);
   lcl_register_spec(interp, "catch", c_catch);
+  lcl_register_spec(interp, "finally", s_finally);
 }

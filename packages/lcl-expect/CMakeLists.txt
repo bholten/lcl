@@ -20,6 +20,7 @@ target_link_libraries(lcl_expect PRIVATE lcl::lcl)
 
 lcl_add_package_test(NAME lcl-expect COMMAND test/test.lcl)
 lcl_add_package_test(NAME lcl-expect-example COMMAND examples/router.lcl)
+lcl_add_package_test(NAME lcl-expect-example-shell COMMAND examples/shell.lcl)
 
 if(LCL_IS_TOP_LEVEL)
   include(GNUInstallDirs)

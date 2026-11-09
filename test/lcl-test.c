@@ -3151,6 +3151,97 @@ static int test_ns_anchor_lifecycle(void) {
   return 1;
 }
 
+/*  finally must hand back the body's error with its original location,
+ * not the location of the finally form or of the cleanup. */
+static int test_finally_keeps_error_location(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  lcl_return_code rc;
+
+  prog = lcl_program_compile("proc fin_f {} {\n"
+                             "  error boom\n"
+                             "}\n"
+                             "var fin_ran 0\n"
+                             "finally {\n"
+                             "  fin_f\n"
+                             "} {\n"
+                             "  set! fin_ran 1\n"
+                             "  catch { error other }\n"
+                             "}\n",
+                             "finally.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(lcl_test_interp->err_msg != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_msg, "boom");
+  ASSERT_TRUE(lcl_test_interp->err_line == 2);
+  ASSERT_TRUE(lcl_test_interp->err_file != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_file, "finally.lcl");
+
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
+
+  lcl_clear_error(lcl_test_interp);
+
+  prog = lcl_program_compile("$fin_ran", "finally.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(result != NULL);
+  ASSERT_STREQ(lcl_value_to_string(result), "1");
+  lcl_ref_dec(result);
+  return 1;
+}
+
+/*  A step-hook abort is sticky and not unwound: the cleanup is skipped
+ * and the abort propagates untouched. */
+static int test_finally_skips_cleanup_on_host_abort(void) {
+  extern lcl_interp *lcl_test_interp;
+  lcl_program *prog;
+  lcl_value *result = NULL;
+  lcl_return_code rc;
+
+  lcl_set_step_hook(lcl_test_interp, step_hook_abort, NULL, 1000);
+  step_hook_fires = 0;
+
+  prog = lcl_program_compile("var fin_abort_ran 0\n"
+                             "finally { while {1} { let fin_x 1 } } "
+                             "{ set! fin_abort_ran 1 }",
+                             "finally.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+
+  ASSERT_TRUE(rc == LCL_RC_ERR);
+  ASSERT_TRUE(step_hook_fires == 1);
+  ASSERT_TRUE(lcl_test_interp->err_msg != NULL);
+  ASSERT_STREQ(lcl_test_interp->err_msg, "evaluation aborted by host");
+
+  if (result) {
+    lcl_ref_dec(result);
+    result = NULL;
+  }
+
+  lcl_clear_error(lcl_test_interp);
+  lcl_set_step_hook(lcl_test_interp, NULL, NULL, 0);
+
+  prog = lcl_program_compile("$fin_abort_ran", "finally.lcl");
+  ASSERT_TRUE(prog != NULL);
+  rc = lcl_eval_program(lcl_test_interp, prog, &result);
+  lcl_program_free(prog);
+  ASSERT_TRUE(rc == LCL_RC_OK);
+  ASSERT_TRUE(result != NULL);
+  ASSERT_STREQ(lcl_value_to_string(result), "0");
+  lcl_ref_dec(result);
+  return 1;
+}
+
 int run_test(void) {
   int total = 0;
   int passed = 0;
@@ -3234,6 +3325,8 @@ int run_test(void) {
   RUN(test_require_module_source_hook);
   RUN(test_ns_anchor_lifecycle);
   RUN(test_call_proc_break_is_error);
+  RUN(test_finally_keeps_error_location);
+  RUN(test_finally_skips_cleanup_on_host_abort);
 
   printf("\n%d/%d tests passed\n", passed, total);
   return (passed == total) ? 0 : 1;

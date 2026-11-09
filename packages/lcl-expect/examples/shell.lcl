@@ -1,0 +1,54 @@
+;; shell.lcl - drive a program that never intends to exit.
+;;
+;; The router example talks to a device that reboots at the end, so
+;; its dialogue naturally ends in end-of-file. This one talks to an
+;; interactive shell: we run a few commands, read their answers, and
+;; are done -- but the shell is still sitting at its prompt. Nothing
+;; about a successful dialogue implies the process should exit, so the
+;; ending is a hang-up, and its exit status is uninteresting.
+;;
+;;   ./build/lcl packages/lcl-expect/examples/shell.lcl
+
+proc assert_eq {expected actual} {
+    if [!= $expected $actual] { error "expected '$expected', got '$actual'" }
+}
+
+;; A fixed prompt makes the conversation deterministic; ENV/BASH_ENV
+;; keep the user's startup files out of it.
+let prompt "lcl> "
+let sh [Expect::spawn (sh -i) #{timeout 5000 env #{PS1 "lcl> " ENV "" BASH_ENV ""}}]
+
+;; Send a command and return its output: the terminal echoes the line
+;; we typed, so skip that, then take everything up to the next prompt.
+proc run_command {s cmd} {
+    Expect::send-line $s $cmd
+    Expect::wait-for $s "\n"
+    String::trim [get [Expect::wait-for $s $prompt] before]
+}
+
+;; Whatever happens in the dialogue, the shell does not outlive it.
+finally {
+    Expect::wait-for $sh $prompt
+
+    let five [run_command $sh "echo $((2 + 3))"]
+    puts "the shell says 2 + 3 = $five"
+    assert_eq 5 $five
+
+    let user [run_command $sh "id -un"]
+    puts "running as $user"
+
+    ;; A failing command is just more text: the shell is still there.
+    let missing [run_command $sh "cd /nonexistent/dir 2>&1; echo rc=\$?"]
+    let lines [String::split $missing "\n"]
+    puts "a bad command answered: [String::trim [get $lines [- [len $lines] 1]]]"
+    assert_eq 1 [has? $missing "rc="]
+
+    let again [run_command $sh "echo still-here"]
+    assert_eq still-here $again
+} {
+    ;; Hang up. The shell was never going to exit on its own, so this
+    ;; is the only honest ending; `close` reaps it and tells us how it
+    ;; went (a hang-up, or a normal exit if the shell chose to).
+    let w [Expect::close $sh]
+    puts "shell closed: $w"
+}
