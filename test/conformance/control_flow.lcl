@@ -988,3 +988,170 @@ Test::suite "Control codes escaping special-form operands" {
         Test::eq $l ()
     }
 }
+
+;; ============================================================================
+;; finally {body} {cleanup}
+;;
+;; The cleanup runs however the body leaves: normal completion, error,
+;; return, break or continue. When the cleanup completes normally the
+;; body's outcome continues unchanged (value, control code, error
+;; message and location). A cleanup that does not complete normally
+;; supersedes the body's outcome; a cleanup error raised while an
+;; error was already pending keeps the original in its message.
+;; ============================================================================
+
+Test::suite "finally" {
+    Test::case "the value is the body's, not the cleanup's" {
+        Test::eq [finally { "body" } { "cleanup" }] body
+        Test::eq [finally { } { 1 }] ""
+    }
+
+    Test::case "cleanup runs on every way out of the body" {
+        var trace ()
+        finally { List::push! trace normal } { List::push! trace c1 }
+        catch { finally { error boom } { List::push! trace c2 } }
+        proc fin_ret {} { finally { return r } { List::push! trace c3 } }
+        Test::eq [fin_ret] r
+        foreach x (1 2 3) {
+            finally { if [== $x 2] { continue }; List::push! trace b$x } { List::push! trace c$x }
+        }
+        foreach x (1 2 3) {
+            finally { if [== $x 2] { break }; List::push! trace d$x } { List::push! trace e$x }
+        }
+        Test::eq $trace (normal c1 c2 c3 b1 c1 c2 b3 c3 d1 e1 e2)
+    }
+
+    Test::case "return carries its value through the cleanup" {
+        var ran 0
+        proc fin_val {} {
+            finally {
+                return 42
+            } {
+                set! ran 1
+            }
+            "unreachable"
+        }
+        Test::eq [fin_val] 42
+        Test::eq $ran 1
+    }
+
+    Test::case "the body's error message survives a cleanup that catches its own errors" {
+        var seen ""
+        let rc [catch {
+            finally { error "original failure" } {
+                catch { error "unrelated, caught in cleanup" } _ seen
+            }
+        } _ e]
+        Test::eq $rc 1
+        Test::eq $e "original failure"
+        Test::eq $seen "unrelated, caught in cleanup"
+    }
+
+    Test::case "cleanup reads and writes the caller's variables" {
+        var n 1
+        let v [finally { let m [* $n 10]; $m } { set! n [+ $n 1] }]
+        Test::eq $v 10
+        Test::eq $n 2
+    }
+
+    Test::case "nested cleanups run innermost first" {
+        var trace ()
+        finally {
+            finally {
+                List::push! trace body
+            } {
+                List::push! trace inner
+            }
+        } {
+            List::push! trace outer
+        }
+        Test::eq $trace (body inner outer)
+        set! trace ()
+        catch {
+            finally {
+                finally { error boom } { List::push! trace inner }
+            } {
+                List::push! trace outer
+            }
+        }
+        Test::eq $trace (inner outer)
+    }
+
+    Test::case "a failing cleanup supersedes a successful body" {
+        let rc [catch { finally { "fine" } { error "cleanup failed" } } r e]
+        Test::eq $rc 1
+        Test::eq $e "cleanup failed"
+    }
+
+    Test::case "a failing cleanup after a failing body keeps the original in its message" {
+        let rc [catch { finally { error "first" } { error "second" } } r e]
+        Test::eq $rc 1
+        Test::eq $e "second (while unwinding: first)"
+    }
+
+    Test::case "a cleanup's own control flow supersedes the body's" {
+        proc fin_two {} { finally { return body } { return cleanup } }
+        Test::eq [fin_two] cleanup
+        var trace ()
+        foreach x (1 2 3) {
+            finally { List::push! trace b$x } { if [== $x 2] { break } }
+            List::push! trace after$x
+        }
+        Test::eq $trace (b1 after1 b2)
+        proc fin_err_then_return {} { finally { error boom } { return recovered } }
+        Test::eq [fin_err_then_return] recovered
+    }
+
+    Test::case "a cleanup error after a body continue propagates out of the loop" {
+        var count 0
+        let rc [catch {
+            foreach x (1 2 3) {
+                set! count [+ $count 1]
+                finally { continue } { error "cleanup $x" }
+            }
+        } r e]
+        Test::eq $rc 1
+        Test::eq $e "cleanup 1"
+        Test::eq $count 1
+    }
+
+    Test::case "the body is not a tail position: recursion unwinds through each cleanup" {
+        ;; With tail-call elimination mistakenly applied to the body, the
+        ;; cleanup would run before the recursive call and the trace would
+        ;; come out outermost first.
+        var trace ()
+        proc fin_recur {n} {
+            finally {
+                if [> $n 0] { fin_recur [- $n 1] }
+            } {
+                List::push! trace $n
+            }
+        }
+        fin_recur 3
+        Test::eq $trace (0 1 2 3)
+    }
+
+    Test::case "body and cleanup may be strings, compiled like repeat's body" {
+        var trace ()
+        let body {List::push! trace b}
+        let cleanup {List::push! trace c}
+        repeat 2 { finally $body $cleanup }
+        Test::eq $trace (b c b c)
+    }
+
+    Test::case "errors" {
+        Test::eq [catch { finally { 1 } } r e] 1
+        Test::eq [catch { finally } r e] 1
+        Test::eq [catch { finally { 1 } { 2 } { 3 } } r e] 1
+        Test::eq [catch { finally { 1 } { puts "a"b } } r e] 1
+    }
+
+    Test::case "many iterations leak nothing" {
+        var acc 0
+        repeat 2000 {
+            finally { let v (1 2 3); set! acc [+ $acc [len $v]] } { let w (4 5) }
+        }
+        Test::eq $acc 6000
+        catch { repeat 2000 { finally { error x } { let w (4 5) } } }
+    }
+}

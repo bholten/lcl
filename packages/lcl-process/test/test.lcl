@@ -211,6 +211,52 @@ Test::suite "Process::spawn" {
 ;; cases double as the leak check. The interrupt-delivery half of the
 ;; guarantee is tested in lcl-expect, which can send control
 ;; characters.
+;;
+;; Read until the handle reports end-of-file, or give up after ~5 s.
+proc drain-to-eof {h} {
+    var tries 0
+    while [and [not [Process::eof? $h]] [< $tries 5]] {
+        Process::read $h #{timeout 1000}
+        set! tries [+ $tries 1]
+    }
+}
+
+Test::suite "Process descriptors are close-on-exec" {
+    ;; A second child must not inherit the first handle's pipe ends or
+    ;; PTY master. If it did, the first child's EOF would not arrive
+    ;; until the second child exited.
+    Test::case "EOF on a pipe handle arrives while another child is alive" {
+        let a [Process::spawn (cat)]
+        let b [Process::spawn (sleep 5)]
+        Process::send $a "ping\n"
+        Process::close-stdin $a
+        let r [Process::read-until $a "ping" #{timeout 3000}]
+        Test::eq [get $r matched] 1
+        drain-to-eof $a
+        Test::eq [Process::eof? $a] 1
+        Test::eq [Process::alive? $b] 1
+        Process::close $a
+        Process::kill $b
+        Process::wait $b #{timeout 2000}
+        Process::close $b
+    }
+
+    Test::case "hang-up on a PTY handle arrives while another child is alive" {
+        let a [Process::spawn (cat) #{pty 1}]
+        let b [Process::spawn (sleep 5)]
+        Process::send $a "ping\n"
+        Process::close-stdin $a
+        Process::read-until $a "ping" #{timeout 3000}
+        drain-to-eof $a
+        Test::eq [Process::eof? $a] 1
+        Test::eq [Process::alive? $b] 1
+        Process::close $a
+        Process::kill $b
+        Process::wait $b #{timeout 2000}
+        Process::close $b
+    }
+}
+
 Test::suite "Process::spawn handshake" {
     Test::case "a pre-exec failure (bad cwd) neither hangs nor leaks, pipes" {
         let h [Process::spawn (cat) #{cwd /nonexistent/lcl-spawn-test}]

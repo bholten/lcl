@@ -558,6 +558,36 @@
 ;;; >> $kept
 ;;; (1 2 4)
 ;;;
+;;; `catch` traps an error (`catch {body} ?resultVar? ?errorVar?`
+;;; returns 1 and binds the message) and is transparent to `break`,
+;;; `continue` and `return`. `finally {body} {cleanup}` runs the
+;;; cleanup however the body leaves -- normally, by error, or by
+;;; `return`/`break`/`continue` -- and then lets the body's outcome
+;;; continue unchanged: its value, its control code, and for an error
+;;; its message and original location. The cleanup runs in a clean
+;;; error state, so it may `catch` its own failures without disturbing
+;;; the pending one. A cleanup that does not complete normally
+;;; supersedes the body's outcome; when both fail, the message keeps
+;;; the original as `<cleanup error> (while unwinding: <body error>)`.
+;;; Neither body is a tail position. A host step-budget abort is not
+;;; unwound: it is sticky, and the cleanup is skipped.
+;;;
+;;; Examples:
+;;; >> var log ()
+;;; >> finally { List::push! log work; "done" } { List::push! log closed }
+;;; "done"
+;;; >> $log
+;;; ("work" "closed")
+;;; >> catch { finally { error "boom" } { List::push! log closed2 } } _ e; $e
+;;; "boom"
+;;; >> proc early {} { finally { return 7 } { List::push! log closed3 } }
+;;; >> early
+;;; 7
+;;; >> $log
+;;; ("work" "closed" "closed2" "closed3")
+;;; >> catch { finally { error first } { error second } } _ e; $e
+;;; "second (while unwinding: first)"
+;;;
 ;;; ### Threading Operators (Clojure-style)
 ;;;
 ;;; Thread a value through a series of operations. `->` inserts the

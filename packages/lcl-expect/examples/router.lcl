@@ -44,78 +44,88 @@ proc run_command {s cmd} {
 
 let s [Expect::spawn (sh $device) #{timeout 5000}]
 
-puts "logging in..."
+;; However the conversation ends -- including an error half-way, which
+;; would otherwise leave the device process behind -- the session is
+;; closed. On the normal path the device has already exited by then,
+;; so `close` only reaps it.
+finally {
+    puts "logging in..."
 
-let attempts [login $s admin (letmein hunter2)]
+    let attempts [login $s admin (letmein hunter2)]
 
-puts "  logged in after $attempts attempt(s)"
-Expect::wait-for $s $prompt
+    puts "  logged in after $attempts attempt(s)"
+    Expect::wait-for $s $prompt
 
-puts "version: [run_command $s "show version"]"
-assert_eq "RouterOS 7.2.1 (build 4711)" [run_command $s "show version"]
+    puts "version: [run_command $s "show version"]"
+    assert_eq "RouterOS 7.2.1 (build 4711)" [run_command $s "show version"]
 
-;; Regex captures: groups 1.. are the parenthesised parts.
-Expect::send-line $s "show uptime"
+    ;; Regex captures: groups 1.. are the parenthesised parts.
+    Expect::send-line $s "show uptime"
 
-let up [Expect::wait-for $s [Expect::regex {Uptime: ([0-9]+) days, ([0-9]+) hours}]]
-let days [int [get [get $up groups] 1]]
-let hours [int [get [get $up groups] 2]]
+    let up [Expect::wait-for $s [Expect::regex {Uptime: ([0-9]+) days, ([0-9]+) hours}]]
+    let days [int [get [get $up groups] 1]]
+    let hours [int [get [get $up groups] 2]]
 
-puts "uptime: $days days and $hours hours"
+    puts "uptime: $days days and $hours hours"
 
-assert_eq (4 3) ($days $hours)
+    assert_eq (4 3) ($days $hours)
 
-Expect::wait-for $s $prompt
+    Expect::wait-for $s $prompt
 
-;; A paged listing: keep pressing Enter at --More-- and collect the
-;; text that came before each stop.
-puts "reading the log..."
+    ;; A paged listing: keep pressing Enter at --More-- and collect the
+    ;; text that came before each stop.
+    puts "reading the log..."
 
-var log ""
+    var log ""
 
-Expect::send-line $s "show log"
-Expect::wait-for $s "\n"
-Expect::expect $s (
-    "--More--" {
-        set! log "$log[get [Expect::out $s] before]"
-        Expect::send-line $s
-        continue
-    }
-    $prompt    { set! log "$log[get [Expect::out $s] before]" }
-)
+    Expect::send-line $s "show log"
+    Expect::wait-for $s "\n"
+    Expect::expect $s (
+        "--More--" {
+            set! log "$log[get [Expect::out $s] before]"
+            Expect::send-line $s
+            continue
+        }
+        $prompt    { set! log "$log[get [Expect::out $s] before]" }
+    )
 
-let entries [List::filter [String::split $log "\n"] [lambda {line} { has? $line "link state" }]]
+    let entries [List::filter [String::split $log "\n"] [lambda {line} { has? $line "link state" }]]
 
-puts "  [len $entries] log entries"
-assert_eq 25 [len $entries]
+    puts "  [len $entries] log entries"
+    assert_eq 25 [len $entries]
 
-;; What a failed wait looks like: the error names the patterns and
-;; shows the tail of what the device actually said.
-Expect::send-line $s "show nothing"
+    ;; What a failed wait looks like: the error names the patterns and
+    ;; shows the tail of what the device actually said.
+    Expect::send-line $s "show nothing"
 
-let failed [catch { Expect::wait-for $s "Interfaces:" #{timeout 300} } _ problem]
+    let failed [catch { Expect::wait-for $s "Interfaces:" #{timeout 300} } _ problem]
 
-assert_eq 1 $failed
-puts "a wait that fails says: $problem"
+    assert_eq 1 $failed
+    puts "a wait that fails says: $problem"
 
-Expect::wait-for $s $prompt
+    Expect::wait-for $s $prompt
 
-;; Answer a confirmation, then let the device go.
-Expect::send-line $s "reboot"
-Expect::wait-for $s {[y/N]}
-Expect::send-line $s "y"
-Expect::expect $s (
-    "Rebooting..."   { puts "device is rebooting" }
-    "Cancelled."     { error "the reboot was refused" }
-)
+    ;; Answer a confirmation, then let the device go.
+    Expect::send-line $s "reboot"
+    Expect::wait-for $s {[y/N]}
+    Expect::send-line $s "y"
+    Expect::expect $s (
+        "Rebooting..."   { puts "device is rebooting" }
+        "Cancelled."     { error "the reboot was refused" }
+    )
 
-;; "Rebooting..." is the device's last word, not its exit: wait for
-;; its output to end before closing. Expect::close hangs up on the
-;; child (closing the terminal sends SIGHUP), and a child caught
-;; between its last line and its exit would report `status -1 signal
-;; 1` instead of the status it was about to exit with.
-Expect::wait-for $s [Expect::eof]
+    ;; "Rebooting..." is the device's last word, not its exit: wait for
+    ;; its output to end before closing. Expect::close hangs up on the
+    ;; child (closing the terminal sends SIGHUP), and a child caught
+    ;; between its last line and its exit would report `status -1 signal
+    ;; 1` instead of the status it was about to exit with.
+    Expect::wait-for $s [Expect::eof]
 
+} {
+    Expect::close $s
+}
+
+;; Closing again returns the same result.
 let status [Expect::close $s]
 
 puts "device exited with status [get $status status]"
