@@ -174,6 +174,21 @@ Test::suite "File Handle Operations" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "arity and handle-type errors say what was expected" {
+        Test::raises_with { Io::open_file /tmp/x } "Io::open_file: expected 2 arguments (path mode)"
+        Test::raises_with { Io::fputs "not a handle" "text" } "Io::fputs: expected a file handle"
+        Test::raises_with { Io::rename only-one } "Io::rename: expected 2 arguments (old new)"
+    }
+
+    Test::case "a failed operation names the path and the reason" {
+        let missing "/nonexistent/lcl-io-test/x"
+        Test::raises_with { Io::open_file $missing r } "Io::open_file: cannot open '$missing': "
+        Test::raises_with { Io::remove $missing } "Io::remove: cannot remove '$missing': "
+        Test::raises_with { Io::copy $missing /tmp/lcl-io-copy-never } "Io::copy: cannot open '$missing': "
+    }
+}
+
 ;; ============================================================================
 ;; Run Tests
 ;; ============================================================================

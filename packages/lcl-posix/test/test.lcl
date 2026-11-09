@@ -207,6 +207,24 @@ Test::suite "path parts (Posix::dirname, Posix::basename)" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "arity errors say what was expected" {
+        Test::raises_with { Posix::mkdir } "Posix::mkdir: expected 1 or 2 arguments (path ?mode?)"
+        Test::raises_with { Posix::mkdir /tmp/x notamode } "Posix::mkdir: mode must be an integer"
+        Test::raises_with { Posix::dirname } "Posix::dirname: expected 1 argument (path)"
+        Test::raises_with { Posix::basename a b } "Posix::basename: expected 1 argument (path)"
+    }
+
+    Test::case "a failed operation names the path and the reason" {
+        let missing "/nonexistent/lcl-posix-test"
+        Test::raises_with { Posix::rmdir $missing } "Posix::rmdir: cannot remove directory '$missing': "
+        Test::raises_with { Posix::file_size $missing } "Posix::file_size: cannot stat '$missing': "
+        Test::raises_with { Posix::readdir $missing } "Posix::readdir: cannot read directory '$missing': "
+        Test::raises_with { Posix::chdir $missing } "Posix::chdir: cannot change to '$missing': "
+        Test::raises_with { Posix::realpath $missing } "Posix::realpath: cannot resolve '$missing': "
+    }
+}
+
 ;; ============================================================================
 ;; Run Tests
 ;; ============================================================================

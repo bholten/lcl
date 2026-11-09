@@ -79,50 +79,71 @@ static void curl_set_error_code(lcl_interp *interp, const char *who,
     return LCL_RC_OK;                                                          \
   }
 
-#define CURL_INFO_LONG(fn_name, curl_info)                                     \
+#define CURL_INFO_LONG(fn_name, lcl_name, curl_info)                           \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
+    CURLcode cc;                                                               \
     long val;                                                                  \
-    (void)interp;                                                              \
-    if (argc < 1)                                                              \
+    if (argc != 1) {                                                           \
+      lcl_set_error(interp, lcl_name ": expected 1 argument (handle)");        \
       return LCL_RC_ERR;                                                       \
-    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
+    }                                                                          \
+    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) { \
+      lcl_set_error(interp, lcl_name ": expected a curl handle");              \
       return LCL_RC_ERR;                                                       \
-    if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
+    }                                                                          \
+    cc = curl_easy_getinfo(ctx->curl, curl_info, &val);                        \
+    if (cc != CURLE_OK) {                                                      \
+      curl_set_error_code(interp, lcl_name, cc);                               \
       return LCL_RC_ERR;                                                       \
+    }                                                                          \
     *out = lcl_int_new(val);                                                   \
     return LCL_RC_OK;                                                          \
   }
 
-#define CURL_INFO_STRING(fn_name, curl_info)                                   \
+#define CURL_INFO_STRING(fn_name, lcl_name, curl_info)                         \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
+    CURLcode cc;                                                               \
     char *val = NULL;                                                          \
-    (void)interp;                                                              \
-    if (argc < 1)                                                              \
+    if (argc != 1) {                                                           \
+      lcl_set_error(interp, lcl_name ": expected 1 argument (handle)");        \
       return LCL_RC_ERR;                                                       \
-    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
+    }                                                                          \
+    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) { \
+      lcl_set_error(interp, lcl_name ": expected a curl handle");              \
       return LCL_RC_ERR;                                                       \
-    if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
+    }                                                                          \
+    cc = curl_easy_getinfo(ctx->curl, curl_info, &val);                        \
+    if (cc != CURLE_OK) {                                                      \
+      curl_set_error_code(interp, lcl_name, cc);                               \
       return LCL_RC_ERR;                                                       \
+    }                                                                          \
     *out = lcl_string_new(val);                                                \
     return LCL_RC_OK;                                                          \
   }
 
-#define CURL_INFO_DOUBLE(fn_name, curl_info)                                   \
+#define CURL_INFO_DOUBLE(fn_name, lcl_name, curl_info)                         \
   static lcl_return_code fn_name(lcl_interp *interp, int argc,                 \
                                  lcl_value **argv, lcl_value **out) {          \
     struct curl_context *ctx;                                                  \
+    CURLcode cc;                                                               \
     double val;                                                                \
-    (void)interp;                                                              \
-    if (argc < 1)                                                              \
+    if (argc != 1) {                                                           \
+      lcl_set_error(interp, lcl_name ": expected 1 argument (handle)");        \
       return LCL_RC_ERR;                                                       \
-    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK)   \
+    }                                                                          \
+    if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) { \
+      lcl_set_error(interp, lcl_name ": expected a curl handle");              \
       return LCL_RC_ERR;                                                       \
-    if (curl_easy_getinfo(ctx->curl, curl_info, &val) != CURLE_OK)             \
+    }                                                                          \
+    cc = curl_easy_getinfo(ctx->curl, curl_info, &val);                        \
+    if (cc != CURLE_OK) {                                                      \
+      curl_set_error_code(interp, lcl_name, cc);                               \
       return LCL_RC_ERR;                                                       \
+    }                                                                          \
     *out = lcl_float_new((float)val);                                          \
     return LCL_RC_OK;                                                          \
   }
@@ -504,10 +525,10 @@ static lcl_return_code c_curl_init(lcl_interp *interp, int argc,
                                    lcl_value **argv, lcl_value **out) {
   (void)argc;
   (void)argv;
-  (void)interp;
   (void)out;
 
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
+    lcl_set_error(interp, "Curl::init: curl_global_init failed");
     return LCL_RC_ERR;
   }
 
@@ -517,14 +538,15 @@ static lcl_return_code c_curl_init(lcl_interp *interp, int argc,
 static lcl_return_code c_curl_reset(lcl_interp *interp, int argc,
                                     lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
-  (void)interp;
   (void)out;
 
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Curl::reset: expected 1 argument (handle)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::reset: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -562,10 +584,14 @@ static lcl_return_code c_curl_set_header(lcl_interp *interp, int argc,
   (void)out;
 
   if (argc < 2) {
+    lcl_set_error(
+        interp,
+        "Curl::set_header: expected at least 2 arguments (handle header ...)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::set_header: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -580,6 +606,7 @@ static lcl_return_code c_curl_set_header(lcl_interp *interp, int argc,
   rc = curl_easy_setopt(ctx->curl, CURLOPT_HTTPHEADER, ctx->headers);
 
   if (rc != CURLE_OK) {
+    curl_set_error_code(interp, "Curl::set_header", rc);
     return LCL_RC_ERR;
   }
 
@@ -593,11 +620,13 @@ static lcl_return_code c_curl_set_body(lcl_interp *interp, int argc,
   CURLcode rc;
   (void)out;
 
-  if (argc < 2) {
+  if (argc != 2) {
+    lcl_set_error(interp, "Curl::set_body: expected 2 arguments (handle body)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::set_body: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -616,6 +645,7 @@ static lcl_return_code c_curl_set_body(lcl_interp *interp, int argc,
   rc = curl_easy_setopt(ctx->curl, CURLOPT_COPYPOSTFIELDS, body);
 
   if (rc != CURLE_OK) {
+    curl_set_error_code(interp, "Curl::set_body", rc);
     return LCL_RC_ERR;
   }
 
@@ -771,27 +801,37 @@ CURL_LONG_OPTION(c_curl_set_option_timeout_ms, "Curl::set_timeout_ms",
  * Info from last request
  */
 
-CURL_INFO_LONG(c_curl_get_info_response_code, CURLINFO_RESPONSE_CODE)
-CURL_INFO_STRING(c_curl_get_info_content_type, CURLINFO_CONTENT_TYPE)
-CURL_INFO_STRING(c_curl_get_info_effective_url, CURLINFO_EFFECTIVE_URL)
-CURL_INFO_DOUBLE(c_curl_get_info_total_time, CURLINFO_TOTAL_TIME)
-CURL_INFO_LONG(c_curl_get_info_header_size, CURLINFO_HEADER_SIZE)
-CURL_INFO_LONG(c_curl_get_info_request_size, CURLINFO_REQUEST_SIZE)
-CURL_INFO_LONG(c_curl_get_info_num_connects, CURLINFO_NUM_CONNECTS)
-CURL_INFO_STRING(c_curl_get_info_primary_ip, CURLINFO_PRIMARY_IP)
-CURL_INFO_LONG(c_curl_get_info_primary_port, CURLINFO_PRIMARY_PORT)
+CURL_INFO_LONG(c_curl_get_info_response_code, "Curl::get_response_code",
+               CURLINFO_RESPONSE_CODE)
+CURL_INFO_STRING(c_curl_get_info_content_type, "Curl::get_content_type",
+                 CURLINFO_CONTENT_TYPE)
+CURL_INFO_STRING(c_curl_get_info_effective_url, "Curl::get_effective_url",
+                 CURLINFO_EFFECTIVE_URL)
+CURL_INFO_DOUBLE(c_curl_get_info_total_time, "Curl::get_total_time",
+                 CURLINFO_TOTAL_TIME)
+CURL_INFO_LONG(c_curl_get_info_header_size, "Curl::get_header_size",
+               CURLINFO_HEADER_SIZE)
+CURL_INFO_LONG(c_curl_get_info_request_size, "Curl::get_request_size",
+               CURLINFO_REQUEST_SIZE)
+CURL_INFO_LONG(c_curl_get_info_num_connects, "Curl::get_num_connects",
+               CURLINFO_NUM_CONNECTS)
+CURL_INFO_STRING(c_curl_get_info_primary_ip, "Curl::get_primary_ip",
+                 CURLINFO_PRIMARY_IP)
+CURL_INFO_LONG(c_curl_get_info_primary_port, "Curl::get_primary_port",
+               CURLINFO_PRIMARY_PORT)
 
 static lcl_return_code c_curl_get_last_error(lcl_interp *interp, int argc,
                                              lcl_value **argv,
                                              lcl_value **out) {
   struct curl_context *ctx;
-  (void)interp;
 
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Curl::get_last_error: expected 1 argument (handle)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::get_last_error: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -803,13 +843,14 @@ static lcl_return_code c_curl_get_last_error(lcl_interp *interp, int argc,
 static lcl_return_code c_curl_is_timeout(lcl_interp *interp, int argc,
                                          lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
-  (void)interp;
 
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Curl::is_timeout: expected 1 argument (handle)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::is_timeout: expected a curl handle");
     return LCL_RC_ERR;
   }
 
@@ -821,13 +862,14 @@ static lcl_return_code c_curl_is_timeout(lcl_interp *interp, int argc,
 static lcl_return_code c_curl_error_string(lcl_interp *interp, int argc,
                                            lcl_value **argv, lcl_value **out) {
   struct curl_context *ctx;
-  (void)interp;
 
-  if (argc < 1) {
+  if (argc != 1) {
+    lcl_set_error(interp, "Curl::error_string: expected 1 argument (handle)");
     return LCL_RC_ERR;
   }
 
   if (lcl_opaque_get(argv[0], CURL_CONTEXT_TYPE, (void **)&ctx) != LCL_OK) {
+    lcl_set_error(interp, "Curl::error_string: expected a curl handle");
     return LCL_RC_ERR;
   }
 

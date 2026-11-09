@@ -210,7 +210,12 @@ static lcl_return_code c_int(lcl_interp *interp, int argc, lcl_value **argv,
   off = uniform_below(r, width);
   *out = lcl_int_new((lcl_int)((lcl_u64)lo + off));
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Xoshiro::int: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 /* Xoshiro::float stream -> float in [0, 1) */
@@ -240,7 +245,12 @@ static lcl_return_code c_float(lcl_interp *interp, int argc, lcl_value **argv,
 
   *out = lcl_float_new(x);
 
-  return *out ? LCL_RC_OK : LCL_RC_ERR;
+  if (!*out) {
+    lcl_set_error(interp, "Xoshiro::float: out of memory");
+    return LCL_RC_ERR;
+  }
+
+  return LCL_RC_OK;
 }
 
 /* Xoshiro::shuffle stream list -> new list, Fisher-Yates */

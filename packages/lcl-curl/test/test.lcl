@@ -236,6 +236,15 @@ Test::suite "CURL Handle Management" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "arity and handle-type errors say what was expected" {
+        Test::raises_with { Curl::reset } "Curl::reset: expected 1 argument (handle)"
+        Test::raises_with { Curl::get_response_code "nope" } "Curl::get_response_code: expected a curl handle"
+        Test::raises_with { Curl::set_body [Curl::new] } "Curl::set_body: expected 2 arguments (handle body)"
+        Test::raises_with { Curl::set_header [Curl::new] } "Curl::set_header: expected at least 2 arguments"
+    }
+}
+
 ;; ============================================================================
 ;; Run Tests
 ;; ============================================================================

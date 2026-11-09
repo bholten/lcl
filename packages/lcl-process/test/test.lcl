@@ -293,4 +293,14 @@ Test::suite "Process::spawn handshake" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "arity and handle-type errors say what was expected" {
+        Test::raises_with { Process::spawn () } "Process::spawn: argv must not be empty"
+        Test::raises_with { Process::run } "Process::run: expected 1 or 2 arguments (argv ?opts?)"
+        Test::raises_with { Process::wait "nope" } "Process::wait: expected a process handle"
+        Test::raises_with { Process::set-winsize } "Process::set-winsize: expected 3 arguments (handle rows cols)"
+        Test::raises_with { Process::read-until [Process::spawn (true)] () } "Process::read-until: patterns must not be empty"
+    }
+}
+
 exit [Test::run]

@@ -18,6 +18,8 @@ target_include_directories(lcl_math
 target_compile_options(lcl_math PRIVATE ${LCL_COMPILE_OPTIONS})
 target_link_libraries(lcl_math PRIVATE lcl::lcl m)
 
+lcl_add_package_test(NAME lcl-math COMMAND test/test.lcl)
+
 if(LCL_IS_TOP_LEVEL)
   include(GNUInstallDirs)
   install(TARGETS lcl_math

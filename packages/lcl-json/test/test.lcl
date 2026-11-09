@@ -61,4 +61,11 @@ Test::suite "Load JSON" {
     }
 }
 
+Test::suite "Errors name the command" {
+    Test::case "arity errors say what was expected" {
+        Test::raises_with { Json::true 1 } "Json::true: expected no arguments"
+        Test::raises_with { Json::null? } "Json::null?: expected 1 argument (value)"
+    }
+}
+
 exit [Test::run]

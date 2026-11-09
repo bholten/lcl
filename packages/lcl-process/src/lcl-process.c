@@ -125,6 +125,29 @@ static process_handle *get_handle(lcl_value *v) {
   return (process_handle *)ptr;
 }
 
+/* "who: what 'subject': strerror(err)"; subject may be NULL and err
+   0. */
+static lcl_return_code process_fail(lcl_interp *interp, const char *who,
+                                    const char *what, const char *subject,
+                                    int err) {
+  char buf[512];
+  size_t n;
+
+  if (subject) {
+    snprintf(buf, sizeof buf, "%s: %s '%s'", who, what, subject);
+  } else {
+    snprintf(buf, sizeof buf, "%s: %s", who, what);
+  }
+
+  if (err) {
+    n = strlen(buf);
+    snprintf(buf + n, sizeof buf - n, ": %s", strerror(err));
+  }
+
+  lcl_set_error(interp, buf);
+  return LCL_RC_ERR;
+}
+
 /* Child side of the spawn handshake: one byte, then the caller
  * _exit()s. Async-signal-safe; a failed write is not worth
  * reporting. */
@@ -325,8 +348,9 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
   size_t limit;
   lcl_return_code rc = LCL_RC_OK;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc < 1 || argc > 2) {
+    return process_fail(interp, "Process::run",
+                        "expected 1 or 2 arguments (argv ?opts?)", NULL, 0);
   }
 
   argv_list = argv[0];
@@ -345,7 +369,8 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
   argv_len = lcl_list_len(argv_list);
 
   if (argv_len == 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::run", "argv must not be empty", NULL,
+                        0);
   }
 
   if (use_shell) {
@@ -376,7 +401,7 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
         if (!new_cmd) {
           lcl_ref_dec(arg);
           free(cmd);
-          return LCL_RC_ERR;
+          return process_fail(interp, "Process::run", "out of memory", NULL, 0);
         }
 
         cmd = new_cmd;
@@ -396,7 +421,7 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
 
     if (!exec_argv) {
       free(cmd);
-      return LCL_RC_ERR;
+      return process_fail(interp, "Process::run", "out of memory", NULL, 0);
     }
 
     exec_argv[0] = strdup("/bin/sh");
@@ -407,7 +432,7 @@ static lcl_return_code c_process_run(lcl_interp *interp, int argc,
     exec_argv = (char **)malloc((argv_len + 1) * sizeof(char *));
 
     if (!exec_argv) {
-      return LCL_RC_ERR;
+      return process_fail(interp, "Process::run", "out of memory", NULL, 0);
     }
 
     for (i = 0; i < argv_len; i++) {
@@ -653,8 +678,9 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   int pty_rows;
   int pty_cols;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc < 1 || argc > 2) {
+    return process_fail(interp, "Process::spawn",
+                        "expected 1 or 2 arguments (argv ?opts?)", NULL, 0);
   }
 
   argv_list = argv[0];
@@ -672,13 +698,14 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   argv_len = lcl_list_len(argv_list);
 
   if (argv_len == 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::spawn", "argv must not be empty",
+                        NULL, 0);
   }
 
   exec_argv = (char **)malloc((argv_len + 1) * sizeof(char *));
 
   if (!exec_argv) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::spawn", "out of memory", NULL, 0);
   }
 
   for (i = 0; i < argv_len; i++) {
@@ -715,6 +742,7 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     ws.ws_ypixel = 0;
 
     if (openpty(&pty_master, &pty_slave, NULL, NULL, &ws) < 0) {
+      process_fail(interp, "Process::spawn", "openpty failed", NULL, errno);
       goto error;
     }
 
@@ -722,25 +750,30 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
     set_cloexec(pty_slave);
   } else {
     if (pipe_cloexec(stdin_pipe) < 0) {
+      process_fail(interp, "Process::spawn", "pipe failed", NULL, errno);
       goto error;
     }
 
     if (pipe_cloexec(stdout_pipe) < 0) {
+      process_fail(interp, "Process::spawn", "pipe failed", NULL, errno);
       goto error;
     }
 
     if (!merge && pipe_cloexec(stderr_pipe) < 0) {
+      process_fail(interp, "Process::spawn", "pipe failed", NULL, errno);
       goto error;
     }
   }
 
   if (pipe_cloexec(sync_pipe) < 0) {
+    process_fail(interp, "Process::spawn", "pipe failed", NULL, errno);
     goto error;
   }
 
   pid = fork();
 
   if (pid < 0) {
+    process_fail(interp, "Process::spawn", "fork failed", NULL, errno);
     goto error;
   }
 
@@ -862,6 +895,7 @@ lcl_return_code c_process_spawn(lcl_interp *interp, int argc, lcl_value **argv,
   h = process_handle_new();
 
   if (!h) {
+    process_fail(interp, "Process::spawn", "out of memory", NULL, 0);
     goto error;
   }
 
@@ -1042,14 +1076,16 @@ static lcl_return_code c_process_close_stdin(lcl_interp *interp, int argc,
                                              lcl_value **out) {
   process_handle *h;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return process_fail(interp, "Process::close-stdin",
+                        "expected 1 argument (handle)", NULL, 0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::close-stdin",
+                        "expected a process handle", NULL, 0);
   }
 
   if (h->is_pty) {
@@ -1146,7 +1182,7 @@ static lcl_return_code c_process_read(lcl_interp *interp, int argc,
   buf = (char *)malloc((size_t)max_bytes + 1);
 
   if (!buf) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::read", "out of memory", NULL, 0);
   }
 
   n = read(fd, buf, (size_t)max_bytes);
@@ -1252,16 +1288,18 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
   lcl_value *result;
   lcl_value *tmp;
   size_t i;
-  (void)interp;
 
   if (argc < 2) {
-    return LCL_RC_ERR;
+    return process_fail(
+        interp, "Process::read-until",
+        "expected at least 2 arguments (handle patterns ?opts?)", NULL, 0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::read-until",
+                        "expected a process handle", NULL, 0);
   }
 
   patterns = argv[1];
@@ -1300,7 +1338,8 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
   }
 
   if (num_patterns == 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::read-until",
+                        "patterns must not be empty", NULL, 0);
   }
 
   pattern_strs = (const char **)malloc(num_patterns * sizeof(char *));
@@ -1309,7 +1348,8 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
   if (!pattern_strs || !pattern_lens) {
     free(pattern_strs);
     free(pattern_lens);
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::read-until", "out of memory", NULL,
+                        0);
   }
 
   if (lcl_value_type_of(patterns) == LCL_LIST) {
@@ -1347,7 +1387,8 @@ static lcl_return_code c_process_read_until(lcl_interp *interp, int argc,
   if (!buf) {
     free(pattern_strs);
     free(pattern_lens);
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::read-until", "out of memory", NULL,
+                        0);
   }
 
   buf[0] = '\0';
@@ -1488,16 +1529,18 @@ static lcl_return_code c_process_wait(lcl_interp *interp, int argc,
   pid_t ret;
   lcl_value *result;
   lcl_value *tmp;
-  (void)interp;
 
   if (argc < 1) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::wait",
+                        "expected at least 1 argument (handle ?opts?)", NULL,
+                        0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::wait", "expected a process handle",
+                        NULL, 0);
   }
 
   if (argc >= 2) {
@@ -1537,7 +1580,8 @@ static lcl_return_code c_process_wait(lcl_interp *interp, int argc,
       }
 
       if (ret < 0) {
-        return LCL_RC_ERR;
+        return process_fail(interp, "Process::wait", "waitpid failed", NULL,
+                            errno);
       }
 
       {
@@ -1562,7 +1606,8 @@ static lcl_return_code c_process_wait(lcl_interp *interp, int argc,
     ret = waitpid(h->pid, &status, 0);
 
     if (ret < 0) {
-      return LCL_RC_ERR;
+      return process_fail(interp, "Process::wait", "waitpid failed", NULL,
+                          errno);
     }
   }
 
@@ -1651,16 +1696,18 @@ static lcl_return_code c_process_kill(lcl_interp *interp, int argc,
   lcl_value *opts = NULL;
   const char *sig_str;
   int sig = SIGTERM;
-  (void)interp;
 
   if (argc < 1) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::kill",
+                        "expected at least 1 argument (handle ?opts?)", NULL,
+                        0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::kill", "expected a process handle",
+                        NULL, 0);
   }
 
   if (argc >= 2) {
@@ -1699,7 +1746,7 @@ static lcl_return_code c_process_kill(lcl_interp *interp, int argc,
   }
 
   if (kill(h->pid, sig) < 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::kill", "kill failed", NULL, errno);
   }
 
   *out = lcl_int_new(1);
@@ -1711,16 +1758,16 @@ static lcl_return_code c_process_close(lcl_interp *interp, int argc,
                                        lcl_value **argv, lcl_value **out) {
   process_handle *h;
 
-  (void)interp;
-
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return process_fail(interp, "Process::close",
+                        "expected 1 argument (handle)", NULL, 0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::close", "expected a process handle",
+                        NULL, 0);
   }
 
   if (h->is_pty) {
@@ -1757,15 +1804,17 @@ static lcl_return_code c_process_close(lcl_interp *interp, int argc,
 static lcl_return_code c_process_is_pty(lcl_interp *interp, int argc,
                                         lcl_value **argv, lcl_value **out) {
   process_handle *h;
-  (void)interp;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return process_fail(interp, "Process::pty?", "expected 1 argument (handle)",
+                        NULL, 0);
   }
 
   h = get_handle(argv[0]);
+
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::pty?", "expected a process handle",
+                        NULL, 0);
   }
 
   *out = lcl_int_new(h->is_pty);
@@ -1785,16 +1834,17 @@ static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
   lcl_int rows;
   lcl_int cols;
   struct winsize ws;
-  (void)interp;
 
-  if (argc < 3) {
-    return LCL_RC_ERR;
+  if (argc != 3) {
+    return process_fail(interp, "Process::set-winsize",
+                        "expected 3 arguments (handle rows cols)", NULL, 0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::set-winsize",
+                        "expected a process handle", NULL, 0);
   }
 
   if (!h->is_pty || h->pty_master < 0) {
@@ -1804,7 +1854,8 @@ static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
 
   if (lcl_value_to_int(argv[1], &rows) != LCL_OK ||
       lcl_value_to_int(argv[2], &cols) != LCL_OK) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::set-winsize",
+                        "rows and cols must be integers", NULL, 0);
   }
 
   ws.ws_row = (unsigned short)rows;
@@ -1813,7 +1864,8 @@ static lcl_return_code c_process_set_winsize(lcl_interp *interp, int argc,
   ws.ws_ypixel = 0;
 
   if (ioctl(h->pty_master, TIOCSWINSZ, &ws) < 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::set-winsize",
+                        "cannot set window size", NULL, errno);
   }
 
   *out = lcl_string_new("");
@@ -1833,16 +1885,17 @@ static lcl_return_code c_process_get_winsize(lcl_interp *interp, int argc,
   struct winsize ws;
   lcl_value *result;
   lcl_value *tmp;
-  (void)interp;
 
-  if (argc < 1) {
-    return LCL_RC_ERR;
+  if (argc != 1) {
+    return process_fail(interp, "Process::get-winsize",
+                        "expected 1 argument (handle)", NULL, 0);
   }
 
   h = get_handle(argv[0]);
 
   if (!h) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::get-winsize",
+                        "expected a process handle", NULL, 0);
   }
 
   if (!h->is_pty || h->pty_master < 0) {
@@ -1851,7 +1904,8 @@ static lcl_return_code c_process_get_winsize(lcl_interp *interp, int argc,
   }
 
   if (ioctl(h->pty_master, TIOCGWINSZ, &ws) < 0) {
-    return LCL_RC_ERR;
+    return process_fail(interp, "Process::get-winsize",
+                        "cannot get window size", NULL, errno);
   }
 
   result = lcl_dict_new();
