@@ -1,6 +1,114 @@
 #include "lcl-name.h"
 #include "lcl-stdlib-internal.h"
 
+/* The substitution classes `subst` can perform; its optional second
+ * argument is a list naming the ones wanted. */
+#define SUBST_VARIABLES 1u
+#define SUBST_COMMANDS 2u
+#define SUBST_BACKSLASHES 4u
+#define SUBST_ALL (SUBST_VARIABLES | SUBST_COMMANDS | SUBST_BACKSLASHES)
+
+/* Turn the class list into a mask. Returns 1 on success, 0 with the
+ * error recorded. */
+static int subst_classes(lcl_interp *interp, lcl_value *list, unsigned *mask) {
+  size_t len;
+  size_t k;
+
+  if (list->type != LCL_LIST) {
+    lcl_std_err_expected_got(interp, "subst", "list of substitution classes",
+                             list);
+    return 0;
+  }
+
+  *mask = 0;
+  len = lcl_list_len(list);
+
+  for (k = 0; k < len; k++) {
+    lcl_value *elem = NULL;
+    const char *s = NULL;
+    unsigned bit = 0;
+
+    if (lcl_list_get(list, k, &elem) != LCL_OK) {
+      LCL_ERR_MSG(interp, "subst: out of memory");
+      return 0;
+    }
+
+    if (lcl_value_to_cstring(interp, elem, &s) == LCL_OK) {
+      if (strcmp(s, "variables") == 0) {
+        bit = SUBST_VARIABLES;
+      } else if (strcmp(s, "commands") == 0) {
+        bit = SUBST_COMMANDS;
+      } else if (strcmp(s, "backslashes") == 0) {
+        bit = SUBST_BACKSLASHES;
+      }
+    }
+
+    if (!bit) {
+      char msg[160];
+
+      sprintf(msg,
+              "subst: unknown substitution class \"%.48s\" (expected "
+              "variables, commands or backslashes)",
+              s ? s : "");
+      lcl_ref_dec(elem);
+      LCL_ERR_MSG_DUP(interp, msg);
+      return 0;
+    }
+
+    lcl_ref_dec(elem);
+    *mask |= bit;
+  }
+
+  return 1;
+}
+
+static int subst_append_var(lcl_interp *interp, const char *name, size_t n,
+                            char **result, size_t *result_len,
+                            size_t *result_cap) {
+  char *owned = malloc(n + 1);
+  lcl_value *val = NULL;
+  const char *val_str;
+  int ok;
+
+  if (!owned) {
+    return 0;
+  }
+
+  memcpy(owned, name, n);
+  owned[n] = '\0';
+
+  if (lcl_env_get_value(interp, owned, &val) != LCL_OK) {
+    lcl_std_err_undefined(interp, "subst", owned);
+    free(owned);
+    return 0;
+  }
+
+  free(owned);
+
+  if (val->type == LCL_CELL) {
+    lcl_value *content = NULL;
+
+    if (lcl_cell_get(val, &content) != LCL_OK) {
+      lcl_ref_dec(val);
+      return 0;
+    }
+
+    lcl_ref_dec(val);
+    val = content;
+  }
+
+  if (lcl_value_to_cstring(interp, val, &val_str) != LCL_OK) {
+    lcl_ref_dec(val);
+    return 0;
+  }
+
+  ok = lcl_std_buf_append(result, result_len, result_cap, val_str,
+                          strlen(val_str));
+  lcl_ref_dec(val);
+
+  return ok;
+}
+
 static lcl_return_code s_subst(lcl_interp *interp, int argc,
                                const lcl_word **args, lcl_value **out) {
   lcl_value *input_v = NULL;
@@ -10,9 +118,10 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
   char *result = NULL;
   size_t result_len = 0;
   size_t result_cap = 0;
+  unsigned mask = SUBST_ALL;
   lcl_return_code rc;
 
-  if (!lcl_std_chk_argc(interp, "subst", argc, 1, 1)) {
+  if (!lcl_std_chk_argc(interp, "subst", argc, 1, 2)) {
     return LCL_RC_ERR;
   }
 
@@ -21,6 +130,27 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
   if (rc != LCL_RC_OK) {
     *out = input_v;
     return rc;
+  }
+
+  if (argc == 2) {
+    lcl_value *classes_v = NULL;
+    int ok;
+
+    rc = lcl_eval_word(interp, args[1], &classes_v);
+
+    if (rc != LCL_RC_OK) {
+      lcl_ref_dec(input_v);
+      *out = classes_v;
+      return rc;
+    }
+
+    ok = subst_classes(interp, classes_v, &mask);
+    lcl_ref_dec(classes_v);
+
+    if (!ok) {
+      lcl_ref_dec(input_v);
+      return LCL_RC_ERR;
+    }
   }
 
   if (lcl_value_to_cstring(interp, input_v, &src) != LCL_OK) {
@@ -34,25 +164,30 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
 
     if (c == '\\' && i + 1 < src_len) {
       char next = src[i + 1];
-      char esc;
+      char esc = next;
+      unsigned owner = SUBST_BACKSLASHES;
+      int known = 1;
 
       switch (next) {
       case 'n': esc = '\n'; break;
       case 't': esc = '\t'; break;
       case 'r': esc = '\r'; break;
-      case '\\': esc = '\\'; break;
-      case '[': esc = '['; break;
-      case ']': esc = ']'; break;
-      case '$': esc = '$'; break;
-      case '{': esc = '{'; break;
-      case '}': esc = '}'; break;
-      case '"': esc = '"'; break;
-      default:
+      case '\\':
+      case '{':
+      case '}':
+      case '"': break;
+      case '$': owner = SUBST_VARIABLES; break;
+      case '[':
+      case ']': owner = SUBST_COMMANDS; break;
+      default: known = 0; break;
+      }
+
+      if (!known || !(mask & owner)) {
         if (!lcl_std_buf_append_char(&result, &result_len, &result_cap, '\\')) {
           goto err;
         }
+
         esc = next;
-        break;
       }
 
       if (!lcl_std_buf_append_char(&result, &result_len, &result_cap, esc)) {
@@ -63,7 +198,7 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
       continue;
     }
 
-    if (c == '$') {
+    if (c == '$' && (mask & SUBST_VARIABLES)) {
       i++;
 
       if (i < src_len && src[i] == '{') {
@@ -74,6 +209,7 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
         }
 
         if (i >= src_len) {
+          LCL_ERR_MSG(interp, "subst: unmatched '${'");
           goto err;
         }
 
@@ -86,50 +222,9 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
           }
         }
 
-        {
-          size_t name_len = i - start;
-          char *name = malloc(name_len + 1);
-          lcl_value *val = NULL;
-          const char *val_str;
-
-          if (!name) {
-            goto err;
-          }
-
-          memcpy(name, src + start, name_len);
-          name[name_len] = '\0';
-
-          if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
-            free(name);
-            goto err;
-          }
-
-          free(name);
-
-          if (val->type == LCL_CELL) {
-            lcl_value *content = NULL;
-
-            if (lcl_cell_get(val, &content) != LCL_OK) {
-              lcl_ref_dec(val);
-              goto err;
-            }
-
-            lcl_ref_dec(val);
-            val = content;
-          }
-
-          if (lcl_value_to_cstring(interp, val, &val_str) != LCL_OK) {
-            lcl_ref_dec(val);
-            goto err;
-          }
-
-          if (!lcl_std_buf_append(&result, &result_len, &result_cap, val_str,
-                                  strlen(val_str))) {
-            lcl_ref_dec(val);
-            goto err;
-          }
-
-          lcl_ref_dec(val);
+        if (!subst_append_var(interp, src + start, i - start, &result,
+                              &result_len, &result_cap)) {
+          goto err;
         }
 
         i++;
@@ -152,50 +247,9 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
           goto err;
         }
 
-        {
-          size_t name_len = i - start;
-          char *name = malloc(name_len + 1);
-          lcl_value *val = NULL;
-          const char *val_str;
-
-          if (!name) {
-            goto err;
-          }
-
-          memcpy(name, src + start, name_len);
-          name[name_len] = '\0';
-
-          if (lcl_env_get_value(interp, name, &val) != LCL_OK) {
-            free(name);
-            goto err;
-          }
-
-          free(name);
-
-          if (val->type == LCL_CELL) {
-            lcl_value *content = NULL;
-
-            if (lcl_cell_get(val, &content) != LCL_OK) {
-              lcl_ref_dec(val);
-              goto err;
-            }
-
-            lcl_ref_dec(val);
-            val = content;
-          }
-
-          if (lcl_value_to_cstring(interp, val, &val_str) != LCL_OK) {
-            lcl_ref_dec(val);
-            goto err;
-          }
-
-          if (!lcl_std_buf_append(&result, &result_len, &result_cap, val_str,
-                                  strlen(val_str))) {
-            lcl_ref_dec(val);
-            goto err;
-          }
-
-          lcl_ref_dec(val);
+        if (!subst_append_var(interp, src + start, i - start, &result,
+                              &result_len, &result_cap)) {
+          goto err;
         }
 
         continue;
@@ -208,7 +262,7 @@ static lcl_return_code s_subst(lcl_interp *interp, int argc,
       continue;
     }
 
-    if (c == '[') {
+    if (c == '[' && (mask & SUBST_COMMANDS)) {
       size_t start = ++i;
       size_t close_end;
 
