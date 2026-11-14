@@ -966,6 +966,26 @@
 ;;; >> subst {x is $ex, sum is [+ 1 2]}
 ;;; "x is 42, sum is 3"
 ;;;
+;;; `subst` takes an optional list naming the substitution classes to
+;;; perform -- `variables`, `commands`, `backslashes` -- and defaults to
+;;; all three. Each class owns the escape for its own sigil: `\$` is an
+;;; escape only while `variables` is selected, `\[` and `\]` only with
+;;; `commands`, and the rest (`\n`, `\t`, `\\`, ...) only with
+;;; `backslashes`. Any other backslash pair is copied through unchanged,
+;;; and a substituted value is inserted as text, never rescanned.
+;;; `(variables)` is the mode for templating foreign text such as JSON,
+;;; where brackets and backslashes belong to the data.
+;;;
+;;; Examples:
+;;; >> subst {$ex and [+ 1 2]} (variables)
+;;; "42 and \[+ 1 2]"
+;;; >> subst {$ex and [+ 1 2]} (commands)
+;;; "\$ex and 3"
+;;; >> subst {costs \$5, x is $ex} (variables)
+;;; "costs \$5, x is 42"
+;;; >> subst {$ex and [+ 1 2]} ()
+;;; "\$ex and \[+ 1 2]"
+;;;
 ;;; ```tcl
 ;;; eval_at $fragment "*scratch*" 42
 ;;; eval_at $buffer_text "/home/me/game/main.lcl"

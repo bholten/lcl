@@ -217,6 +217,86 @@ Test::suite "Subst" {
     Test::case "braces are literal" {
         Test::eq [subst {braces {} ok}] {braces {} ok}
     }
+
+    Test::case "undefined variable is named in the error" {
+        Test::eq [catch { subst {x=$sub_absent} } r e] 1
+        Test::eq $e {subst: undefined variable "sub_absent"}
+        Test::eq [catch { subst {x=${sub_absent}} } r e] 1
+        Test::eq $e {subst: undefined variable "sub_absent"}
+    }
+
+    Test::case "unterminated braced variable is reported" {
+        ;; cut the closing brace off so this file stays brace-balanced
+        let open [String::range {x=${sub_open}} 0 12]
+        Test::eq [catch { subst $open } r e] 1
+        Test::assert [has? $e {unmatched}]
+    }
+}
+
+Test::suite "Subst classes" {
+    Test::case "an explicit full list matches the default" {
+        let sc_x 5
+        let text {$sc_x [+ 1 2] a\tb \$ \[ \\}
+        Test::eq [subst $text (variables commands backslashes)] [subst $text]
+    }
+
+    Test::case "variables only leaves commands and backslashes alone" {
+        let sc_name Alice
+        let tpl {{"n":"$sc_name","t":["a","b"],"m":"l1\nl2 \"q\""}}
+        let want {{"n":"Alice","t":["a","b"],"m":"l1\nl2 \"q\""}}
+        Test::eq [subst $tpl (variables)] $want
+        Test::eq [subst {${sc_name}! $5 $.} (variables)] {Alice! $5 $.}
+    }
+
+    Test::case "each class owns the escape for its own sigil" {
+        let sc_x 5
+        Test::eq [subst {\$sc_x \[+ 1 2\] \n} (variables)] {$sc_x \[+ 1 2\] \n}
+        Test::eq [subst {\$sc_x \[+ 1 2\] \n} (commands)] {\$sc_x [+ 1 2] \n}
+        Test::eq [subst {\$sc_x \[x\] a\tb} (backslashes)] "\\\$sc_x \\\[x\\\] a\tb"
+    }
+
+    Test::case "a backslash pairs with the next character in every mode" {
+        let sc_x 5
+        ;; escaped backslash, then a substitution
+        Test::eq [subst {\\$sc_x} (variables)] {\\5}
+        Test::eq [subst {\\$sc_x}] {\5}
+        ;; escaped backslash, then an escaped dollar
+        Test::eq [subst {\\\$sc_x} (variables)] {\\$sc_x}
+    }
+
+    Test::case "substituted values are never rescanned" {
+        let sc_v {[error boom] $sc_nope \n}
+        Test::eq [subst {<$sc_v>} (variables)] {<[error boom] $sc_nope \n>}
+        Test::eq [subst {<$sc_v>}] {<[error boom] $sc_nope \n>}
+    }
+
+    Test::case "commands only" {
+        Test::eq [subst {$sc_x=[+ 1 2]} (commands)] {$sc_x=3}
+    }
+
+    Test::case "an empty list substitutes nothing" {
+        Test::eq [subst {$sc_x [+ 1 2] \n \$} ()] {$sc_x [+ 1 2] \n \$}
+    }
+
+    Test::case "the class list is evaluated" {
+        let sc_x 5
+        let sc_what (variables)
+        Test::eq [subst {$sc_x [no]} $sc_what] {5 [no]}
+    }
+
+    Test::case "unknown class is an error" {
+        Test::eq [catch { subst {x} (variables nope) } r e] 1
+        Test::assert [has? $e {unknown substitution class "nope"}]
+    }
+
+    Test::case "class argument must be a list" {
+        Test::eq [catch { subst {x} variables } r e] 1
+        Test::assert [has? $e {expected list of substitution classes}]
+    }
+
+    Test::case "too many arguments" {
+        Test::eq [catch { subst {x} (variables) extra } r e] 1
+    }
 }
 
 ;; ============================================================================
